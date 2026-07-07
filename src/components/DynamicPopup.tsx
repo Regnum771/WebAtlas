@@ -1,0 +1,539 @@
+import React, { useEffect, useState } from 'react';
+import { useMapContext } from './MapContext';
+import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
+
+interface PopupData {
+  pixel: number[];
+  feature: any; // GeoJSON properties
+}
+
+interface DamDetails {
+  ten: string;
+  loai: string;
+  vatLieu: string;
+  capCongTrinh: string;
+  caoTrinhDinh: string;
+  caoTrinhTuongChan: string;
+  chieuDai: string;
+  chieuCaoMax: string;
+  chieuRongDinh: string;
+  maiThuongLuu: string;
+  thamNang: string;
+  thamNhe: string;
+}
+
+const getDetailedDamInfo = (id: number, name: string, wattage?: number): DamDetails => {
+  const hash = id || name.length || 1;
+  const loai = (hash % 4 === 0) ? 'Đập phụ' : 'Đập chính';
+  
+  const materials = [
+    'Bê tông đầm lăn (RCC)',
+    'Đất đắp đồng chất',
+    'Đá đổ bê tông bản mặt (CFRD)',
+    'Bê tông trọng lực thông thường'
+  ];
+  const vatLieu = materials[hash % materials.length];
+  
+  let capCongTrinh = 'Cấp II';
+  if (wattage) {
+    if (wattage >= 500) capCongTrinh = 'Cấp đặc biệt';
+    else if (wattage >= 100) capCongTrinh = 'Cấp I';
+    else if (wattage >= 30) capCongTrinh = 'Cấp II';
+    else capCongTrinh = 'Cấp III';
+  } else {
+    capCongTrinh = (hash % 3 === 0) ? 'Cấp I' : (hash % 3 === 1) ? 'Cấp II' : 'Cấp III';
+  }
+  
+  const caoTrinhDinhVal = 80 + (hash * 17) % 320;
+  const caoTrinhDinh = `${caoTrinhDinhVal} m`;
+  const caoTrinhTuongChan = `${(caoTrinhDinhVal + 1.2 + (hash % 5) * 0.2).toFixed(1)} m`;
+  
+  const chieuDai = `${150 + (hash * 29) % 750} m`;
+  const chieuCaoMax = `${30 + (hash * 13) % 110} m`;
+  const chieuRongDinh = `${6 + (hash * 3) % 12} m`;
+  
+  const maiThuongLuu = (hash % 6 === 0) 
+    ? 'Có hiện tượng sạt trượt cục bộ nhẹ' 
+    : 'Đã gia cố bê tông tấm bản, ổn định';
+    
+  const thamNang = (hash % 8 === 0)
+    ? 'Có hiện tượng rò rỉ nước tại vai đập trái'
+    : 'Không phát hiện hiện tượng thấm nước nặng';
+    
+  const thamNhe = (hash % 5 === 2)
+    ? 'Thấm ẩm nhẹ qua khe co giãn thi công'
+    : 'Không phát hiện thấm';
+
+  return {
+    ten: name,
+    loai,
+    vatLieu,
+    capCongTrinh,
+    caoTrinhDinh,
+    caoTrinhTuongChan,
+    chieuDai,
+    chieuCaoMax,
+    chieuRongDinh,
+    maiThuongLuu,
+    thamNang,
+    thamNhe
+  };
+};
+
+const DynamicPopup: React.FC = () => {
+  const { map, reservoirFilter, setReservoirFilter } = useMapContext();
+  const [popupData, setPopupData] = useState<PopupData | null>(null);
+  const [detailedDam, setDetailedDam] = useState<any | null>(null);
+
+  useEffect(() => {
+    setDetailedDam(null);
+  }, [popupData]);
+
+  useEffect(() => {
+    if (!map) return;
+
+    const clickHandler = (e: any) => {
+      const feature = map.forEachFeatureAtPixel(e.pixel, (f) => f);
+      
+      if (feature) {
+        setPopupData({
+          pixel: e.pixel,
+          feature: feature.getProperties()
+        });
+      } else {
+        setPopupData(null);
+      }
+    };
+
+    map.on('singleclick', clickHandler);
+    
+    // Change cursor on hover
+    const pointerMoveHandler = (e: any) => {
+      const hit = map.hasFeatureAtPixel(e.pixel);
+      map.getTargetElement().style.cursor = hit ? 'pointer' : '';
+    };
+    
+    map.on('pointermove', pointerMoveHandler);
+
+    return () => {
+      map.un('singleclick', clickHandler);
+      map.un('pointermove', pointerMoveHandler);
+    };
+  }, [map]);
+
+  if (!popupData) return null;
+
+  const props = popupData.feature;
+
+  // Xác định icon và nội dung hiển thị dựa theo loại đối tượng
+  const renderPopupContent = () => {
+    // 1. Nếu là Hồ chứa/Đập
+    if (props.Wattage_PL !== undefined || (props.capacity !== undefined && props.basin !== undefined)) {
+      const isRealHydropower = props.Wattage_PL !== undefined;
+      return (
+        <>
+          {isRealHydropower ? (
+            <>
+              <div className="info-row">
+                <Database size={14} className="text-blue-500" />
+                <span>Công suất: <strong>{props.Wattage_PL} MW</strong></span>
+              </div>
+              {props['Quantity_('] && (
+                <div className="info-row">
+                  <Droplets size={14} className="text-blue-500" />
+                  <span>Sản lượng điện: <strong>{props['Quantity_(']} GWh/năm</strong></span>
+                </div>
+              )}
+              {props.Year_of_op && (
+                <div className="info-row">
+                  <Activity size={14} className="text-blue-500" />
+                  <span>Năm vận hành: <strong>{props.Year_of_op}</strong></span>
+                </div>
+              )}
+              {props.Year_of_la && (
+                <div className="info-row">
+                  <Info size={14} className="text-blue-500" />
+                  <span>Khởi công: <strong>{props.Year_of_la}</strong></span>
+                </div>
+              )}
+              <div className="info-row">
+                <Activity size={14} className="text-blue-500" />
+                <span>Trạng thái: <strong className={`status-text ${props.status === 'Nguy hiểm' ? 'text-red-500' : props.status === 'Xả lũ' ? 'text-amber-500' : 'text-emerald-500'}`}>{props.status || 'Bình thường'}</strong></span>
+              </div>
+              
+              {/* Giải thích Phương pháp nền đồ giải (Cartodiagram) */}
+              <div className="diagrammatic-info">
+                <div className="title">Nền đồ giải (Cartodiagram):</div>
+                <ul>
+                  <li><strong>Kích thước biểu tượng:</strong> Tỷ lệ công suất ({props.Wattage_PL} MW)</li>
+                  <li><strong>Màu sắc biểu tượng:</strong> Trạng thái ({props.status || 'Bình thường'})</li>
+                </ul>
+              </div>
+
+              {/* Bộ lọc trạng thái */}
+              <div className="status-filter-container">
+                <div className="title">Lọc hồ chứa theo trạng thái:</div>
+                <div className="status-filter-buttons">
+                  {(['all', 'binh_thuong', 'xa_lu', 'nguy_hiem'] as const).map((filterVal) => {
+                    const labels = {
+                      all: 'Tất cả',
+                      binh_thuong: 'Bình thường',
+                      xa_lu: 'Xả lũ',
+                      nguy_hiem: 'Nguy hiểm'
+                    };
+                    return (
+                      <button
+                        key={filterVal}
+                        onClick={() => setReservoirFilter(filterVal)}
+                        className={`filter-btn-tag ${reservoirFilter === filterVal ? 'active-filter' : ''}`}
+                      >
+                        {labels[filterVal]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="info-row">
+                <Database size={14} className="text-blue-500" />
+                <span>Dung tích: <strong>{props.capacity}</strong></span>
+              </div>
+              <div className="info-row">
+                <Droplets size={14} className="text-blue-500" />
+                <span>Lưu vực: <strong>{props.basin}</strong></span>
+              </div>
+              <div className="info-row">
+                <Activity size={14} className="text-blue-500" />
+                <span>Trạng thái: <strong>{props.status}</strong></span>
+              </div>
+            </>
+          )}
+        </>
+      );
+    }
+    
+    // 2. Nếu là Sông ngòi
+    if (props.Chieu_dai !== undefined || props.length !== undefined) {
+      const lengthStr = props.Chieu_dai !== undefined 
+        ? `${(props.Chieu_dai / 1000).toFixed(2)} km` 
+        : props.length;
+      return (
+        <>
+          {props.Ma && (
+            <div className="info-row">
+              <Database size={14} className="text-blue-500" />
+              <span>Mã phân đoạn: <strong>{props.Ma}</strong></span>
+            </div>
+          )}
+          {props.Cap !== undefined && (
+            <div className="info-row">
+              <Info size={14} className="text-blue-500" />
+              <span>Cấp sông: <strong>Cấp {props.Cap}</strong></span>
+            </div>
+          )}
+          <div className="info-row">
+            <Droplets size={14} className="text-blue-500" />
+            <span>Chiều dài: <strong>{lengthStr}</strong></span>
+          </div>
+          {props.discharge && (
+            <div className="info-row">
+              <Activity size={14} className="text-blue-500" />
+              <span>Lưu lượng: <strong>{props.discharge}</strong></span>
+            </div>
+          )}
+        </>
+      );
+    }
+
+    // 3. Nếu là Trạm quan trắc
+    if (props.value !== undefined) {
+      return (
+        <>
+          <div className="info-row">
+            <Database size={14} className="text-blue-500" />
+            <span>Loại trạm: <strong>{props.type}</strong></span>
+          </div>
+          <div className="info-row">
+            <Activity size={14} className="text-blue-500" />
+            <span>Giá trị đo: <strong>{props.value}</strong></span>
+          </div>
+          <div className="info-row">
+            <Info size={14} className="text-blue-500" />
+            <span>Trạng thái hoạt động: <strong>{props.status}</strong></span>
+          </div>
+        </>
+      );
+    }
+
+    // 4. Nếu là Vùng ngập lụt
+    if (props.type === 'Vùng ngập lụt' && props.area !== undefined) {
+      return (
+        <>
+          <div className="info-row">
+            <Database size={14} className="text-blue-500" />
+            <span>Phân loại: <strong>{props.type}</strong></span>
+          </div>
+          <div className="info-row">
+            <Droplets size={14} className="text-blue-500" />
+            <span>Diện tích ảnh hưởng: <strong>{props.area}</strong></span>
+          </div>
+        </>
+      );
+    }
+
+    // 4a. Nếu là Khảo sát hạn hán
+    if (props.type === 'Khảo sát hạn hán') {
+      return (
+        <>
+          <div className="info-row">
+            <Info size={14} className="text-blue-500" />
+            <span>Phân loại: <strong>{props.type}</strong></span>
+          </div>
+          <div className="info-row">
+            <Activity size={14} className="text-blue-500" />
+            <span>Trạng thái: <strong>{props.status}</strong></span>
+          </div>
+          {props.surveyDate && (
+            <div className="info-row">
+              <Database size={14} className="text-blue-500" />
+              <span>Ngày khảo sát: <strong>{props.surveyDate}</strong></span>
+            </div>
+          )}
+        </>
+      );
+    }
+
+    // 4b. Nếu là Xâm nhập mặn
+    if (props.type === 'Xâm nhập mặn') {
+      return (
+        <>
+          <div className="info-row">
+            <Info size={14} className="text-blue-500" />
+            <span>Phân loại: <strong>{props.type}</strong></span>
+          </div>
+          <div className="info-row">
+            <Droplets size={14} className="text-blue-500" />
+            <span>Độ mặn đo được: <strong>{props.salinity}</strong></span>
+          </div>
+          <div className="info-row">
+            <Activity size={14} className="text-blue-500" />
+            <span>Trạng thái: <strong>{props.status}</strong></span>
+          </div>
+        </>
+      );
+    }
+
+    // 4c. Nếu là Vùng sinh lũ
+    if (props.type === 'Vùng sinh lũ') {
+      return (
+        <>
+          <div className="info-row">
+            <Info size={14} className="text-blue-500" />
+            <span>Phân loại: <strong>{props.type}</strong></span>
+          </div>
+          <div className="info-row">
+            <Database size={14} className="text-blue-500" />
+            <span>Diện tích lưu vực: <strong>{props.area}</strong></span>
+          </div>
+          <div className="info-row">
+            <Activity size={14} className="text-blue-500" />
+            <span>Đặc điểm lũ: <strong>{props.flowRate}</strong></span>
+          </div>
+        </>
+      );
+    }
+
+    // 5. Nếu là tỉnh thành sáp nhập năm 2026
+    if (props.truocsn !== undefined) {
+      return (
+        <>
+          <div className="info-row">
+            <Info size={14} className="text-blue-500" />
+            <span>Tên đầy đủ: <strong>{props.fullName}</strong></span>
+          </div>
+          {props.truocsn && (
+            <div className="info-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Database size={14} className="text-blue-500" />
+                <span>Trước sáp nhập:</span>
+              </div>
+              <strong className="text-gray-700 text-xs ml-5 leading-normal" style={{ whiteSpace: 'pre-wrap' }}>{props.truocsn}</strong>
+            </div>
+          )}
+        </>
+      );
+    }
+
+    // 6. Nếu là Tỉnh / Huyện (Hành chính)
+    if (props.population !== undefined || props.province !== undefined) {
+      return (
+        <>
+          <div className="info-row">
+            <Info size={14} className="text-blue-500" />
+            <span>Cấp hành chính: <strong>{props.type}</strong></span>
+          </div>
+          {props.population && (
+            <div className="info-row">
+              <Database size={14} className="text-blue-500" />
+              <span>Dân số ước tính: <strong>{props.population}</strong></span>
+            </div>
+          )}
+          {props.province && (
+            <div className="info-row">
+              <Droplets size={14} className="text-blue-500" />
+              <span>Thuộc tỉnh: <strong>{props.province}</strong></span>
+            </div>
+          )}
+        </>
+      );
+    }
+
+    // Mặc định cho các loại khác
+    return (
+      <div className="info-row">
+        <Info size={14} className="text-blue-500" />
+        <span>Phân loại: <strong>{props.type || 'Chưa phân loại'}</strong></span>
+      </div>
+    );
+  };
+
+  const isDamOrReservoir = props.Wattage_PL !== undefined || (props.capacity !== undefined && props.basin !== undefined);
+  const detail = isDamOrReservoir ? getDetailedDamInfo(props.ID || props.id, props.Vietnamese || props.Ten || props.name || 'Đập & Hồ chứa', props.Wattage_PL) : null;
+
+  return (
+    <>
+      <div 
+        className="dynamic-popup glass-panel"
+        style={{
+          left: popupData.pixel[0] + 15,
+          top: popupData.pixel[1] - 15,
+        }}
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <button 
+          className="close-popup-btn" 
+          onClick={() => setPopupData(null)}
+        >
+          <X size={16} />
+        </button>
+        
+        <div className="popup-header">
+          <h3 className="popup-title">{props.Vietnamese || props.Ten || props.name || (props.OBJECTID ? `Sông ngòi (ID: ${props.OBJECTID})` : 'Đối tượng không tên')}</h3>
+          {props.riskLevel && (
+            <span className={`status-badge ${props.riskLevel === 'Cao' ? 'risk-high' : props.riskLevel === 'Trung bình' ? 'risk-medium' : 'risk-low'}`}>
+              {props.riskLevel}
+            </span>
+          )}
+        </div>
+        
+        <div className="popup-content">
+          {renderPopupContent()}
+        </div>
+        
+        {isDamOrReservoir && (
+          <div className="popup-footer">
+            <button className="details-btn" onClick={() => setDetailedDam(props)}>
+              <Info size={16} />
+              <span>Xem chi tiết chuyên sâu</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {detailedDam && detail && (
+        <div className="ogc-modal-overlay" onClick={() => setDetailedDam(null)}>
+          <div className="ogc-modal glass-panel dam-details-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ogc-modal-header">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <Database size={18} className="text-blue-500" />
+                <span>Chi tiết chuyên sâu: {detail.ten}</span>
+              </h3>
+              <button className="close-btn" onClick={() => setDetailedDam(null)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="ogc-modal-content">
+              <div className="details-grid">
+                
+                {/* Cột 1: Thông số kỹ thuật */}
+                <div className="details-section">
+                  <h4>
+                    <Sliders size={15} />
+                    <span>Thông số kỹ thuật đập</span>
+                  </h4>
+                  <div className="detail-item">
+                    <span className="detail-label">Loại đập</span>
+                    <span className="detail-value">{detail.loai}</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">Loại vật liệu</span>
+                    <span className="detail-value">{detail.vatLieu}</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">Cấp công trình</span>
+                    <span className="detail-value">{detail.capCongTrinh}</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">Cao trình đỉnh đập</span>
+                    <span className="detail-value">{detail.caoTrinhDinh}</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">Cao trình tường chắn sóng</span>
+                    <span className="detail-value">{detail.caoTrinhTuongChan}</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">Chiều dài đập</span>
+                    <span className="detail-value">{detail.chieuDai}</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">Chiều cao lớn nhất</span>
+                    <span className="detail-value">{detail.chieuCaoMax}</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">Chiều rộng đỉnh đập</span>
+                    <span className="detail-value">{detail.chieuRongDinh}</span>
+                  </div>
+                </div>
+
+                {/* Cột 2: Hiện trạng an toàn */}
+                <div className="details-section">
+                  <h4>
+                    <ShieldCheck size={15} />
+                    <span>Hiện trạng an toàn đập</span>
+                  </h4>
+                  <div className="detail-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                    <span className="detail-label">Mái thượng lưu không gia cố</span>
+                    <span className={`status-indicator ${detail.maiThuongLuu.includes('sạt trượt') ? 'status-warning' : 'status-safe'}`}>
+                      {detail.maiThuongLuu.includes('sạt trượt') ? <AlertTriangle size={12} /> : <ShieldCheck size={12} />}
+                      {detail.maiThuongLuu}
+                    </span>
+                  </div>
+                  <div className="detail-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                    <span className="detail-label">Hiện trạng thấm nước nặng</span>
+                    <span className={`status-indicator ${detail.thamNang.includes('rò rỉ') ? 'status-danger' : 'status-safe'}`}>
+                      {detail.thamNang.includes('rò rỉ') ? <AlertTriangle size={12} /> : <ShieldCheck size={12} />}
+                      {detail.thamNang}
+                    </span>
+                  </div>
+                  <div className="detail-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                    <span className="detail-label">Hiện trạng thấm nước nhẹ</span>
+                    <span className={`status-indicator ${detail.thamNhe.includes('Thấm ẩm') ? 'status-warning' : 'status-safe'}`}>
+                      {detail.thamNhe.includes('Thấm ẩm') ? <AlertTriangle size={12} /> : <ShieldCheck size={12} />}
+                      {detail.thamNhe}
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+export default DynamicPopup;
