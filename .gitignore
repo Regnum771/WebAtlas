@@ -24,6 +24,6 @@ dist-ssr
 *.sw?
 
 # Exclude data directory
-data/
+/data/
 sapnhapbando_geojson/
 geojson_11Mar2026/
