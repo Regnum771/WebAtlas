@@ -3,7 +3,7 @@ import { useMapContext } from './MapContext';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
 
 interface PopupData {
-  pixel: number[];
+  coordinate: number[];
   feature: any; // GeoJSON properties
 }
 
@@ -83,7 +83,21 @@ const getDetailedDamInfo = (id: number, name: string, wattage?: number): DamDeta
 const DynamicPopup: React.FC = () => {
   const { map, reservoirFilter, setReservoirFilter } = useMapContext();
   const [popupData, setPopupData] = useState<PopupData | null>(null);
+  const [pixel, setPixel] = useState<number[]>([0, 0]);
   const [detailedDam, setDetailedDam] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!map || !popupData) return;
+    
+    const updatePixel = () => {
+      const px = map.getPixelFromCoordinate(popupData.coordinate);
+      if (px) setPixel(px);
+    };
+
+    updatePixel();
+    map.on('postrender', updatePixel);
+    return () => map.un('postrender', updatePixel);
+  }, [map, popupData]);
 
   useEffect(() => {
     setDetailedDam(null);
@@ -97,9 +111,11 @@ const DynamicPopup: React.FC = () => {
       
       if (feature) {
         setPopupData({
-          pixel: e.pixel,
+          coordinate: e.coordinate,
           feature: feature.getProperties()
         });
+        // Pan the map to the clicked feature so the popup stays in viewport
+        map.getView().animate({ center: e.coordinate, duration: 400 });
       } else {
         setPopupData(null);
       }
@@ -402,13 +418,33 @@ const DynamicPopup: React.FC = () => {
   const isDamOrReservoir = props.Wattage_PL !== undefined || (props.capacity !== undefined && props.basin !== undefined);
   const detail = isDamOrReservoir ? getDetailedDamInfo(props.ID || props.id, props.Vietnamese || props.Ten || props.name || 'Đập & Hồ chứa', props.Wattage_PL) : null;
 
+  // Tính toán vị trí để không bị tràn khỏi màn hình (khung hình)
+  let popupLeft = pixel[0] + 15;
+  let popupTop = pixel[1] - 15;
+  let xTranslate = '0';
+  let yTranslate = '-100%';
+
+  // Ước tính kích thước popup (width: 260px, height khoảng 350px)
+  if (popupLeft + 260 > window.innerWidth) {
+    popupLeft = pixel[0] - 15; // Đẩy sang trái con trỏ
+    xTranslate = '-100%';
+  }
+  
+  if (popupTop - 350 < 0) {
+    popupTop = pixel[1] + 15; // Đẩy xuống dưới con trỏ
+    yTranslate = '0';
+  }
+
   return (
     <>
       <div 
         className="dynamic-popup glass-panel"
         style={{
-          left: popupData.pixel[0] + 15,
-          top: popupData.pixel[1] - 15,
+          left: popupLeft,
+          top: popupTop,
+          transform: `translate(${xTranslate}, ${yTranslate})`,
+          maxHeight: '80vh',
+          overflowY: 'auto'
         }}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}

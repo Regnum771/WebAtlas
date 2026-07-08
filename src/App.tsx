@@ -28,9 +28,10 @@ function App() {
           <BasemapSwitcher />
           <SearchBar />
           <DynamicLegend />
-          <DynamicPopup />
           <OGCClient />
         </div>
+
+        <DynamicPopup />
 
         {/* Nút ẩn/hiện các panel */}
         <button

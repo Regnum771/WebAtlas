@@ -20,7 +20,7 @@ export const riversMockData = {
         length: '388 km',
         status: 'Bình thường'
       }
-    },
+    }, 
     {
       type: 'Feature',
       geometry: {

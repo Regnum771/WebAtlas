@@ -9,6 +9,7 @@ import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import GeoJSON from 'ol/format/GeoJSON';
 import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
+import Select from 'ol/interaction/Select';
 import { useMapContext } from './MapContext';
 import { 
   stationsMockData,
@@ -336,17 +337,53 @@ const MapContainer: React.FC = () => {
       view: new View({
         center: fromLonLat([108.2, 13.5]),
         zoom: 7,
-        minZoom: 4.5,
-        maxZoom: 18,
+        minZoom: 4.0,
+        maxZoom: 20,
         extent: transformExtent([107.0, 10.5, 109.5, 16.5], 'EPSG:4326', 'EPSG:3857'),
       }),
       controls: []
     });
 
+    // Thêm interaction để highlight sông khi click
+    const selectInteraction = new Select({
+      layers: [riversLayer],
+      style: (feature) => {
+        const cap = feature.get('Cap') || 6;
+        
+        let mainWidth = 0.5;
+        let borderWidth = 1.5;
+        
+        if (cap === 1) {
+          mainWidth = 3.5;
+          borderWidth = 7;
+        } else if (cap === 2) {
+          mainWidth = 2.2;
+          borderWidth = 5;
+        } else if (cap === 3) {
+          mainWidth = 1.2;
+          borderWidth = 3;
+        } else {
+          mainWidth = 0.5;
+          borderWidth = 1.5;
+        }
+        
+        return [
+          new Style({
+            stroke: new Stroke({ color: '#fde047', width: borderWidth + 4 }) // Viền ngoài màu vàng sáng (yellow-300)
+          }),
+          new Style({
+            stroke: new Stroke({ color: '#ef4444', width: mainWidth + 2 }) // Lõi màu đỏ (red-500)
+          })
+        ];
+      }
+    });
+    map.addInteraction(selectInteraction);
+
     mapRef.current = map;
     setMap(map);
 
     return () => {
+      map.removeInteraction(selectInteraction);
       map.setTarget(undefined);
     };
   }, []);
@@ -398,9 +435,9 @@ const MapContainer: React.FC = () => {
           let zoomVisible = true;
           // Ranh giới tỉnh chỉ hiện khi zoom <= 9.5, ranh giới xã phường hiện khi zoom > 9.5
           if (state.id === 'layer_provinces_2026') {
-            zoomVisible = currentZoom <= 9.5;
+            zoomVisible = true; // Luôn hiển thị ranh giới tỉnh
           } else if (state.id === 'layer_wards_2026') {
-            zoomVisible = currentZoom > 9.5;
+            zoomVisible = currentZoom >= 10.0; // Chỉ hiện ranh giới xã khi phóng to
           }
           
           layer.setVisible(state.visible && zoomVisible);
