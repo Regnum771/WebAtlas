@@ -14,3 +14,5 @@ export const EDITABLE_LAYER_KEYS = [
 ] as const;
 
 export type EditableLayerKey = (typeof EDITABLE_LAYER_KEYS)[number];
+
+export * from './layer-attributes';
