@@ -14,4 +14,16 @@ describe('EDITABLE_LAYER_KEYS', () => {
   it('contains no duplicate keys', () => {
     expect(new Set(EDITABLE_LAYER_KEYS).size).toBe(EDITABLE_LAYER_KEYS.length);
   });
+
+  it('is exactly the seven canonical keys in order', () => {
+    expect([...EDITABLE_LAYER_KEYS]).toEqual([
+      'dams',
+      'rivers',
+      'stations',
+      'flood_zones',
+      'drought_points',
+      'saltwater_intrusion',
+      'flood_generation',
+    ]);
+  });
 });
