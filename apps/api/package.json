@@ -1,0 +1,25 @@
+{
+  "name": "@webatlas/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "node-pg-migrate -m src/db/migrations --tsconfig tsconfig.json",
+    "migrate:up": "node-pg-migrate up -m src/db/migrations",
+    "migrate:down": "node-pg-migrate down -m src/db/migrations",
+    "seed": "tsx src/db/seeds/run.ts",
+    "publish:geoserver": "tsx src/geoserver/publish.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-pg-migrate": "^7.9.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "~6.0.2",
+    "vitest": "^3.0.0"
+  }
+}
