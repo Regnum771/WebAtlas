@@ -1,7 +1,6 @@
 import VectorSource from 'ol/source/Vector';
 import GeoJSON from 'ol/format/GeoJSON';
-import Feature from 'ol/Feature';
-import { bbox as bboxStrategy } from 'ol/loadingstrategy';
+import type Feature from 'ol/Feature';
 import { LAYER_ATTRIBUTE_MAP, normalizeFeatureProperties, type EditableLayerKey } from '@webatlas/shared';
 import { GEOSERVER_URL } from '../config';
 
@@ -28,8 +27,7 @@ export function createWfsVectorSource(layerKey: EditableLayerKey): VectorSource 
   const format = new GeoJSON();
   const source = new VectorSource({
     format,
-    url: () => wfsUrl(info.wfsTypeName),
-    strategy: bboxStrategy,
+    url: wfsUrl(info.wfsTypeName),
   });
 
   // Normalize + filter once features are loaded for this source.
