@@ -11,7 +11,8 @@ import GeoJSON from 'ol/format/GeoJSON';
 import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
 import Select from 'ol/interaction/Select';
 import { useMapContext } from './MapContext';
-import { 
+import { createWfsVectorSource } from '../services/wfs';
+import {
   stationsMockData,
   floodMockData,
   droughtSurveyMockData,
@@ -85,8 +86,8 @@ const MapContainer: React.FC = () => {
     // Kích thước vòng tròn đại diện cho công suất phát điện (Wattage_PL)
     // Màu sắc đại diện cho trạng thái hoạt động (Bình thường, Xả lũ, Nguy hiểm)
     const damsStyle = (feature: any) => {
-      const id = feature.get('ID') || 0;
-      const wattage = feature.get('Wattage_PL') || 50;
+      const id = feature.get('localId') || 0;
+      const wattage = feature.get('ratedPower') || 50;
 
       // Phân loại trạng thái dựa trên ID
       let status = 'Bình thường';
@@ -101,7 +102,7 @@ const MapContainer: React.FC = () => {
       }
 
       // Lưu trạng thái vào properties để hiển thị trong DynamicPopup
-      feature.set('status', status);
+      feature.set('operationalStatus', status);
 
       // Thực hiện lọc theo bộ lọc hoạt động
       const currentFilter = reservoirFilterRef.current;
@@ -125,7 +126,7 @@ const MapContainer: React.FC = () => {
 
     // Style cho mạng lưới sông ngòi động dựa trên cấp độ sông (Cap)
     const riversStyle = (feature: any) => {
-      const cap = feature.get('Cap') || 6;
+      const cap = feature.get('streamOrder') || 6;
       
       // Sông cấp nhỏ thì nét nhỏ nhạt, cấp lớn thì nét dày rõ
       let mainWidth = 0.5;
@@ -189,8 +190,10 @@ const MapContainer: React.FC = () => {
       stroke: new Stroke({ color: '#4f46e5', width: 1.5 })
     });
 
-    const damsLayer = createVectorLayerFromUrl('layer_dams', './thuydienvietnam.geojson', damsStyle);
-    const riversLayer = createVectorLayerFromUrl('layer_rivers', './thuyhe.geojson', riversStyle);
+    const damsLayer = new VectorLayer({ source: createWfsVectorSource('dams'), style: damsStyle, properties: { id: 'layer_dams' } });
+    layersRef.current['layer_dams'] = damsLayer;
+    const riversLayer = new VectorLayer({ source: createWfsVectorSource('rivers'), style: riversStyle, properties: { id: 'layer_rivers' } });
+    layersRef.current['layer_rivers'] = riversLayer;
     const stationsLayer = createVectorLayer('layer_stations', stationsMockData, stationsStyle);
     const floodLayer = createVectorLayer('layer_flood', floodMockData, floodStyle);
     const droughtSurveyLayer = createVectorLayer('layer_drought_survey', droughtSurveyMockData, droughtSurveyStyle);
@@ -348,7 +351,7 @@ const MapContainer: React.FC = () => {
     const selectInteraction = new Select({
       layers: [riversLayer],
       style: (feature) => {
-        const cap = feature.get('Cap') || 6;
+        const cap = feature.get('streamOrder') || 6;
         
         let mainWidth = 0.5;
         let borderWidth = 1.5;
