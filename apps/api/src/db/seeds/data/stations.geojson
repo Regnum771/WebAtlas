@@ -1,0 +1,9 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [108.07, 13.95] },
+      "properties": { "id": "s1", "name": "Trạm Thủy văn An Khê", "type": "Đo mực nước", "status": "Hoạt động", "value": "Mực nước: 2.3m" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [108.44, 15.46] },
+      "properties": { "id": "s2", "name": "Trạm Đo Mưa Phú Ninh", "type": "Đo lượng mưa", "status": "Hoạt động", "value": "Lượng mưa: 45mm/24h" } }
+  ]
+}
