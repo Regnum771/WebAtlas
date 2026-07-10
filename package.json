@@ -7,6 +7,10 @@
     "apps/*",
     "packages/*"
   ],
+  "engines": {
+    "node": ">=22 <23",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev:web": "npm run dev -w @webatlas/web",
     "build:web": "npm run build -w @webatlas/web",
