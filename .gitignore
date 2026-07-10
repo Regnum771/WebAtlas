@@ -30,3 +30,6 @@ geojson_11Mar2026/
 
 # Shared package build output
 packages/shared/dist/
+
+# Local infra secrets
+infra/.env
