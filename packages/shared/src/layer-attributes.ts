@@ -1,4 +1,5 @@
 import type { EditableLayerKey } from './index';
+import type { LayerFeatureProperties } from './feature-properties';
 
 export interface LayerAttributeInfo {
   /** GeoServer WFS typeName, e.g. "webatlas:dams" */
@@ -101,7 +102,7 @@ export const LAYER_ATTRIBUTE_MAP: Record<EditableLayerKey, LayerAttributeInfo> =
 export function normalizeFeatureProperties(
   layerKey: EditableLayerKey,
   dbProps: Record<string, unknown>
-): Record<string, unknown> {
+): LayerFeatureProperties {
   const map = LAYER_ATTRIBUTE_MAP[layerKey].attributes;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(dbProps)) {
@@ -114,5 +115,5 @@ export function normalizeFeatureProperties(
     }
   }
   out.layerKey = layerKey;
-  return out;
+  return out as unknown as LayerFeatureProperties;
 }
