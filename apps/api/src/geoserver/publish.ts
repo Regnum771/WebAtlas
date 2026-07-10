@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { fileURLToPath } from 'node:url';
+import { resolve as resolvePath } from 'node:path';
 import { gsRequest, gsExists } from './client';
 
 const WS = process.env.GEOSERVER_WORKSPACE ?? 'webatlas';
@@ -62,8 +64,12 @@ export async function publishAll(): Promise<void> {
   }
 }
 
-publishAll().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error(err);
-  process.exitCode = 1;
-});
+// Run when invoked directly (npm run publish:geoserver), not when imported.
+const isMainModule = process.argv[1] != null && fileURLToPath(import.meta.url) === resolvePath(process.argv[1]);
+if (isMainModule) {
+  publishAll().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error(err);
+    process.exitCode = 1;
+  });
+}

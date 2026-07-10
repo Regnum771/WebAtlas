@@ -2,6 +2,9 @@
 exports.shorthands = undefined;
 
 exports.up = (pgm) => {
+  pgm.createExtension('postgis', { ifNotExists: true });
+  pgm.createSchema('app', { ifNotExists: true });
+  pgm.createSchema('water', { ifNotExists: true });
   pgm.createExtension('citext', { ifNotExists: true });
 
   pgm.createType({ schema: 'app', name: 'user_role' }, ['admin', 'editor', 'viewer']);
