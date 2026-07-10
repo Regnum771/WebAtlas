@@ -1,27 +1,21 @@
 {
-  "name": "atlas",
+  "name": "webatlas",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22 <23",
+    "npm": ">=10"
+  },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "lucide-react": "^1.22.0",
-    "ol": "^10.9.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7"
-  },
-  "devDependencies": {
-    "@types/node": "^24.13.2",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.2",
-    "oxlint": "^1.69.0",
-    "typescript": "~6.0.2",
-    "vite": "^8.1.0"
+    "dev:web": "npm run dev -w @webatlas/web",
+    "build:web": "npm run build -w @webatlas/web",
+    "lint:web": "npm run lint -w @webatlas/web",
+    "build:shared": "npm run build -w @webatlas/shared",
+    "test:shared": "npm run test -w @webatlas/shared"
   }
 }
