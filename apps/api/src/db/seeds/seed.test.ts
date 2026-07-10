@@ -26,11 +26,19 @@ describe('seeds', () => {
     }
   });
 
-  it('stores only valid 4326 geometry', async () => {
+  it('stores only valid 4326 geometry (ignoring rows with no geometry)', async () => {
     const { rows } = await getPool().query(
-      `SELECT count(*)::int AS bad FROM water.dams WHERE NOT ST_IsValid(geom) OR ST_SRID(geom) <> 4326`
+      `SELECT count(*)::int AS bad FROM water.dams
+       WHERE geom IS NOT NULL AND (NOT ST_IsValid(geom) OR ST_SRID(geom) <> 4326)`
     );
     expect(rows[0].bad).toBe(0);
+  });
+
+  it('stores NULL geometry for the 19 dams with no source coordinates', async () => {
+    const { rows } = await getPool().query(
+      `SELECT count(*)::int AS n FROM water.dams WHERE geom IS NULL`
+    );
+    expect(rows[0].n).toBe(19);
   });
 
   it('is idempotent (re-running does not duplicate rows)', async () => {
