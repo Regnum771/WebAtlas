@@ -38,6 +38,7 @@ globally-injected cross-cutting concerns, and a single source of truth.
 | 5 | Auth model | **Multiple admin accounts + JWT**, `users` table with a `role` column |
 | 6 | Repo & runtime | **Monorepo + Docker Compose** (PostGIS + GeoServer + API) |
 | 7 | Frontend architecture | **MVP** roles, organized with **Feature-Sliced Design** |
+| 8 | Satellite EO data | **Admin-triggered async pipeline**: Python worker fetches Sentinel-2/Landsat (later Sentinel-1) for an AOI, computes derived products, publishes COGs as GeoServer coverages (see §14) |
 
 ---
 
@@ -72,6 +73,10 @@ Four cooperating services, orchestrated by Docker Compose.
 WFS → change appears live. WFS reads PostGIS directly, so there is no tile cache to
 invalidate.
 
+> These four services are the **vector/CRUD core** (Plans 1–5). A separate raster
+> **Earth-observation subsystem** (Plans 6–7) adds a Python EO worker and an object store,
+> and serves satellite-derived products as GeoServer coverages — see §14.
+
 ---
 
 ## 4. Single-source-of-truth invariants
@@ -89,12 +94,21 @@ definitions, styling, and schema can silently gain second sources. These invaria
   layer panel is *derived* from `GET /api/layers`; it is never hand-maintained. GeoServer
   layer publication is provisioned from the same registry as config-as-code, never
   hand-edited in the GeoServer UI.
-- **INV-3 — Styling lives in exactly one place: the frontend.** Since the public reads
-  WFS/GeoJSON and styles client-side, no parallel SLDs are maintained. If WMS is ever
-  needed, SLD is *generated* from the same style tokens, not authored separately.
+- **INV-3 — Vector styling lives in exactly one place: the frontend.** Since the public
+  reads WFS/GeoJSON and styles client-side, no parallel SLDs are maintained for vector
+  layers. If vector WMS is ever needed, SLD is *generated* from the same style tokens, not
+  authored separately. (Raster EO coverages are the exception: they are styled with
+  GeoServer raster styles, since there is no client-side pixel styling — see §14.8. That is
+  still a single source for each layer's styling, not a duplicate.)
 - **INV-4 — Attribute schema has one definition.** The shared types in
   `packages/shared` define each layer's attributes; migrations, the API layer registry,
   and the frontend attribute forms all consume that single definition.
+- **INV-5 — Raster EO data lives as COGs + GeoServer coverages, never in PostGIS.**
+  Satellite imagery and derived products are stored as Cloud-Optimized GeoTIFFs (object
+  store / volume) and served via GeoServer coverage stores (ImageMosaic). PostGIS holds
+  only EO *metadata* (`eo.jobs`, `eo.products` — §14), which is the authoritative record of
+  what has been produced and published. The `eo` schema and the GeoServer EO coverages are
+  provisioned as config-as-code, never hand-edited (extends INV-2 to the raster path).
 
 ---
 
@@ -352,19 +366,22 @@ webatlas/
   apps/
     web/                 # existing React app moved here (src/, public/, vite config)
     api/                 # new Fastify API (see §6.5)
+    eo-worker/           # Python EO worker (fetch/compute/publish) — see §14
   packages/
     shared/              # shared TS types: feature & attribute schemas (INV-4)
   infra/
-    docker-compose.yml   # postgis + geoserver + api
-    postgis/init.sql     # extensions + schemas
-    geoserver/           # catalog config + provisioning (config-as-code, INV-2)
+    docker-compose.yml   # postgis + geoserver + api + eo-worker (+ object store)
+    postgis/init.sql     # extensions + schemas (app, water, eo)
+    geoserver/           # catalog config + provisioning (config-as-code, INV-2/INV-5)
   docs/superpowers/specs/
   package.json           # npm workspaces root
 ```
 
-npm workspaces; `docker compose up` brings up PostGIS + GeoServer + API; the frontend runs
-via Vite dev (or containerized). Shared feature/attribute types live in `packages/shared`
-so the API and web agree on schemas.
+npm workspaces; `docker compose up` brings up PostGIS + GeoServer + API (+ the EO worker
+and object store once §14 lands); the frontend runs via Vite dev (or containerized). Shared
+feature/attribute types live in `packages/shared` so the API and web agree on schemas. The
+`eo-worker` is a separate Python service (not an npm workspace) — it shares the database and
+storage but has its own toolchain.
 
 ---
 
@@ -409,23 +426,132 @@ so the API and web agree on schemas.
 - No public user registration (admins are provisioned by admins / seed).
 - No map versioning or rollback beyond the audit log.
 - GADM boundaries stay static (not editable, not in the DB).
-- No WMS/GeoWebCache tiling initially (WFS live). If added later, INV-1 requires cache
+- No WMS/GeoWebCache tiling for the *vector* layers initially (WFS live). GeoWebCache **is**
+  used for the raster EO coverages (§14). If vector WMS is added later, INV-1 requires cache
   truncation on the write path.
+- **Sentinel-1 SAR (flood extent)** is deferred to a follow-up EO plan (Plan 7). The first
+  EO delivery is optical only (Sentinel-2 + Landsat: NDWI, NDVI).
+- No on-the-fly / per-request raster processing; EO products are precomputed by the async
+  pipeline and served as tiles.
 
 ---
 
-## 13. Migration path (high level)
+## 13. Phased plan roadmap
 
-1. Restructure to the monorepo (`apps/web` = current app, add `apps/api`, `packages/shared`,
-   `infra/`).
-2. Stand up PostGIS + GeoServer + API via Docker Compose; init schemas; run migrations.
-3. Seed `water.*` tables from existing GeoJSON/mock; publish layers in GeoServer from the
-   registry.
-4. Point the frontend thematic layers at GeoServer WFS; verify the public viewer is
-   unchanged.
-5. Build auth (backend + `session` entity + login UI).
-6. Build the layers CRUD API + admin editing mode.
-7. Build user management.
-8. Harden: error handling, rate limiting, audit logging, tests.
+The build-out is delivered as a sequence of plans, each producing working, testable
+software on its own. Detailed, ordered implementation steps for each are produced via the
+writing-plans skill.
 
-Detailed, ordered implementation steps are produced next via the writing-plans skill.
+| Plan | Scope | Deliverable |
+|------|-------|-------------|
+| 1 | Monorepo + infrastructure foundation | Workspaces + `@webatlas/shared`; PostGIS + GeoServer via Docker Compose |
+| 2 | Vector schema + seeds + GeoServer publication | WFS serves the seven `water.*` layers as GeoJSON |
+| 3 | Frontend WFS swap + MVP/FSD refactor (read-only) | Public viewer unchanged, reading from WFS |
+| 4 | API: global middleware + auth + users | Login + user CRUD API (the control plane) |
+| 5 | Vector layers CRUD + audit + admin editing | Admin can create/update/delete features on the map |
+| 6 | **EO pipeline — optical** (Sentinel-2 + Landsat) | Admin-triggered async jobs producing NDWI/NDVI COGs, served as time-aware GeoServer coverages; viewer EO layers with a date slider (§14) |
+| 7 | **EO — Sentinel-1 SAR flood extent** | Adds CDSE source + SAR preprocessing chain; flood-extent product (§14.6) |
+
+Plans 1–5 are the vector/CRUD core. Plan 6 (EO) depends on Plan 4's auth + API control
+plane and GeoServer publication existing first, so it is sequenced after the core.
+
+---
+
+## 14. Earth-observation (EO) satellite subsystem
+
+A second, raster data path alongside the vector layers: an **admin-triggered, asynchronous
+pipeline** that fetches satellite scenes for an area of interest (AOI), computes derived
+products, and publishes them as time-aware GeoServer coverages for the public viewer. This
+is a distinct subsystem — it does **not** use the `water.*` tables, the WFS path, or
+feature-level CRUD.
+
+### 14.1 Sensors, sources, products
+
+- **Sources:** **Earth Search** STAC (Element84/AWS) for **Sentinel-2 L2A** and
+  **Landsat 8/9** — ready COGs, no authentication. **Copernicus Data Space Ecosystem
+  (CDSE)** (free account / OAuth) for **Sentinel-1**, added in Plan 7.
+- **Products (Plan 6, optical):** **NDWI** (surface-water extent) and **NDVI**
+  (vegetation / drought indicator), both from Sentinel-2 and Landsat.
+- **Product (Plan 7, SAR):** **flood extent** from Sentinel-1 backscatter thresholding
+  (§14.6).
+
+### 14.2 Why asynchronous + a Python worker
+
+Fetching and processing a scene takes minutes or more, so the request cannot block. The
+Node/TS API is the **control plane** (authenticate admin, validate AOI, enqueue job, report
+status); a separate **Python worker** (`apps/eo-worker`) does the raster work, because the
+EO tooling ecosystem — `pystac-client`, `rasterio`/GDAL, `rio-tiler`, `numpy`/`xarray` — is
+Python. The two communicate through a job queue and the shared database; they never share a
+process.
+
+### 14.3 Data flow
+
+```
+Admin: AOI + date range + product ─► API POST /api/eo/jobs (validate, enqueue)
+                                            │  writes eo.jobs (status=queued)
+                                            ▼
+   Python EO worker (polls/consumes queue):
+     STAC search (Earth Search) for AOI+dates
+       ─► windowed COG reads of required bands over the AOI
+       ─► compute index (NDWI/NDVI) with rasterio/numpy
+       ─► write Cloud-Optimized GeoTIFF to object store
+       ─► register/refresh GeoServer ImageMosaic (REST, time dimension)
+       ─► write eo.products row; update eo.jobs (status=done|failed, progress)
+                                            │
+   Viewer ◄── WMS/WMTS (GeoWebCache tiles, time-aware) ◄── GeoServer coverage
+   Admin  ◄── GET /api/eo/jobs/:id (poll status)
+```
+
+### 14.4 `eo` schema (metadata — the raster source of truth per INV-5)
+
+- **`eo.jobs`** — `id`, `product_type` (`ndwi`|`ndvi`|`flood`), `sensor`
+  (`sentinel2`|`landsat`|`sentinel1`), `aoi` (`geometry(Polygon,4326)`), `date_from`,
+  `date_to`, `params` (jsonb), `status` (`queued`|`fetching`|`processing`|`publishing`|
+  `done`|`failed`), `progress` (int), `error` (text), `requested_by` (fk `app.users`),
+  timestamps, timings. Every job is also recorded in `app.audit_log`.
+- **`eo.products`** — `id`, `job_id` (fk), `product_type`, `sensor`, `scene_ids` (text[]),
+  `acquired_at` (timestamp — the coverage time dimension), `cog_path`, `geoserver_layer`,
+  `bbox` (`geometry(Polygon,4326)`), `stats` (jsonb), `published_at`.
+
+### 14.5 Storage & serving
+
+- **COGs** are written to an object store — **MinIO** (S3-compatible) in the Compose stack
+  for local/dev, swappable for real S3 in production; a mounted volume is the minimal
+  fallback.
+- Each product type is a GeoServer **ImageMosaic** coverage store with a **time dimension**
+  (`acquired_at`), fronted by **GeoWebCache** (WMTS tiles) — the efficient, time-series way
+  to serve EO. New scenes are added by writing the COG + refreshing the mosaic index via
+  GeoServer REST (config-as-code, INV-5).
+
+### 14.6 Sentinel-1 note (Plan 7)
+
+Sentinel-1 is SAR, not optical: it requires calibration, speckle filtering, and terrain
+correction before flood thresholding — a substantially heavier chain than the optical
+indices. It also needs the CDSE source (auth). Hence it is a separate plan after the
+optical pipeline proves out.
+
+### 14.7 API surface (control plane)
+
+```
+POST   /api/eo/jobs           → { product_type, sensor, aoi, date_from, date_to } → job  [admin]
+GET    /api/eo/jobs           → list jobs (status/progress)                                [admin]
+GET    /api/eo/jobs/:id       → one job's status                                           [admin]
+GET    /api/eo/products       → published EO layers (for the viewer's layer list)          [public]
+```
+
+### 14.8 Frontend
+
+- **Admin "EO jobs" panel** (a feature slice): draw/select an AOI, pick sensor + date range
+  + product, submit, and watch job status/progress. Follows the same MVP/FSD conventions
+  (§7): a `useEoJobPresenter` over an `eo` model, passive views.
+- **Viewer:** published EO products appear as time-aware raster layers in the layer tree
+  with a **date slider** bound to the coverage time dimension; styling (e.g. NDWI color
+  ramp) is applied via GeoServer coverage styles for raster (the one place raster styling
+  can live — INV-3 concerns vector styling).
+
+### 14.9 Stack additions (Plans 6–7)
+
+Python EO worker (`pystac-client`, `rasterio`/GDAL, `rio-tiler`, `numpy`); a job queue
+(Postgres-backed queue polled by the worker as the minimal option, or Redis + a Python
+worker if throughput demands); an object store (MinIO/S3); GeoServer ImageMosaic +
+GeoWebCache; CDSE credentials (Plan 7 only).
