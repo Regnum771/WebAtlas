@@ -34,3 +34,26 @@ describe('app schema', () => {
     expect(uniq.length).toBeGreaterThan(0);
   });
 });
+
+describe('water schema', () => {
+  const tables = [
+    'dams', 'rivers', 'stations', 'flood_zones',
+    'drought_points', 'saltwater_intrusion', 'flood_generation',
+  ];
+
+  it('has all seven thematic tables', async () => {
+    for (const t of tables) {
+      expect(await tableExists('water', t)).toBe(true);
+    }
+  });
+
+  it('every table has a 4326 geometry column', async () => {
+    const { rows } = await getPool().query(
+      `SELECT f_table_name, srid, type FROM geometry_columns WHERE f_table_schema='water'`
+    );
+    expect(rows).toHaveLength(7);
+    for (const r of rows) {
+      expect(r.srid).toBe(4326);
+    }
+  });
+});
