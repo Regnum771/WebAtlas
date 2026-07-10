@@ -143,220 +143,118 @@ const DynamicPopup: React.FC = () => {
 
   // Xác định icon và nội dung hiển thị dựa theo loại đối tượng
   const renderPopupContent = () => {
-    // 1. Nếu là Hồ chứa/Đập
-    if (props.Wattage_PL !== undefined || (props.capacity !== undefined && props.basin !== undefined)) {
-      const isRealHydropower = props.Wattage_PL !== undefined;
+    // Thematic WFS layers are discriminated by layerKey (ISO/INSPIRE attributes).
+    if (props.layerKey === 'dams') {
       return (
         <>
-          {isRealHydropower ? (
-            <>
-              <div className="info-row">
-                <Database size={14} className="text-blue-500" />
-                <span>Công suất: <strong>{props.Wattage_PL} MW</strong></span>
-              </div>
-              {props['Quantity_('] && (
-                <div className="info-row">
-                  <Droplets size={14} className="text-blue-500" />
-                  <span>Sản lượng điện: <strong>{props['Quantity_(']} GWh/năm</strong></span>
-                </div>
-              )}
-              {props.Year_of_op && (
-                <div className="info-row">
-                  <Activity size={14} className="text-blue-500" />
-                  <span>Năm vận hành: <strong>{props.Year_of_op}</strong></span>
-                </div>
-              )}
-              {props.Year_of_la && (
-                <div className="info-row">
-                  <Info size={14} className="text-blue-500" />
-                  <span>Khởi công: <strong>{props.Year_of_la}</strong></span>
-                </div>
-              )}
-              <div className="info-row">
-                <Activity size={14} className="text-blue-500" />
-                <span>Trạng thái: <strong className={`status-text ${props.status === 'Nguy hiểm' ? 'text-red-500' : props.status === 'Xả lũ' ? 'text-amber-500' : 'text-emerald-500'}`}>{props.status || 'Bình thường'}</strong></span>
-              </div>
-              
-              {/* Giải thích Phương pháp nền đồ giải (Cartodiagram) */}
-              <div className="diagrammatic-info">
-                <div className="title">Nền đồ giải (Cartodiagram):</div>
-                <ul>
-                  <li><strong>Kích thước biểu tượng:</strong> Tỷ lệ công suất ({props.Wattage_PL} MW)</li>
-                  <li><strong>Màu sắc biểu tượng:</strong> Trạng thái ({props.status || 'Bình thường'})</li>
-                </ul>
-              </div>
-
-              {/* Bộ lọc trạng thái */}
-              <div className="status-filter-container">
-                <div className="title">Lọc hồ chứa theo trạng thái:</div>
-                <div className="status-filter-buttons">
-                  {(['all', 'binh_thuong', 'xa_lu', 'nguy_hiem'] as const).map((filterVal) => {
-                    const labels = {
-                      all: 'Tất cả',
-                      binh_thuong: 'Bình thường',
-                      xa_lu: 'Xả lũ',
-                      nguy_hiem: 'Nguy hiểm'
-                    };
-                    return (
-                      <button
-                        key={filterVal}
-                        onClick={() => setReservoirFilter(filterVal)}
-                        className={`filter-btn-tag ${reservoirFilter === filterVal ? 'active-filter' : ''}`}
-                      >
-                        {labels[filterVal]}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="info-row">
-                <Database size={14} className="text-blue-500" />
-                <span>Dung tích: <strong>{props.capacity}</strong></span>
-              </div>
-              <div className="info-row">
-                <Droplets size={14} className="text-blue-500" />
-                <span>Lưu vực: <strong>{props.basin}</strong></span>
-              </div>
-              <div className="info-row">
-                <Activity size={14} className="text-blue-500" />
-                <span>Trạng thái: <strong>{props.status}</strong></span>
-              </div>
-            </>
-          )}
-        </>
-      );
-    }
-    
-    // 2. Nếu là Sông ngòi
-    if (props.Chieu_dai !== undefined || props.length !== undefined) {
-      const lengthStr = props.Chieu_dai !== undefined 
-        ? `${(props.Chieu_dai / 1000).toFixed(2)} km` 
-        : props.length;
-      return (
-        <>
-          {props.Ma && (
-            <div className="info-row">
-              <Database size={14} className="text-blue-500" />
-              <span>Mã phân đoạn: <strong>{props.Ma}</strong></span>
+          <div className="info-row"><Database size={14} className="text-blue-500" />
+            <span>Công suất: <strong>{props.ratedPower} MW</strong></span></div>
+          {props.annualGeneration != null && (
+            <div className="info-row"><Droplets size={14} className="text-blue-500" />
+              <span>Sản lượng điện: <strong>{props.annualGeneration} GWh/năm</strong></span></div>)}
+          {props.commissioningYear && (
+            <div className="info-row"><Activity size={14} className="text-blue-500" />
+              <span>Năm vận hành: <strong>{props.commissioningYear}</strong></span></div>)}
+          {props.constructionYear && (
+            <div className="info-row"><Info size={14} className="text-blue-500" />
+              <span>Khởi công: <strong>{props.constructionYear}</strong></span></div>)}
+          <div className="info-row"><Activity size={14} className="text-blue-500" />
+            <span>Trạng thái: <strong className={`status-text ${props.operationalStatus === 'Nguy hiểm' ? 'text-red-500' : props.operationalStatus === 'Xả lũ' ? 'text-amber-500' : 'text-emerald-500'}`}>{props.operationalStatus || 'Bình thường'}</strong></span></div>
+          <div className="diagrammatic-info">
+            <div className="title">Nền đồ giải (Cartodiagram):</div>
+            <ul>
+              <li><strong>Kích thước biểu tượng:</strong> Tỷ lệ công suất ({props.ratedPower} MW)</li>
+              <li><strong>Màu sắc biểu tượng:</strong> Trạng thái ({props.operationalStatus || 'Bình thường'})</li>
+            </ul>
+          </div>
+          <div className="status-filter-container">
+            <div className="title">Lọc hồ chứa theo trạng thái:</div>
+            <div className="status-filter-buttons">
+              {(['all', 'binh_thuong', 'xa_lu', 'nguy_hiem'] as const).map((filterVal) => {
+                const labels = { all: 'Tất cả', binh_thuong: 'Bình thường', xa_lu: 'Xả lũ', nguy_hiem: 'Nguy hiểm' };
+                return (
+                  <button key={filterVal} onClick={() => setReservoirFilter(filterVal)}
+                    className={`filter-btn-tag ${reservoirFilter === filterVal ? 'active-filter' : ''}`}>
+                    {labels[filterVal]}
+                  </button>
+                );
+              })}
             </div>
-          )}
-          {props.Cap !== undefined && (
-            <div className="info-row">
-              <Info size={14} className="text-blue-500" />
-              <span>Cấp sông: <strong>Cấp {props.Cap}</strong></span>
-            </div>
-          )}
-          <div className="info-row">
-            <Droplets size={14} className="text-blue-500" />
-            <span>Chiều dài: <strong>{lengthStr}</strong></span>
-          </div>
-          {props.discharge && (
-            <div className="info-row">
-              <Activity size={14} className="text-blue-500" />
-              <span>Lưu lượng: <strong>{props.discharge}</strong></span>
-            </div>
-          )}
-        </>
-      );
-    }
-
-    // 3. Nếu là Trạm quan trắc
-    if (props.value !== undefined) {
-      return (
-        <>
-          <div className="info-row">
-            <Database size={14} className="text-blue-500" />
-            <span>Loại trạm: <strong>{props.type}</strong></span>
-          </div>
-          <div className="info-row">
-            <Activity size={14} className="text-blue-500" />
-            <span>Giá trị đo: <strong>{props.value}</strong></span>
-          </div>
-          <div className="info-row">
-            <Info size={14} className="text-blue-500" />
-            <span>Trạng thái hoạt động: <strong>{props.status}</strong></span>
           </div>
         </>
       );
     }
-
-    // 4. Nếu là Vùng ngập lụt
-    if (props.type === 'Vùng ngập lụt' && props.area !== undefined) {
+    if (props.layerKey === 'rivers') {
+      const lengthStr = props.length != null ? `${(props.length / 1000).toFixed(2)} km` : '—';
       return (
         <>
-          <div className="info-row">
-            <Database size={14} className="text-blue-500" />
-            <span>Phân loại: <strong>{props.type}</strong></span>
-          </div>
-          <div className="info-row">
-            <Droplets size={14} className="text-blue-500" />
-            <span>Diện tích ảnh hưởng: <strong>{props.area}</strong></span>
-          </div>
+          {props.hydroId && (
+            <div className="info-row"><Database size={14} className="text-blue-500" />
+              <span>Mã phân đoạn: <strong>{props.hydroId}</strong></span></div>)}
+          {props.streamOrder != null && (
+            <div className="info-row"><Info size={14} className="text-blue-500" />
+              <span>Cấp sông: <strong>Cấp {props.streamOrder}</strong></span></div>)}
+          <div className="info-row"><Droplets size={14} className="text-blue-500" />
+            <span>Chiều dài: <strong>{lengthStr}</strong></span></div>
         </>
       );
     }
-
-    // 4a. Nếu là Khảo sát hạn hán
-    if (props.type === 'Khảo sát hạn hán') {
+    if (props.layerKey === 'stations') {
       return (
         <>
-          <div className="info-row">
-            <Info size={14} className="text-blue-500" />
-            <span>Phân loại: <strong>{props.type}</strong></span>
-          </div>
-          <div className="info-row">
-            <Activity size={14} className="text-blue-500" />
-            <span>Trạng thái: <strong>{props.status}</strong></span>
-          </div>
-          {props.surveyDate && (
-            <div className="info-row">
-              <Database size={14} className="text-blue-500" />
-              <span>Ngày khảo sát: <strong>{props.surveyDate}</strong></span>
-            </div>
-          )}
+          <div className="info-row"><Database size={14} className="text-blue-500" />
+            <span>Loại trạm: <strong>{props.measurementType}</strong></span></div>
+          <div className="info-row"><Activity size={14} className="text-blue-500" />
+            <span>Giá trị đo: <strong>{props.measurementValue}</strong></span></div>
+          <div className="info-row"><Info size={14} className="text-blue-500" />
+            <span>Trạng thái hoạt động: <strong>{props.operationalStatus}</strong></span></div>
         </>
       );
     }
-
-    // 4b. Nếu là Xâm nhập mặn
-    if (props.type === 'Xâm nhập mặn') {
+    if (props.layerKey === 'flood_zones') {
       return (
         <>
-          <div className="info-row">
-            <Info size={14} className="text-blue-500" />
-            <span>Phân loại: <strong>{props.type}</strong></span>
-          </div>
-          <div className="info-row">
-            <Droplets size={14} className="text-blue-500" />
-            <span>Độ mặn đo được: <strong>{props.salinity}</strong></span>
-          </div>
-          <div className="info-row">
-            <Activity size={14} className="text-blue-500" />
-            <span>Trạng thái: <strong>{props.status}</strong></span>
-          </div>
+          <div className="info-row"><Database size={14} className="text-blue-500" />
+            <span>Phân loại: <strong>{props.hazardType}</strong></span></div>
+          <div className="info-row"><Droplets size={14} className="text-blue-500" />
+            <span>Diện tích ảnh hưởng: <strong>{props.affectedArea}</strong></span></div>
         </>
       );
     }
-
-    // 4c. Nếu là Vùng sinh lũ
-    if (props.type === 'Vùng sinh lũ') {
+    if (props.layerKey === 'drought_points') {
       return (
         <>
-          <div className="info-row">
-            <Info size={14} className="text-blue-500" />
-            <span>Phân loại: <strong>{props.type}</strong></span>
-          </div>
-          <div className="info-row">
-            <Database size={14} className="text-blue-500" />
-            <span>Diện tích lưu vực: <strong>{props.area}</strong></span>
-          </div>
-          <div className="info-row">
-            <Activity size={14} className="text-blue-500" />
-            <span>Đặc điểm lũ: <strong>{props.flowRate}</strong></span>
-          </div>
+          <div className="info-row"><Info size={14} className="text-blue-500" />
+            <span>Phân loại: <strong>Khảo sát hạn hán</strong></span></div>
+          <div className="info-row"><Activity size={14} className="text-blue-500" />
+            <span>Trạng thái: <strong>{props.observedStatus}</strong></span></div>
+          {props.observationDate && (
+            <div className="info-row"><Database size={14} className="text-blue-500" />
+              <span>Ngày khảo sát: <strong>{props.observationDate}</strong></span></div>)}
+        </>
+      );
+    }
+    if (props.layerKey === 'saltwater_intrusion') {
+      return (
+        <>
+          <div className="info-row"><Info size={14} className="text-blue-500" />
+            <span>Phân loại: <strong>Xâm nhập mặn</strong></span></div>
+          <div className="info-row"><Droplets size={14} className="text-blue-500" />
+            <span>Độ mặn đo được: <strong>{props.salinity}</strong></span></div>
+          <div className="info-row"><Activity size={14} className="text-blue-500" />
+            <span>Trạng thái: <strong>{props.observedStatus}</strong></span></div>
+        </>
+      );
+    }
+    if (props.layerKey === 'flood_generation') {
+      return (
+        <>
+          <div className="info-row"><Info size={14} className="text-blue-500" />
+            <span>Phân loại: <strong>Vùng sinh lũ</strong></span></div>
+          <div className="info-row"><Database size={14} className="text-blue-500" />
+            <span>Diện tích lưu vực: <strong>{props.catchmentArea}</strong></span></div>
+          <div className="info-row"><Activity size={14} className="text-blue-500" />
+            <span>Đặc điểm lũ: <strong>{props.flowCharacteristics}</strong></span></div>
         </>
       );
     }
@@ -415,8 +313,8 @@ const DynamicPopup: React.FC = () => {
     );
   };
 
-  const isDamOrReservoir = props.Wattage_PL !== undefined || (props.capacity !== undefined && props.basin !== undefined);
-  const detail = isDamOrReservoir ? getDetailedDamInfo(props.ID || props.id, props.Vietnamese || props.Ten || props.name || 'Đập & Hồ chứa', props.Wattage_PL) : null;
+  const isDamOrReservoir = props.layerKey === 'dams';
+  const detail = isDamOrReservoir ? getDetailedDamInfo(props.localId || 0, props.geographicalName || 'Đập & Hồ chứa', props.ratedPower) : null;
 
   // Tính toán vị trí để không bị tràn khỏi màn hình (khung hình)
   let popupLeft = pixel[0] + 15;
@@ -457,7 +355,7 @@ const DynamicPopup: React.FC = () => {
         </button>
         
         <div className="popup-header">
-          <h3 className="popup-title">{props.Vietnamese || props.Ten || props.name || (props.OBJECTID ? `Sông ngòi (ID: ${props.OBJECTID})` : 'Đối tượng không tên')}</h3>
+          <h3 className="popup-title">{props.geographicalName || props.name || (props.layerKey === 'rivers' ? `Sông ngòi (${props.hydroId ?? props.localId})` : 'Đối tượng không tên')}</h3>
           {props.riskLevel && (
             <span className={`status-badge ${props.riskLevel === 'Cao' ? 'risk-high' : props.riskLevel === 'Trung bình' ? 'risk-medium' : 'risk-low'}`}>
               {props.riskLevel}

@@ -12,13 +12,6 @@ import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
 import Select from 'ol/interaction/Select';
 import { useMapContext } from './MapContext';
 import { createWfsVectorSource } from '../services/wfs';
-import {
-  stationsMockData,
-  floodMockData,
-  droughtSurveyMockData,
-  saltwaterIntrusionMockData,
-  floodGenerationMockData
-} from '../data/mockData';
 import { fromLonLat, transformExtent } from 'ol/proj';
 
 const MapContainer: React.FC = () => {
@@ -48,23 +41,6 @@ const MapContainer: React.FC = () => {
       }),
     });
     basemapLayerRef.current = initialBasemap;
-
-    // Helper tạo vector layer
-    const createVectorLayer = (id: string, data: any, style: any) => {
-      const source = new VectorSource({
-        features: new GeoJSON().readFeatures(data, {
-          dataProjection: 'EPSG:4326',
-          featureProjection: 'EPSG:3857'
-        })
-      });
-      const layer = new VectorLayer({
-        source,
-        style,
-        properties: { id }
-      });
-      layersRef.current[id] = layer;
-      return layer;
-    };
 
     // Helper tạo vector layer từ URL GeoJSON
     const createVectorLayerFromUrl = (id: string, url: string, style: any, options: any = {}) => {
@@ -194,11 +170,16 @@ const MapContainer: React.FC = () => {
     layersRef.current['layer_dams'] = damsLayer;
     const riversLayer = new VectorLayer({ source: createWfsVectorSource('rivers'), style: riversStyle, properties: { id: 'layer_rivers' } });
     layersRef.current['layer_rivers'] = riversLayer;
-    const stationsLayer = createVectorLayer('layer_stations', stationsMockData, stationsStyle);
-    const floodLayer = createVectorLayer('layer_flood', floodMockData, floodStyle);
-    const droughtSurveyLayer = createVectorLayer('layer_drought_survey', droughtSurveyMockData, droughtSurveyStyle);
-    const saltwaterIntrusionLayer = createVectorLayer('layer_saltwater_intrusion', saltwaterIntrusionMockData, saltwaterIntrusionStyle);
-    const floodGenerationLayer = createVectorLayer('layer_flood_generation', floodGenerationMockData, floodGenerationStyle);
+    const mkWfs = (stateId: string, key: Parameters<typeof createWfsVectorSource>[0], style: any) => {
+      const layer = new VectorLayer({ source: createWfsVectorSource(key), style, properties: { id: stateId } });
+      layersRef.current[stateId] = layer;
+      return layer;
+    };
+    const stationsLayer = mkWfs('layer_stations', 'stations', stationsStyle);
+    const floodLayer = mkWfs('layer_flood', 'flood_zones', floodStyle);
+    const droughtSurveyLayer = mkWfs('layer_drought_survey', 'drought_points', droughtSurveyStyle);
+    const saltwaterIntrusionLayer = mkWfs('layer_saltwater_intrusion', 'saltwater_intrusion', saltwaterIntrusionStyle);
+    const floodGenerationLayer = mkWfs('layer_flood_generation', 'flood_generation', floodGenerationStyle);
 
     // Bảng màu pastel cho 34 tỉnh thành 2026
     const provinceColors = [
