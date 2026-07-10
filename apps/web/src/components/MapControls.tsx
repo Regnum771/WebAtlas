@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useMapContext } from './MapContext';
+import { useMapContext } from '../app/providers/MapProvider';
 import { ZoomIn, ZoomOut, Home, Ruler, Square, MousePointer2 } from 'lucide-react';
 import { fromLonLat } from 'ol/proj';
 import Draw from 'ol/interaction/Draw';

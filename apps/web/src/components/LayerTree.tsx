@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useMapContext } from './MapContext';
+import { useMapContext } from '../app/providers/MapProvider';
 import { layerGroups } from '../data/mockData';
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 

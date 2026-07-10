@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useMapContext } from './MapContext';
+import { useMapContext } from '../app/providers/MapProvider';
 import { Search, MapPin } from 'lucide-react';
 import { fromLonLat } from 'ol/proj';
 import { GEOSERVER_URL } from '../shared/config';

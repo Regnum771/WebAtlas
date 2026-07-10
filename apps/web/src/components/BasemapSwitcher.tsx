@@ -1,5 +1,5 @@
 import React from 'react';
-import { useMapContext, type BasemapType } from './MapContext';
+import { useMapContext, type BasemapType } from '../app/providers/MapProvider';
 import { Map, Layers, Mountain } from 'lucide-react';
 
 const BasemapSwitcher: React.FC = () => {

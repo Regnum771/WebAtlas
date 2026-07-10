@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useMapContext } from './MapContext';
+import { useMapContext } from '../app/providers/MapProvider';
 import TileLayer from 'ol/layer/Tile';
 import TileWMS from 'ol/source/TileWMS';
 import { Globe, Plus, X } from 'lucide-react';

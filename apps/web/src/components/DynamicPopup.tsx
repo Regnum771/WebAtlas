@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useMapContext } from './MapContext';
+import { useMapContext } from '../app/providers/MapProvider';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
 
 interface PopupData {

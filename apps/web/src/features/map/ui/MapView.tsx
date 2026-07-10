@@ -1,9 +1,9 @@
 import React, { useEffect, useRef } from 'react';
 import 'ol/ol.css';
-import { useMapContext } from './MapContext';
-import { MapModel } from '../features/map/model/MapModel';
+import { useMapContext } from '../../../app/providers/MapProvider';
+import { MapModel } from '../model/MapModel';
 
-const MapContainer: React.FC = () => {
+const MapView: React.FC = () => {
   const el = useRef<HTMLDivElement>(null);
   const modelRef = useRef<MapModel | null>(null);
   const { setMap, basemap, layersState, reservoirFilter } = useMapContext();
@@ -24,4 +24,4 @@ const MapContainer: React.FC = () => {
   return <div ref={el} className={`map-container basemap-${basemap}`} />;
 };
 
-export default MapContainer;
+export default MapView;
