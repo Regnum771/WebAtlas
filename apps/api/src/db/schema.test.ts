@@ -21,9 +21,16 @@ describe('app schema', () => {
 
   it('users.email is unique and citext', async () => {
     const { rows } = await getPool().query(
-      `SELECT data_type FROM information_schema.columns
+      `SELECT udt_name FROM information_schema.columns
        WHERE table_schema='app' AND table_name='users' AND column_name='email'`
     );
-    expect(rows[0].data_type).toBe('USER-DEFINED'); // citext
+    expect(rows[0].udt_name).toBe('citext');
+
+    const { rows: uniq } = await getPool().query(
+      `SELECT 1 FROM pg_indexes
+       WHERE schemaname='app' AND tablename='users'
+         AND indexdef ILIKE '%unique%' AND indexdef ILIKE '%(email)%'`
+    );
+    expect(uniq.length).toBeGreaterThan(0);
   });
 });
