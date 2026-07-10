@@ -11,7 +11,7 @@ import GeoJSON from 'ol/format/GeoJSON';
 import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
 import Select from 'ol/interaction/Select';
 import { useMapContext } from './MapContext';
-import { createWfsVectorSource } from '../services/wfs';
+import { createWfsVectorSource } from '../features/map/model/wfsSource';
 import { fromLonLat, transformExtent } from 'ol/proj';
 
 const MapContainer: React.FC = () => {

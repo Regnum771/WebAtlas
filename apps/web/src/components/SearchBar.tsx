@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useMapContext } from './MapContext';
 import { Search, MapPin } from 'lucide-react';
 import { fromLonLat } from 'ol/proj';
-import { GEOSERVER_URL } from '../config';
+import { GEOSERVER_URL } from '../shared/config';
 
 const DAMS_WFS_URL =
   `${GEOSERVER_URL}/ows?service=WFS&version=2.0.0&request=GetFeature` +

@@ -2,7 +2,7 @@ import VectorSource from 'ol/source/Vector';
 import GeoJSON from 'ol/format/GeoJSON';
 import type Feature from 'ol/Feature';
 import { LAYER_ATTRIBUTE_MAP, normalizeFeatureProperties, type EditableLayerKey } from '@webatlas/shared';
-import { GEOSERVER_URL } from '../config';
+import { GEOSERVER_URL } from '../../../shared/config';
 
 function wfsUrl(typeName: string): string {
   const params = new URLSearchParams({
