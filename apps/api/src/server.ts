@@ -4,6 +4,7 @@ import security from './plugins/security';
 import dbPlugin from './plugins/db';
 import authentication from './plugins/authentication';
 import authRoutes from './modules/auth/routes';
+import usersRoutes from './modules/users/routes';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -24,6 +25,7 @@ export function buildApp(): FastifyInstance {
   });
 
   app.register(authRoutes, { prefix: '/api/auth' });
+  app.register(usersRoutes, { prefix: '/api/users' });
 
   return app;
 }
