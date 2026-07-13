@@ -3,6 +3,7 @@ import errorHandler from './plugins/errorHandler';
 import security from './plugins/security';
 import dbPlugin from './plugins/db';
 import authentication from './plugins/authentication';
+import authRoutes from './modules/auth/routes';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -21,6 +22,8 @@ export function buildApp(): FastifyInstance {
   app.register(async (child) => {
     child.get('/health', async () => ({ status: 'ok' }));
   });
+
+  app.register(authRoutes, { prefix: '/api/auth' });
 
   return app;
 }
