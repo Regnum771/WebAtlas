@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import errorHandler from './plugins/errorHandler';
 import dbPlugin from './plugins/db';
 
 export function buildApp(): FastifyInstance {
@@ -7,6 +8,7 @@ export function buildApp(): FastifyInstance {
     genReqId: () => crypto.randomUUID(),
   });
 
+  app.register(errorHandler);
   app.register(dbPlugin);
 
   app.get('/health', async () => ({ status: 'ok' }));
