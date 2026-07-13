@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import errorHandler from './plugins/errorHandler';
 import security from './plugins/security';
 import dbPlugin from './plugins/db';
+import authentication from './plugins/authentication';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -12,6 +13,7 @@ export function buildApp(): FastifyInstance {
   app.register(errorHandler);
   app.register(security);
   app.register(dbPlugin);
+  app.register(authentication);
 
   // Register the health route inside a child plugin so it loads after the
   // security plugin has resolved; this ensures the global @fastify/rate-limit
