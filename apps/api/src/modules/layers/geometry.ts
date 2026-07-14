@@ -1,3 +1,4 @@
+import type { Pool } from 'pg';
 import { GeometryError } from '../../errors';
 import type { LayerDef } from '../../layers/registry';
 
@@ -38,4 +39,20 @@ export function geomInsertSql(def: LayerDef, n: number): string {
   if (def.geomType === 'MultiLineString') return `ST_Multi(${base})`;
   if (def.geomType === 'MultiPolygon') return `ST_Multi(${base})`;
   return base;
+}
+
+/**
+ * Ask PostGIS whether the GeoJSON string parses to a valid geometry. Runs before
+ * insert/update so invalid input becomes GeometryError(422), not a DB 500.
+ */
+export async function assertValidInPg(pg: Pool, def: LayerDef, geometryJson: string): Promise<void> {
+  const sql = `SELECT ST_IsValid(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)) AS valid`;
+  let valid: boolean;
+  try {
+    const { rows } = await pg.query(sql, [geometryJson]);
+    valid = rows[0]?.valid === true;
+  } catch {
+    throw new GeometryError('Geometry could not be parsed');
+  }
+  if (!valid) throw new GeometryError('Geometry is not valid');
 }
