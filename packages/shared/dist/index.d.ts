@@ -3,16 +3,6 @@
  * Single source of truth for layer identity across API registry,
  * GeoServer publication, and the frontend (INV-4).
  */
-export const EDITABLE_LAYER_KEYS = [
-  'dams',
-  'rivers',
-  'stations',
-  'flood_zones',
-  'drought_points',
-  'saltwater_intrusion',
-  'flood_generation',
-] as const;
-
+export declare const EDITABLE_LAYER_KEYS: readonly ["dams", "rivers", "stations", "flood_zones", "drought_points", "saltwater_intrusion", "flood_generation"];
 export type EditableLayerKey = (typeof EDITABLE_LAYER_KEYS)[number];
-
 export { LAYER_GEOMETRY, type OgcGeometryType } from './layer-geometry';
