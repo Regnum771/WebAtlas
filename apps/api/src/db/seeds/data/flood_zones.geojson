@@ -1,0 +1,9 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[108.95,13.05],[109.15,13.05],[109.15,12.95],[108.95,12.95],[108.95,13.05]]] },
+      "properties": { "id": "f1", "name": "Vùng ngập lụt Tuy Hòa", "type": "Nguy cơ ngập", "area": "15.4 km2", "riskLevel": "Trung bình" } },
+    { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[108.40,15.58],[108.55,15.58],[108.55,15.48],[108.40,15.48],[108.40,15.58]]] },
+      "properties": { "id": "f2", "name": "Vùng ngập lụt Tam Kỳ", "type": "Nguy cơ ngập", "area": "22.8 km2", "riskLevel": "Cao" } }
+  ]
+}

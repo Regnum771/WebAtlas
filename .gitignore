@@ -33,3 +33,6 @@ packages/shared/dist/
 
 # Local infra secrets
 infra/.env
+
+# API local env
+apps/api/.env

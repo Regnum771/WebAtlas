@@ -1,0 +1,9 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [109.28, 13.06] },
+      "properties": { "id": "sw1", "name": "Cửa sông Đà Diễn (Sông Ba)", "salinity": "4.2 g/l", "riskLevel": "Cao", "status": "Xâm nhập sâu 5km vào nội đồng" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [109.18, 13.63] },
+      "properties": { "id": "sw2", "name": "Đầm Thị Nại", "salinity": "3.1 g/l", "riskLevel": "Trung bình", "status": "Độ mặn tăng cao theo triều cường" } }
+  ]
+}

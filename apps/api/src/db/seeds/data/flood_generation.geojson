@@ -1,0 +1,9 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[107.8,14.3],[108.1,14.3],[108.1,14.0],[107.8,14.0],[107.8,14.3]]] },
+      "properties": { "id": "fg1", "name": "Lưu vực sinh lũ Thượng nguồn Sông Ba", "riskLevel": "Cao", "area": "120 km2", "flowRate": "Rất lớn khi mưa lớn" } },
+    { "type": "Feature", "geometry": { "type": "Polygon", "coordinates": [[[107.5,14.8],[107.9,14.8],[107.9,14.5],[107.5,14.5],[107.5,14.8]]] },
+      "properties": { "id": "fg2", "name": "Vùng sinh lũ Sa Thầy", "riskLevel": "Trung bình", "area": "85 km2", "flowRate": "Độ dốc cao, lũ quét nhanh" } }
+  ]
+}

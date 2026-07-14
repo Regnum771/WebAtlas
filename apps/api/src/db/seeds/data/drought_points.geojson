@@ -1,0 +1,9 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [108.01, 14.01] },
+      "properties": { "id": "dr1", "name": "Trạm khảo sát hạn hán Pleiku", "riskLevel": "Cao", "status": "Đang thiếu nước nghiêm trọng", "surveyDate": "2026-06-15" } },
+    { "type": "Feature", "geometry": { "type": "Point", "coordinates": [108.80, 13.20] },
+      "properties": { "id": "dr2", "name": "Điểm khảo sát hạn hán Sông Hinh", "riskLevel": "Trung bình", "status": "Nguồn nước ngầm suy giảm", "surveyDate": "2026-06-20" } }
+  ]
+}
