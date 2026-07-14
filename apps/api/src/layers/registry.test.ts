@@ -36,4 +36,12 @@ describe('layer registry', () => {
     expect(dams.geomType).toBe('Point');
     expect(dams.attributes).toContain('name');
   });
+
+  it('drought_points.survey_date rejects malformed dates but accepts valid/absent/null values', () => {
+    const schema = LAYER_REGISTRY.drought_points.attributeSchema;
+    expect(schema.safeParse({ survey_date: 'not-a-date' }).success).toBe(false);
+    expect(schema.safeParse({ survey_date: '2026-07-14' }).success).toBe(true);
+    expect(schema.safeParse({}).success).toBe(true);
+    expect(schema.safeParse({ survey_date: null }).success).toBe(true);
+  });
 });

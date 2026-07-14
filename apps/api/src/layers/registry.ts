@@ -16,6 +16,7 @@ export interface LayerDef {
 // `name` is editable; id/geom/external_id/created_*/updated_* are system-managed and excluded.
 const nullableStr = z.string().nullable().optional();
 const nullableNum = z.number().nullable().optional();
+const nullableDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected an ISO date (YYYY-MM-DD)').nullable().optional();
 
 const ATTRS: Record<EditableLayerKey, z.ZodObject<z.ZodRawShape>> = {
   dams: z.object({
@@ -33,7 +34,7 @@ const ATTRS: Record<EditableLayerKey, z.ZodObject<z.ZodRawShape>> = {
     name: nullableStr, hazard_type: nullableStr, area: nullableStr, risk_level: nullableStr,
   }),
   drought_points: z.object({
-    name: nullableStr, risk_level: nullableStr, status: nullableStr, survey_date: nullableStr,
+    name: nullableStr, risk_level: nullableStr, status: nullableStr, survey_date: nullableDate,
   }),
   saltwater_intrusion: z.object({
     name: nullableStr, salinity: nullableStr, risk_level: nullableStr, status: nullableStr,
