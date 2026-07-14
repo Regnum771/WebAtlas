@@ -1,5 +1,5 @@
 import React from 'react';
-import { useMapContext } from './MapContext';
+import { useMapContext } from '../app/providers/MapProvider';
 import { List } from 'lucide-react';
 
 const DynamicLegend: React.FC = () => {

@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { MapProvider } from './components/MapContext';
-import MapContainer from './components/MapContainer';
-import BasemapSwitcher from './components/BasemapSwitcher';
-import LayerTree from './components/LayerTree';
-import MapControls from './components/MapControls';
-import SearchBar from './components/SearchBar';
-import DynamicPopup from './components/DynamicPopup';
-import DynamicLegend from './components/DynamicLegend';
-import OGCClient from './components/OGCClient';
+import { MapProvider } from './providers/MapProvider';
+import MapView from '../features/map/ui/MapView';
+import BasemapSwitcher from '../components/BasemapSwitcher';
+import LayerTree from '../components/LayerTree';
+import MapControls from '../components/MapControls';
+import SearchBar from '../components/SearchBar';
+import DynamicPopup from '../components/DynamicPopup';
+import DynamicLegend from '../components/DynamicLegend';
+import OGCClient from '../components/OGCClient';
 import { PanelLeftOpen, PanelLeftClose } from 'lucide-react';
-import './styles/main.css';
+import '../styles/main.css';
 
 function App() {
   const [panelsVisible, setPanelsVisible] = useState(true);
@@ -17,7 +17,7 @@ function App() {
   return (
     <MapProvider>
       <div className="app-container">
-        <MapContainer />
+        <MapView />
 
         {/* MapControls luôn hiển thị (góc trên cùng bên phải) */}
         <MapControls />

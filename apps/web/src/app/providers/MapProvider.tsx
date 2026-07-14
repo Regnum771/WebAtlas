@@ -1,15 +1,9 @@
 import React, { createContext, useContext, useState, type ReactNode } from 'react';
 import { Map } from 'ol';
-import { layerGroups } from '../data/mockData';
+import type { BasemapType, ReservoirFilterType, LayerState } from '../../features/map/model/MapModel';
+import { layerGroups } from '../../entities/layer/layerRegistry';
 
-export type BasemapType = 'satellite' | 'street' | 'dem';
-export type ReservoirFilterType = 'all' | 'binh_thuong' | 'xa_lu' | 'nguy_hiem';
-
-export interface LayerState {
-  id: string;
-  visible: boolean;
-  opacity: number;
-}
+export type { BasemapType, ReservoirFilterType, LayerState };
 
 interface MapContextType {
   map: Map | null;
