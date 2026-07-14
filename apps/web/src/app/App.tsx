@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { MapProvider } from './providers/MapProvider';
+import { AppProviders } from './providers/AppProviders';
+import AuthWidget from '../features/auth';
+import { RequireRole } from '../features/auth/ui/RequireRole';
 import MapView from '../features/map/ui/MapView';
 import BasemapSwitcher from '../components/BasemapSwitcher';
 import LayerTree from '../components/LayerTree';
@@ -15,14 +17,19 @@ function App() {
   const [panelsVisible, setPanelsVisible] = useState(true);
 
   return (
-    <MapProvider>
+    <AppProviders>
       <div className="app-container">
         <MapView />
-
-        {/* MapControls luôn hiển thị (góc trên cùng bên phải) */}
         <MapControls />
 
-        {/* Các panel có thể ẩn/hiện */}
+        {/* Auth entry: login button or user badge */}
+        <div className="auth-widget-slot">
+          <AuthWidget />
+          <RequireRole role="admin">
+            <div className="admin-region-placeholder glass-panel">Admin tools (coming soon)</div>
+          </RequireRole>
+        </div>
+
         <div className={`panels-wrapper ${panelsVisible ? '' : 'hidden'}`}>
           <LayerTree />
           <BasemapSwitcher />
@@ -33,7 +40,6 @@ function App() {
 
         <DynamicPopup />
 
-        {/* Nút ẩn/hiện các panel */}
         <button
           className="toggle-panels-btn glass-panel"
           onClick={() => setPanelsVisible(!panelsVisible)}
@@ -43,7 +49,7 @@ function App() {
           <span>{panelsVisible ? 'Ẩn giao diện' : 'Hiện giao diện'}</span>
         </button>
       </div>
-    </MapProvider>
+    </AppProviders>
   );
 }
 
