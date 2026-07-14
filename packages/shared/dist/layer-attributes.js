@@ -103,3 +103,29 @@ export function normalizeFeatureProperties(layerKey, dbProps) {
     out.layerKey = layerKey;
     return out;
 }
+/**
+ * Inverse of `normalizeFeatureProperties`: rename ISO/INSPIRE property names back
+ * to their DB columns for a given layer.
+ * - `id` (uuid) passes through unchanged.
+ * - The `layerKey` discriminator is dropped.
+ * - Unknown keys pass through unchanged.
+ * A round-trip `denormalize(normalize(db))` returns the original DB props.
+ */
+export function denormalizeFeatureProperties(layerKey, isoProps) {
+    const map = LAYER_ATTRIBUTE_MAP[layerKey].attributes;
+    const inverse = {};
+    for (const [dbCol, isoName] of Object.entries(map))
+        inverse[isoName] = dbCol;
+    const out = {};
+    for (const [k, v] of Object.entries(isoProps)) {
+        if (k === 'layerKey')
+            continue;
+        if (k === 'id')
+            out.id = v;
+        else if (inverse[k])
+            out[inverse[k]] = v;
+        else
+            out[k] = v;
+    }
+    return out;
+}
