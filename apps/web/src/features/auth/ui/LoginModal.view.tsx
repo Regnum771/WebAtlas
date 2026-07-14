@@ -26,11 +26,13 @@ export function LoginModalView(props: LoginModalViewProps) {
         <input
           id="login-email" type="email" autoComplete="username" value={email}
           onChange={(e) => onEmail(e.target.value)}
+          required
         />
         <label htmlFor="login-password">Password</label>
         <input
           id="login-password" type="password" autoComplete="current-password" value={password}
           onChange={(e) => onPassword(e.target.value)}
+          required
         />
         {error && <p className="login-error" role="alert">{error}</p>}
         <button type="submit" disabled={loading}>{loading ? 'Logging in…' : 'Log in'}</button>

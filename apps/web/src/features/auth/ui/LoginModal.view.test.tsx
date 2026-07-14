@@ -23,7 +23,7 @@ describe('LoginModalView', () => {
 
   it('calls onSubmit when the form is submitted', async () => {
     const onSubmit = vi.fn();
-    render(<LoginModalView {...baseProps} onSubmit={onSubmit} />);
+    render(<LoginModalView {...baseProps} email="a@webatlas.test" password="pw" onSubmit={onSubmit} />);
     await userEvent.click(screen.getByRole('button', { name: /log in/i }));
     expect(onSubmit).toHaveBeenCalled();
   });
