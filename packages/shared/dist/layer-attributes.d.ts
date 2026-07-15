@@ -16,3 +16,12 @@ export declare const LAYER_ATTRIBUTE_MAP: Record<EditableLayerKey, LayerAttribut
  * - A `layerKey` discriminator is stamped onto the result.
  */
 export declare function normalizeFeatureProperties(layerKey: EditableLayerKey, dbProps: Record<string, unknown>): LayerFeatureProperties;
+/**
+ * Inverse of `normalizeFeatureProperties`: rename ISO/INSPIRE property names back
+ * to their DB columns for a given layer.
+ * - `id` (uuid) passes through unchanged.
+ * - The `layerKey` discriminator is dropped.
+ * - Unknown keys pass through unchanged.
+ * A round-trip `denormalize(normalize(db))` returns the original DB props.
+ */
+export declare function denormalizeFeatureProperties(layerKey: EditableLayerKey, isoProps: Record<string, unknown>): Record<string, unknown>;

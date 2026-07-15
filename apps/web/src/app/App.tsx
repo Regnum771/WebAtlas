@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AppProviders } from './providers/AppProviders';
 import AuthWidget from '../features/auth';
-import { RequireRole } from '../features/auth/ui/RequireRole';
+import AdminEditing from '../features/admin-editing';
 import MapView from '../features/map/ui/MapView';
 import BasemapSwitcher from '../components/BasemapSwitcher';
 import LayerTree from '../components/LayerTree';
@@ -25,9 +25,7 @@ function App() {
         {/* Auth entry: login button or user badge */}
         <div className="auth-widget-slot">
           <AuthWidget />
-          <RequireRole role="admin">
-            <div className="admin-region-placeholder glass-panel">Admin tools (coming soon)</div>
-          </RequireRole>
+          <AdminEditing />
         </div>
 
         <div className={`panels-wrapper ${panelsVisible ? '' : 'hidden'}`}>

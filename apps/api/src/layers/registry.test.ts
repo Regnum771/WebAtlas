@@ -44,4 +44,14 @@ describe('layer registry', () => {
     expect(schema.safeParse({}).success).toBe(true);
     expect(schema.safeParse({ survey_date: null }).success).toBe(true);
   });
+
+  it('coerces string-encoded numeric attributes but keeps null/missing semantics (nullable-before-coerce)', () => {
+    const dams = LAYER_REGISTRY.dams.attributeSchema;
+    expect(dams.parse({ wattage_mw: '1920' }).wattage_mw).toBe(1920);
+    expect(dams.parse({ wattage_mw: null }).wattage_mw).toBeNull();
+    expect(dams.parse({}).wattage_mw).toBeUndefined();
+
+    const rivers = LAYER_REGISTRY.rivers.attributeSchema;
+    expect(rivers.parse({ stream_order: '3' }).stream_order).toBe(3);
+  });
 });
