@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useMapContext } from '../app/providers/MapProvider';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
+import { damStatusDisplay } from '@webatlas/shared';
 
 interface PopupData {
   coordinate: number[];
@@ -158,13 +159,18 @@ const DynamicPopup: React.FC = () => {
           {props.constructionYear && (
             <div className="info-row"><Info size={14} className="text-blue-500" />
               <span>Khởi công: <strong>{props.constructionYear}</strong></span></div>)}
-          <div className="info-row"><Activity size={14} className="text-blue-500" />
-            <span>Trạng thái: <strong className={`status-text ${props.operationalStatus === 'Nguy hiểm' ? 'text-red-500' : props.operationalStatus === 'Xả lũ' ? 'text-amber-500' : 'text-emerald-500'}`}>{props.operationalStatus || 'Bình thường'}</strong></span></div>
+          {(() => {
+            const st = damStatusDisplay(props.statusSlug ?? props.operationalStatus);
+            return (
+              <div className="info-row"><Activity size={14} className="text-blue-500" />
+                <span>Trạng thái: <strong className="status-text" style={{ color: st.color }}>{st.label}</strong></span></div>
+            );
+          })()}
           <div className="diagrammatic-info">
             <div className="title">Nền đồ giải (Cartodiagram):</div>
             <ul>
               <li><strong>Kích thước biểu tượng:</strong> Tỷ lệ công suất ({props.ratedPower} MW)</li>
-              <li><strong>Màu sắc biểu tượng:</strong> Trạng thái ({props.operationalStatus || 'Bình thường'})</li>
+              <li><strong>Màu sắc biểu tượng:</strong> Trạng thái ({damStatusDisplay(props.statusSlug ?? props.operationalStatus).label})</li>
             </ul>
           </div>
           <div className="status-filter-container">
