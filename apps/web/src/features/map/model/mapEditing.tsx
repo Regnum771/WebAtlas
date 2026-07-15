@@ -16,6 +16,7 @@ interface MapEditingValue {
   cancelDraw: () => void;
   refreshLayer: (layerStateId: string) => void;
   registerRefresh: (fn: (layerStateId: string) => void) => void;
+  registerSetSelectActive: (fn: (active: boolean) => void) => void;
   editing: boolean;
   enterEditMode: (onSelected: (sel: EditSelection) => void) => void;
   exitEditMode: () => void;
@@ -32,6 +33,7 @@ export function MapEditingProvider({ children }: { children: ReactNode }) {
   const selectRef = useRef<SelectController | null>(null);
   const modifyRef = useRef<ModifyController | null>(null);
   const refreshRef = useRef<((id: string) => void) | null>(null);
+  const selectActiveRef = useRef<((active: boolean) => void) | null>(null);
   const [hasMap, setHasMap] = useState(false);
   const [editing, setEditing] = useState(false);
 
@@ -60,14 +62,17 @@ export function MapEditingProvider({ children }: { children: ReactNode }) {
   const cancelDraw = useCallback(() => { controllerRef.current?.cancel(); }, []);
   const refreshLayer = useCallback((id: string) => { refreshRef.current?.(id); }, []);
   const registerRefresh = useCallback((fn: (id: string) => void) => { refreshRef.current = fn; }, []);
+  const registerSetSelectActive = useCallback((fn: (active: boolean) => void) => { selectActiveRef.current = fn; }, []);
 
   const enterEditMode = useCallback((onSelected: (sel: EditSelection) => void) => {
     selectRef.current?.activate(onSelected);
+    selectActiveRef.current?.(false);
     setEditing(true);
   }, []);
   const exitEditMode = useCallback(() => {
     modifyRef.current?.cancel();
     selectRef.current?.deactivate();
+    selectActiveRef.current?.(true);
     setEditing(false);
   }, []);
   const startModify = useCallback((onChange: (g: GeoJSONGeometry) => void) => {
@@ -79,7 +84,7 @@ export function MapEditingProvider({ children }: { children: ReactNode }) {
 
   return (
     <MapEditingContext.Provider value={{
-      hasMap, startDraw, cancelDraw, refreshLayer, registerRefresh,
+      hasMap, startDraw, cancelDraw, refreshLayer, registerRefresh, registerSetSelectActive,
       editing, enterEditMode, exitEditMode, startModify, cancelModify, clearSelection,
     }}>
       {children}

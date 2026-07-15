@@ -75,4 +75,16 @@ describe('useMapEditing edit-existing', () => {
     act(() => result.current.startModify(onChange));
     expect(modStart).toHaveBeenCalled();
   });
+
+  it('enterEditMode disables the rivers-highlight select; exitEditMode re-enables it', () => {
+    const { result } = renderHook(() => useMapEditing(), { wrapper });
+    const setSelectActive = vi.fn();
+    act(() => result.current.registerSetSelectActive(setSelectActive));
+
+    act(() => result.current.enterEditMode(vi.fn()));
+    expect(setSelectActive).toHaveBeenCalledWith(false);
+
+    act(() => result.current.exitEditMode());
+    expect(setSelectActive).toHaveBeenCalledWith(true);
+  });
 });

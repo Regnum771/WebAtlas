@@ -70,6 +70,7 @@ export function useAttributeFormPresenter({
     for (const [k, v] of Object.entries(values)) if (v !== '') properties[k] = v;
     try {
       if (mode === 'edit') {
+        // featureId is guaranteed non-null in edit mode: the container only renders the edit form for a real selection.
         await updateFeature(layerKey, featureId!, { geometry: geometry ?? undefined, properties });
       } else {
         await createFeature(layerKey, { geometry: geometry!, properties });

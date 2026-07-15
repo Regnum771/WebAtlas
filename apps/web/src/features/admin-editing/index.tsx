@@ -94,6 +94,7 @@ function EditExisting() {
       />
       {sel && (
         <EditForm
+          /* key remounts EditForm per selection so the form re-seeds initialValues (useState initializer runs once) */
           key={sel.featureId}
           sel={sel}
           workingGeometry={edit.workingGeometry}
