@@ -15,11 +15,18 @@ function messageFor(e: ApiError): { error: string | null; fieldErrors: Record<st
   if (e.status === 422) return { error: 'Invalid geometry — please redraw', fieldErrors: {} };
   if (e.status === 409) return { error: 'A feature like this already exists', fieldErrors: {} };
   if (e.status === 400) {
-    const details = e.details;
-    if (details && typeof details === 'object' && !Array.isArray(details)) {
+    const details = e.details as { formErrors?: unknown; fieldErrors?: unknown } | null | undefined;
+    const rawFieldErrors = details?.fieldErrors;
+    if (rawFieldErrors && typeof rawFieldErrors === 'object' && !Array.isArray(rawFieldErrors)) {
       const fe: Record<string, string> = {};
-      for (const [k, v] of Object.entries(details as Record<string, unknown>)) fe[k] = String(v);
+      for (const [k, v] of Object.entries(rawFieldErrors as Record<string, unknown>)) {
+        if (Array.isArray(v)) fe[k] = v.join(', ');
+      }
       if (Object.keys(fe).length > 0) return { error: null, fieldErrors: fe };
+    }
+    const formErrors = details?.formErrors;
+    if (Array.isArray(formErrors) && formErrors.length > 0) {
+      return { error: (formErrors as string[]).join(', '), fieldErrors: {} };
     }
     return { error: e.message, fieldErrors: {} };
   }

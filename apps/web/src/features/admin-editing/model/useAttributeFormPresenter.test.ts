@@ -58,4 +58,15 @@ describe('useAttributeFormPresenter', () => {
     await act(async () => { await result.current.submit(); });
     expect(result.current.error).toBe('name too long');
   });
+
+  it('maps a 400 Zod flatten() error to per-column fieldErrors', async () => {
+    createFeature.mockRejectedValue(new ApiError(400, 'VALIDATION_ERROR', 'Validation failed', {
+      formErrors: [],
+      fieldErrors: { wattage_mw: ['Expected number, received string'] },
+    }));
+    const { result } = renderHook(() => useAttributeFormPresenter(baseArgs));
+    await act(async () => { await result.current.submit(); });
+    expect(result.current.fieldErrors.wattage_mw).toContain('Expected number');
+    expect(result.current.error).toBeNull();
+  });
 });
