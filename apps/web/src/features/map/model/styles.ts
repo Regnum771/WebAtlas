@@ -1,36 +1,37 @@
 import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
 import type { ReservoirFilterType } from './MapModel';
+import { DAM_STATUS_DISPLAY, toDamStatusSlug, type DamStatusSlug } from '@webatlas/shared';
 
-// Style cho mạng lưới sông ngòi động dựa trên cấp độ sông (Cap)
+// Stream-order -> [border width, core width]; bucket 0 is the "everything else" default.
+const RIVER_WIDTHS: Record<number, [number, number]> = {
+  1: [7, 3.5],
+  2: [5, 2.2],
+  3: [3, 1.2],
+  0: [1.5, 0.5],
+};
+
+function riverBucket(cap: number): 0 | 1 | 2 | 3 {
+  return cap === 1 ? 1 : cap === 2 ? 2 : cap === 3 ? 3 : 0;
+}
+
+// Precompute the 4 style arrays once at module load.
+const RIVER_STYLES: Record<number, Style[]> = Object.fromEntries(
+  ([0, 1, 2, 3] as const).map((b) => {
+    const [borderWidth, mainWidth] = RIVER_WIDTHS[b];
+    return [
+      b,
+      [
+        new Style({ stroke: new Stroke({ color: '#1e3a8a', width: borderWidth }) }),
+        new Style({ stroke: new Stroke({ color: '#38bdf8', width: mainWidth }) }),
+      ],
+    ];
+  })
+);
+
+// Style cho mạng lưới sông ngòi động dựa trên cấp độ sông (Cap) — cached, no per-frame allocation.
 export const riversStyle = (feature: any) => {
   const cap = feature.get('streamOrder') || 6;
-
-  // Sông cấp nhỏ thì nét nhỏ nhạt, cấp lớn thì nét dày rõ
-  let mainWidth = 0.5;
-  let borderWidth = 1.5;
-
-  if (cap === 1) {
-    mainWidth = 3.5;
-    borderWidth = 7;
-  } else if (cap === 2) {
-    mainWidth = 2.2;
-    borderWidth = 5;
-  } else if (cap === 3) {
-    mainWidth = 1.2;
-    borderWidth = 3;
-  } else {
-    mainWidth = 0.5;
-    borderWidth = 1.5;
-  }
-
-  return [
-    new Style({
-      stroke: new Stroke({ color: '#1e3a8a', width: borderWidth }) // Viền sông xanh đậm
-    }),
-    new Style({
-      stroke: new Stroke({ color: '#38bdf8', width: mainWidth }) // Lõi sông xanh sáng
-    })
-  ];
+  return RIVER_STYLES[riverBucket(cap)];
 };
 
 export const stationsStyle = new Style({
@@ -114,8 +115,8 @@ export const provincesStyle = (feature: any) => {
   const colorIndex = id % provinceColors.length;
 
   const geom = feature.getGeometry();
-  let labelGeometry = geom;
-  if (geom) {
+  let labelGeometry = feature.get('_labelGeom');
+  if (!labelGeometry && geom) {
     const geomType = geom.getType();
     if (geomType === 'MultiPolygon') {
       const polygons = geom.getPolygons();
@@ -123,18 +124,15 @@ export const provincesStyle = (feature: any) => {
       let largestPolygon = polygons[0];
       polygons.forEach((poly: any) => {
         const area = poly.getArea();
-        if (area > maxArea) {
-          maxArea = area;
-          largestPolygon = poly;
-        }
+        if (area > maxArea) { maxArea = area; largestPolygon = poly; }
       });
-      if (largestPolygon) {
-        labelGeometry = largestPolygon.getInteriorPoint();
-      }
+      if (largestPolygon) labelGeometry = largestPolygon.getInteriorPoint();
     } else if (geomType === 'Polygon') {
       labelGeometry = geom.getInteriorPoint();
     }
+    if (labelGeometry) feature.set('_labelGeom', labelGeometry, true);
   }
+  if (!labelGeometry) labelGeometry = geom;
 
   return [
     new Style({
@@ -184,78 +182,58 @@ export const wardsStyle = (feature: any) => {
   });
 };
 
-// Style cho các trạm hồ chứa (Cartodiagram): kích thước ~ công suất, màu ~ trạng thái vận hành.
-// Đọc bộ lọc hoạt động (reservoirFilter) qua getter để luôn phản ánh giá trị mới nhất.
-export function makeDamsStyle(getReservoirFilter: () => ReservoirFilterType) {
-  return (feature: any) => {
-    const id = feature.get('localId') || 0;
-    const wattage = feature.get('ratedPower') || 50;
+// Cache CircleStyle by `${slug}|${radius}` — bounded (3 slugs x ~13 integer radii).
+const damStyleCache = new Map<string, Style>();
 
-    // Phân loại trạng thái dựa trên ID
-    let status = 'Bình thường';
-    let color = '#10b981'; // Xanh lá - Bình thường
-
-    if (id % 5 === 0) {
-      status = 'Nguy hiểm';
-      color = '#ef4444'; // Đỏ - Nguy hiểm
-    } else if (id % 3 === 0) {
-      status = 'Xả lũ';
-      color = '#f59e0b'; // Vàng/Cam - Xả lũ
-    }
-
-    // Lưu trạng thái vào properties để hiển thị trong DynamicPopup
-    feature.set('operationalStatus', status);
-
-    // Thực hiện lọc theo bộ lọc hoạt động
-    const currentFilter = getReservoirFilter();
-    if (currentFilter !== 'all') {
-      if (currentFilter === 'binh_thuong' && status !== 'Bình thường') return;
-      if (currentFilter === 'xa_lu' && status !== 'Xả lũ') return;
-      if (currentFilter === 'nguy_hiem' && status !== 'Nguy hiểm') return;
-    }
-
-    // Bán kính vòng tròn tỷ lệ với công suất phát điện: từ 6px đến 18px
-    const radius = Math.max(6, Math.min(18, 6 + (wattage / 180)));
-
-    return new Style({
+function damStyle(slug: DamStatusSlug, radius: number): Style {
+  const key = `${slug}|${radius}`;
+  let style = damStyleCache.get(key);
+  if (!style) {
+    style = new Style({
       image: new CircleStyle({
-        radius: radius,
-        fill: new Fill({ color: color }),
-        stroke: new Stroke({ color: '#ffffff', width: 2 })
-      })
+        radius,
+        fill: new Fill({ color: DAM_STATUS_DISPLAY[slug].color }),
+        stroke: new Stroke({ color: '#ffffff', width: 2 }),
+      }),
     });
+    damStyleCache.set(key, style);
+  }
+  return style;
+}
+
+// Cartodiagram: size ~ ratedPower, color ~ operational status (real DB slug, stamped at load).
+// Reads the pre-computed statusSlug (Task 4); does NOT mutate the feature or derive status from id.
+export function makeDamsStyle(getReservoirFilter: () => ReservoirFilterType) {
+  return (feature: any): Style | undefined => {
+    const slug = toDamStatusSlug(feature.get('statusSlug'));
+
+    const currentFilter = getReservoirFilter();
+    if (currentFilter !== 'all' && currentFilter !== slug) return undefined;
+
+    const wattage = feature.get('ratedPower') || 50;
+    const radius = Math.round(Math.max(6, Math.min(18, 6 + wattage / 180)));
+    return damStyle(slug, radius);
   };
 }
+
+// Highlight styles (cached) for ol/interaction/Select on rivers.
+const RIVER_SELECT_STYLES: Record<number, Style[]> = Object.fromEntries(
+  ([0, 1, 2, 3] as const).map((b) => {
+    const [borderWidth, mainWidth] = RIVER_WIDTHS[b];
+    return [
+      b,
+      [
+        new Style({ stroke: new Stroke({ color: '#fde047', width: borderWidth + 4 }) }),
+        new Style({ stroke: new Stroke({ color: '#ef4444', width: mainWidth + 2 }) }),
+      ],
+    ];
+  })
+);
 
 // Style highlight khi click chọn một đoạn sông (dùng cho ol/interaction/Select)
 export function makeRiverSelectStyle() {
   return (feature: any) => {
     const cap = feature.get('streamOrder') || 6;
-
-    let mainWidth = 0.5;
-    let borderWidth = 1.5;
-
-    if (cap === 1) {
-      mainWidth = 3.5;
-      borderWidth = 7;
-    } else if (cap === 2) {
-      mainWidth = 2.2;
-      borderWidth = 5;
-    } else if (cap === 3) {
-      mainWidth = 1.2;
-      borderWidth = 3;
-    } else {
-      mainWidth = 0.5;
-      borderWidth = 1.5;
-    }
-
-    return [
-      new Style({
-        stroke: new Stroke({ color: '#fde047', width: borderWidth + 4 }) // Viền ngoài màu vàng sáng (yellow-300)
-      }),
-      new Style({
-        stroke: new Stroke({ color: '#ef4444', width: mainWidth + 2 }) // Lõi màu đỏ (red-500)
-      })
-    ];
+    return RIVER_SELECT_STYLES[riverBucket(cap)];
   };
 }
