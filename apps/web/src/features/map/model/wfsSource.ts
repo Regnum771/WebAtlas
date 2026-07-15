@@ -1,7 +1,7 @@
 import VectorSource from 'ol/source/Vector';
 import GeoJSON from 'ol/format/GeoJSON';
 import type Feature from 'ol/Feature';
-import { LAYER_ATTRIBUTE_MAP, normalizeFeatureProperties, type EditableLayerKey } from '@webatlas/shared';
+import { LAYER_ATTRIBUTE_MAP, normalizeFeatureProperties, toDamStatusSlug, DAM_STATUS_DISPLAY, type EditableLayerKey } from '@webatlas/shared';
 import { GEOSERVER_URL } from '../../../shared/config';
 
 function wfsUrl(typeName: string): string {
@@ -49,6 +49,18 @@ export function createWfsVectorSource(layerKey: EditableLayerKey): VectorSource 
       // Replace all non-geometry properties with the ISO-named set.
       for (const k of Object.keys(dbProps)) f.unset(k, true);
       f.setProperties(iso, true);
+    }
+    if (layerKey === 'dams') {
+      for (const f of loaded) {
+        if (!f.getGeometry()) continue;
+        // The ISO-normalized props keep the raw DB `status` under operationalStatus? No —
+        // `status` maps to operationalStatus via LAYER_ATTRIBUTE_MAP. Read whatever is there,
+        // coerce to a canonical slug, and stamp both the slug and the display label once.
+        const raw = f.get('operationalStatus');
+        const slug = toDamStatusSlug(raw);
+        f.set('statusSlug', slug, true);
+        f.set('operationalStatus', DAM_STATUS_DISPLAY[slug].label, true);
+      }
     }
     source.changed();
   });

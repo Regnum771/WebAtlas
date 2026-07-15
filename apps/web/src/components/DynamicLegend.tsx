@@ -1,6 +1,7 @@
 import React from 'react';
 import { useMapContext } from '../app/providers/MapProvider';
 import { List } from 'lucide-react';
+import { DAM_STATUS_SLUGS, DAM_STATUS_DISPLAY } from '@webatlas/shared';
 
 const DynamicLegend: React.FC = () => {
   const { layersState } = useMapContext();
@@ -27,18 +28,12 @@ const DynamicLegend: React.FC = () => {
                 {/* Trạng thái (Màu sắc) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '4px' }}>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>Theo Trạng thái:</div>
-                  <div className="legend-item" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="legend-color-box" style={{ background: '#10b981', width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block' }}></span>
-                    <span className="legend-label" style={{ fontSize: '12px' }}>Bình thường</span>
-                  </div>
-                  <div className="legend-item" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="legend-color-box" style={{ background: '#f59e0b', width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block' }}></span>
-                    <span className="legend-label" style={{ fontSize: '12px' }}>Xả lũ</span>
-                  </div>
-                  <div className="legend-item" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="legend-color-box" style={{ background: '#ef4444', width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block' }}></span>
-                    <span className="legend-label" style={{ fontSize: '12px' }}>Nguy hiểm</span>
-                  </div>
+                  {DAM_STATUS_SLUGS.map((slug) => (
+                    <div key={slug} className="legend-item" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className="legend-color-box" style={{ background: DAM_STATUS_DISPLAY[slug].color, width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block' }}></span>
+                      <span className="legend-label" style={{ fontSize: '12px' }}>{DAM_STATUS_DISPLAY[slug].label}</span>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Công suất (Kích thước) */}
