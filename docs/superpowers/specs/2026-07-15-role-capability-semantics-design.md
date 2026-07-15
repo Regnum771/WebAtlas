@@ -3,7 +3,7 @@
 **Date:** 2026-07-15
 **Status:** Approved design — ready for implementation planning
 **Roadmap:** Phase 2, item 2.1 (see `2026-07-15-product-roadmap.md` §4.3). Foundation the adaptive shell (2.2) sits on.
-**Scope:** Make the `editor` and `viewer` roles grant **distinct, tested capabilities end-to-end**, replacing today's reality where the `app.user_role` enum has `admin | editor | viewer` but only `admin` does anything. Backend stays the authorization boundary; the frontend gate is widened as UX only. Frontend + API only — no DB change.
+**Scope:** Make the `editor` and `viewer` roles grant **distinct, tested capabilities end-to-end**, replacing today's reality where the `app.user_role` enum has `admin | editor | viewer` but only `admin` does anything. Backend stays the authorization boundary; the frontend gate is widened as UX only. Frontend + API only — no DB change. The spec also records a **persona metric-focus catalogue** (§3) — which thematic-layer metrics each persona cares about — as product context/demand-signal for the downstream persona panels; that section is non-normative for the access-control code delivered here.
 
 ---
 
@@ -40,9 +40,49 @@ The authorization primitives already exist and are role-capable; they are simply
 
 ---
 
-## 3. Architecture — components
+## 3. Persona metric focus (product context — non-normative for 2.1 code)
 
-### 3.1 API — a named capability policy (single source of truth)
+**Purpose:** define, per persona, *which* thematic-layer metrics each one monitors, filters, and reports on. This is the demand signal for the downstream persona panels (roadmap 2.2/2.3/2.4); it does **not** change the access-control code in this spec's §4–§7. It lives here because it belongs with the stakeholder work and the roadmap requested it (roadmap §4.1 personas).
+
+**Source data:** the 7 editable thematic layers and their attributes are fixed in `packages/shared/src/layer-attributes.ts` (`LAYER_ATTRIBUTE_MAP`), ISO/INSPIRE-named. Layers: `dams`, `rivers`, `stations`, `flood_zones`, `drought_points`, `saltwater_intrusion`, `flood_generation`.
+
+**Metric kinds & feasibility tags** — every *derived* metric carries one:
+- `[available now]` — computable from current per-feature attributes (count, avg/min/max, distribution, filter).
+- `[needs aggregation]` — requires a spatial join to admin boundaries (per-province/ward rollup) not built yet.
+- `[needs time-series]` — requires temporal history the model doesn't hold (features are single-row snapshots; only the audit trail is temporal).
+
+### 3.1 Community & Water Users (public) — orientation, not analysis
+
+- **Priority attributes:** `geographicalName`; `operationalStatus` (dams, stations); `riskLevel` (flood_zones, drought_points, saltwater_intrusion, flood_generation); `observedStatus` (drought_points, saltwater_intrusion).
+- **Derived:** nearest-feature distance `[available now]`; simple risk badge (low/med/high) from `riskLevel` on nearby hazard points `[available now]`.
+
+### 3.2 Governance (viewer) — oversight & reporting, status/risk-centric
+
+- **Priority attributes:** Dams — `operationalStatus`, `ratedPower`; Stations — `operationalStatus`, `measurementType`; Hazard layers — `riskLevel`, `hazardType`, `affectedArea` / `catchmentArea`.
+- **Derived:** count of dams by `operationalStatus` per province `[needs aggregation]`; count of hazard points by `riskLevel` per admin boundary `[needs aggregation]`; total affected/catchment area per province `[needs aggregation]`; share of stations reporting (operational vs not) `[available now]` (system-wide) / `[needs aggregation]` (per boundary).
+
+### 3.3 Research & Academia (viewer) — quantitative modeling variables
+
+- **Priority attributes:** Dams — `ratedPower`, `annualGeneration`, `commissioningYear`; Rivers — `streamOrder`, `length`; Stations — `measurementValue`, `measurementType`; Drought — `observationDate` (the only dated attribute, on `drought_points`); Saltwater — `salinity`; Drought / flood_generation — `riskLevel`, `catchmentArea`, `flowCharacteristics`.
+- **Derived:** avg/min/max `measurementValue` by station type `[available now]`; `annualGeneration` distribution across dams `[available now]`; raw attribute-table export for offline modeling `[available now]` (roadmap 2.4); salinity trend over time `[needs time-series]`; `measurementValue` series over time `[needs time-series]`.
+
+### 3.4 Data Steward / Producer (editor) — completeness & correctness, not analytics
+
+- **Priority attributes:** *all* editable attributes on the layers they maintain (the full attribute form), plus data-quality signals.
+- **Derived:** % features with missing required attributes per layer `[available now]`; stale-record age from `observationDate` / `survey_date` `[available now]`; count of features edited recently `[needs time-series]` (relies on audit timestamps — available via the audit trail, not feature rows).
+
+### 3.5 System Operator / Admin — governance rollups
+
+- **Priority attributes:** everything the Data Steward sees.
+- **Derived:** features-per-layer totals `[available now]`; edit volume per user `[needs time-series]` (from the existing audit trail); user/role/active counts `[available now]`.
+
+**Scope note:** only `[available now]` metrics are candidates for the near-term persona panels; `[needs aggregation]` waits on a boundary spatial-join capability and `[needs time-series]` on a temporal data model — both are separate future specs, explicitly **not** part of 2.1. This section is the target catalogue, not an implementation commitment.
+
+---
+
+## 4. Architecture — components
+
+### 4.1 API — a named capability policy (single source of truth)
 
 The role→capability mapping must live in **one auditable place**, not scattered as inline `authorize('admin','editor')` calls across route files (matches the roadmap's "document the matrix" note).
 
@@ -53,7 +93,7 @@ The role→capability mapping must live in **one auditable place**, not scattere
 - `Role` is imported from `modules/users/repository` (existing type). Constants are typed `Role[]` (or `readonly Role[]`) so a typo is a compile error.
 - `authorize()` is **unchanged** — routes call `authorize(...CAN_WRITE_FEATURES)` etc.
 
-### 3.2 API — route wiring
+### 4.2 API — route wiring
 
 - **`modules/layers/routes.ts`:** replace the single `adminOnly` bundle with per-route policy:
   - `GET /layers` — public (unchanged, no `preHandler`).
@@ -63,7 +103,7 @@ The role→capability mapping must live in **one auditable place**, not scattere
 
 No controller, schema, or DB change — only which roles each `preHandler` accepts.
 
-### 3.3 Frontend — rename the slice + widen the gate
+### 4.3 Frontend — rename the slice + widen the gate
 
 The editing slice is named for `admin` but the capability now belongs to `editor` + `admin`. Rename so the name stays honest (decided in brainstorming):
 
@@ -74,7 +114,7 @@ The editing slice is named for `admin` but the capability now belongs to `editor
 
 ---
 
-## 4. Data flow
+## 5. Data flow
 
 Identical to today except which roles a `preHandler` admits — the JWT already carries the role (`request.currentUser.role`), set by `app.authenticate`.
 
@@ -86,7 +126,7 @@ Identical to today except which roles a `preHandler` admits — the JWT already 
 
 ---
 
-## 5. Error handling
+## 6. Error handling
 
 Reuses the established rules — no new machinery:
 
@@ -96,7 +136,7 @@ Reuses the established rules — no new machinery:
 
 ---
 
-## 6. Testing (mirrors existing API/web test patterns)
+## 7. Testing (mirrors existing API/web test patterns)
 
 **API** — extend `apps/api/src/modules/layers/layers.test.ts` (already seeds `ADMIN` + `EDITOR`; add a `VIEWER` seed):
 
@@ -118,7 +158,7 @@ Reuses the established rules — no new machinery:
 
 ---
 
-## 7. Convention rules (enforced in review)
+## 8. Convention rules (enforced in review)
 
 1. The role→capability matrix lives only in `capabilities.ts`; routes reference the named constants, never inline role literals.
 2. Backend remains the authorization boundary; `RequireRole` and hidden UI are UX only and carry the standard comment.
@@ -128,17 +168,18 @@ Reuses the established rules — no new machinery:
 
 ---
 
-## 8. Scope boundaries (YAGNI — deferred)
+## 9. Scope boundaries (YAGNI — deferred)
 
 - Private layers / public-vs-authenticated data surfaces → a later spec if a real need appears.
 - Per-layer editor scoping (user↔layer assignment) → deferred; editor writes to the full editable set.
 - Reserving delete (or any specific op) to admin → not wanted now; revisit only on a concrete driver.
 - Viewer-facing panels (filter/query/export/saved views) → roadmap 2.3/2.4.
 - Adaptive shell + persona workspaces → roadmap 2.2.
+- **Computing** the persona metrics of §3 → downstream panel specs. Only `[available now]` metrics are near-term; `[needs aggregation]` (boundary spatial-join) and `[needs time-series]` (temporal data model) are separate future specs. §3 is a target catalogue, not a build commitment in 2.1.
 
 ---
 
-## 9. Follow-on
+## 10. Follow-on
 
-- **2.2 Adaptive shell + persona panels** consumes this: it reveals Governance/Research/Edit/Management panels by the now-meaningful roles, and the viewer read capability un-gated here is what the analysis panels query.
+- **2.2 Adaptive shell + persona panels** consumes this: it reveals Governance/Research/Edit/Management panels by the now-meaningful roles, the viewer read capability un-gated here is what the analysis panels query, and the **§3 persona metric-focus catalogue** is the demand signal for what each panel surfaces (start with the `[available now]` metrics).
 - If per-layer stewardship is ever needed, `capabilities.ts` is the natural place to grow from static role sets to a capability check that also consults a user↔layer assignment.
