@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 const createFeature = vi.fn();
-vi.mock('../api/features.api', () => ({ createFeature: (...a: unknown[]) => createFeature(...a) }));
+const updateFeature = vi.fn();
+vi.mock('../api/features.api', () => ({
+  createFeature: (...a: unknown[]) => createFeature(...a),
+  updateFeature: (...a: unknown[]) => updateFeature(...a),
+}));
 import { ApiError } from '../../../shared/api/apiClient';
 import { useAttributeFormPresenter } from './useAttributeFormPresenter';
 
@@ -68,5 +72,42 @@ describe('useAttributeFormPresenter', () => {
     await act(async () => { await result.current.submit(); });
     expect(result.current.fieldErrors.wattage_mw).toContain('Expected number');
     expect(result.current.error).toBeNull();
+  });
+});
+
+describe('useAttributeFormPresenter (edit mode)', () => {
+  beforeEach(() => { updateFeature.mockReset(); });
+
+  it('seeds values from initialValues and can save without geometry', () => {
+    const { result } = renderHook(() => useAttributeFormPresenter({
+      layerKey: 'dams', attributes: ['name', 'status'], geometry: null,
+      mode: 'edit', featureId: 'f1', initialValues: { name: 'Hoa Binh', status: 'binh_thuong' }, onSaved: vi.fn(),
+    }));
+    expect(result.current.values).toEqual({ name: 'Hoa Binh', status: 'binh_thuong' });
+    expect(result.current.canSave).toBe(true); // no geometry required on edit
+  });
+
+  it('submit PUTs non-empty props (+ geometry when present) and calls onSaved', async () => {
+    updateFeature.mockResolvedValue({ id: 'f1' });
+    const onSaved = vi.fn();
+    const geom = { type: 'Point', coordinates: [108, 13] };
+    const { result } = renderHook(() => useAttributeFormPresenter({
+      layerKey: 'dams', attributes: ['name'], geometry: geom,
+      mode: 'edit', featureId: 'f1', initialValues: { name: 'A' }, onSaved,
+    }));
+    act(() => result.current.setField('name', 'B'));
+    await act(async () => { await result.current.submit(); });
+    expect(updateFeature).toHaveBeenCalledWith('dams', 'f1', { geometry: geom, properties: { name: 'B' } });
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('maps a 404 to a friendly message', async () => {
+    updateFeature.mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'gone'));
+    const { result } = renderHook(() => useAttributeFormPresenter({
+      layerKey: 'dams', attributes: ['name'], geometry: null,
+      mode: 'edit', featureId: 'f1', initialValues: { name: 'A' }, onSaved: vi.fn(),
+    }));
+    await act(async () => { await result.current.submit(); });
+    expect(result.current.error).toBe('This feature no longer exists');
   });
 });

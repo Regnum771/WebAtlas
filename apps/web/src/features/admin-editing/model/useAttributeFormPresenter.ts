@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { LAYER_ATTRIBUTE_MAP, type EditableLayerKey } from '@webatlas/shared';
 import { ApiError } from '../../../shared/api/apiClient';
-import { createFeature } from '../api/features.api';
+import { createFeature, updateFeature } from '../api/features.api';
 import type { GeoJSONGeometry } from '../../map/model/mapEditing';
 
 interface Args {
@@ -9,11 +9,15 @@ interface Args {
   attributes: string[]; // DB column names
   geometry: GeoJSONGeometry | null;
   onSaved: () => void;
+  mode?: 'create' | 'edit';
+  initialValues?: Record<string, string>;
+  featureId?: string;
 }
 
 function messageFor(e: ApiError): { error: string | null; fieldErrors: Record<string, string> } {
   if (e.status === 422) return { error: 'Invalid geometry — please redraw', fieldErrors: {} };
   if (e.status === 409) return { error: 'A feature like this already exists', fieldErrors: {} };
+  if (e.status === 404) return { error: 'This feature no longer exists', fieldErrors: {} };
   if (e.status === 400) {
     const details = e.details as { formErrors?: unknown; fieldErrors?: unknown } | null | undefined;
     const rawFieldErrors = details?.fieldErrors;
@@ -33,7 +37,10 @@ function messageFor(e: ApiError): { error: string | null; fieldErrors: Record<st
   return { error: e.message, fieldErrors: {} };
 }
 
-export function useAttributeFormPresenter({ layerKey, attributes, geometry, onSaved }: Args) {
+export function useAttributeFormPresenter({
+  layerKey, attributes, geometry, onSaved,
+  mode = 'create', initialValues, featureId,
+}: Args) {
   const labels = useMemo(() => {
     const map = LAYER_ATTRIBUTE_MAP[layerKey].attributes;
     const out: Record<string, string> = {};
@@ -42,27 +49,31 @@ export function useAttributeFormPresenter({ layerKey, attributes, geometry, onSa
   }, [layerKey, attributes]);
 
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(attributes.map((c) => [c, '']))
+    Object.fromEntries(attributes.map((c) => [c, initialValues?.[c] ?? '']))
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const canSave = geometry !== null && !saving;
+  const canSave = (mode === 'edit' || geometry !== null) && !saving;
 
   const setField = useCallback((col: string, v: string) => {
     setValues((prev) => ({ ...prev, [col]: v }));
   }, []);
 
   const submit = useCallback(async () => {
-    if (!geometry) { setError('Draw a geometry first'); return; }
+    if (mode === 'create' && !geometry) { setError('Draw a geometry first'); return; }
     setSaving(true);
     setError(null);
     setFieldErrors({});
     const properties: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(values)) if (v !== '') properties[k] = v;
     try {
-      await createFeature(layerKey, { geometry, properties });
+      if (mode === 'edit') {
+        await updateFeature(layerKey, featureId!, { geometry: geometry ?? undefined, properties });
+      } else {
+        await createFeature(layerKey, { geometry: geometry!, properties });
+      }
       onSaved();
     } catch (e) {
       if (e instanceof ApiError) {
@@ -75,7 +86,7 @@ export function useAttributeFormPresenter({ layerKey, attributes, geometry, onSa
     } finally {
       setSaving(false);
     }
-  }, [geometry, values, layerKey, onSaved]);
+  }, [mode, geometry, values, layerKey, featureId, onSaved]);
 
   return { values, labels, setField, canSave, saving, error, fieldErrors, submit };
 }
