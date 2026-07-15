@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { assignDamStatus } from './damStatus';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // apps/api/src/db/seeds -> repo root is five levels up
@@ -34,6 +35,7 @@ export const SEED_LAYERS: SeedLayer[] = [
       annual_output: p['Quantity_('],
       year_launched: p.Year_of_la,
       year_operational: p.Year_of_op,
+      status: assignDamStatus(p.ID),
     }),
   },
   {
