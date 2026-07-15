@@ -7,7 +7,10 @@ vi.mock('../../entities/session/model/session.store', () => ({
 }));
 // map editing bridge stub
 vi.mock('../map/model/mapEditing', () => ({
-  useMapEditing: () => ({ hasMap: true, startDraw: vi.fn(), cancelDraw: vi.fn(), refreshLayer: vi.fn(), registerRefresh: vi.fn() }),
+  useMapEditing: () => ({
+    hasMap: true, startDraw: vi.fn(), cancelDraw: vi.fn(), refreshLayer: vi.fn(), registerRefresh: vi.fn(),
+    editing: false, enterEditMode: vi.fn(), exitEditMode: vi.fn(), startModify: vi.fn(), cancelModify: vi.fn(), clearSelection: vi.fn(),
+  }),
 }));
 // layer catalog stub
 vi.mock('../../entities/layer/useLayerCatalog', () => ({
@@ -22,5 +25,6 @@ describe('AdminEditing', () => {
     expect(screen.getByText('Add a feature')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /dams/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /draw/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit existing/i })).toBeInTheDocument();
   });
 });
