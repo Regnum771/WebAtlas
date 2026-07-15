@@ -867,3 +867,14 @@ body {
 .login-form input { padding: 8px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.2); }
 .login-error { color: #c0392b; margin: 0; }
 .admin-region-placeholder { padding: 8px 12px; border-radius: 8px; }
+
+.edit-toolbar { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 10px; min-width: 260px; }
+.edit-toolbar-title { margin: 0 0 2px; font-size: 14px; }
+.edit-layer-picker, .edit-draw-controls, .edit-attr-form { display: flex; flex-direction: column; gap: 6px; }
+.edit-draw-controls { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
+.edit-layer-picker select, .edit-attr-field input { padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.2); }
+.edit-hint { margin: 0; font-size: 12px; opacity: 0.75; flex-basis: 100%; }
+.edit-attr-field { display: flex; flex-direction: column; gap: 4px; }
+.edit-attr-error, .edit-form-error { color: #c0392b; font-size: 12px; margin: 0; }
+.edit-form-actions { display: flex; gap: 8px; margin-top: 4px; }
+.edit-toolbar button { cursor: pointer; padding: 6px 10px; border-radius: 6px; border: none; }

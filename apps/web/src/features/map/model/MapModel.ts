@@ -214,6 +214,17 @@ export class MapModel {
     }
   }
 
+  /**
+   * Force a WFS refetch for a thematic layer by its layersState id (e.g. 'layer_dams').
+   * Called after an admin create/edit so the new feature renders live (design §4.7).
+   */
+  refreshLayer(layerStateId: string): void {
+    if (!this.map) return;
+    const layer = this.layers[layerStateId];
+    if (!layer) return;
+    layer.getSource()?.refresh();
+  }
+
   dispose(): void {
     if (!this.map) return;
 
