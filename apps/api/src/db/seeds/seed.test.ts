@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { getPool, closePool } from '../pool';
 import { runSeeds } from './run';
+import { DAM_STATUS_SLUGS } from '@webatlas/shared';
 
 beforeAll(async () => {
   await runSeeds();
@@ -45,5 +46,20 @@ describe('seeds', () => {
     const before = await count('flood_zones');
     await runSeeds();
     expect(await count('flood_zones')).toBe(before);
+  });
+
+  it('assigns every dam a valid status slug (not null)', async () => {
+    const { rows } = await getPool().query(
+      `SELECT DISTINCT status FROM water.dams`
+    );
+    const statuses = rows.map((r) => r.status);
+    // no nulls
+    expect(statuses.includes(null)).toBe(false);
+    // every distinct value is a known slug
+    for (const s of statuses) {
+      expect(DAM_STATUS_SLUGS).toContain(s);
+    }
+    // variety: more than one distinct status present across 371 dams
+    expect(statuses.length).toBeGreaterThan(1);
   });
 });
