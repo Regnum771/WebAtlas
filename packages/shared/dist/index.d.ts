@@ -6,3 +6,6 @@
 export declare const EDITABLE_LAYER_KEYS: readonly ["dams", "rivers", "stations", "flood_zones", "drought_points", "saltwater_intrusion", "flood_generation"];
 export type EditableLayerKey = (typeof EDITABLE_LAYER_KEYS)[number];
 export { LAYER_GEOMETRY, type OgcGeometryType } from './layer-geometry';
+export * from './layer-attributes';
+export * from './feature-properties';
+export * from './dam-status';

@@ -13,3 +13,6 @@ export const EDITABLE_LAYER_KEYS = [
     'flood_generation',
 ];
 export { LAYER_GEOMETRY } from './layer-geometry';
+export * from './layer-attributes';
+export * from './feature-properties';
+export * from './dam-status';
