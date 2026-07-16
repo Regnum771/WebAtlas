@@ -140,7 +140,7 @@ Reuses the established rules — no new machinery:
 
 **API** — extend `apps/api/src/modules/layers/layers.test.ts` (already seeds `ADMIN` + `EDITOR`; add a `VIEWER` seed):
 
-- `editor` can `POST` / `PUT` / `DELETE` a feature → 200 / 200 / 204.
+- `editor` can `POST` / `PUT` / `DELETE` a feature → 201 / 200 / 204.
 - `viewer` → **403** on each write; **200** on `GET /layers/:key/features`.
 - `editor` → **200** on `GET /layers/:key/features`.
 - no token → **401** on every guarded route.
