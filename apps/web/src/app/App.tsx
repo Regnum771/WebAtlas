@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AppProviders } from './providers/AppProviders';
 import AuthWidget from '../features/auth';
-import AdminEditing from '../features/admin-editing';
+import FeatureEditing from '../features/feature-editing';
 import MapView from '../features/map/ui/MapView';
 import BasemapSwitcher from '../components/BasemapSwitcher';
 import LayerTree from '../components/LayerTree';
@@ -25,7 +25,7 @@ function App() {
         {/* Auth entry: login button or user badge */}
         <div className="auth-widget-slot">
           <AuthWidget />
-          <AdminEditing />
+          <FeatureEditing />
         </div>
 
         <div className={`panels-wrapper ${panelsVisible ? '' : 'hidden'}`}>

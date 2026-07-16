@@ -17,11 +17,11 @@ vi.mock('../../entities/layer/useLayerCatalog', () => ({
   useLayerCatalog: () => ({ data: [{ key: 'dams', geomType: 'Point', attributes: ['name', 'status'] }], isLoading: false }),
 }));
 
-import AdminEditing from './index';
+import FeatureEditing from './index';
 
-describe('AdminEditing', () => {
+describe('FeatureEditing', () => {
   it('renders the toolbar with the layer picker and a draw control for an admin', () => {
-    render(<AdminEditing />);
+    render(<FeatureEditing />);
     expect(screen.getByText('Add a feature')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /dams/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /draw/i })).toBeInTheDocument();
