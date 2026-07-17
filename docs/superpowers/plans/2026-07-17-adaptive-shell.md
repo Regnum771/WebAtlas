@@ -774,24 +774,58 @@ Confirm the framework in the real app. Not a code task — evidence per design �
 
 **Files:** none.
 
-- [ ] **Step 1: Bring the stack up + start web**
+- [x] **Step 1: Bring the stack up + start web**
 
 Start Postgres + API + web (`docker compose -f infra/docker-compose.yml up -d db`; `npm run dev -w @webatlas/api`; `npm run dev -w @webatlas/web`). Ensure users exist for each role (admin via `create-admin`; seed an editor + viewer via SQL/one-off if needed).
 
-- [ ] **Step 2: Per-role walkthrough**
+- [x] **Step 2: Per-role walkthrough**
 
 - **Logged out:** lean map, **no persona rail**, base panels (layer tree/search/legend) present.
 - **Editor:** rail shows **Data Steward**; selecting it opens the edit panel (draw/modify/delete works as before).
 - **Admin:** rail shows **Data Steward + Management**; Management opens the user table (create/edit/deactivate works).
 - **Viewer:** rail shows **Governance + Research**; each opens its "coming soon" placeholder; switch between them; the pick **persists across a page reload**; the invalid pick for another role is discarded on role change.
 
-- [ ] **Step 3: Confirm map interactivity**
+- [x] **Step 3: Confirm map interactivity**
 
 With a workspace panel open, confirm the map still pans/zooms and the popup still works (panel is an overlay, not a modal blocker).
 
-- [ ] **Step 4: Record the result**
+- [x] **Step 4: Record the result**
 
-Note: rail appears per role; edit + management hosted correctly; placeholders show; viewer pick persists; logged-out is lean. Clean up any temp users.
+**Verified 2026-07-17** (Playwright/headless Chromium against the live stack; temp users `run-t6-{admin,editor,viewer}@webatlas.test` created via the admin API and deleted afterwards — DB back to its two pre-existing admins).
+
+**Behaviour — all logic assertions PASS:**
+
+| Check | Result |
+|---|---|
+| Logged out → no rail, lean map, base panels present | ✅ `railPresent: false`, LayerTree/search/legend intact |
+| Editor → rail shows Data Steward only; hosts the edit panel | ✅ layer picker + Draw/Edit existing render |
+| Admin → rail shows Data Steward + Management | ✅ both entries; Management hosts the real user table (5 rows) |
+| Viewer → Governance + Research placeholders | ✅ both "coming soon" placeholders render |
+| Viewer pick persists across reload | ✅ `webatlas.persona: 'research'` survives reload, rail stays on Research |
+| Stale out-of-role pick discarded on role change | ✅ stored `'research'` + editor role → falls back to Data Steward, no throw |
+| Map pans/zooms with a panel open (overlay, not modal) | ✅ pan + wheel-zoom both work |
+| Console errors | ✅ none |
+
+**🔴 BLOCKER — `.workspace-panel` covers `.persona-rail`; the rail is unclickable.**
+
+The Self-Review called this out as "cosmetic, not a test blocker." It is **not cosmetic** — it is a functional dead-end. Measured at 1440×900:
+
+- `.persona-rail` → x:12–153, y:404–496, `z-index: 1000`
+- `.workspace-panel` → x:12–352, y:96–888, `z-index: 1001`
+
+The panel **fully encloses the rail at a higher z-index**. `document.elementFromPoint()` at each rail button's centre returns `aside.workspace-panel` — `clickable: false` for **every rail item in every role**. Because `isOpen` defaults to `true`, a user lands with the panel already open and can never reach the rail:
+
+- **Admin can never switch to Management** — the panel that Data Steward opened swallows the button. Playwright timed out 30s trying to click it (only reachable after clicking ×).
+- The panel also overlaps the existing `.panels-wrapper` (LayerTree header clipped; basemap switcher buried).
+
+**Fix options** (design decision, deferred to the plan author):
+1. Move the rail outside the panel's box — e.g. rail on the left edge, panel offset to `left: 165px`.
+2. Reserve a rail gutter — panel `left: 165px`, keep the rail at `left: 12px`.
+3. Anchor the panel on the right (`right: 12px`), leaving the whole left edge to the rail + existing panels.
+
+Option 2/3 also resolve the `.panels-wrapper` overlap. Whichever is picked needs a regression test asserting rail hit-testability while `isOpen` — a DOM-presence test cannot catch this, which is why the unit suite is green while the feature is unusable.
+
+**🟡 Secondary — duplicated panel chrome in the admin workspace.** `UserManagement` renders its own "Close" button + "Users" heading *inside* the shell panel, which already supplies a "Management" title and an ×. Two close affordances stacked; the table is also cramped/unstyled at 340px. Worth folding into the fix.
 
 ---
 
