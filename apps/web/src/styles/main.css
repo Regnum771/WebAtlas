@@ -886,3 +886,23 @@ body {
 .confirm-dialog { display: flex; flex-direction: column; gap: 10px; min-width: 280px; }
 .confirm-actions { display: flex; gap: 8px; }
 .confirm-actions button:first-child { background: #ef4444; color: #fff; }
+
+/* Adaptive shell (roadmap 2.2) */
+.persona-rail {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  z-index: 1000; display: flex; flex-direction: column; gap: 6px; padding: 6px;
+}
+.persona-rail-item {
+  padding: 8px 12px; border: none; background: transparent; cursor: pointer;
+  border-radius: 8px; font: inherit; text-align: left; white-space: nowrap;
+}
+.persona-rail-item.active { background: rgba(56, 189, 248, 0.18); font-weight: 600; }
+.workspace-panel {
+  position: absolute; left: 12px; bottom: 12px; top: 96px; width: 340px; max-width: 90vw;
+  z-index: 1001; display: flex; flex-direction: column; overflow: hidden;
+}
+.workspace-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; }
+.workspace-panel-close { border: none; background: transparent; font-size: 20px; line-height: 1; cursor: pointer; }
+.workspace-panel-body { overflow: auto; padding: 0 12px 12px; }
+.workspace-placeholder { padding: 24px 8px; text-align: center; opacity: 0.8; }
+.workspace-placeholder-heading { font-weight: 600; margin-bottom: 6px; }
