@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMapContext } from '../app/providers/MapProvider';
 import { layerGroups } from '../data/mockData';
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
+import BasemapSwitcher from './BasemapSwitcher';
 
 const LayerTree: React.FC = () => {
   const { layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
@@ -24,6 +25,10 @@ const LayerTree: React.FC = () => {
       </div>
       
       <div className="layer-tree-content">
+        <div className="layer-tree-section">
+          <h3 className="layer-tree-section-title">Bản đồ nền</h3>
+          <BasemapSwitcher />
+        </div>
         {layerGroups.map(group => (
           <div key={group.id} className="mb-2">
             <button 

@@ -12,7 +12,7 @@ const BasemapSwitcher: React.FC = () => {
   ];
 
   return (
-    <div className="basemap-switcher glass-panel">
+    <div className="basemap-switcher">
       {options.map((opt) => (
         <button
           key={opt.id}
