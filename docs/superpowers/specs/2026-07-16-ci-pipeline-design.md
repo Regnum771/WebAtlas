@@ -127,7 +127,7 @@ A workflow only genuinely runs on GitHub, so validation is empirical, not local:
 
 ## 7. Scope boundaries (YAGNI — deferred)
 
-- GeoServer in CI (tests don't use it).
+- GeoServer in CI (the one GeoServer smoke test is env-gated to skip there, §1).
 - Multi-Node-version matrix (single Node 22 matches `engines`).
 - Artifact-passing `dist/` between jobs (each job's `build:shared` is trivially fast).
 - Coverage, caching beyond npm, Docker-layer caching, deploy/release.
