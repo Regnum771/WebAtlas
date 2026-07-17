@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppProviders } from './providers/AppProviders';
 import AuthWidget from '../features/auth';
 import Shell from '../features/shell';
@@ -18,36 +19,43 @@ function App() {
 
   return (
     <AppProviders>
-      <div className="app-container">
-        <MapView />
-        <MapControls />
+      <BrowserRouter>
+        <div className="app-container">
+          {/* MapView is a SIBLING of <Routes>, never inside one: navigating to
+              /admin/users must overlay a live map, not unmount it. */}
+          <MapView />
+          <MapControls />
 
-        {/* Auth entry: login button or user badge */}
-        <div className="auth-widget-slot">
-          <AuthWidget />
+          <div className="auth-widget-slot">
+            <AuthWidget />
+          </div>
+
+          <Shell />
+
+          <div className={`panels-wrapper ${panelsVisible ? '' : 'hidden'}`}>
+            <LayerTree />
+            <BasemapSwitcher />
+            <SearchBar />
+            <DynamicLegend />
+            <OGCClient />
+          </div>
+
+          <DynamicPopup />
+
+          <button
+            className="toggle-panels-btn glass-panel"
+            onClick={() => setPanelsVisible(!panelsVisible)}
+            title={panelsVisible ? 'Ẩn các panel' : 'Hiện các panel'}
+          >
+            {panelsVisible ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+            <span>{panelsVisible ? 'Ẩn giao diện' : 'Hiện giao diện'}</span>
+          </button>
+
+          <Routes>
+            <Route path="/" element={null} />
+          </Routes>
         </div>
-
-        <Shell />
-
-        <div className={`panels-wrapper ${panelsVisible ? '' : 'hidden'}`}>
-          <LayerTree />
-          <BasemapSwitcher />
-          <SearchBar />
-          <DynamicLegend />
-          <OGCClient />
-        </div>
-
-        <DynamicPopup />
-
-        <button
-          className="toggle-panels-btn glass-panel"
-          onClick={() => setPanelsVisible(!panelsVisible)}
-          title={panelsVisible ? 'Ẩn các panel' : 'Hiện các panel'}
-        >
-          {panelsVisible ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-          <span>{panelsVisible ? 'Ẩn giao diện' : 'Hiện giao diện'}</span>
-        </button>
-      </div>
+      </BrowserRouter>
     </AppProviders>
   );
 }
