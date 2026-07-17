@@ -1,6 +1,11 @@
+import 'dotenv/config';
 import { describe, it, expect } from 'vitest';
 
-const GS = process.env.GEOSERVER_URL ?? 'http://localhost:8080/geoserver';
+// Live WFS smoke test: needs a running GeoServer with the layers published
+// (npm run publish:geoserver). Gated on GEOSERVER_URL so CI — which runs
+// Postgres only, no GeoServer (CI design §1) — skips it; the local dev
+// stack sets GEOSERVER_URL in apps/api/.env, so it still runs there.
+const GS = process.env.GEOSERVER_URL;
 
 async function wfsCount(layer: string): Promise<number> {
   const url =
@@ -13,7 +18,7 @@ async function wfsCount(layer: string): Promise<number> {
   return json.features.length;
 }
 
-describe('WFS publication', () => {
+describe.skipIf(!GS)('WFS publication', () => {
   it('serves dams as GeoJSON', async () => {
     expect(await wfsCount('dams')).toBeGreaterThan(0);
   });
