@@ -33,6 +33,14 @@ describe('RequireRole (UX gate)', () => {
     const { container } = render(<Fresh role="admin"><div>secret</div></Fresh>);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it('renders children when the role is in the allowed array', async () => {
+    vi.resetModules();
+    mockSession({ role: 'editor' });
+    const { RequireRole: Fresh } = await import('./RequireRole');
+    render(<Fresh role={['admin', 'editor']}><div>secret</div></Fresh>);
+    expect(screen.getByText('secret')).toBeInTheDocument();
+  });
 });
 // keep the top-level import referenced so the file type-checks
 void RequireRole;

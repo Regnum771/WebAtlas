@@ -7,20 +7,24 @@ vi.mock('../../entities/session/model/session.store', () => ({
 }));
 // map editing bridge stub
 vi.mock('../map/model/mapEditing', () => ({
-  useMapEditing: () => ({ hasMap: true, startDraw: vi.fn(), cancelDraw: vi.fn(), refreshLayer: vi.fn(), registerRefresh: vi.fn() }),
+  useMapEditing: () => ({
+    hasMap: true, startDraw: vi.fn(), cancelDraw: vi.fn(), refreshLayer: vi.fn(), registerRefresh: vi.fn(),
+    editing: false, enterEditMode: vi.fn(), exitEditMode: vi.fn(), startModify: vi.fn(), cancelModify: vi.fn(), clearSelection: vi.fn(),
+  }),
 }));
 // layer catalog stub
 vi.mock('../../entities/layer/useLayerCatalog', () => ({
   useLayerCatalog: () => ({ data: [{ key: 'dams', geomType: 'Point', attributes: ['name', 'status'] }], isLoading: false }),
 }));
 
-import AdminEditing from './index';
+import FeatureEditing from './index';
 
-describe('AdminEditing', () => {
+describe('FeatureEditing', () => {
   it('renders the toolbar with the layer picker and a draw control for an admin', () => {
-    render(<AdminEditing />);
+    render(<FeatureEditing />);
     expect(screen.getByText('Add a feature')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /dams/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /draw/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit existing/i })).toBeInTheDocument();
   });
 });

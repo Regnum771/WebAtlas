@@ -15,6 +15,7 @@
     "dev:web": "npm run dev -w @webatlas/web",
     "build:web": "npm run build -w @webatlas/web",
     "lint:web": "npm run lint -w @webatlas/web",
+    "test:web": "npm run test -w @webatlas/web",
     "build:shared": "npm run build -w @webatlas/shared",
     "test:shared": "npm run test -w @webatlas/shared",
     "migrate": "npm run migrate:up -w @webatlas/api",

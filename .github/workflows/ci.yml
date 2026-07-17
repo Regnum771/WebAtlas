@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  shared:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:shared
+      - run: npm run test:shared
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:shared
+      - run: npm run lint:web
+      - run: npm run build:web
+      - run: npm run test:web
+
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: webatlas
+          POSTGRES_PASSWORD: webatlas
+          POSTGRES_DB: webatlas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U webatlas"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://webatlas:webatlas@localhost:5432/webatlas
+      JWT_SECRET: ci_dummy_secret_at_least_16_chars
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:shared
+      - run: npm run migrate
+      - run: npm run seed
+      - run: npm run test:api

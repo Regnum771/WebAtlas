@@ -8,7 +8,7 @@ const MapView: React.FC = () => {
   const el = useRef<HTMLDivElement>(null);
   const modelRef = useRef<MapModel | null>(null);
   const { setMap, basemap, layersState, reservoirFilter } = useMapContext();
-  const { registerRefresh } = useMapEditing();
+  const { registerRefresh, registerSetSelectActive } = useMapEditing();
 
   useEffect(() => {
     if (!el.current) return;
@@ -17,6 +17,7 @@ const MapView: React.FC = () => {
     modelRef.current = model;
     setMap(model.getMap());
     registerRefresh((id: string) => model.refreshLayer(id));
+    registerSetSelectActive((active: boolean) => model.setSelectActive(active));
     return () => model.dispose();
   }, []);
 

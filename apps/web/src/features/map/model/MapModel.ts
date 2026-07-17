@@ -225,6 +225,11 @@ export class MapModel {
     layer.getSource()?.refresh();
   }
 
+  /** Enable/disable the rivers click-highlight Select (disabled during admin edit mode so it doesn't fire alongside the edit selection). */
+  setSelectActive(active: boolean): void {
+    this.selectInteraction?.setActive(active);
+  }
+
   dispose(): void {
     if (!this.map) return;
 

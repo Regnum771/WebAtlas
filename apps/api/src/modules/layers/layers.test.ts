@@ -7,6 +7,7 @@ import { hashPassword } from '../../lib/password';
 const app = buildApp();
 const ADMIN = 'layers-admin@webatlas.test';
 const EDITOR = 'layers-editor@webatlas.test';
+const VIEWER = 'layers-viewer@webatlas.test';
 const PW = 'admin-pass-123';
 const NAME = 'layers-crud-dam@webatlas.test';
 
@@ -18,7 +19,7 @@ async function tokenFor(email: string) {
 beforeAll(async () => {
   await app.ready();
   const repo = usersRepository(getPool());
-  for (const [email, role] of [[ADMIN, 'admin'], [EDITOR, 'editor']] as const) {
+  for (const [email, role] of [[ADMIN, 'admin'], [EDITOR, 'editor'], [VIEWER, 'viewer']] as const) {
     if (!(await repo.findByEmailWithHash(email))) {
       await repo.insert({ email, password_hash: await hashPassword(PW), full_name: role, role });
     }
@@ -41,12 +42,39 @@ describe('layers metadata', () => {
 });
 
 describe('feature CRUD (admin only)', () => {
-  it('rejects non-admin with 403 and anonymous with 401', async () => {
-    const editorToken = await tokenFor(EDITOR);
-    const forbidden = await app.inject({ method: 'GET', url: '/api/layers/dams/features', headers: { authorization: `Bearer ${editorToken}` } });
-    expect(forbidden.statusCode).toBe(403);
+  it('viewer can read features but cannot write; anonymous is 401', async () => {
+    const viewerToken = await tokenFor(VIEWER);
+    const vAuth = { authorization: `Bearer ${viewerToken}` };
+
+    const read = await app.inject({ method: 'GET', url: '/api/layers/dams/features', headers: vAuth });
+    expect(read.statusCode).toBe(200);
+
+    const write = await app.inject({
+      method: 'POST', url: '/api/layers/dams/features', headers: vAuth,
+      payload: { geometry: { type: 'Point', coordinates: [105.8, 21.0] }, properties: { name: NAME } },
+    });
+    expect(write.statusCode).toBe(403);
+
     const anon = await app.inject({ method: 'GET', url: '/api/layers/dams/features' });
     expect(anon.statusCode).toBe(401);
+  });
+
+  it('editor can read and write features', async () => {
+    const editorToken = await tokenFor(EDITOR);
+    const eAuth = { authorization: `Bearer ${editorToken}` };
+
+    const read = await app.inject({ method: 'GET', url: '/api/layers/dams/features', headers: eAuth });
+    expect(read.statusCode).toBe(200);
+
+    const create = await app.inject({
+      method: 'POST', url: '/api/layers/dams/features', headers: eAuth,
+      payload: { geometry: { type: 'Point', coordinates: [105.81, 21.01] }, properties: { name: NAME } },
+    });
+    expect(create.statusCode).toBe(201);
+    const id = create.json().feature.id;
+
+    const del = await app.inject({ method: 'DELETE', url: `/api/layers/dams/features/${id}`, headers: eAuth });
+    expect(del.statusCode).toBe(204);
   });
 
   it('404 for an unknown layer key', async () => {

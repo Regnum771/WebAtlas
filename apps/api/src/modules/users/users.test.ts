@@ -7,6 +7,7 @@ import { hashPassword } from '../../lib/password';
 const app = buildApp();
 const ADMIN = 'users-admin@webatlas.test';
 const EDITOR = 'users-editor@webatlas.test';
+const VIEWER = 'users-viewer@webatlas.test';
 const PW = 'admin-pass-123';
 const created: string[] = [];
 
@@ -18,7 +19,7 @@ async function tokenFor(email: string) {
 beforeAll(async () => {
   await app.ready();
   const repo = usersRepository(getPool());
-  for (const [email, role] of [[ADMIN, 'admin'], [EDITOR, 'editor']] as const) {
+  for (const [email, role] of [[ADMIN, 'admin'], [EDITOR, 'editor'], [VIEWER, 'viewer']] as const) {
     if (!(await repo.findByEmailWithHash(email))) {
       await repo.insert({ email, password_hash: await hashPassword(PW), full_name: role, role });
     }
@@ -34,6 +35,11 @@ describe('users CRUD (admin only)', () => {
     const editorToken = await tokenFor(EDITOR);
     const forbidden = await app.inject({ method: 'GET', url: '/api/users', headers: { authorization: `Bearer ${editorToken}` } });
     expect(forbidden.statusCode).toBe(403);
+
+    const viewerToken = await tokenFor(VIEWER);
+    const viewerForbidden = await app.inject({ method: 'GET', url: '/api/users', headers: { authorization: `Bearer ${viewerToken}` } });
+    expect(viewerForbidden.statusCode).toBe(403);
+
     const anon = await app.inject({ method: 'GET', url: '/api/users' });
     expect(anon.statusCode).toBe(401);
   });
