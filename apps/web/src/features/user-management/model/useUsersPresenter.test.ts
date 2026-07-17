@@ -18,7 +18,8 @@ vi.mock('../../../entities/session/model/session.store', () => ({
 }));
 
 // Mock TanStack: useQuery returns our list; useMutation returns a mutateAsync that calls the fn + onSuccess.
-const rows = [
+import type { AdminUser } from '../api/users.api';
+const rows: AdminUser[] = [
   { id: 'me', email: 'me@b.test', full_name: 'Me', role: 'admin', is_active: true, created_at: '', updated_at: '' },
   { id: 'u2', email: 'ed@b.test', full_name: 'Ed', role: 'editor', is_active: true, created_at: '', updated_at: '' },
 ];
