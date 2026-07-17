@@ -1,41 +1,44 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
-let workspaces: { id: string; label: string }[] = [];
-let activeId = 'public';
+let hasDrawer = false;
+let isOpen = false;
+const toggle = vi.fn(() => { isOpen = !isOpen; });
+const close = vi.fn(() => { isOpen = false; });
 vi.mock('./model/useShellPresenter', () => ({
-  useShellPresenter: () => ({ workspaces, activeId, isOpen: true, select: vi.fn(), close: vi.fn() }),
+  useShellPresenter: () => ({ hasDrawer, isOpen, toggle, close }),
 }));
-// Stub the hosted features so we assert ROUTING, not their internals.
+// Stub the hosted feature so we assert ROUTING, not its internals.
 vi.mock('../feature-editing', () => ({ default: () => <div>FEATURE_EDITING</div> }));
-vi.mock('../user-management', () => ({ default: () => <div>USER_MANAGEMENT</div> }));
 
 import Shell from './index';
 
-beforeEach(() => { workspaces = []; activeId = 'public'; });
+beforeEach(() => { hasDrawer = false; isOpen = false; toggle.mockClear(); close.mockClear(); });
 
-describe('Shell container', () => {
-  it('anonymous/public renders no rail and no panel content', () => {
+describe('Shell', () => {
+  it('renders no burger when the role has no drawer (viewer/anonymous)', () => {
     const { container } = render(<Shell />);
-    expect(container.textContent).not.toContain('FEATURE_EDITING');
-    expect(container.textContent).not.toContain('USER_MANAGEMENT');
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it('steward workspace hosts FeatureEditing', () => {
-    workspaces = [{ id: 'steward', label: 'Data Steward' }]; activeId = 'steward';
+  it('renders the burger when the role has a drawer, closed by default', () => {
+    hasDrawer = true;
+    render(<Shell />);
+    expect(screen.getByRole('button', { name: /menu/i })).toBeInTheDocument();
+    expect(screen.queryByText('FEATURE_EDITING')).not.toBeInTheDocument();
+  });
+
+  it('clicking the burger toggles the drawer', async () => {
+    hasDrawer = true;
+    render(<Shell />);
+    await userEvent.click(screen.getByRole('button', { name: /menu/i }));
+    expect(toggle).toHaveBeenCalled();
+  });
+
+  it('hosts FeatureEditing when open', () => {
+    hasDrawer = true; isOpen = true;
     render(<Shell />);
     expect(screen.getByText('FEATURE_EDITING')).toBeInTheDocument();
-  });
-
-  it('admin workspace hosts UserManagement', () => {
-    workspaces = [{ id: 'steward', label: 'Data Steward' }, { id: 'admin', label: 'Management' }]; activeId = 'admin';
-    render(<Shell />);
-    expect(screen.getByText('USER_MANAGEMENT')).toBeInTheDocument();
-  });
-
-  it('governance workspace hosts the placeholder', () => {
-    workspaces = [{ id: 'governance', label: 'Governance' }, { id: 'research', label: 'Research' }]; activeId = 'governance';
-    render(<Shell />);
-    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
   });
 });
