@@ -114,8 +114,9 @@ WaterAtlas is a many-layer, many-role GIS — the standing risk is an overcrowde
 | Item | What | Prereq | Notes |
 |---|---|---|---|
 | **3.1 Selection/edit polish** | Hover-highlight the hit feature before click; an "editing this feature" chip; vertex **snapping**; **undo/redo**. Optionally disable the rivers-highlight `Select` during edit if `/run` shows interference. | Part 2 | Explicit deferred non-goals from modify-delete §9. Each is its own small spec. |
+| **3.2 Improve hydrology data** | Two data/feature fixes (NOT code bugs — investigated 2026-07-17, app renders its data faithfully): (a) **replace the rivers dataset** — `thuyhe.geojson` (2013 generalized MultiLineString segments) is too coarse and cuts across the real watercourses; source a higher-detail set (OSM waterways / HydroRIVERS VN), re-seed. (b) **add a lake/reservoir water-body layer** — the app has no water-body polygons; lakes the user sees are the basemap's own faint fill. Add a new thematic polygon layer (DB → WFS → blue Fill style) so lakes/reservoirs render as bright-blue water like the rivers. | none | Confirmed no projection/CRS bug (provinces align correctly via the same reproject path; river bbox ≈ VN extent, no offset). See memory `hydrology-data-quality`. Each is its own spec; the lake layer is the smaller, self-contained first step. |
 
-**Exit criteria:** editing feels polished — hover, snapping, undo/redo, and a clear "editing this feature" affordance.
+**Exit criteria:** editing feels polished — hover, snapping, undo/redo, and a clear "editing this feature" affordance. Rivers trace real watercourses at usable detail; lakes/reservoirs render as a styled app water-body layer, not basemap fill.
 
 ---
 
