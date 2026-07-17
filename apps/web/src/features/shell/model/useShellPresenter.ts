@@ -1,28 +1,24 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { usePersona } from '../../../entities/persona/usePersona';
-import { PERSONAS, type PersonaId } from '../../../entities/persona/persona';
 
-export interface Workspace { id: PersonaId; label: string; }
-
+// Persona is UX routing only. The drawer reveals tools per role; the backend
+// enforces authorization on every write regardless of what is shown.
 export function useShellPresenter(): {
-  workspaces: Workspace[];
-  activeId: PersonaId;
+  hasDrawer: boolean;
   isOpen: boolean;
-  select: (id: PersonaId) => void;
+  toggle: () => void;
   close: () => void;
 } {
-  const { available, active, setActive } = usePersona();
+  const { available } = usePersona();
 
-  const workspaces = useMemo(
-    () => available.filter((id) => id !== 'public').map((id) => ({ id, label: PERSONAS[id].label })),
-    [available]
-  );
+  // Only the steward persona has real tools today. Governance/Research have
+  // none yet (design §5), so viewers get no drawer at all.
+  const hasDrawer = available.includes('steward');
 
-  // Panel starts open when there is a non-public workspace to show.
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
 
-  const select = (id: PersonaId) => { setActive(id); setIsOpen(true); };
-  const close = () => setIsOpen(false);
+  const toggle = useCallback(() => setIsOpen((o) => !o), []);
+  const close = useCallback(() => setIsOpen(false), []);
 
-  return { workspaces, activeId: active, isOpen, select, close };
+  return { hasDrawer, isOpen, toggle, close };
 }

@@ -2,46 +2,57 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 let available: string[] = ['public'];
-let active = 'public';
-const setActive = vi.fn((id: string) => { active = id; });
 vi.mock('../../../entities/persona/usePersona', () => ({
-  usePersona: () => ({ available, active, setActive }),
+  usePersona: () => ({ available, active: available[0], setActive: vi.fn() }),
 }));
 
 import { useShellPresenter } from './useShellPresenter';
 
-beforeEach(() => { available = ['public']; active = 'public'; setActive.mockClear(); });
+beforeEach(() => { available = ['public']; });
 
 describe('useShellPresenter', () => {
-  it('anonymous/public yields no workspaces', () => {
+  it('anonymous has no drawer', () => {
     const { result } = renderHook(() => useShellPresenter());
-    expect(result.current.workspaces).toEqual([]);
+    expect(result.current.hasDrawer).toBe(false);
   });
 
-  it('viewer yields governance + research workspaces with labels', () => {
-    available = ['governance', 'research']; active = 'governance';
+  it('viewer has no drawer (governance/research have no tools yet)', () => {
+    available = ['governance', 'research'];
     const { result } = renderHook(() => useShellPresenter());
-    expect(result.current.workspaces.map((w) => w.id)).toEqual(['governance', 'research']);
-    expect(result.current.workspaces[0].label).toBe('Governance');
+    expect(result.current.hasDrawer).toBe(false);
   });
 
-  it('admin workspaces exclude public and include steward + admin', () => {
-    available = ['steward', 'admin']; active = 'steward';
+  it('editor has a drawer', () => {
+    available = ['steward'];
     const { result } = renderHook(() => useShellPresenter());
-    expect(result.current.workspaces.map((w) => w.id)).toEqual(['steward', 'admin']);
+    expect(result.current.hasDrawer).toBe(true);
   });
 
-  it('select sets the persona and opens the panel', () => {
-    available = ['governance', 'research']; active = 'governance';
+  it('admin has a drawer (steward is in its persona set)', () => {
+    available = ['steward', 'admin'];
     const { result } = renderHook(() => useShellPresenter());
-    act(() => result.current.select('research'));
-    expect(setActive).toHaveBeenCalledWith('research');
+    expect(result.current.hasDrawer).toBe(true);
+  });
+
+  it('starts CLOSED (a drawer must never ambush the user on load)', () => {
+    available = ['steward'];
+    const { result } = renderHook(() => useShellPresenter());
+    expect(result.current.isOpen).toBe(false);
+  });
+
+  it('toggle opens then closes', () => {
+    available = ['steward'];
+    const { result } = renderHook(() => useShellPresenter());
+    act(() => result.current.toggle());
     expect(result.current.isOpen).toBe(true);
+    act(() => result.current.toggle());
+    expect(result.current.isOpen).toBe(false);
   });
 
-  it('close collapses the panel', () => {
-    available = ['steward']; active = 'steward';
+  it('close collapses an open drawer', () => {
+    available = ['steward'];
     const { result } = renderHook(() => useShellPresenter());
+    act(() => result.current.toggle());
     act(() => result.current.close());
     expect(result.current.isOpen).toBe(false);
   });
