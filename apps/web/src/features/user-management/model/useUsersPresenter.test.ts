@@ -86,4 +86,15 @@ describe('useUsersPresenter', () => {
     expect(result.current.fieldErrors.email).toBe('Email already in use');
     expect(result.current.modal.mode).toBe('create'); // stays open
   });
+
+  it('maps a 400 VALIDATION_ERROR on create to per-field errors from Zod flatten output', async () => {
+    const { ApiError } = await import('../../../shared/api/apiClient');
+    createUser.mockRejectedValue(new ApiError(400, 'VALIDATION_ERROR', 'Invalid', { fieldErrors: { password: ['Too short'] }, formErrors: [] }));
+    const { result } = renderHook(() => useUsersPresenter());
+    act(() => result.current.openCreate());
+    act(() => { result.current.setField('email', 'n@b.test'); result.current.setField('password', 'longenough'); });
+    await act(async () => { await result.current.submitForm(); });
+    expect(result.current.fieldErrors.password).toBe('Too short');
+    expect(result.current.modal.mode).toBe('create'); // stays open
+  });
 });

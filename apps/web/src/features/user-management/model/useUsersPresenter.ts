@@ -13,12 +13,19 @@ const EMPTY: FormValues = { email: '', password: '', full_name: '', role: 'viewe
 function mapError(e: unknown, setFieldErrors: (f: Record<string, string>) => void, setFormError: (s: string) => void) {
   if (e instanceof ApiError) {
     if (e.status === 409) { setFieldErrors({ email: 'Email already in use' }); return; }
-    if (e.status === 400 && e.details && typeof e.details === 'object') {
-      const fe: Record<string, string> = {};
-      for (const [k, v] of Object.entries(e.details as Record<string, unknown>)) {
-        fe[k] = Array.isArray(v) ? String(v[0]) : String(v);
+    if (e.status === 400) {
+      const details = e.details as { formErrors?: unknown; fieldErrors?: unknown } | null | undefined;
+      const rawFieldErrors = details?.fieldErrors;
+      if (rawFieldErrors && typeof rawFieldErrors === 'object' && !Array.isArray(rawFieldErrors)) {
+        const fe: Record<string, string> = {};
+        for (const [k, v] of Object.entries(rawFieldErrors as Record<string, unknown>)) {
+          if (Array.isArray(v)) fe[k] = v.join(', ');
+        }
+        if (Object.keys(fe).length > 0) { setFieldErrors(fe); return; }
       }
-      setFieldErrors(fe); return;
+      const formErrors = details?.formErrors;
+      if (Array.isArray(formErrors) && formErrors.length > 0) { setFormError(formErrors.join(', ')); return; }
+      setFormError(e.message); return;
     }
     if (e.status === 403) { setFormError('You do not have permission'); return; }
     setFormError(e.message); return;
