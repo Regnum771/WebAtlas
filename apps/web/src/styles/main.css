@@ -929,3 +929,43 @@ body {
   margin-top: 16px; padding: 8px 14px; border: none; border-radius: 8px;
   cursor: pointer; font: inherit;
 }
+
+/* Attribute filter (roadmap 2.3) */
+.attribute-filter { position: relative; display: flex; align-items: center; }
+.filter-btn {
+  display: inline-flex; align-items: center; justify-content: center; position: relative;
+  width: 34px; height: 34px; border: none; cursor: pointer; border-radius: 8px; padding: 0;
+}
+.filter-btn-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px;
+  padding: 0 4px; border-radius: 8px; background: rgba(56, 189, 248, 0.9); color: #fff;
+  font-size: 11px; line-height: 16px; text-align: center;
+}
+.filter-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; width: 320px; max-width: 90vw;
+  z-index: 1050; display: flex; flex-direction: column; gap: 10px; padding: 12px;
+  max-height: 60vh; overflow-y: auto;
+}
+.filter-layer-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.filter-layer-select, .condition-field, .condition-op, .condition-value {
+  font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.12);
+}
+.filter-conditions { display: flex; flex-direction: column; gap: 6px; }
+.condition-row { display: flex; align-items: center; gap: 6px; }
+.condition-field { flex: 1 1 auto; min-width: 0; }
+.condition-value { width: 90px; }
+.condition-remove, .filter-add, .filter-clear {
+  border: none; background: transparent; cursor: pointer; font: inherit; padding: 4px 6px; border-radius: 6px;
+}
+.filter-add { align-self: flex-start; color: rgba(56,130,246,0.95); }
+.filter-results-header { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+.filter-results { display: flex; flex-direction: column; gap: 2px; }
+.filter-result-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  padding: 6px 8px; border: none; background: transparent; cursor: pointer; border-radius: 6px;
+}
+.filter-result-item:hover:not(:disabled) { background: rgba(56, 189, 248, 0.12); }
+.filter-result-item:disabled { opacity: 0.5; cursor: default; }
+.filter-result-name { font-weight: 600; font-size: 13px; }
+.filter-result-sub { font-size: 12px; opacity: 0.7; }
+.filter-empty { display: flex; flex-direction: column; gap: 8px; font-size: 13px; opacity: 0.85; }

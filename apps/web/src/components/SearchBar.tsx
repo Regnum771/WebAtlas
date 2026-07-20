@@ -3,6 +3,7 @@ import { useMapContext } from '../app/providers/MapProvider';
 import { Search, MapPin } from 'lucide-react';
 import { fromLonLat } from 'ol/proj';
 import { GEOSERVER_URL } from '../shared/config';
+import AttributeFilter from '../features/attribute-filter';
 
 const DAMS_WFS_URL =
   `${GEOSERVER_URL}/ows?service=WFS&version=2.0.0&request=GetFeature` +
@@ -65,6 +66,7 @@ const SearchBar: React.FC = () => {
           onFocus={() => setShowResults(true)}
           className="search-input"
         />
+        <AttributeFilter />
       </div>
 
       {showResults && results.length > 0 && (

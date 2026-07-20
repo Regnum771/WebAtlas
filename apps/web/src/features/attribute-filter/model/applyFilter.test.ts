@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyFilter, type FeatureLike, type Condition } from './applyFilter';
+import { applyFilter, type FeatureLike } from './applyFilter';
 
 function feat(props: Record<string, unknown>, geom: unknown = { type: 'Point' }): FeatureLike {
   return { getProperties: () => props, getGeometry: () => geom };
