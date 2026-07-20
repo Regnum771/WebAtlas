@@ -17,7 +17,9 @@ interface SessionContextValue {
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<Status>('anonymous');
+  const [status, setStatus] = useState<Status>(() =>
+    localStorage.getItem(TOKEN_KEY) ? 'authenticating' : 'anonymous'
+  );
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
   const logout = useCallback(() => {

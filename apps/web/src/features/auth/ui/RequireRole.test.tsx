@@ -1,46 +1,54 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+
+let mock: { status: string; currentUser: unknown };
+vi.mock('../../../entities/session/model/session.store', () => ({
+  useSession: () => mock,
+}));
+
 import { RequireRole } from './RequireRole';
 
-function mockSession(user: { role: string } | null) {
-  vi.doMock('../../../entities/session/model/session.store', () => ({
-    useSession: () => ({ currentUser: user, status: user ? 'authenticated' : 'anonymous', login: vi.fn(), logout: vi.fn() }),
-  }));
-}
-
-describe('RequireRole (UX gate)', () => {
-  it('renders children for a matching role', async () => {
-    vi.resetModules();
-    mockSession({ role: 'admin' });
-    const { RequireRole: Fresh } = await import('./RequireRole');
-    render(<Fresh role="admin"><div>secret</div></Fresh>);
-    expect(screen.getByText('secret')).toBeInTheDocument();
+describe('RequireRole', () => {
+  it('renders children for an allowed role', () => {
+    mock = { status: 'authenticated', currentUser: { role: 'admin' } };
+    render(<RequireRole role="admin"><div>SECRET</div></RequireRole>);
+    expect(screen.getByText('SECRET')).toBeInTheDocument();
   });
 
-  it('renders the fallback for a non-matching role', async () => {
-    vi.resetModules();
-    mockSession({ role: 'viewer' });
-    const { RequireRole: Fresh } = await import('./RequireRole');
-    render(<Fresh role="admin" fallback={<div>denied</div>}><div>secret</div></Fresh>);
-    expect(screen.queryByText('secret')).not.toBeInTheDocument();
-    expect(screen.getByText('denied')).toBeInTheDocument();
+  it('renders the fallback for a disallowed role', () => {
+    mock = { status: 'authenticated', currentUser: { role: 'viewer' } };
+    render(<RequireRole role="admin" fallback={<div>NOPE</div>}><div>SECRET</div></RequireRole>);
+    expect(screen.getByText('NOPE')).toBeInTheDocument();
+    expect(screen.queryByText('SECRET')).not.toBeInTheDocument();
   });
 
-  it('renders nothing for anonymous with no fallback', async () => {
-    vi.resetModules();
-    mockSession(null);
-    const { RequireRole: Fresh } = await import('./RequireRole');
-    const { container } = render(<Fresh role="admin"><div>secret</div></Fresh>);
+  it('renders the fallback for an anonymous visitor (resolved, no user)', () => {
+    mock = { status: 'anonymous', currentUser: null };
+    render(<RequireRole role="admin" fallback={<div>NOPE</div>}><div>SECRET</div></RequireRole>);
+    expect(screen.getByText('NOPE')).toBeInTheDocument();
+  });
+
+  it('renders nothing for anonymous with no fallback', () => {
+    mock = { status: 'anonymous', currentUser: null };
+    const { container } = render(<RequireRole role="admin"><div>SECRET</div></RequireRole>);
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('renders children when the role is in the allowed array', async () => {
-    vi.resetModules();
-    mockSession({ role: 'editor' });
-    const { RequireRole: Fresh } = await import('./RequireRole');
-    render(<Fresh role={['admin', 'editor']}><div>secret</div></Fresh>);
-    expect(screen.getByText('secret')).toBeInTheDocument();
+  it('renders children when the role is in the allowed array', () => {
+    mock = { status: 'authenticated', currentUser: { role: 'editor' } };
+    render(<RequireRole role={['admin', 'editor']}><div>SECRET</div></RequireRole>);
+    expect(screen.getByText('SECRET')).toBeInTheDocument();
+  });
+
+  it('does NOT redirect while the session is still authenticating (renders neither yet)', () => {
+    mock = { status: 'authenticating', currentUser: null };
+    const { container } = render(
+      <RequireRole role="admin" fallback={<div>NOPE</div>}><div>SECRET</div></RequireRole>
+    );
+    // The whole point: a stored-token admin on cold load must not be bounced to
+    // the fallback before rehydration resolves.
+    expect(screen.queryByText('NOPE')).not.toBeInTheDocument();
+    expect(screen.queryByText('SECRET')).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 });
-// keep the top-level import referenced so the file type-checks
-void RequireRole;
