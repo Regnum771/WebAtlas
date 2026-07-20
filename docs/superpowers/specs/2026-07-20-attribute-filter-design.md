@@ -79,6 +79,7 @@ Rules:
 - Keyed by **ISO name** (what's on the feature), not DB column.
 - Only *useful* filter fields are listed — `localId` (external_id) and free-text-only ids are omitted; names are `text`.
 - For `dams.operationalStatus`, the enum values are the **canonical status slugs** (filter on `statusSlug`, which the source already stamps), so a filter is robust against the display-label rewrite. This is the one field that filters on `statusSlug` rather than its ISO name; the descriptor records that mapping explicitly (`iso: 'statusSlug'`).
+- **Types reflect the real (dirty) data, not the ideal.** Verified against seeds: hazard `riskLevel` is a Vietnamese enum (`"Cao"`/`"Trung bình"`), not `low/medium/high`. Several nominally-numeric fields are stored as **labeled strings** — `area: "120 km2"`, `salinity: "4.2 g/l"`, station `value: "Mực nước: 2.3m"` — so they are typed `text` (a numeric compare would fail). Only genuinely-numeric fields (dams `ratedPower`, rivers `streamOrder`/`length`) are `number`. Unit-stripping/parsing of the dirty fields is deferred (§9).
 - Additive only — `LAYER_ATTRIBUTE_MAP`'s existing shape is untouched. `@webatlas/shared` rebuilds.
 
 ### 4.2 `applyFilter` (pure, the testable core)
@@ -155,3 +156,4 @@ Top-center search row gains a funnel button with an active-count badge. Clicking
 - **No server-side filtering** — no `CQL_FILTER`, no `/api/…filter` endpoint.
 - **No cross-layer filter** — one layer at a time.
 - **No new auth surface** — client-side on public WFS; no gating.
+- **No unit-stripping / numeric coercion of dirty fields** — `"120 km2"` etc. filter as text this cut. A future data-cleanup (or a parse layer) can promote them to numeric later.
