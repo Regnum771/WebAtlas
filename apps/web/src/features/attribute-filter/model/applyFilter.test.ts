@@ -58,4 +58,19 @@ describe('applyFilter', () => {
     const r = applyFilter([feat({ statusSlug: 'xa_lu' }, null)], [{ field: 'statusSlug', op: 'eq', value: 'xa_lu' }]);
     expect(r).toHaveLength(1);
   });
+
+  it('scale divides the feature value before comparing (metres stored, km entered)', () => {
+    const rivers = [
+      feat({ geographicalName: 'Sông dài', length: 11313 }),  // 11.3 km
+      feat({ geographicalName: 'Suối ngắn', length: 1405 }),  // 1.4 km
+    ];
+    // "length >= 10 km" with scale 1000 -> compares raw/1000 >= 10
+    const r = applyFilter(rivers, [{ field: 'length', op: 'gte', value: 10, scale: 1000 }]);
+    expect(r.map((f) => f.getProperties().geographicalName)).toEqual(['Sông dài']);
+  });
+
+  it('scale defaults to 1 (no division) when absent', () => {
+    const r = applyFilter([feat({ length: 11313 })], [{ field: 'length', op: 'gte', value: 10000 }]);
+    expect(r).toHaveLength(1); // raw 11313 >= 10000
+  });
 });

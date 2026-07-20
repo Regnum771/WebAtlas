@@ -51,4 +51,17 @@ describe('LAYER_FILTER_FIELDS', () => {
     const year = LAYER_FILTER_FIELDS.dams.find((f) => f.iso === 'commissioningYear');
     expect(year?.type).toBe('text'); // "MM/YYYY" string
   });
+
+  it('rivers Cấp sông (streamOrder) is an enum of Strahler orders 1..6, not a free number', () => {
+    const order = LAYER_FILTER_FIELDS.rivers.find((f) => f.iso === 'streamOrder');
+    expect(order?.type).toBe('enum');
+    expect(order?.enumValues).toEqual(['1', '2', '3', '4', '5', '6']);
+  });
+
+  it('rivers Chiều dài (length) filters in km via scale=1000, labelled in km', () => {
+    const len = LAYER_FILTER_FIELDS.rivers.find((f) => f.iso === 'length');
+    expect(len?.type).toBe('number');
+    expect(len?.scale).toBe(1000); // feature stores metres; user enters km
+    expect(len?.label).toMatch(/km/);
+  });
 });

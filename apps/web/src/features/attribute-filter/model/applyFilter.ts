@@ -5,6 +5,7 @@ export interface Condition {
   op: Operator;
   value: unknown;
   value2?: unknown;   // upper bound for 'between'
+  scale?: number;     // divide the feature's raw value by this before comparing (e.g. metres -> km with 1000)
 }
 
 // Minimal shape so tests need no OpenLayers. Real ol/Feature satisfies this.
@@ -27,9 +28,11 @@ function matchesCondition(props: Record<string, unknown>, c: Condition): boolean
     // Case-insensitive substring for text; exact-ish (lowercased) for enums too.
     return String(raw).toLowerCase().includes(String(c.value).toLowerCase());
   }
-  const n = toNumber(raw);
+  const rawN = toNumber(raw);
   const a = toNumber(c.value);
-  if (n === null || a === null) return false;
+  if (rawN === null || a === null) return false;
+  // Compare in the user's units: divide the feature's raw value by the field scale (default 1).
+  const n = rawN / (c.scale && c.scale !== 0 ? c.scale : 1);
   if (c.op === 'gte') return n >= a;
   if (c.op === 'lte') return n <= a;
   if (c.op === 'between') {

@@ -6,7 +6,15 @@ import { renderHook, act } from '@testing-library/react';
 function fakeFeature(props: Record<string, unknown>, coords: number[] | null = [108, 14]) {
   return {
     getProperties: () => props,
-    getGeometry: () => (coords ? { getType: () => 'Point', getCoordinates: () => coords } : null),
+    // Real ol geometries expose getExtent(); a point's extent is [x,y,x,y].
+    getGeometry: () =>
+      coords
+        ? {
+            getType: () => 'Point',
+            getCoordinates: () => coords,
+            getExtent: () => [coords[0], coords[1], coords[0], coords[1]],
+          }
+        : null,
     get: (k: string) => props[k],
   };
 }
@@ -112,5 +120,28 @@ describe('useFilterPresenter', () => {
     act(() => result.current.updateCondition(0, { field: 'statusSlug', op: 'eq', value: 'xa_lu' }));
     act(() => result.current.flyTo(result.current.results[0].id));
     expect(animateSpy).toHaveBeenCalled();
+  });
+
+  it('flyTo on a LINE feature centres on the extent, not a nested coord array (whiteout regression)', () => {
+    // A river geometry: getCoordinates() is nested [[x,y],...]; getExtent() is [minX,minY,maxX,maxY].
+    const riverFeature = {
+      getProperties: () => ({ geographicalName: 'Sông Ba', streamOrder: 3 }),
+      getGeometry: () => ({
+        getType: () => 'MultiLineString',
+        getCoordinates: () => [[[100, 200], [300, 400]]], // nested — the old code passed THIS as center
+        getExtent: () => [100, 200, 300, 400],
+      }),
+      get: (k: string) => ({ streamOrder: 3 } as Record<string, unknown>)[k],
+    };
+    mockMap = fakeMap({ layer_rivers: [riverFeature] });
+    const { result } = renderHook(() => useFilterPresenter());
+    act(() => result.current.setLayer('rivers'));
+    act(() => result.current.addCondition());
+    act(() => result.current.updateCondition(0, { field: 'streamOrder', op: 'eq', value: '3' }));
+    act(() => result.current.flyTo(result.current.results[0].id));
+    // The center must be the extent midpoint [200,300], NOT the nested coordinate array.
+    const arg = animateSpy.mock.calls[0][0];
+    expect(arg.center).toEqual([200, 300]);
+    expect(Array.isArray(arg.center[0])).toBe(false); // not nested -> no whiteout
   });
 });

@@ -5,8 +5,11 @@ import {
   type FilterField,
   type EditableLayerKey,
 } from '@webatlas/shared';
+import type { Map as OlMap } from 'ol';
+import type { Geometry } from 'ol/geom';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { applyFilter, type Condition, type FeatureLike } from './applyFilter';
+import { flyToGeometry } from './flyToGeometry';
 
 export interface FilterResult {
   id: string;          // stable per-result id (index-based; features lack a guaranteed id here)
@@ -89,8 +92,19 @@ export function useFilterPresenter() {
     setConditions((cs) => [...cs, { field: fields[0]?.iso ?? '', op: 'eq', value: '' }]);
   }, [fields]);
   const updateCondition = useCallback((i: number, patch: Partial<Condition>) => {
-    setConditions((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
-  }, []);
+    setConditions((cs) =>
+      cs.map((c, idx) => {
+        if (idx !== i) return c;
+        const next = { ...c, ...patch };
+        // When the field changes, carry that field's unit scale (e.g. km) so applyFilter
+        // compares in the user's units. Undefined for unscaled fields.
+        if (patch.field !== undefined) {
+          next.scale = fields.find((fl) => fl.iso === patch.field)?.scale;
+        }
+        return next;
+      }),
+    );
+  }, [fields]);
   const removeCondition = useCallback((i: number) => {
     setConditions((cs) => cs.filter((_, idx) => idx !== i));
   }, []);
@@ -100,13 +114,11 @@ export function useFilterPresenter() {
 
   const flyTo = useCallback(
     (id: string) => {
-      if (!map) return;
       const f = matched[Number(id)];
-      const geom = f?.getGeometry() as { getCoordinates?: () => number[] } | null;
-      const coords = geom?.getCoordinates?.();
-      if (!coords) return;
-      // Features are in EPSG:3857 already (source reprojects on load); animate to the map coord.
-      map.getView().animate({ center: coords, zoom: 11, duration: 1000 });
+      const geom = f?.getGeometry() as Geometry | undefined;
+      // Centre on the geometry's extent — correct for points AND lines/polygons
+      // (a line's getCoordinates() is nested and is NOT a valid view centre).
+      flyToGeometry(map as OlMap | null, geom ?? null);
       setIsOpen(false);
     },
     [map, matched],

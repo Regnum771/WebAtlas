@@ -1,18 +1,11 @@
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey, type FilterField } from '@webatlas/shared';
 import type { Condition } from '../model/applyFilter';
 import type { FilterResult } from '../model/useFilterPresenter';
+import { LAYER_LABELS } from '../model/layerLabels';
 import { ConditionRowView } from './ConditionRow.view';
 
-// Vietnamese display names for the layer picker (mirrors data/mockData).
-export const LAYER_LABELS: Record<EditableLayerKey, string> = {
-  dams: 'Đập & Hồ chứa',
-  rivers: 'Mạng lưới sông ngòi',
-  stations: 'Trạm quan trắc',
-  flood_zones: 'Vùng ngập lụt',
-  drought_points: 'Vùng hạn hán',
-  saltwater_intrusion: 'Xâm nhập mặn',
-  flood_generation: 'Vùng sinh lũ',
-};
+// Re-export so existing importers of LAYER_LABELS from this module keep working.
+export { LAYER_LABELS };
 
 export function FilterPanelView(props: {
   layerKey: EditableLayerKey | null;

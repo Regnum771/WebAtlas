@@ -10,6 +10,11 @@ export interface FilterField {
   type: FilterFieldType;
   /** For 'enum' — the allowed (canonical) values. */
   enumValues?: string[];
+  /**
+   * For 'number' — a unit divisor. The feature stores the raw value (e.g. metres);
+   * the user enters, and comparisons run in, `raw / scale` (e.g. km with scale=1000).
+   */
+  scale?: number;
 }
 
 // Canonical dam status slugs (match wfsSource.ts stamping via toDamStatusSlug).
@@ -37,8 +42,10 @@ export const LAYER_FILTER_FIELDS: Record<EditableLayerKey, FilterField[]> = {
   ],
   rivers: [
     { iso: 'geographicalName', label: 'Tên', type: 'text' },
-    { iso: 'streamOrder', label: 'Cấp sông', type: 'number' },  // Cap: real number
-    { iso: 'length', label: 'Chiều dài (m)', type: 'number' },  // Chieu_dai: real number
+    // Cap is a Strahler stream order (1..6), an ordinal — an enum reads far better than free numeric input.
+    { iso: 'streamOrder', label: 'Cấp sông', type: 'enum', enumValues: ['1', '2', '3', '4', '5', '6'] },
+    // Chieu_dai is raw metres; filter in km (scale=1000) so "≥ 10 km" beats "≥ 1405.71 m".
+    { iso: 'length', label: 'Chiều dài (km)', type: 'number', scale: 1000 },
   ],
   stations: [
     { iso: 'geographicalName', label: 'Tên', type: 'text' },
