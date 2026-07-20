@@ -12,13 +12,21 @@ function fakeFeature(props: Record<string, unknown>, coords: number[] | null = [
 }
 let animateSpy = vi.fn();
 function fakeMap(featuresByLayerId: Record<string, unknown[]>) {
-  const layers = Object.entries(featuresByLayerId).map(([id, features]) => ({
+  const handlers: Record<string, (() => void)[]> = {};
+  const layers = Object.entries(featuresByLayerId).map(([id]) => ({
     get: (k: string) => (k === 'id' ? id : undefined),
-    getSource: () => ({ getFeatures: () => features }),
+    getSource: () => ({
+      getFeatures: () => featuresByLayerId[id],
+      on: (t: string, h: () => void) => { (handlers[id + t] ||= []).push(h); },
+      un: (_t: string, _h: () => void) => {},
+    }),
   }));
+  const fire = (id: string, t = 'change') => (handlers[id + t] || []).forEach((h) => h());
   return {
     getLayers: () => ({ getArray: () => layers }),
     getView: () => ({ animate: animateSpy }),
+    __fire: fire,           // test hook to simulate a source load event
+    __data: featuresByLayerId,
   };
 }
 
@@ -53,6 +61,20 @@ describe('useFilterPresenter', () => {
     const { result } = renderHook(() => useFilterPresenter());
     act(() => result.current.setLayer('dams'));
     expect(result.current.layerLoaded).toBe(false);
+  });
+
+  it('re-derives layerLoaded when the source finishes loading after enable', () => {
+    const data: Record<string, unknown[]> = { layer_stations: [] }; // starts loaded-but-empty
+    mockMap = fakeMap(data);
+    const { result } = renderHook(() => useFilterPresenter());
+    act(() => result.current.setLayer('stations'));
+    expect(result.current.layerLoaded).toBe(false);
+    // Simulate the WFS load arriving: features appear, then the source emits 'change'.
+    act(() => {
+      data.layer_stations = [fakeFeature({ geographicalName: 'Trạm A' })];
+      (mockMap as { __fire: (id: string) => void }).__fire('layer_stations');
+    });
+    expect(result.current.layerLoaded).toBe(true);
   });
 
   it('derives results from live features once conditions are added', () => {

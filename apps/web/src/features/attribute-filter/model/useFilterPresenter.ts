@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   LAYER_FILTER_FIELDS,
   LAYER_ATTRIBUTE_MAP,
@@ -21,6 +21,10 @@ export function useFilterPresenter() {
   const [isOpen, setIsOpen] = useState(false);
   const [layerKey, setLayerKey] = useState<EditableLayerKey | null>(null);
   const [conditions, setConditions] = useState<Condition[]>([]);
+  // Bumps when the active layer's source finishes (re)loading features, so the
+  // memo below re-reads getFeatures() — otherwise enabling an off layer from the
+  // panel would never flip layerLoaded (the async load changes neither map nor layerKey).
+  const [loadTick, setLoadTick] = useState(0);
 
   const fields: FilterField[] = useMemo(
     () => (layerKey ? LAYER_FILTER_FIELDS[layerKey] : []),
@@ -38,6 +42,21 @@ export function useFilterPresenter() {
     if (!src) return null;
     return src.getFeatures();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, layerKey, loadTick]);
+
+  // Subscribe to the active layer's source so a late WFS load re-triggers derivation.
+  useEffect(() => {
+    if (!map || !layerKey) return;
+    const stateId = LAYER_ATTRIBUTE_MAP[layerKey].layerStateId;
+    const layer = map.getLayers().getArray().find(
+      (l: { get(k: string): unknown }) => l.get('id') === stateId,
+    ) as { getSource(): { on(t: string, h: () => void): void; un(t: string, h: () => void): void } | null } | undefined;
+    const src = layer?.getSource?.();
+    if (!src) return;
+    const bump = () => setLoadTick((t) => t + 1);
+    // 'change' fires on featuresloadend (wfsSource.ts calls source.changed()).
+    src.on('change', bump);
+    return () => src.un('change', bump);
   }, [map, layerKey]);
 
   const layerLoaded = liveFeatures !== null && liveFeatures.length > 0;
