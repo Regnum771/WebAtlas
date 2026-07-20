@@ -7,10 +7,17 @@ import { LAYER_ATTRIBUTE_MAP } from '@webatlas/shared';
 // Filtering is a display tool available to every role. No auth gate (design §2).
 export default function AttributeFilter() {
   const s = useFilterPresenter();
-  const { toggleLayerVisibility } = useMapContext();
+  const { layersState, toggleLayerVisibility } = useMapContext();
 
+  // Enable = "make sure the layer is on", idempotent. `toggleLayerVisibility` FLIPS
+  // visibility, so calling it on an already-visible layer would turn it OFF — the
+  // not-loaded prompt can appear for a layer that is visible but still loading, so
+  // only toggle when the layer is actually off.
   const onEnableLayer = () => {
-    if (s.layerKey) toggleLayerVisibility(LAYER_ATTRIBUTE_MAP[s.layerKey].layerStateId);
+    if (!s.layerKey) return;
+    const stateId = LAYER_ATTRIBUTE_MAP[s.layerKey].layerStateId;
+    const isVisible = layersState.find((l) => l.id === stateId)?.visible ?? false;
+    if (!isVisible) toggleLayerVisibility(stateId);
   };
 
   return (
