@@ -33,7 +33,7 @@ export const LAYER_FILTER_FIELDS: Record<EditableLayerKey, FilterField[]> = {
     { iso: 'geographicalName', label: 'Tên', type: 'text' },
     { iso: 'statusSlug', label: 'Trạng thái', type: 'enum', enumValues: [...DAM_STATUS_SLUGS] },
     { iso: 'ratedPower', label: 'Công suất (MW)', type: 'number' },       // Wattage_PL: real number
-    { iso: 'commissioningYear', label: 'Năm vận hành', type: 'number' },  // year: real number where present
+    { iso: 'commissioningYear', label: 'Năm vận hành', type: 'text' },  // "MM/YYYY" string, e.g. "01/2019"
   ],
   rivers: [
     { iso: 'geographicalName', label: 'Tên', type: 'text' },
