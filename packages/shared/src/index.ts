@@ -18,4 +18,5 @@ export type EditableLayerKey = (typeof EDITABLE_LAYER_KEYS)[number];
 export { LAYER_GEOMETRY, type OgcGeometryType } from './layer-geometry';
 export * from './layer-attributes';
 export * from './feature-properties';
+export * from './attribute-schema';
 export * from './dam-status';

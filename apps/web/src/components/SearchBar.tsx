@@ -1,56 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useMapContext } from '../app/providers/MapProvider';
 import { Search, MapPin } from 'lucide-react';
-import { fromLonLat } from 'ol/proj';
-import { GEOSERVER_URL } from '../shared/config';
-
-const DAMS_WFS_URL =
-  `${GEOSERVER_URL}/ows?service=WFS&version=2.0.0&request=GetFeature` +
-  `&typeNames=webatlas:dams&outputFormat=application/json&srsName=EPSG:4326`;
+import type { Geometry } from 'ol/geom';
+import type { Map as OlMap } from 'ol';
+import AttributeFilter from '../features/attribute-filter';
+import { searchAllLayers, type SearchHit } from '../features/attribute-filter/model/searchFeatures';
+import { flyToGeometry } from '../features/attribute-filter/model/flyToGeometry';
 
 const SearchBar: React.FC = () => {
   const { map } = useMapContext();
   const [query, setQuery] = useState('');
-  const [dams, setDams] = useState<any[]>([]);
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<SearchHit[]>([]);
   const [showResults, setShowResults] = useState(false);
 
-  useEffect(() => {
-    fetch(DAMS_WFS_URL)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.features) {
-          // Only dams with a geometry are searchable/navigable.
-          const withGeom = data.features.filter((f: any) => f.geometry);
-          setDams(withGeom);
-          setResults(withGeom.slice(0, 10));
-        }
-      })
-      .catch((err) => console.error('Error loading hydropower data for search:', err));
-  }, []);
-
+  // Search reads the already-loaded features of every thematic layer (no fetch).
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setQuery(val);
-    if (val.trim() === '') {
-      setResults(dams.slice(0, 10));
-    } else {
-      const normVal = val.toLowerCase();
-      setResults(
-        dams.filter((f: any) => {
-          const vnName = (f.properties.name || '').toLowerCase();
-          const enName = (f.properties.name_en || '').toLowerCase();
-          return vnName.includes(normVal) || enName.includes(normVal);
-        })
-      );
-    }
+    setResults(searchAllLayers(map as OlMap | null, val));
   };
 
-  const flyTo = (coordinates: number[]) => {
-    if (!map) return;
-    map.getView().animate({ center: fromLonLat(coordinates), zoom: 11, duration: 1000 });
+  const flyTo = (geom: unknown) => {
+    flyToGeometry(map as OlMap | null, (geom as Geometry) ?? null);
     setShowResults(false);
     setQuery('');
+    setResults([]);
   };
 
   return (
@@ -59,29 +33,28 @@ const SearchBar: React.FC = () => {
         <Search className="search-icon" size={18} />
         <input
           type="text"
-          placeholder="Tìm kiếm nhà máy thủy điện..."
+          placeholder="Tìm kiếm..."
           value={query}
           onChange={handleSearch}
           onFocus={() => setShowResults(true)}
           className="search-input"
         />
+        <AttributeFilter />
       </div>
 
       {showResults && results.length > 0 && (
         <div className="search-results glass-panel">
-          {results.map((item: any, idx: number) => (
+          {results.map((item, idx) => (
             <button
-              key={item.properties.external_id || idx}
+              key={`${item.layerKey}-${idx}`}
               className="search-result-item"
-              onClick={() => flyTo(item.geometry.coordinates)}
+              onClick={() => flyTo(item.geometry)}
+              disabled={!item.geometry}
             >
               <MapPin size={16} className="text-blue-500" />
               <div className="result-info">
-                <span className="result-name">{item.properties.name}</span>
-                <span className="result-desc">
-                  Thủy điện {item.properties.wattage_mw ? `- ${item.properties.wattage_mw} MW` : ''}
-                  {item.properties.year_operational ? ` (Vận hành: ${item.properties.year_operational})` : ''}
-                </span>
+                <span className="result-name">{item.label}</span>
+                <span className="result-desc">{item.layerLabel}</span>
               </div>
             </button>
           ))}
