@@ -11,8 +11,9 @@
 
 Delivered across 8 plans (Plans 1–8 + map-perf). Stack: React 19 + OpenLayers 10 (`apps/web`), Fastify + PostGIS + GeoServer (`apps/api`), shared types (`packages/shared`), Docker Compose. Feature-Sliced Design + MVP; OL quarantined to `features/map/model/`.
 
-**On `main`:** backend infra + spatial DB + WFS, API control plane (auth/JWT/user-CRUD/admin guards), layer feature-CRUD API, frontend auth foundation, admin draw-to-create editing, map-perf + real dam status.
-**On branch `feat/admin-editing-modify-delete` (11 commits ahead, tests green):** admin modify/move + delete (Part 2).
+**On `main`:** backend infra + spatial DB + WFS, API control plane (auth/JWT/user-CRUD/admin guards), layer feature-CRUD API, frontend auth foundation, admin draw-to-create editing, map-perf + real dam status, admin modify/move + delete (Part 2), CI pipeline, role→capability semantics (2.1), user-management UI (1.1), and the **adaptive shell (2.2, PR #10)** — top bar + profile, a `/admin/users` route over an always-mounted map, a burger-toggled edit drawer, and the merged right-side display panel (layers + basemap + legend). `react-router-dom` is now in the stack.
+
+> **Shipped-since-2026-07-15 note:** this baseline paragraph is appended-to as items land; §3–§5 phase tables mark shipped rows inline (✅) rather than deleting them, so the sequencing rationale stays readable.
 
 **Verified facts that shape this roadmap (checked against code 2026-07-15):**
 
@@ -88,7 +89,7 @@ Representative stories; each is tagged to the feature(s) in §4.3 that satisfy i
 | Item | What | Serves | Prereq | Notes |
 |---|---|---|---|---|
 | **2.1 Role → capability semantics** | Give `editor` real editing capability (today only `admin` writes) and `viewer` an authenticated read surface distinct from the anonymous public. Extend API `authorize()` beyond admin-only per route; extend frontend `RequireRole` past the admin-only gate. Backend stays the authorization boundary. | Data Steward, Governance, Research | 1.1 (assign roles) | Document the per-route role matrix. `RequireRole` UX-only discipline (auth foundation §2) holds. |
-| **2.2 Adaptive shell + persona panels** | One map-centric app shell that reveals tools/panels/layers by role & persona (see §4.4). Public → lean viewer; Governance → oversight/report panel; Research → analysis/query panel; Data Steward → edit workspace; Admin → management console. | all personas | 2.1 | The structural UI change that makes personas real. Panels are dismissible, task-oriented. |
+| **2.2 Adaptive shell + persona panels ✅** | One map-centric app shell that reveals tools/panels/layers by role & persona (see §4.4). Public → lean viewer; Governance/Research → lean map (no tools yet, until 2.3); Data Steward → edit drawer; Admin → edit drawer + `/admin/users` route. | all personas | 2.1 | **Shipped (PR #10).** Delivered as burger drawer (left) + display panel (right) + top bar, NOT the original rail — a `/run` verification found the rail unreachable; see `specs/2026-07-17-shell-layout-restructure-design.md`. Persona *model* kept; switcher UI stashed until personas have distinct tools. Added `react-router-dom`. |
 | **2.3 Query, filter & search** | Attribute filter + feature search over the layers, surfaced in the Governance & Research panels. | Governance, Research, (public: search) | 2.2 | Pulled up from the old Phase 3 — it is a core analyst/governance story, not polish. |
 | **2.4 Data export & saved views** | Export a layer/selection as GeoJSON; save named views/queries. | Research, Governance | 2.3 | Research's offline-modeling and Governance's reporting stories. |
 | **2.5 Editable attribute labels** | `app.layer_attribute_labels` table + admin GET/PUT API + runtime label fetch. The attribute form swaps its label source from the compile-time `LAYER_ATTRIBUTE_MAP` to the API — **no change to the DB-keyed save path**, so it works for create and edit. | Admin, Data Steward | none (independent) | Named follow-on (draw-create §9, modify-delete §9). Control-plane config maturity. |
