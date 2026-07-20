@@ -1231,6 +1231,13 @@ In `apps/web/src/styles/main.css`, delete the entire "Adaptive shell (roadmap 2.
 
 **4f.** **Delete the whole `.auth-widget-slot` rule** (~line 859) — the top bar owns auth and nothing renders that class now.
 
+- [ ] **Step 4.5: Confirm the basemap is mounted exactly ONCE**
+
+Task 6 added `<BasemapSwitcher />` *inside* `LayerTree`. Until this task's Step 1 rewrite lands, App.tsx ALSO renders a standalone `<BasemapSwitcher />` as a sibling of `<LayerTree />` — so between Task 6 and now the switcher mounts twice (two live copies wired to the same `setBasemap`). The Step 1 rewrite fixes this by dropping both the import and the standalone render. Verify it actually did:
+
+Run: `grep -n "BasemapSwitcher" apps/web/src/app/App.tsx`
+Expected: **no matches.** If anything prints, the standalone render or its import survived the rewrite — remove it. The only `BasemapSwitcher` in the tree must be the one inside `LayerTree` (Task 6).
+
 - [ ] **Step 5: Run the full suite**
 
 Run: `npm test -w @webatlas/web`
