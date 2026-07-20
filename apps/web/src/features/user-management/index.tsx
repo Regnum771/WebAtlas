@@ -1,13 +1,14 @@
-import { RequireRole } from '../auth/ui/RequireRole';
 import { useUsersPresenter } from './model/useUsersPresenter';
 import { UserTableView } from './ui/UserTable.view';
 import { UserFormModalView } from './ui/UserFormModal.view';
 
-function Panel({ onClose }: { onClose: () => void }) {
+// The `open` prop is gone: a route's existence IS the open signal (design §4.4).
+// The panel no longer renders its own Close button — the route owns dismissal,
+// which also removes the duplicate close chrome found during /run.
+export function UserManagementPanel({ onClose }: { onClose: () => void }) {
   const p = useUsersPresenter();
   return (
-    <div className="user-mgmt-panel glass-panel">
-      <button type="button" className="user-mgmt-close" onClick={onClose}>Close</button>
+    <div className="user-mgmt-panel">
       <UserTableView
         users={p.users} canModify={p.canModify}
         onEdit={p.openEdit} onToggleActive={p.toggleActive} onNew={p.openCreate}
@@ -20,17 +21,9 @@ function Panel({ onClose }: { onClose: () => void }) {
         canSave={p.canSave} saving={p.saving}
         onField={p.setField} onSubmit={p.submitForm} onClose={p.closeModal}
       />
+      <button type="button" className="user-mgmt-back" onClick={onClose}>
+        Back to map
+      </button>
     </div>
-  );
-}
-
-// UX gate ONLY. Real authorization is enforced by the backend (admin on every
-// /api/users route); a non-admin who forces this open still gets 401/403.
-export default function UserManagement({ open, onClose }: { open: boolean; onClose: () => void }) {
-  if (!open) return null;
-  return (
-    <RequireRole role="admin">
-      <Panel onClose={onClose} />
-    </RequireRole>
   );
 }

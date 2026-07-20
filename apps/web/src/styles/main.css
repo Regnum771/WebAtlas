@@ -56,11 +56,8 @@ body {
 
 /* Basemap Switcher */
 .basemap-switcher {
-  position: absolute;
-  bottom: 24px;
-  left: 24px;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   padding: 8px;
 }
 
@@ -92,11 +89,8 @@ body {
 
 /* Layer Tree */
 .layer-tree {
-  position: absolute;
-  top: 24px;
-  left: 24px;
-  width: 300px;
-  max-height: calc(100vh - 100px);
+  width: 100%;
+  max-height: none;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -304,9 +298,8 @@ body {
 /* Toggle Panels Button */
 .toggle-panels-btn {
   position: absolute;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 12px;
+  right: 12px;
   z-index: 20;
   display: flex;
   align-items: center;
@@ -322,7 +315,7 @@ body {
 }
 
 .toggle-panels-btn:hover {
-  transform: translateX(-50%) scale(1.03);
+  transform: scale(1.03);
   background: var(--bg-panel-hover);
 }
 
@@ -332,6 +325,10 @@ body {
 
 /* Hideable panels wrapper */
 .panels-wrapper {
+  position: absolute; top: 64px; right: 12px; bottom: 64px;
+  z-index: 900; width: 320px; max-width: 88vw;
+  display: flex; flex-direction: column; gap: 12px;
+  overflow-y: auto;
   transition: opacity 0.35s ease, transform 0.35s ease;
   opacity: 1;
   pointer-events: auto;
@@ -521,9 +518,6 @@ body {
 
 /* Dynamic Legend */
 .dynamic-legend {
-  position: absolute;
-  bottom: 24px;
-  right: 24px;
   padding: 16px;
   min-width: 160px;
 }
@@ -856,7 +850,6 @@ body {
   color: #dc2626;
 }
 
-.auth-widget-slot { position: absolute; top: 12px; right: 12px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
 .admin-login-btn, .user-badge, .user-badge-logout, .login-form button { cursor: pointer; }
 .admin-login-btn, .user-badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: none; border-radius: 8px; }
 .user-badge { flex-direction: row; }
@@ -886,3 +879,53 @@ body {
 .confirm-dialog { display: flex; flex-direction: column; gap: 10px; min-width: 280px; }
 .confirm-actions { display: flex; gap: 8px; }
 .confirm-actions button:first-child { background: #ef4444; color: #fff; }
+
+/* Shell layout restructure: left = doing, right = seeing */
+.top-bar {
+  position: absolute; top: 0; left: 0; right: 0; height: 52px;
+  z-index: 1200; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 12px; border-radius: 0;
+}
+.top-bar-brand { font-weight: 700; letter-spacing: 0.02em; margin-left: 44px; }
+.top-bar-right, .top-bar-profile { display: flex; align-items: center; gap: 12px; }
+.top-bar-email { opacity: 0.75; font-size: 13px; }
+.top-bar-link, .top-bar-logout {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px;
+  border: none; background: transparent; border-radius: 8px; cursor: pointer;
+  font: inherit; color: inherit; text-decoration: none;
+}
+.top-bar-link:hover, .top-bar-logout:hover { background: rgba(56, 189, 248, 0.18); }
+
+/* Burger + left drawer (editor/admin only) */
+.burger-btn {
+  position: absolute; top: 6px; left: 12px; z-index: 1300;
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border: none; cursor: pointer; border-radius: 10px;
+}
+.edit-drawer {
+  position: absolute; top: 64px; bottom: 12px; left: 12px; width: 360px; max-width: 88vw;
+  z-index: 1101; display: flex; flex-direction: column; overflow: hidden;
+}
+.edit-drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; flex-shrink: 0;
+}
+.edit-drawer-header h2 { font-size: 15px; font-weight: 600; }
+.edit-drawer-close { border: none; background: transparent; cursor: pointer; display: flex; }
+.edit-drawer-body { overflow-y: auto; padding: 0 12px 12px; flex: 1; }
+
+/* Right: display controls, stacked */
+.layer-tree-section { margin-bottom: 12px; }
+.layer-tree-section-title { font-size: 12px; font-weight: 600; opacity: 0.7; margin-bottom: 6px; }
+/* .basemap-switcher is defined once above (near .basemap-btn). */
+
+/* Admin route: full-screen over a live map */
+.admin-users-route {
+  position: absolute; top: 52px; left: 0; right: 0; bottom: 0;
+  z-index: 1500; overflow: auto; padding: 24px;
+  background: rgba(248, 250, 252, 0.97);
+}
+.user-mgmt-back {
+  margin-top: 16px; padding: 8px 14px; border: none; border-radius: 8px;
+  cursor: pointer; font: inherit;
+}

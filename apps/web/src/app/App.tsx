@@ -1,62 +1,63 @@
 import { useState } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppProviders } from './providers/AppProviders';
-import AuthWidget from '../features/auth';
-import FeatureEditing from '../features/feature-editing';
-import UserManagement from '../features/user-management';
-import { RequireRole } from '../features/auth/ui/RequireRole';
+import TopBar from '../widgets/top-bar';
+import Shell from '../features/shell';
+import AdminUsersRoute from '../pages/admin-users';
 import MapView from '../features/map/ui/MapView';
-import BasemapSwitcher from '../components/BasemapSwitcher';
 import LayerTree from '../components/LayerTree';
 import MapControls from '../components/MapControls';
 import SearchBar from '../components/SearchBar';
 import DynamicPopup from '../components/DynamicPopup';
 import DynamicLegend from '../components/DynamicLegend';
 import OGCClient from '../components/OGCClient';
-import { PanelLeftOpen, PanelLeftClose } from 'lucide-react';
+import { PanelRightOpen, PanelRightClose } from 'lucide-react';
 import '../styles/main.css';
 
 function App() {
   const [panelsVisible, setPanelsVisible] = useState(true);
-  const [usersOpen, setUsersOpen] = useState(false);
 
   return (
     <AppProviders>
-      <div className="app-container">
-        <MapView />
-        <MapControls />
+      <BrowserRouter>
+        <div className="app-container">
+          {/* MapView is a SIBLING of <Routes>, never inside one: navigating to
+              /admin/users overlays a live map instead of unmounting it, so
+              center/zoom/layer state survives navigation. */}
+          <MapView />
+          <MapControls />
 
-        {/* Auth entry: login button or user badge */}
-        <div className="auth-widget-slot">
-          <AuthWidget />
-          <FeatureEditing />
-          <RequireRole role="admin">
-            <button type="button" className="manage-users-btn glass-panel" onClick={() => setUsersOpen(true)}>
-              Manage users
-            </button>
-          </RequireRole>
-        </div>
+          <TopBar />
 
-        <UserManagement open={usersOpen} onClose={() => setUsersOpen(false)} />
+          {/* Left: doing. Burger drawer with the editing tools (editor/admin). */}
+          <Shell />
 
-        <div className={`panels-wrapper ${panelsVisible ? '' : 'hidden'}`}>
-          <LayerTree />
-          <BasemapSwitcher />
           <SearchBar />
-          <DynamicLegend />
-          <OGCClient />
+
+          {/* Right: seeing. Layers + basemap + legend as one stacked panel. */}
+          <div className={`panels-wrapper ${panelsVisible ? '' : 'hidden'}`}>
+            <LayerTree />
+            <DynamicLegend />
+            <OGCClient />
+          </div>
+
+          <DynamicPopup />
+
+          <button
+            className="toggle-panels-btn glass-panel"
+            onClick={() => setPanelsVisible(!panelsVisible)}
+            title={panelsVisible ? 'Ẩn các panel' : 'Hiện các panel'}
+          >
+            {panelsVisible ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+            <span>{panelsVisible ? 'Ẩn giao diện' : 'Hiện giao diện'}</span>
+          </button>
+
+          <Routes>
+            <Route path="/" element={null} />
+            <Route path="/admin/users" element={<AdminUsersRoute />} />
+          </Routes>
         </div>
-
-        <DynamicPopup />
-
-        <button
-          className="toggle-panels-btn glass-panel"
-          onClick={() => setPanelsVisible(!panelsVisible)}
-          title={panelsVisible ? 'Ẩn các panel' : 'Hiện các panel'}
-        >
-          {panelsVisible ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-          <span>{panelsVisible ? 'Ẩn giao diện' : 'Hiện giao diện'}</span>
-        </button>
-      </div>
+      </BrowserRouter>
     </AppProviders>
   );
 }

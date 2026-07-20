@@ -9,7 +9,10 @@ export function RequireRole({ role, fallback = null, children }: {
   fallback?: ReactNode;
   children: ReactNode;
 }) {
-  const { currentUser } = useSession();
+  const { status, currentUser } = useSession();
+  // Still resolving a stored session on cold load: decide nothing yet, or we
+  // would redirect an authenticated user before rehydration finishes.
+  if (status === 'authenticating') return null;
   const allowed = Array.isArray(role) ? role : [role];
   if (!currentUser || !allowed.includes(currentUser.role)) return <>{fallback}</>;
   return <>{children}</>;
