@@ -37,4 +37,18 @@ describe('LAYER_FILTER_FIELDS', () => {
     expect(statusField).toBeDefined();
     expect(statusField!.enumValues).toContain('xa_lu');
   });
+
+  it('riskLevel is a Vietnamese enum (matches the real seed data, not low/medium/high)', () => {
+    const rl = LAYER_FILTER_FIELDS.flood_zones.find((f) => f.iso === 'riskLevel');
+    expect(rl?.type).toBe('enum');
+    expect(rl?.enumValues).toContain('Cao');
+    expect(rl?.enumValues).not.toContain('high');
+  });
+
+  it('labeled-string fields are text, not number (a numeric compare would fail on "4.2 g/l")', () => {
+    const salinity = LAYER_FILTER_FIELDS.saltwater_intrusion.find((f) => f.iso === 'salinity');
+    expect(salinity?.type).toBe('text');
+    const year = LAYER_FILTER_FIELDS.dams.find((f) => f.iso === 'commissioningYear');
+    expect(year?.type).toBe('text'); // "MM/YYYY" string
+  });
 });

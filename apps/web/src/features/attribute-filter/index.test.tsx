@@ -16,7 +16,7 @@ beforeEach(() => {
     count: 0, activeCount: 0, layerLoaded: false,
     setLayer: vi.fn(), addCondition: vi.fn(), updateCondition: vi.fn(),
     removeCondition: vi.fn(), clear: vi.fn(), open: vi.fn(), close: vi.fn(),
-    flyTo: vi.fn(), toggle: vi.fn(),
+    flyTo: vi.fn(),
   };
 });
 
