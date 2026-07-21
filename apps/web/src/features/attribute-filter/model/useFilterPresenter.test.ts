@@ -101,15 +101,18 @@ describe('useFilterPresenter', () => {
     expect(result.current.activeCount).toBe(1);
   });
 
-  it('clear removes all conditions and results', () => {
+  it('clear removes all conditions', () => {
     mockMap = fakeMap({ layer_dams: [fakeFeature({ statusSlug: 'xa_lu' })] });
     const { result } = renderHook(() => useFilterPresenter());
     act(() => result.current.setLayer('dams'));
     act(() => result.current.addCondition());
     act(() => result.current.updateCondition(0, { field: 'statusSlug', op: 'eq', value: 'xa_lu' }));
     act(() => result.current.clear());
-    expect(result.current.results).toEqual([]);
     expect(result.current.activeCount).toBe(0);
+    // NOTE: results is deliberately not asserted here. applyFilter no longer special-cases
+    // empty conditions (no predicate = everything matches); refusing to LIST an unfiltered
+    // set is now a display decision. Task 9 rewires this presenter onto runQuery, which
+    // returns no hits plus error='Chưa có điều kiện lọc', and this test is rewritten there.
   });
 
   it('flyTo animates the view to a matched feature with geometry', () => {
