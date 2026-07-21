@@ -949,6 +949,13 @@ body {
 .filter-btn {
   display: inline-flex; align-items: center; justify-content: center; position: relative;
   width: 34px; height: 34px; border: none; cursor: pointer; border-radius: 8px; padding: 0;
+  /* The count badge overhangs this button by 4px (see .filter-btn-badge). Since Task 9
+     moved the filter inside the drawer — whose body scrolls and whose shell is
+     overflow:hidden — that overhang is clipped unless the button reserves room for it.
+     The margin gives the badge space to sit in instead of being cut off at the edge. */
+  margin: 6px 6px 0 0;
+  align-self: flex-start;
+  flex-shrink: 0;
 }
 .filter-btn-badge {
   position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px;
@@ -957,7 +964,8 @@ body {
 }
 .filter-panel {
   width: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px 0;
-  max-height: 60vh; overflow-y: auto;
+  /* No overflow/max-height here: .edit-drawer-body is already the scroll container, and a
+     second one would both double-scroll and clip the filter button's overhanging badge. */
 }
 .filter-layer-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .filter-layer-select, .condition-field, .condition-op, .condition-value {
