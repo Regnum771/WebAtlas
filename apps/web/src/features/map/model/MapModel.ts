@@ -6,7 +6,6 @@ import XYZ from 'ol/source/XYZ';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import GeoJSON from 'ol/format/GeoJSON';
-import Select from 'ol/interaction/Select';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import {
   VIETNAM_EXTENT_4326,
@@ -26,7 +25,6 @@ import {
   saltwaterIntrusionStyle,
   floodGenerationStyle,
   makeDamsStyle,
-  makeRiverSelectStyle,
 } from './styles';
 
 export type BasemapType = 'satellite' | 'street' | 'dem';
@@ -46,7 +44,6 @@ export class MapModel {
   private map: Map | null = null;
   private basemapLayer: TileLayer<XYZ | OSM> | null = null;
   private layers: Record<string, VectorLayer<VectorSource>> = {};
-  private selectInteraction: Select | null = null;
   private reservoirFilter: ReservoirFilterType = 'all';
   private layerStates: LayerState[] = [];
   private moveendHandler: (() => void) | null = null;
@@ -128,14 +125,6 @@ export class MapModel {
       }),
       controls: []
     });
-
-    // Thêm interaction để highlight sông khi click
-    const selectInteraction = new Select({
-      layers: [riversLayer],
-      style: makeRiverSelectStyle()
-    });
-    map.addInteraction(selectInteraction);
-    this.selectInteraction = selectInteraction;
 
     this.map = map;
 
@@ -232,18 +221,16 @@ export class MapModel {
     layer.getSource()?.refresh();
   }
 
-  /** Enable/disable the rivers click-highlight Select (disabled during admin edit mode so it doesn't fire alongside the edit selection). */
-  setSelectActive(active: boolean): void {
-    this.selectInteraction?.setActive(active);
-  }
+  /**
+   * No-op now that the rivers-only Select is retired (Task 6 of the selection-panel plan);
+   * kept so `MapView`'s `registerSetSelectActive` wiring stays compilable until that wiring
+   * itself is retired. There is no interaction left to enable/disable.
+   */
+  setSelectActive(_active: boolean): void {}
 
   dispose(): void {
     if (!this.map) return;
 
-    if (this.selectInteraction) {
-      this.map.removeInteraction(this.selectInteraction);
-      this.selectInteraction = null;
-    }
     if (this.moveendHandler) {
       this.map.un('moveend', this.moveendHandler);
       this.moveendHandler = null;

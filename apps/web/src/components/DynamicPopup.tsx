@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useMapContext } from '../app/providers/MapProvider';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
 import { damStatusDisplay } from '@webatlas/shared';
-import { useMapEditing } from '../features/map/model/mapEditing';
+import { useSelection } from '../entities/selection';
 
 interface PopupData {
   coordinate: number[];
@@ -84,7 +84,7 @@ const getDetailedDamInfo = (id: number, name: string, wattage?: number): DamDeta
 
 const DynamicPopup: React.FC = () => {
   const { map, reservoirFilter, setReservoirFilter } = useMapContext();
-  const { editing } = useMapEditing();
+  const { selection } = useSelection();
   const [popupData, setPopupData] = useState<PopupData | null>(null);
   const [pixel, setPixel] = useState<number[]>([0, 0]);
   const [detailedDam, setDetailedDam] = useState<any | null>(null);
@@ -110,7 +110,7 @@ const DynamicPopup: React.FC = () => {
     if (!map) return;
 
     const clickHandler = (e: any) => {
-      if (editing) return; // edit mode owns clicks (feature selection); no popup
+      if (selection) return; // a selected feature owns the detail panel; no popup on top of it
       const feature = map.forEachFeatureAtPixel(e.pixel, (f) => f);
 
       if (feature) {
@@ -139,7 +139,7 @@ const DynamicPopup: React.FC = () => {
       map.un('singleclick', clickHandler);
       map.un('pointermove', pointerMoveHandler);
     };
-  }, [map, editing]);
+  }, [map, selection]);
 
   if (!popupData) return null;
 
