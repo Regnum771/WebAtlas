@@ -39,6 +39,8 @@ export function useEditExistingPresenter() {
   // The pen. Promotes the current read-only selection into an editable one.
   const beginEdit = useCallback(() => {
     if (!mapSelection) return;
+    const geom = mapSelection.feature.getGeometry();
+    if (!geom) return; // refuse to edit a feature whose geometry could not be read
     const dbProps = denormalizeFeatureProperties(mapSelection.layerKey, mapSelection.isoProps);
     const attributes = Object.keys(LAYER_ATTRIBUTE_MAP[mapSelection.layerKey].attributes);
     const initialValues: Record<string, string> = {};
@@ -52,8 +54,7 @@ export function useEditExistingPresenter() {
       attributes,
       initialValues,
     });
-    const geom = mapSelection.feature.getGeometry?.();
-    setWorkingGeometry(geom ? olGeometryTo4326GeoJSON(geom) : null);
+    setWorkingGeometry(olGeometryTo4326GeoJSON(geom));
     setEditing(true);
     startModify((g) => setWorkingGeometry(g));
   }, [mapSelection, startModify]);

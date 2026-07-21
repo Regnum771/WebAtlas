@@ -2,7 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { useMapContext } from '../app/providers/MapProvider';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
 import { damStatusDisplay } from '@webatlas/shared';
-import { useSelection } from '../entities/selection';
+import { LAYER_REGISTRY } from '../entities/layer/layerRegistry';
+
+// Layers that the shared SelectionController owns; a click that lands on one of them
+// hands ownership of the click to selection/detail-panel, so no popup should stack on top.
+const EDITABLE_LAYER_STATE_IDS = new Set(LAYER_REGISTRY.map((e) => e.layerStateId));
 
 interface PopupData {
   coordinate: number[];
@@ -84,7 +88,6 @@ const getDetailedDamInfo = (id: number, name: string, wattage?: number): DamDeta
 
 const DynamicPopup: React.FC = () => {
   const { map, reservoirFilter, setReservoirFilter } = useMapContext();
-  const { selection } = useSelection();
   const [popupData, setPopupData] = useState<PopupData | null>(null);
   const [pixel, setPixel] = useState<number[]>([0, 0]);
   const [detailedDam, setDetailedDam] = useState<any | null>(null);
@@ -110,8 +113,15 @@ const DynamicPopup: React.FC = () => {
     if (!map) return;
 
     const clickHandler = (e: any) => {
-      if (selection) return; // a selected feature owns the detail panel; no popup on top of it
-      const feature = map.forEachFeatureAtPixel(e.pixel, (f) => f);
+      let hitLayerId: string | undefined;
+      const feature = map.forEachFeatureAtPixel(e.pixel, (f, layer) => {
+        hitLayerId = layer?.get('id');
+        return f;
+      });
+
+      // A selected feature owns the detail panel; do not stack a popup on top of a click
+      // that the SelectionController will also handle (i.e. it landed on an editable layer).
+      if (hitLayerId && EDITABLE_LAYER_STATE_IDS.has(hitLayerId)) return;
 
       if (feature) {
         setPopupData({
@@ -139,7 +149,7 @@ const DynamicPopup: React.FC = () => {
       map.un('singleclick', clickHandler);
       map.un('pointermove', pointerMoveHandler);
     };
-  }, [map, selection]);
+  }, [map]);
 
   if (!popupData) return null;
 
