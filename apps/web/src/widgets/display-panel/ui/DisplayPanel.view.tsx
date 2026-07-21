@@ -29,38 +29,46 @@ export function DisplayPanelView({
         {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
       </button>
 
-      {!collapsed && (
-        <aside className="display-panel glass-panel" aria-label="Chi tiết đối tượng">
-          <header className="display-panel-header">
-            <div>
-              <h2>{title}</h2>
-              <span className="display-panel-tag">{layerLabel}</span>
-            </div>
-            <div className="display-panel-actions">
-              {canEdit && (
-                <button type="button" onClick={onEdit} aria-label="Chỉnh sửa">
-                  <Pencil size={16} />
-                </button>
-              )}
-              <button type="button" onClick={onClose} aria-label="Đóng">
-                <X size={16} />
-              </button>
-            </div>
-          </header>
-          <div className="display-panel-body">
-            {children ?? (
-              <dl className="display-panel-rows">
-                {rows.map((r) => (
-                  <div key={r.label} className="display-panel-row">
-                    <dt>{r.label}</dt>
-                    <dd>{r.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            )}
+      {/* Stays MOUNTED when collapsed — only visually/AT hidden via the `hidden`
+          attribute. Unmounting here would drop EditForm's in-progress input state
+          (useAttributeFormPresenter's useState) and, worse, would leave the map's
+          ModifyController armed with no visible edit surface to cancel it from.
+          `hidden` removes the subtree from the accessibility tree and from the tab
+          order, so a folded panel is never reachable by keyboard or screen reader. */}
+      <aside
+        className="display-panel glass-panel"
+        aria-label="Chi tiết đối tượng"
+        hidden={collapsed}
+      >
+        <header className="display-panel-header">
+          <div>
+            <h2>{title}</h2>
+            <span className="display-panel-tag">{layerLabel}</span>
           </div>
-        </aside>
-      )}
+          <div className="display-panel-actions">
+            {canEdit && (
+              <button type="button" onClick={onEdit} aria-label="Chỉnh sửa">
+                <Pencil size={16} />
+              </button>
+            )}
+            <button type="button" onClick={onClose} aria-label="Đóng">
+              <X size={16} />
+            </button>
+          </div>
+        </header>
+        <div className="display-panel-body">
+          {children ?? (
+            <dl className="display-panel-rows">
+              {rows.map((r) => (
+                <div key={r.label} className="display-panel-row">
+                  <dt>{r.label}</dt>
+                  <dd>{r.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
+      </aside>
     </>
   );
 }

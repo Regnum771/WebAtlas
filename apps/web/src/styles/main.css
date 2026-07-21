@@ -993,6 +993,16 @@ body {
   overflow: hidden;
 }
 
+/* The panel stays mounted while collapsed (see DisplayPanel.view.tsx) so in-progress
+   edit state survives and the ModifyController's lifecycle stays tied to edit mode,
+   not to visibility. The [hidden] selector must win over the `display: flex` above,
+   since the plain `hidden` attribute alone is overridden by any later `display`
+   declaration — this is what actually removes it from layout, hit-testing and the
+   accessibility tree (not just visibility/opacity, and not an off-screen position). */
+.display-panel[hidden] {
+  display: none;
+}
+
 .display-panel-toggle {
   position: absolute;
   top: 96px;

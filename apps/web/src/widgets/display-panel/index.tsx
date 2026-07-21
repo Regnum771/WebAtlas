@@ -32,7 +32,7 @@ function EditForm({
         fieldErrors={form.fieldErrors} error={form.error} canSave={form.canSave}
         saving={form.saving} onField={form.setField} onSubmit={form.submit} onCancel={onCancel}
       />
-      <button type="button" className="edit-delete-btn" onClick={onDelete}>Delete feature</button>
+      <button type="button" className="edit-delete-btn" onClick={onDelete}>Xóa đối tượng</button>
     </>
   );
 }
@@ -68,9 +68,9 @@ export default function DisplayPanel() {
           {edit.error && <p className="edit-form-error" role="alert">{edit.error}</p>}
           <ConfirmDialog
             open={edit.confirmOpen}
-            title="Delete feature"
-            message="Delete this feature? This cannot be undone."
-            confirmLabel="Delete"
+            title="Xóa đối tượng"
+            message="Xóa đối tượng này? Hành động không thể hoàn tác."
+            confirmLabel="Xóa"
             busy={edit.deleting}
             onConfirm={edit.confirmDelete}
             onCancel={edit.cancelDelete}
