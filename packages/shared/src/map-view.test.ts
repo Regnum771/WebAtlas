@@ -38,4 +38,30 @@ describe('map view constants', () => {
     expect(lat).toBeGreaterThanOrEqual(minLat);
     expect(lat).toBeLessThanOrEqual(maxLat);
   });
+
+  // Vietnam's N-S span in EPSG:3857 is ~1,764,512 m and the country is ~2.14x
+  // taller than wide, so viewport HEIGHT is the binding constraint for
+  // view.fit. The zoom needed to fit that height is
+  // log2(earthCircumference / (height_m * viewportHeightPx / 256)).
+  // At 700/800/1000px tall that works out to ~5.96/6.15/6.47. MAP_MIN_ZOOM
+  // must stay at or below all of these or the user could never zoom out
+  // far enough to see the whole country.
+  it('sets a zoom floor at or below the zoom needed to fit common viewport heights', () => {
+    const EARTH_CIRCUMFERENCE_3857 = 2 * Math.PI * 6378137;
+    const TILE_SIZE = 256;
+    const [, minLat, , maxLat] = VIETNAM_EXTENT_4326;
+    const latToMercatorY = (lat: number) => {
+      const rad = (lat * Math.PI) / 180;
+      return 6378137 * Math.log(Math.tan(Math.PI / 4 + rad / 2));
+    };
+    const heightMeters = latToMercatorY(maxLat) - latToMercatorY(minLat);
+
+    for (const viewportHeightPx of [700, 800, 1000]) {
+      const resolution = heightMeters / viewportHeightPx;
+      const fittingZoom = Math.log2(
+        EARTH_CIRCUMFERENCE_3857 / TILE_SIZE / resolution,
+      );
+      expect(MAP_MIN_ZOOM).toBeLessThanOrEqual(fittingZoom);
+    }
+  });
 });

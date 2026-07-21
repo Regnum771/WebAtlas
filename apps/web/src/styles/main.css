@@ -228,12 +228,21 @@ body {
   cursor: pointer;
 }
 
-/* Map Controls */
+/* Map Controls
+   Positioned top-right, clear of `.top-bar` (top:0, height:52px, z-index:1200)
+   and to the LEFT of `.panels-wrapper` (top:64px, right:12px, width:320px,
+   z-index:900): right offset = 320px width + 12px panel gutter + 12px gap
+   = 344px. Aligning `top` with the panels-wrapper's `top:64px` keeps the two
+   stacks visually level. This placement holds regardless of
+   `.panels-wrapper.hidden` (opacity/pointer-events only, no layout change),
+   so the controls stay put and reachable whether the right panels are shown
+   or hidden. z-index raised above the panels-wrapper's 900 as a second guard
+   against stacking collisions. */
 .map-controls {
   position: absolute;
-  top: 24px;
-  right: 24px;
-  z-index: 10;
+  top: 64px;
+  right: 344px;
+  z-index: 950;
   display: flex;
   flex-direction: column;
 }
@@ -672,9 +681,10 @@ body {
   border: 1px solid #d1d5db;
   color: #374151;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 5px 10px;
   border-radius: 6px;
   font-size: 11px;
+  line-height: 1.4;
   transition: all 0.2s ease;
 }
 
@@ -912,7 +922,10 @@ body {
 }
 .edit-drawer-header h2 { font-size: 15px; font-weight: 600; }
 .edit-drawer-close { border: none; background: transparent; cursor: pointer; display: flex; }
-.edit-drawer-body { overflow-y: auto; padding: 0 12px 12px; flex: 1; }
+.edit-drawer-body {
+  overflow-y: auto; padding: 12px; flex: 1;
+  display: flex; flex-direction: column; gap: 12px;
+}
 
 /* Right: display controls, stacked */
 .layer-tree-section { margin-bottom: 12px; }
@@ -1046,7 +1059,7 @@ body {
   align-items: center;
 }
 
-.display-panel-body { padding: 0 14px 14px; overflow-y: auto; flex: 1; }
+.display-panel-body { padding: 12px 14px 14px; overflow-y: auto; flex: 1; }
 .display-panel-rows { margin: 0; }
 .display-panel-row {
   display: flex;
