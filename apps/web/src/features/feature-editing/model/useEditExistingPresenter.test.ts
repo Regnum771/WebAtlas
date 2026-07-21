@@ -15,7 +15,13 @@ vi.mock('../../map/model/mapEditing', () => ({
 }));
 
 vi.mock('../../../entities/selection', () => ({
-  useSelection: () => ({ selection: currentSelection, clear: clearSelection }),
+  useSelection: () => ({
+    selection: currentSelection,
+    clear: () => {
+      clearSelection();
+      currentSelection = null;
+    },
+  }),
 }));
 
 vi.mock('../api/features.api', () => ({

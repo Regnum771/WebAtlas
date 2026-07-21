@@ -1,12 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useMapContext } from '../app/providers/MapProvider';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
 import { damStatusDisplay } from '@webatlas/shared';
-import { LAYER_REGISTRY } from '../entities/layer/layerRegistry';
-
-// Layers that the shared SelectionController owns; a click that lands on one of them
-// hands ownership of the click to selection/detail-panel, so no popup should stack on top.
-const EDITABLE_LAYER_STATE_IDS = new Set(LAYER_REGISTRY.map((e) => e.layerStateId));
+import { useSelection } from '../entities/selection';
+import { parseFeatureId } from '../entities/selection/model/selection';
 
 interface PopupData {
   coordinate: number[];
@@ -88,9 +85,19 @@ const getDetailedDamInfo = (id: number, name: string, wattage?: number): DamDeta
 
 const DynamicPopup: React.FC = () => {
   const { map, reservoirFilter, setReservoirFilter } = useMapContext();
+  const { selection } = useSelection();
   const [popupData, setPopupData] = useState<PopupData | null>(null);
   const [pixel, setPixel] = useState<number[]>([0, 0]);
   const [detailedDam, setDetailedDam] = useState<any | null>(null);
+
+  // The click handler below is a stable OL listener (registered once per `map`); it
+  // must not close over `selection` directly, or it would observe the value from the
+  // PREVIOUS click rather than the one just made (an every-other-click race). A ref
+  // kept current by this effect always reflects the latest committed selection.
+  const selectionRef = useRef(selection);
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
 
   useEffect(() => {
     if (!map || !popupData) return;
@@ -113,15 +120,20 @@ const DynamicPopup: React.FC = () => {
     if (!map) return;
 
     const clickHandler = (e: any) => {
-      let hitLayerId: string | undefined;
-      const feature = map.forEachFeatureAtPixel(e.pixel, (f, layer) => {
-        hitLayerId = layer?.get('id');
-        return f;
-      });
+      const feature = map.forEachFeatureAtPixel(e.pixel, (f) => f);
 
-      // A selected feature owns the detail panel; do not stack a popup on top of a click
-      // that the SelectionController will also handle (i.e. it landed on an editable layer).
-      if (hitLayerId && EDITABLE_LAYER_STATE_IDS.has(hitLayerId)) return;
+      // Suppress the popup only when the clicked feature IS ALREADY the selected one —
+      // don't stack a second display on top of the feature the selection already owns.
+      // A first click on a thematic feature (dam, river, station, ...) must still open
+      // the popup; only a click that lands on the CURRENTLY selected feature yields.
+      const clickedId = feature ? parseFeatureId(String(feature.getId() ?? '')).featureId : null;
+      const selectedId = selectionRef.current?.featureId ?? null;
+      if (feature && selectedId !== null && clickedId === selectedId) {
+        // The selection already owns this feature's display; clear any popup left over
+        // from a previous click so it doesn't linger over the newly selected feature.
+        setPopupData(null);
+        return;
+      }
 
       if (feature) {
         setPopupData({
