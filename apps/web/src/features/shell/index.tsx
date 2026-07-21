@@ -2,12 +2,12 @@ import { Menu } from 'lucide-react';
 import { useShellPresenter } from './model/useShellPresenter';
 import { EditDrawerView } from './ui/EditDrawer.view';
 import FeatureEditing from '../feature-editing';
+import AttributeFilter from '../attribute-filter';
 
-// The drawer reveals editing tools per role. This is UX only — FeatureEditing
-// keeps its own RequireRole gate and the backend enforces every write.
+// The drawer is universal: the filter is a display tool for every role. Editing tools
+// are revealed per persona — UX routing only; the backend enforces every write.
 export default function Shell() {
   const s = useShellPresenter();
-  if (!s.hasDrawer) return null;
   return (
     <>
       <button
@@ -20,7 +20,8 @@ export default function Shell() {
         <Menu size={18} />
       </button>
       <EditDrawerView open={s.isOpen} onClose={s.close}>
-        <FeatureEditing />
+        <AttributeFilter />
+        {s.canEdit && <FeatureEditing />}
       </EditDrawerView>
     </>
   );

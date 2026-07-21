@@ -930,8 +930,9 @@ body {
   cursor: pointer; font: inherit;
 }
 
-/* Attribute filter (roadmap 2.3) */
-.attribute-filter { position: relative; display: flex; align-items: center; }
+/* Attribute filter — hosted inside the drawer body (Task 9), so it flows with the
+   drawer's layout rather than floating with its own absolute position. */
+.attribute-filter { display: flex; flex-direction: column; align-items: stretch; }
 .filter-btn {
   display: inline-flex; align-items: center; justify-content: center; position: relative;
   width: 34px; height: 34px; border: none; cursor: pointer; border-radius: 8px; padding: 0;
@@ -942,8 +943,7 @@ body {
   font-size: 11px; line-height: 16px; text-align: center;
 }
 .filter-panel {
-  position: absolute; top: calc(100% + 8px); right: 0; width: 320px; max-width: 90vw;
-  z-index: 1050; display: flex; flex-direction: column; gap: 10px; padding: 12px;
+  width: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px 0;
   max-height: 60vh; overflow-y: auto;
 }
 .filter-layer-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }

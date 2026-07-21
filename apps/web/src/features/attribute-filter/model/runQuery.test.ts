@@ -105,6 +105,18 @@ describe('runQuery', () => {
     expect(out.error).toBe(EMPTY_FILTER_MESSAGE);
   });
 
+  it('does NOT report a layer as unloaded when its source loaded but genuinely has zero features', () => {
+    const map = makeMap({ dams: [feat('dams.d1', { geographicalName: 'A' })], rivers: [] });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const out = runQuery(map as any, {
+      layers: ['dams', 'rivers'],
+      conditions: [{ field: 'geographicalName', op: 'contains', value: 'a' }],
+    });
+
+    expect(out.unloadedLayers).not.toContain('rivers');
+  });
+
   it('reports no error once a condition exists', () => {
     const map = makeMap({ dams: [feat('dams.d1', { geographicalName: 'A' })] });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

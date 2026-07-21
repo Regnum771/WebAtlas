@@ -83,7 +83,10 @@ export function runQuery(
 
   for (const layerKey of keys) {
     const features = readFeatures(map, layerKey);
-    if (features === null || features.length === 0) {
+    // Only a missing source (no layer/no source) means "not loaded". A source that
+    // loaded successfully but genuinely has zero features is not the same thing —
+    // folding the two together mis-reported an empty-but-loaded layer as unloaded.
+    if (features === null) {
       unloadedLayers.push(layerKey);
       continue;
     }

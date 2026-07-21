@@ -30,14 +30,16 @@ export default function AttributeFilter() {
           conditions={s.conditions}
           results={s.results}
           count={s.count}
-          layerLoaded={s.layerLoaded}
+          shownCount={s.shownCount}
+          unloadedLayers={s.unloadedLayers}
+          error={s.error}
           onSelectLayer={s.setLayer}
           onAddCondition={s.addCondition}
           onUpdateCondition={s.updateCondition}
           onRemoveCondition={s.removeCondition}
           onClear={s.clear}
           onEnableLayer={onEnableLayer}
-          onResultClick={s.flyTo}
+          onResultClick={s.onResultClick}
         />
       )}
     </div>

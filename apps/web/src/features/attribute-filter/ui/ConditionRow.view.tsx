@@ -61,7 +61,7 @@ export function ConditionRowView({ condition, fields, onChange, onRemove }: {
           className="condition-value"
           type="text"
           value={String(condition.value ?? '')}
-          onChange={(e) => onChange({ op: 'eq', value: e.target.value })}
+          onChange={(e) => onChange({ value: e.target.value })}
           aria-label="Giá trị"
         />
       )}

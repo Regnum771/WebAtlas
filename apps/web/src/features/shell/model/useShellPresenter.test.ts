@@ -11,27 +11,32 @@ import { useShellPresenter } from './useShellPresenter';
 beforeEach(() => { available = ['public']; });
 
 describe('useShellPresenter', () => {
-  it('anonymous has no drawer', () => {
-    const { result } = renderHook(() => useShellPresenter());
-    expect(result.current.hasDrawer).toBe(false);
+  it('gives every role a drawer, and gates only the edit section', () => {
+    // viewer
+    const viewer = renderHook(() => useShellPresenter());
+    expect(viewer.result.current.hasDrawer).toBe(true);
+    expect(viewer.result.current.canEdit).toBe(false);
   });
 
-  it('viewer has no drawer (governance/research have no tools yet)', () => {
+  it('governance/research get a drawer but cannot edit', () => {
     available = ['governance', 'research'];
     const { result } = renderHook(() => useShellPresenter());
-    expect(result.current.hasDrawer).toBe(false);
+    expect(result.current.hasDrawer).toBe(true);
+    expect(result.current.canEdit).toBe(false);
   });
 
-  it('editor has a drawer', () => {
+  it('editor (steward) can edit', () => {
     available = ['steward'];
     const { result } = renderHook(() => useShellPresenter());
     expect(result.current.hasDrawer).toBe(true);
+    expect(result.current.canEdit).toBe(true);
   });
 
-  it('admin has a drawer (steward is in its persona set)', () => {
+  it('admin can edit (steward is in its persona set)', () => {
     available = ['steward', 'admin'];
     const { result } = renderHook(() => useShellPresenter());
     expect(result.current.hasDrawer).toBe(true);
+    expect(result.current.canEdit).toBe(true);
   });
 
   it('starts CLOSED (a drawer must never ambush the user on load)', () => {

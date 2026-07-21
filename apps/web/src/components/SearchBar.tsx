@@ -3,25 +3,38 @@ import { useMapContext } from '../app/providers/MapProvider';
 import { Search, MapPin } from 'lucide-react';
 import type { Geometry } from 'ol/geom';
 import type { Map as OlMap } from 'ol';
-import AttributeFilter from '../features/attribute-filter';
-import { searchAllLayers, type SearchHit } from '../features/attribute-filter/model/searchFeatures';
+import { useSelection } from '../entities/selection';
+import { runQuery, type QueryHit } from '../features/attribute-filter/model/runQuery';
 import { flyToGeometry } from '../features/attribute-filter/model/flyToGeometry';
 
 const SearchBar: React.FC = () => {
   const { map } = useMapContext();
+  const { selectById } = useSelection();
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchHit[]>([]);
+  const [results, setResults] = useState<QueryHit[]>([]);
   const [showResults, setShowResults] = useState(false);
 
-  // Search reads the already-loaded features of every thematic layer (no fetch).
+  // Search shares runQuery with the drawer filter: reads the already-loaded
+  // features of every thematic layer (no fetch), name substring match.
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setQuery(val);
-    setResults(searchAllLayers(map as OlMap | null, val));
+    if (val.trim() === '') {
+      setResults([]);
+      return;
+    }
+    const out = runQuery(map as OlMap | null, {
+      layers: 'all',
+      conditions: [{ field: 'geographicalName', op: 'contains', value: val }],
+    });
+    setResults(out.hits);
   };
 
-  const flyTo = (geom: unknown) => {
-    flyToGeometry(map as OlMap | null, (geom as Geometry) ?? null);
+  // A search hit behaves exactly like a filter result: select (opens the detail
+  // panel) then frame it on the map.
+  const onHitClick = (hit: QueryHit) => {
+    selectById(hit.layerKey, hit.featureId);
+    flyToGeometry(map as OlMap | null, hit.feature.getGeometry() as Geometry | null);
     setShowResults(false);
     setQuery('');
     setResults([]);
@@ -39,17 +52,16 @@ const SearchBar: React.FC = () => {
           onFocus={() => setShowResults(true)}
           className="search-input"
         />
-        <AttributeFilter />
       </div>
 
       {showResults && results.length > 0 && (
         <div className="search-results glass-panel">
-          {results.map((item, idx) => (
+          {results.map((item) => (
             <button
-              key={`${item.layerKey}-${idx}`}
+              key={`${item.layerKey}-${item.featureId}`}
               className="search-result-item"
-              onClick={() => flyTo(item.geometry)}
-              disabled={!item.geometry}
+              onClick={() => onHitClick(item)}
+              disabled={!item.feature.getGeometry()}
             >
               <MapPin size={16} className="text-blue-500" />
               <div className="result-info">

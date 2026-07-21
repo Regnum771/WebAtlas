@@ -10,9 +10,11 @@ const baseProps = {
     { iso: 'ratedPower', label: 'Công suất (MW)', type: 'number' as const },
   ],
   conditions: [{ field: 'statusSlug', op: 'eq' as const, value: 'xa_lu' }],
-  results: [{ id: '0', label: 'Đập A', subLabel: '250', hasGeometry: true }],
+  results: [{ id: 'd1', label: 'Đập A', layerLabel: 'Đập thủy điện', hasGeometry: true }],
   count: 1,
-  layerLoaded: true,
+  shownCount: 1,
+  unloadedLayers: [],
+  error: null,
   onSelectLayer: vi.fn(),
   onAddCondition: vi.fn(),
   onUpdateCondition: vi.fn(),
@@ -32,11 +34,11 @@ describe('FilterPanelView', () => {
   it('clicking a result calls onResultClick with its id', async () => {
     render(<FilterPanelView {...baseProps} />);
     await userEvent.click(screen.getByText('Đập A'));
-    expect(baseProps.onResultClick).toHaveBeenCalledWith('0');
+    expect(baseProps.onResultClick).toHaveBeenCalledWith('d1');
   });
 
-  it('shows an enable prompt when the layer is not loaded', () => {
-    render(<FilterPanelView {...baseProps} layerLoaded={false} results={[]} count={0} />);
+  it('shows an enable prompt when the active layer is unloaded', () => {
+    render(<FilterPanelView {...baseProps} unloadedLayers={['dams']} results={[]} count={0} shownCount={0} />);
     expect(screen.getByRole('button', { name: /bật lớp/i })).toBeInTheDocument();
   });
 
@@ -44,5 +46,15 @@ describe('FilterPanelView', () => {
     render(<FilterPanelView {...baseProps} />);
     await userEvent.click(screen.getByRole('button', { name: /xóa lọc/i }));
     expect(baseProps.onClear).toHaveBeenCalled();
+  });
+
+  it('shows the empty-filter message instead of an empty result list', () => {
+    render(<FilterPanelView {...baseProps} error="Chưa có điều kiện lọc" results={[]} count={0} shownCount={0} />);
+    expect(screen.getByText('Chưa có điều kiện lọc')).toBeInTheDocument();
+  });
+
+  it('shows "hiển thị N / M" when the cap trims the shown results', () => {
+    render(<FilterPanelView {...baseProps} count={30} shownCount={20} />);
+    expect(screen.getByText('hiển thị 20 / 30')).toBeInTheDocument();
   });
 });

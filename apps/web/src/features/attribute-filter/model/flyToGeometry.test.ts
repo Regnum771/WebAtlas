@@ -1,41 +1,42 @@
 import { describe, it, expect, vi } from 'vitest';
 import { flyToGeometry } from './flyToGeometry';
 
-// Minimal fakes: a geometry exposes getExtent(); the map exposes getView().animate.
-function geom(extent: number[]) {
-  return { getExtent: () => extent };
+function makeMap() {
+  const fit = vi.fn();
+  return { map: { getView: () => ({ fit }) }, fit };
 }
-function fakeMap() {
-  const animate = vi.fn();
-  return { map: { getView: () => ({ animate }) }, animate };
-}
+
+const lineGeom = { getExtent: () => [0, 0, 100, 50] };
 
 describe('flyToGeometry', () => {
-  it('animates to the extent CENTER (works for a line/polygon, not just a point)', () => {
-    const { map, animate } = fakeMap();
-    // A river extent [minX,minY,maxX,maxY]; center is the midpoint, not any vertex.
-    flyToGeometry(map as never, geom([100, 200, 300, 400]) as never);
-    expect(animate).toHaveBeenCalledTimes(1);
-    const arg = animate.mock.calls[0][0];
-    expect(arg.center).toEqual([200, 300]);
+  it('fits the geometry extent rather than centring on a vertex', () => {
+    const { map, fit } = makeMap();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    flyToGeometry(map as any, lineGeom as any);
+    expect(fit).toHaveBeenCalledWith([0, 0, 100, 50], expect.any(Object));
   });
 
-  it('a point geometry (zero-area extent) animates to that point', () => {
-    const { map, animate } = fakeMap();
-    flyToGeometry(map as never, geom([500, 600, 500, 600]) as never);
-    expect(animate.mock.calls[0][0].center).toEqual([500, 600]);
+  it('reserves space on the left so the feature is not hidden behind the panels', () => {
+    const { map, fit } = makeMap();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    flyToGeometry(map as any, lineGeom as any, { padding: [40, 40, 40, 700] });
+    const opts = fit.mock.calls[0][1];
+    expect(opts.padding).toEqual([40, 40, 40, 700]);
   });
 
-  it('does not throw on a null map or null geometry', () => {
-    expect(() => flyToGeometry(null as never, geom([0, 0, 1, 1]) as never)).not.toThrow();
-    const { map, animate } = fakeMap();
-    flyToGeometry(map as never, null as never);
-    expect(animate).not.toHaveBeenCalled();
+  it('caps how far in a tiny geometry zooms', () => {
+    const { map, fit } = makeMap();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    flyToGeometry(map as any, { getExtent: () => [10, 10, 10, 10] } as any);
+    expect(fit.mock.calls[0][1].maxZoom).toBeGreaterThan(0);
   });
 
-  it('passes the given zoom through', () => {
-    const { map, animate } = fakeMap();
-    flyToGeometry(map as never, geom([0, 0, 10, 10]) as never, 9);
-    expect(animate.mock.calls[0][0].zoom).toBe(9);
+  it('does nothing without a map or geometry', () => {
+    const { fit } = makeMap();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => flyToGeometry(null, lineGeom as any)).not.toThrow();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => flyToGeometry({ getView: () => ({ fit }) } as any, null)).not.toThrow();
+    expect(fit).not.toHaveBeenCalled();
   });
 });

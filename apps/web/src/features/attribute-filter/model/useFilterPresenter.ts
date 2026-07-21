@@ -8,44 +8,35 @@ import {
 import type { Map as OlMap } from 'ol';
 import type { Geometry } from 'ol/geom';
 import { useMapContext } from '../../../app/providers/MapProvider';
-import { applyFilter, type Condition, type FeatureLike } from './applyFilter';
+import { useSelection } from '../../../entities/selection';
+import { type Condition } from './applyFilter';
+import { runQuery, DEFAULT_RESULT_CAP } from './runQuery';
 import { flyToGeometry } from './flyToGeometry';
 
 export interface FilterResult {
-  id: string;          // stable per-result id (index-based; features lack a guaranteed id here)
+  id: string;          // the feature's REAL identity (runQuery's featureId), not an index
   label: string;       // geographicalName or a fallback
-  subLabel: string;    // a secondary attribute for context
+  layerLabel: string;
   hasGeometry: boolean;
 }
 
-// Filtering is a display tool. No auth, no fetch — it reads what the map already has.
+// Filtering is a display tool. No auth, no fetch — it reads what the map already has,
+// via the same runQuery engine the top-bar search uses.
 export function useFilterPresenter() {
   const { map } = useMapContext();
+  const { selectById } = useSelection();
   const [isOpen, setIsOpen] = useState(false);
   const [layerKey, setLayerKey] = useState<EditableLayerKey | null>(null);
   const [conditions, setConditions] = useState<Condition[]>([]);
-  // Bumps when the active layer's source finishes (re)loading features, so the
-  // memo below re-reads getFeatures() — otherwise enabling an off layer from the
-  // panel would never flip layerLoaded (the async load changes neither map nor layerKey).
+  // Bumps when the active layer's source finishes (re)loading features, so the query
+  // memo below re-runs — otherwise enabling an off layer from the panel would never
+  // flip unloadedLayers (the async load changes neither map nor layerKey).
   const [loadTick, setLoadTick] = useState(0);
 
   const fields: FilterField[] = useMemo(
     () => (layerKey ? LAYER_FILTER_FIELDS[layerKey] : []),
     [layerKey],
   );
-
-  // The live OL features for the active layer, or null if the layer isn't loaded.
-  const liveFeatures = useMemo((): FeatureLike[] | null => {
-    if (!map || !layerKey) return null;
-    const stateId = LAYER_ATTRIBUTE_MAP[layerKey].layerStateId;
-    const layer = map.getLayers().getArray().find((l: { get(k: string): unknown }) => l.get('id') === stateId) as
-      | { getSource(): { getFeatures(): FeatureLike[] } | null }
-      | undefined;
-    const src = layer?.getSource?.();
-    if (!src) return null;
-    return src.getFeatures();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, layerKey, loadTick]);
 
   // Subscribe to the active layer's source so a late WFS load re-triggers derivation.
   useEffect(() => {
@@ -62,26 +53,26 @@ export function useFilterPresenter() {
     return () => src.un('change', bump);
   }, [map, layerKey]);
 
-  const layerLoaded = liveFeatures !== null && liveFeatures.length > 0;
+  const query = useMemo(
+    () => ({ layers: layerKey ? [layerKey] : [], conditions }),
+    [layerKey, conditions],
+  );
 
-  const matched = useMemo(
-    () => (liveFeatures ? applyFilter(liveFeatures, conditions) : []),
-    [liveFeatures, conditions],
+  const queryResult = useMemo(
+    () => runQuery(map as OlMap | null, query, DEFAULT_RESULT_CAP),
+    // loadTick forces a re-read when a late WFS load changes the source.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [map, query, loadTick],
   );
 
   const results: FilterResult[] = useMemo(
-    () =>
-      matched.map((f, i) => {
-        const p = f.getProperties();
-        const secondary = fields.find((fl) => fl.iso !== 'geographicalName');
-        return {
-          id: String(i),
-          label: String(p.geographicalName ?? p.localId ?? `#${i + 1}`),
-          subLabel: secondary ? String(p[secondary.iso] ?? '') : '',
-          hasGeometry: !!f.getGeometry(),
-        };
-      }),
-    [matched, fields],
+    () => queryResult.hits.map((h) => ({
+      id: h.featureId,
+      label: h.label,
+      layerLabel: h.layerLabel,
+      hasGeometry: !!h.feature.getGeometry(),
+    })),
+    [queryResult],
   );
 
   const setLayer = useCallback((key: EditableLayerKey) => {
@@ -89,7 +80,11 @@ export function useFilterPresenter() {
     setConditions([]);
   }, []);
   const addCondition = useCallback(() => {
-    setConditions((cs) => [...cs, { field: fields[0]?.iso ?? '', op: 'eq', value: '' }]);
+    const first = fields[0];
+    // 'contains' is the sensible default for a fresh text condition; 'eq' would
+    // require an exact match the user has not typed yet.
+    const op = first?.type === 'enum' ? 'eq' : 'contains';
+    setConditions((cs) => [...cs, { field: first?.iso ?? '', op, value: '' }]);
   }, [fields]);
   const updateCondition = useCallback((i: number, patch: Partial<Condition>) => {
     setConditions((cs) =>
@@ -97,9 +92,14 @@ export function useFilterPresenter() {
         if (idx !== i) return c;
         const next = { ...c, ...patch };
         // When the field changes, carry that field's unit scale (e.g. km) so applyFilter
-        // compares in the user's units. Undefined for unscaled fields.
+        // compares in the user's units, and pick a sane default operator for the new
+        // field's type: exact match for enums, substring for free text.
         if (patch.field !== undefined) {
-          next.scale = fields.find((fl) => fl.iso === patch.field)?.scale;
+          const nextField = fields.find((fl) => fl.iso === patch.field);
+          next.scale = nextField?.scale;
+          if (patch.op === undefined) {
+            next.op = nextField?.type === 'enum' ? 'eq' : 'contains';
+          }
         }
         return next;
       }),
@@ -112,24 +112,21 @@ export function useFilterPresenter() {
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
 
-  const flyTo = useCallback(
-    (id: string) => {
-      const f = matched[Number(id)];
-      const geom = f?.getGeometry() as Geometry | undefined;
-      // Centre on the geometry's extent — correct for points AND lines/polygons
-      // (a line's getCoordinates() is nested and is NOT a valid view centre).
-      flyToGeometry(map as OlMap | null, geom ?? null);
-      setIsOpen(false);
-    },
-    [map, matched],
-  );
+  const onResultClick = useCallback((id: string) => {
+    const hit = queryResult.hits.find((h) => h.featureId === id);
+    if (!hit) return;
+    selectById(hit.layerKey, hit.featureId);
+    flyToGeometry(map as OlMap | null, hit.feature.getGeometry() as Geometry | null);
+  }, [queryResult, selectById, map]);
 
   return {
     isOpen, layerKey, fields, conditions, results,
-    count: results.length,
+    count: queryResult.total,
+    shownCount: results.length,
     activeCount: conditions.length,
-    layerLoaded,
+    unloadedLayers: queryResult.unloadedLayers,
+    error: queryResult.error,
     setLayer, addCondition, updateCondition, removeCondition, clear,
-    open, close, flyTo,
+    open, close, onResultClick,
   };
 }
