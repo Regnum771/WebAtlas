@@ -29,6 +29,10 @@ describe('FeatureEditing', () => {
     expect(screen.getByText('Add a feature')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /dams/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /draw/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /edit existing/i })).toBeInTheDocument();
+  });
+
+  it('renders nothing for edit-existing when nothing is selected (the display panel pen drives it now)', () => {
+    render(<FeatureEditing />);
+    expect(screen.queryByRole('button', { name: /edit existing/i })).not.toBeInTheDocument();
   });
 });

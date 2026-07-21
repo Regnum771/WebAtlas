@@ -85,13 +85,6 @@ function EditExisting() {
 
   return (
     <div className="edit-existing">
-      {/* Minimal pen entry point; Task 8's detail panel replaces this with the real trigger.
-          beginEdit is a no-op with nothing selected, so this stays unconditionally clickable. */}
-      {!edit.editing && (
-        <button type="button" onClick={edit.beginEdit}>
-          Edit existing
-        </button>
-      )}
       {sel && (
         <EditForm
           /* key remounts EditForm per selection so the form re-seeds initialValues (useState initializer runs once) */

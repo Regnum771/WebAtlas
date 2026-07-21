@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppProviders } from './providers/AppProviders';
 import TopBar from '../widgets/top-bar';
 import Shell from '../features/shell';
+import DisplayPanel from '../widgets/display-panel';
 import AdminUsersRoute from '../pages/admin-users';
 import MapView from '../features/map/ui/MapView';
 import LayerTree from '../components/LayerTree';
@@ -31,6 +32,7 @@ function App() {
 
           {/* Left: doing. Burger drawer with the editing tools (editor/admin). */}
           <Shell />
+          <DisplayPanel />
 
           <SearchBar />
 
