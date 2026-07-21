@@ -3,15 +3,37 @@ import {
   LAYER_FILTER_FIELDS,
   LAYER_ATTRIBUTE_MAP,
   type FilterField,
+  type FilterFieldType,
   type EditableLayerKey,
 } from '@webatlas/shared';
 import type { Map as OlMap } from 'ol';
 import type { Geometry } from 'ol/geom';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { useSelection } from '../../../entities/selection';
-import { type Condition } from './applyFilter';
+import { type Condition, type Operator } from './applyFilter';
 import { runQuery, DEFAULT_RESULT_CAP } from './runQuery';
 import { flyToGeometry } from './flyToGeometry';
+
+// The sane default operator per field type, kept explicit (not a chained ternary) so a
+// future fifth FilterFieldType is a TypeScript error here rather than silently falling
+// through to a default the corresponding <select> may not even offer.
+//   * enum -> 'eq' (exact match)
+//   * text -> 'contains' (substring)
+//   * number/date -> 'gte' (ConditionRow's numeric <select> renders both the same way —
+//     see isNumeric in ConditionRow.view.tsx — and only offers gte/lte/eq; 'gte' is its
+//     first option and the most common "at least this much" intent).
+const DEFAULT_OP_BY_FIELD_TYPE: Record<FilterFieldType, Operator> = {
+  enum: 'eq',
+  text: 'contains',
+  number: 'gte',
+  date: 'gte',
+};
+
+function defaultOpForFieldType(type: FilterFieldType | undefined): Operator {
+  // undefined (no matching field found) falls back to 'contains', same as before.
+  if (type === undefined) return 'contains';
+  return DEFAULT_OP_BY_FIELD_TYPE[type];
+}
 
 export interface FilterResult {
   id: string;          // the feature's REAL identity (runQuery's featureId), not an index
@@ -81,9 +103,7 @@ export function useFilterPresenter() {
   }, []);
   const addCondition = useCallback(() => {
     const first = fields[0];
-    // 'contains' is the sensible default for a fresh text condition; 'eq' would
-    // require an exact match the user has not typed yet.
-    const op = first?.type === 'enum' ? 'eq' : 'contains';
+    const op = defaultOpForFieldType(first?.type);
     setConditions((cs) => [...cs, { field: first?.iso ?? '', op, value: '' }]);
   }, [fields]);
   const updateCondition = useCallback((i: number, patch: Partial<Condition>) => {
@@ -93,12 +113,12 @@ export function useFilterPresenter() {
         const next = { ...c, ...patch };
         // When the field changes, carry that field's unit scale (e.g. km) so applyFilter
         // compares in the user's units, and pick a sane default operator for the new
-        // field's type: exact match for enums, substring for free text.
+        // field's type (see DEFAULT_OP_BY_FIELD_TYPE above).
         if (patch.field !== undefined) {
           const nextField = fields.find((fl) => fl.iso === patch.field);
           next.scale = nextField?.scale;
           if (patch.op === undefined) {
-            next.op = nextField?.type === 'enum' ? 'eq' : 'contains';
+            next.op = defaultOpForFieldType(nextField?.type);
           }
         }
         return next;

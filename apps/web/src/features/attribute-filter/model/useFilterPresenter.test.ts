@@ -192,4 +192,29 @@ describe('useFilterPresenter', () => {
     act(() => result.current.updateCondition(0, { field: 'geographicalName' }));
     expect(result.current.conditions[0].op).toBe('contains');
   });
+
+  it('picking a NUMBER field defaults to an operator the numeric select actually offers (not "contains")', () => {
+    mockMap = fakeMap({ layer_dams: [] });
+    const { result } = renderHook(() => useFilterPresenter());
+    act(() => result.current.setLayer('dams'));
+    act(() => result.current.addCondition());
+    // ratedPower is type 'number' (attribute-schema.ts). The ConditionRow numeric
+    // <select> only offers gte/lte/eq — 'contains' is not a valid option there.
+    act(() => result.current.updateCondition(0, { field: 'ratedPower' }));
+    expect(result.current.conditions[0].op).not.toBe('contains');
+    expect(['gte', 'lte', 'eq']).toContain(result.current.conditions[0].op);
+  });
+
+  it('picking a DATE field defaults to an operator the numeric select actually offers (not "contains")', () => {
+    mockMap = fakeMap({ layer_drought_points: [] });
+    const { result } = renderHook(() => useFilterPresenter());
+    act(() => result.current.setLayer('drought_points'));
+    act(() => result.current.addCondition());
+    // observationDate is type 'date' (attribute-schema.ts). ConditionRow renders date
+    // fields through the same numeric operator <select> as 'number' (isNumeric check
+    // covers both), which only offers gte/lte/eq.
+    act(() => result.current.updateCondition(0, { field: 'observationDate' }));
+    expect(result.current.conditions[0].op).not.toBe('contains');
+    expect(['gte', 'lte', 'eq']).toContain(result.current.conditions[0].op);
+  });
 });
