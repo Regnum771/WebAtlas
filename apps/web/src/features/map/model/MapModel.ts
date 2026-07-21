@@ -8,6 +8,13 @@ import VectorSource from 'ol/source/Vector';
 import GeoJSON from 'ol/format/GeoJSON';
 import Select from 'ol/interaction/Select';
 import { fromLonLat, transformExtent } from 'ol/proj';
+import {
+  VIETNAM_EXTENT_4326,
+  MAP_MIN_ZOOM,
+  MAP_MAX_ZOOM,
+  MAP_DEFAULT_CENTER_4326,
+  MAP_DEFAULT_ZOOM,
+} from '@webatlas/shared';
 import { createWfsVectorSource } from './wfsSource';
 import {
   provincesStyle,
@@ -113,11 +120,11 @@ export class MapModel {
         floodGenerationLayer
       ],
       view: new View({
-        center: fromLonLat([108.2, 13.5]),
-        zoom: 7,
-        minZoom: 4.0,
-        maxZoom: 20,
-        extent: transformExtent([107.0, 10.5, 109.5, 16.5], 'EPSG:4326', 'EPSG:3857'),
+        center: fromLonLat([...MAP_DEFAULT_CENTER_4326]),
+        zoom: MAP_DEFAULT_ZOOM,
+        minZoom: MAP_MIN_ZOOM,
+        maxZoom: MAP_MAX_ZOOM,
+        extent: transformExtent([...VIETNAM_EXTENT_4326], 'EPSG:4326', 'EPSG:3857'),
       }),
       controls: []
     });
