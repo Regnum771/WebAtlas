@@ -12,8 +12,8 @@ describe('applyFilter', () => {
     feat({ geographicalName: 'Hồ C', statusSlug: 'xa_lu', ratedPower: 50 }),
   ];
 
-  it('empty conditions -> empty result (no filter means no list)', () => {
-    expect(applyFilter(dams, [])).toEqual([]);
+  it('empty conditions -> all features (no filter means no predicate)', () => {
+    expect(applyFilter(dams, [])).toEqual(dams);
   });
 
   it('eq on an enum matches exactly', () => {
@@ -36,8 +36,8 @@ describe('applyFilter', () => {
     expect(r.map((f) => f.getProperties().geographicalName)).toEqual(['Đập B', 'Hồ C']);
   });
 
-  it('text eq is case-insensitive substring', () => {
-    const r = applyFilter(dams, [{ field: 'geographicalName', op: 'eq', value: 'đập' }]);
+  it('text contains is a case-insensitive substring match', () => {
+    const r = applyFilter(dams, [{ field: 'geographicalName', op: 'contains', value: 'đập' }]);
     expect(r.map((f) => f.getProperties().geographicalName)).toEqual(['Đập A', 'Đập B']);
   });
 
@@ -72,5 +72,34 @@ describe('applyFilter', () => {
   it('scale defaults to 1 (no division) when absent', () => {
     const r = applyFilter([feat({ length: 11313 })], [{ field: 'length', op: 'gte', value: 10000 }]);
     expect(r).toHaveLength(1); // raw 11313 >= 10000
+  });
+
+  it('eq is exact, not substring — xa_lu must not match xa_lu_khan_cap', () => {
+    const feats = [
+      { getProperties: () => ({ statusSlug: 'xa_lu_khan_cap' }), getGeometry: () => null },
+      { getProperties: () => ({ statusSlug: 'xa_lu' }), getGeometry: () => null },
+    ];
+    const out = applyFilter(feats, [{ field: 'statusSlug', op: 'eq', value: 'xa_lu' }]);
+    expect(out).toHaveLength(1);
+    expect(out[0].getProperties().statusSlug).toBe('xa_lu');
+  });
+
+  it('eq ignores case and surrounding whitespace', () => {
+    const feats = [{ getProperties: () => ({ riskLevel: ' Cao ' }), getGeometry: () => null }];
+    expect(applyFilter(feats, [{ field: 'riskLevel', op: 'eq', value: 'cao' }])).toHaveLength(1);
+  });
+
+  it('contains is a case-insensitive substring match', () => {
+    const feats = [{ getProperties: () => ({ geographicalName: 'Sông Ba' }), getGeometry: () => null }];
+    expect(applyFilter(feats, [{ field: 'geographicalName', op: 'contains', value: 'ba' }])).toHaveLength(1);
+    expect(applyFilter(feats, [{ field: 'geographicalName', op: 'contains', value: 'xyz' }])).toHaveLength(0);
+  });
+
+  it('returns ALL features when there are no conditions (display capping is the caller job)', () => {
+    const feats = [
+      { getProperties: () => ({ a: 1 }), getGeometry: () => null },
+      { getProperties: () => ({ a: 2 }), getGeometry: () => null },
+    ];
+    expect(applyFilter(feats, [])).toHaveLength(2);
   });
 });
