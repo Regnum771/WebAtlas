@@ -941,7 +941,7 @@ Create `apps/web/src/features/attribute-filter/model/runQuery.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { runQuery } from './runQuery';
+import { runQuery, EMPTY_FILTER_MESSAGE } from './runQuery';
 import { LAYER_ATTRIBUTE_MAP } from '@webatlas/shared';
 
 function feat(id: string, props: Record<string, unknown>) {
@@ -1038,12 +1038,23 @@ describe('runQuery', () => {
     expect(out.total).toBe(30);
   });
 
-  it('returns nothing for an empty query with no conditions', () => {
+  it('refuses an empty filter with a message instead of a silent empty list', () => {
     const map = makeMap({ dams: [feat('dams.d1', { geographicalName: 'A' })] });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const out = runQuery(map as any, { layers: 'all', conditions: [] });
     expect(out.hits).toHaveLength(0);
     expect(out.total).toBe(0);
+    expect(out.error).toBe(EMPTY_FILTER_MESSAGE);
+  });
+
+  it('reports no error once a condition exists', () => {
+    const map = makeMap({ dams: [feat('dams.d1', { geographicalName: 'A' })] });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const out = runQuery(map as any, {
+      layers: ['dams'],
+      conditions: [{ field: 'geographicalName', op: 'contains', value: 'a' }],
+    });
+    expect(out.error).toBeNull();
   });
 });
 ```
@@ -1066,6 +1077,13 @@ import { parseFeatureId } from '../../../entities/selection/model/selection';
 
 export const DEFAULT_RESULT_CAP = 20;
 
+/**
+ * Shown when the user opens the filter but has built no condition yet. An explicit
+ * message beats both alternatives: a silent empty list reads as "no matches found",
+ * and returning every feature dumps thousands of rows nobody asked for.
+ */
+export const EMPTY_FILTER_MESSAGE = 'Chưa có điều kiện lọc';
+
 export interface Query {
   /** 'all' searches every thematic layer; an array scopes to those layers. */
   layers: EditableLayerKey[] | 'all';
@@ -1087,6 +1105,11 @@ export interface LayerQueryResult {
   total: number;
   /** Queried layers with nothing loaded — surfaced so empty != "does not exist". */
   unloadedLayers: EditableLayerKey[];
+  /**
+   * Why there is nothing to show, when the reason is not "no matches" — currently only
+   * the empty filter. null on a real query, including one that legitimately matched 0.
+   */
+  error: string | null;
 }
 
 interface IdFeature extends FeatureLike {
@@ -1116,8 +1139,13 @@ export function runQuery(
   query: Query,
   cap: number = DEFAULT_RESULT_CAP,
 ): LayerQueryResult {
-  const empty: LayerQueryResult = { hits: [], total: 0, unloadedLayers: [] };
-  if (!map || query.conditions.length === 0) return empty;
+  // No map yet is a transient startup state, not something to explain to the user.
+  if (!map) return { hits: [], total: 0, unloadedLayers: [], error: null };
+  // An empty filter is refused explicitly rather than returning [] (reads as "no
+  // matches") or every feature (dumps thousands of rows).
+  if (query.conditions.length === 0) {
+    return { hits: [], total: 0, unloadedLayers: [], error: EMPTY_FILTER_MESSAGE };
+  }
 
   const keys = query.layers === 'all' ? [...EDITABLE_LAYER_KEYS] : query.layers;
   const hits: QueryHit[] = [];
@@ -1146,7 +1174,7 @@ export function runQuery(
     }
   }
 
-  return { hits, total, unloadedLayers };
+  return { hits, total, unloadedLayers, error: null };
 }
 ```
 
@@ -2208,7 +2236,7 @@ In `apps/web/src/features/attribute-filter/model/useFilterPresenter.ts`:
   }, [queryResult, selectById, map]);
 ```
 
-- Return `count: queryResult.total`, `shownCount: results.length`, `unloadedLayers: queryResult.unloadedLayers`, `onResultClick`, and keep `isOpen/layerKey/fields/conditions/activeCount/setLayer/addCondition/updateCondition/removeCondition/clear/open/close`. Replace `layerLoaded` with `unloadedLayers`.
+- Return `count: queryResult.total`, `shownCount: results.length`, `unloadedLayers: queryResult.unloadedLayers`, `error: queryResult.error`, `onResultClick`, and keep `isOpen/layerKey/fields/conditions/activeCount/setLayer/addCondition/updateCondition/removeCondition/clear/open/close`. Replace `layerLoaded` with `unloadedLayers`.
 - **Keep the `loadTick` source subscription `useEffect` exactly as it is** — it is what makes enable-to-filter update, and it is still needed.
 - Set `op: 'contains'` (not `'eq'`) as the default for new text conditions in `addCondition`, and have `updateCondition` choose `'eq'` for `enum` fields and `'contains'` for `text` fields when the field changes.
 
@@ -2218,7 +2246,21 @@ Update `useFilterPresenter.test.ts`: replace `layerLoaded` assertions with `unlo
 
 In `apps/web/src/features/attribute-filter/index.tsx`, pass `onResultClick={s.onResultClick}`, `count={s.count}`, `shownCount={s.shownCount}`, and `unloadedLayers={s.unloadedLayers}` instead of `onResultClick={s.flyTo}` and `layerLoaded`. Keep the existing idempotent `onEnableLayer` logic verbatim.
 
-In `ui/FilterPanel.view.tsx`, replace the `layerLoaded` prop with `unloadedLayers`, render the enable prompt when the active layer appears in it, and show `hiển thị {shownCount} / {count}` above the list when `shownCount < count`. Update `FilterPanel.view.test.tsx` accordingly.
+In `ui/FilterPanel.view.tsx`:
+- replace the `layerLoaded` prop with `unloadedLayers`, rendering the enable prompt when the active layer appears in it;
+- add an `error: string | null` prop and render it where the result list would go, so an unbuilt filter says `Chưa có điều kiện lọc` rather than showing an empty list;
+- show `hiển thị {shownCount} / {count}` above the list when `shownCount < count`.
+
+Add a view test for the error branch:
+
+```tsx
+  it('shows the empty-filter message instead of an empty result list', () => {
+    render(<FilterPanelView {...baseProps} error="Chưa có điều kiện lọc" results={[]} count={0} />);
+    expect(screen.getByText('Chưa có điều kiện lọc')).toBeInTheDocument();
+  });
+```
+
+Match `baseProps` to the file's existing test setup. Update the rest of `FilterPanel.view.test.tsx` for the prop changes.
 
 - [ ] **Step 9: Rewrite `SearchBar` over the shared engine**
 
@@ -2309,7 +2351,7 @@ Note anything cosmetic (panel width, seam alignment, the toggle's vertical posit
 - §1 selection entity, one interaction replacing two, `selectById`, editing subscribes, no modify on select → Tasks 2, 3, 4, 6, 7 ✓
 - §2 drawer universal with role-gated sections, panel attached right, round `<<`/`>>` seam button, collapsed ≠ deselected, new selection re-expands, both overlay → Tasks 8, 9 ✓
 - §3 read-only by default, title/tag/attributes, pen on `steward` persona, pen couples form + modify, cancel keeps selection → Tasks 7, 8 ✓
-- §4 one `Query`/`runQuery`, identical click behaviour, `view.fit` with padding + maxZoom, feature-identity ids, `eq`/`contains` split, empty conditions return all, cap as display concern with `N / M`, unloaded layers surfaced → Tasks 5, 9 ✓
+- §4 one `Query`/`runQuery`, identical click behaviour, `view.fit` with padding + maxZoom, feature-identity ids, `eq`/`contains` split, empty filter refused with an explicit message, cap as display concern with `N / M`, unloaded layers surfaced → Tasks 5, 9 ✓
 - §5 shared zoom constants, Vietnam extent, zoom floor, out-of-scope layer styling untouched → Task 1 ✓
 
 **2. Placeholder scan:** none. Every code step carries real code; every command states its expected result. Values that could have been guesses were verified against the source instead: `attributes` is `Record<dbColumn, isoName>` (`layer-attributes.ts:10`), and the panel's geometry is derived from the real `.edit-drawer` rule (`main.css:905-908`). Three steps still say "read the file first and conform" (Task 3 Step 4 `makeRiverSelectStyle`'s signature, Task 4 Step 6 provider nesting, Task 8 Step 8 `AttributeForm` props) — these are pre-existing interfaces with their own tests, so the plan names the exact file to open rather than dictating a shape that would break them.
