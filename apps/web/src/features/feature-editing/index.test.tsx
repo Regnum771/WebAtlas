@@ -12,10 +12,6 @@ vi.mock('../map/model/mapEditing', () => ({
     registerSetSelectActive: vi.fn(), startModify: vi.fn(), cancelModify: vi.fn(),
   }),
 }));
-// shared selection stub — nothing selected by default
-vi.mock('../../entities/selection', () => ({
-  useSelection: () => ({ selection: null, selectById: vi.fn(), clear: vi.fn() }),
-}));
 // layer catalog stub
 vi.mock('../../entities/layer/useLayerCatalog', () => ({
   useLayerCatalog: () => ({ data: [{ key: 'dams', geomType: 'Point', attributes: ['name', 'status'] }], isLoading: false }),
@@ -23,16 +19,14 @@ vi.mock('../../entities/layer/useLayerCatalog', () => ({
 
 import FeatureEditing from './index';
 
+// Editing an already-selected feature (pen, attribute form, delete) moved to
+// widgets/display-panel — see its index.test.tsx for that coverage, including the
+// delete-reachability regression test. This drawer now only hosts draw/create.
 describe('FeatureEditing', () => {
   it('renders the toolbar with the layer picker and a draw control for an admin', () => {
     render(<FeatureEditing />);
     expect(screen.getByText('Add a feature')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /dams/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /draw/i })).toBeInTheDocument();
-  });
-
-  it('renders nothing for edit-existing when nothing is selected (the display panel pen drives it now)', () => {
-    render(<FeatureEditing />);
-    expect(screen.queryByRole('button', { name: /edit existing/i })).not.toBeInTheDocument();
   });
 });

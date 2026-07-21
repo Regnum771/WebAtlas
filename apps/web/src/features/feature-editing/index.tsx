@@ -1,14 +1,12 @@
 import { LAYER_ATTRIBUTE_MAP, type EditableLayerKey } from '@webatlas/shared';
 import { RequireRole } from '../auth/ui/RequireRole';
-import { useMapEditing, type GeoJSONGeometry } from '../map/model/mapEditing';
+import { useMapEditing } from '../map/model/mapEditing';
 import { useEditToolbarPresenter } from './model/useEditToolbarPresenter';
 import { useAttributeFormPresenter } from './model/useAttributeFormPresenter';
-import { useEditExistingPresenter } from './model/useEditExistingPresenter';
 import { EditToolbarView } from './ui/EditToolbar.view';
 import { LayerPickerView } from './ui/LayerPicker.view';
 import { DrawControlsView } from './ui/DrawControls.view';
 import { AttributeFormView } from './ui/AttributeForm.view';
-import { ConfirmDialog } from '../../shared/ui/ConfirmDialog';
 
 function EditToolbar() {
   const toolbar = useEditToolbarPresenter();
@@ -58,66 +56,17 @@ function EditToolbar() {
   );
 }
 
-function EditForm({ sel, workingGeometry, onSaved, onCancel, onDelete }: {
-  sel: NonNullable<ReturnType<typeof useEditExistingPresenter>['selection']>;
-  workingGeometry: GeoJSONGeometry | null;
-  onSaved: () => void; onCancel: () => void; onDelete: () => void;
-}) {
-  const form = useAttributeFormPresenter({
-    layerKey: sel.layerKey, attributes: sel.attributes, geometry: workingGeometry,
-    mode: 'edit', featureId: sel.featureId, initialValues: sel.initialValues, onSaved,
-  });
-  return (
-    <>
-      <AttributeFormView
-        attributes={sel.attributes} labels={form.labels} values={form.values}
-        fieldErrors={form.fieldErrors} error={form.error} canSave={form.canSave}
-        saving={form.saving} onField={form.setField} onSubmit={form.submit} onCancel={onCancel}
-      />
-      <button type="button" className="edit-delete-btn" onClick={onDelete}>Delete feature</button>
-    </>
-  );
-}
-
-function EditExisting() {
-  const edit = useEditExistingPresenter();
-  const sel = edit.selection;
-
-  return (
-    <div className="edit-existing">
-      {sel && (
-        <EditForm
-          /* key remounts EditForm per selection so the form re-seeds initialValues (useState initializer runs once) */
-          key={sel.featureId}
-          sel={sel}
-          workingGeometry={edit.workingGeometry}
-          onSaved={edit.onSaved}
-          onCancel={edit.cancelEdit}
-          onDelete={edit.requestDelete}
-        />
-      )}
-      {sel && edit.error && <p className="edit-form-error" role="alert">{edit.error}</p>}
-      <ConfirmDialog
-        open={edit.confirmOpen}
-        title="Delete feature"
-        message="Delete this feature? This cannot be undone."
-        confirmLabel="Delete"
-        busy={edit.deleting}
-        onConfirm={edit.confirmDelete}
-        onCancel={edit.cancelDelete}
-      />
-    </div>
-  );
-}
-
 // UX gate ONLY. Real authorization is enforced by the backend (401/403 on every
 // write route); a viewer who forces this open still gets 403 on the API call.
 // Editors and admins can edit features (design §2 CAN_WRITE_FEATURES).
+//
+// Editing an already-selected feature (the pen, the attribute form, delete) lives in
+// widgets/display-panel now — the panel IS the editing surface for a selected feature.
+// This drawer only hosts the draw/create flow.
 export default function FeatureEditing() {
   return (
     <RequireRole role={['admin', 'editor']}>
       <EditToolbar />
-      <EditExisting />
     </RequireRole>
   );
 }
