@@ -80,22 +80,6 @@ describe('MapModel — Vietnam fit on startup (Finding 4)', () => {
     expect(zoomAfter).toBeGreaterThanOrEqual(MAP_MIN_ZOOM);
   });
 
-  it('fitVietnam() re-fits on demand (home button behaviour)', () => {
-    const el = makeSizedTarget(800, 700);
-    model = new MapModel();
-    model.init(el);
-
-    const map = model.getMap()!;
-    const view = map.getView();
-    // Pan/zoom away from the fitted view.
-    view.setZoom(15);
-    expect(view.getZoom()).toBe(15);
-
-    model.fitVietnam();
-    expect(view.getZoom()!).toBeLessThan(7);
-    expect(view.getZoom()!).toBeGreaterThanOrEqual(MAP_MIN_ZOOM);
-  });
-
   it('lets the view center reach the country\'s northern and southern tips at the fitted zoom (Finding 4c)', () => {
     const el = makeSizedTarget(800, 700);
     model = new MapModel();

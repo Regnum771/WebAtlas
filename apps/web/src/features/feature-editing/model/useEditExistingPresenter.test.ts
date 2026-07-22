@@ -179,4 +179,42 @@ describe('useEditExistingPresenter', () => {
     expect(result.current.confirmOpen).toBe(false);
     expect(deleteFeature).not.toHaveBeenCalled();
   });
+
+  it('tears down edit mode when the shared selection changes to a different feature', () => {
+    currentSelection = damSelection;
+    const { result, rerender } = renderHook(() => useEditExistingPresenter());
+    act(() => { result.current.beginEdit(); });
+    expect(result.current.editing).toBe(true);
+
+    const damBSelection = {
+      layerKey: 'dams',
+      featureId: 'b1',
+      feature: { getGeometry: () => ({ fake: 'geometry-b' }) },
+      isoProps: { geographicalName: 'Dam B' },
+    };
+    act(() => {
+      currentSelection = damBSelection;
+      rerender();
+    });
+
+    expect(cancelModify).toHaveBeenCalled();
+    expect(result.current.editing).toBe(false);
+    expect(result.current.selection).toBeNull();
+  });
+
+  it('tears down edit mode when the shared selection is cleared to null', () => {
+    currentSelection = damSelection;
+    const { result, rerender } = renderHook(() => useEditExistingPresenter());
+    act(() => { result.current.beginEdit(); });
+    expect(result.current.editing).toBe(true);
+
+    act(() => {
+      currentSelection = null;
+      rerender();
+    });
+
+    expect(cancelModify).toHaveBeenCalled();
+    expect(result.current.editing).toBe(false);
+    expect(result.current.selection).toBeNull();
+  });
 });

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { LAYER_ATTRIBUTE_MAP, denormalizeFeatureProperties, type EditableLayerKey } from '@webatlas/shared';
 import { useMapEditing, type GeoJSONGeometry } from '../../map/model/mapEditing';
 import { useSelection } from '../../../entities/selection';
@@ -35,6 +35,26 @@ export function useEditExistingPresenter() {
     setConfirmOpen(false);
     setError(null);
   }, [cancelModify]);
+
+  // reset() is not stable across renders of the mapEditing context (cancelModify's
+  // identity can change), so route it through a ref to keep the watcher effect below
+  // from re-subscribing every render — it should only fire when the SELECTION changes.
+  const resetRef = useRef(reset);
+  resetRef.current = reset;
+
+  // Edit mode is only valid for the feature it was opened on. If the shared selection
+  // moves to a different feature (or is cleared) while editing, the Modify/Translate
+  // interactions must be torn down immediately — geometry must never stay draggable
+  // once its editable surface has disappeared from the panel.
+  useEffect(() => {
+    if (!editing) return;
+    if (!selection) return;
+    const stillEditingSameFeature =
+      mapSelection != null &&
+      mapSelection.layerKey === selection.layerKey &&
+      mapSelection.featureId === selection.featureId;
+    if (!stillEditingSameFeature) resetRef.current();
+  }, [mapSelection, editing, selection]);
 
   // The pen. Promotes the current read-only selection into an editable one.
   const beginEdit = useCallback(() => {

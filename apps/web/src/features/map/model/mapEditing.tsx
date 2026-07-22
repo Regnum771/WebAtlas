@@ -14,7 +14,6 @@ interface MapEditingValue {
   cancelDraw: () => void;
   refreshLayer: (layerStateId: string) => void;
   registerRefresh: (fn: (layerStateId: string) => void) => void;
-  registerSetSelectActive: (fn: (active: boolean) => void) => void;
   startModify: (onChange: (g: GeoJSONGeometry) => void) => void;
   cancelModify: () => void;
 }
@@ -27,7 +26,6 @@ export function MapEditingProvider({ children }: { children: ReactNode }) {
   const controllerRef = useRef<DrawController | null>(null);
   const modifyRef = useRef<ModifyController | null>(null);
   const refreshRef = useRef<((id: string) => void) | null>(null);
-  const selectActiveRef = useRef<((active: boolean) => void) | null>(null);
   const [hasMap, setHasMap] = useState(false);
 
   useEffect(() => {
@@ -50,7 +48,6 @@ export function MapEditingProvider({ children }: { children: ReactNode }) {
   const cancelDraw = useCallback(() => { controllerRef.current?.cancel(); }, []);
   const refreshLayer = useCallback((id: string) => { refreshRef.current?.(id); }, []);
   const registerRefresh = useCallback((fn: (id: string) => void) => { refreshRef.current = fn; }, []);
-  const registerSetSelectActive = useCallback((fn: (active: boolean) => void) => { selectActiveRef.current = fn; }, []);
 
   const startModify = useCallback((onChange: (g: GeoJSONGeometry) => void) => {
     const f = selection?.feature;
@@ -60,7 +57,7 @@ export function MapEditingProvider({ children }: { children: ReactNode }) {
 
   return (
     <MapEditingContext.Provider value={{
-      hasMap, startDraw, cancelDraw, refreshLayer, registerRefresh, registerSetSelectActive,
+      hasMap, startDraw, cancelDraw, refreshLayer, registerRefresh,
       startModify, cancelModify,
     }}>
       {children}

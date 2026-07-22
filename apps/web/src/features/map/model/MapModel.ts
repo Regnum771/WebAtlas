@@ -202,11 +202,6 @@ export class MapModel {
     return true;
   }
 
-  /** Re-fit the whole country — used by the home button (MapControls). */
-  fitVietnam(): void {
-    this.tryFitVietnam();
-  }
-
   // Shared by the moveend listener (init) and applyLayerStates() so both use
   // identical zoom-visibility logic against the last-known layerStates.
   private recomputeVisibility(): void {
@@ -292,13 +287,6 @@ export class MapModel {
     if (!layer) return;
     layer.getSource()?.refresh();
   }
-
-  /**
-   * No-op now that the rivers-only Select is retired (Task 6 of the selection-panel plan);
-   * kept so `MapView`'s `registerSetSelectActive` wiring stays compilable until that wiring
-   * itself is retired. There is no interaction left to enable/disable.
-   */
-  setSelectActive(_active: boolean): void {}
 
   dispose(): void {
     if (!this.map) return;

@@ -9,7 +9,7 @@ vi.mock('../../entities/session/model/session.store', () => ({
 vi.mock('../map/model/mapEditing', () => ({
   useMapEditing: () => ({
     hasMap: true, startDraw: vi.fn(), cancelDraw: vi.fn(), refreshLayer: vi.fn(), registerRefresh: vi.fn(),
-    registerSetSelectActive: vi.fn(), startModify: vi.fn(), cancelModify: vi.fn(),
+    startModify: vi.fn(), cancelModify: vi.fn(),
   }),
 }));
 // layer catalog stub

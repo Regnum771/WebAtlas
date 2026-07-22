@@ -5,6 +5,7 @@ import { usePersona } from '../../../entities/persona/usePersona';
 import { LAYER_LABELS } from '../../../features/attribute-filter/model/layerLabels';
 
 export interface DisplayRow {
+  iso: string;
   label: string;
   value: string;
 }
@@ -63,7 +64,7 @@ export function useDisplayPanelPresenter() {
       if (iso === 'localId') continue;
       const v = selection.isoProps[iso];
       if (v === undefined || v === null || v === '') continue;
-      out.push({ label: FIELD_LABELS[iso] ?? column, value: String(v) });
+      out.push({ iso, label: FIELD_LABELS[iso] ?? column, value: String(v) });
     }
     return out;
   }, [selection]);

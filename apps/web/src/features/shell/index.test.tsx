@@ -7,7 +7,7 @@ let isOpen = false;
 const toggle = vi.fn(() => { isOpen = !isOpen; });
 const close = vi.fn(() => { isOpen = false; });
 vi.mock('./model/useShellPresenter', () => ({
-  useShellPresenter: () => ({ hasDrawer: true, canEdit, isOpen, toggle, close }),
+  useShellPresenter: () => ({ canEdit, isOpen, toggle, close }),
 }));
 // Stub the hosted features so we assert ROUTING, not their internals.
 vi.mock('../feature-editing', () => ({ default: () => <div>FEATURE_EDITING</div> }));

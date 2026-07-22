@@ -14,28 +14,24 @@ describe('useShellPresenter', () => {
   it('gives every role a drawer, and gates only the edit section', () => {
     // viewer
     const viewer = renderHook(() => useShellPresenter());
-    expect(viewer.result.current.hasDrawer).toBe(true);
     expect(viewer.result.current.canEdit).toBe(false);
   });
 
   it('governance/research get a drawer but cannot edit', () => {
     available = ['governance', 'research'];
     const { result } = renderHook(() => useShellPresenter());
-    expect(result.current.hasDrawer).toBe(true);
     expect(result.current.canEdit).toBe(false);
   });
 
   it('editor (steward) can edit', () => {
     available = ['steward'];
     const { result } = renderHook(() => useShellPresenter());
-    expect(result.current.hasDrawer).toBe(true);
     expect(result.current.canEdit).toBe(true);
   });
 
   it('admin can edit (steward is in its persona set)', () => {
     available = ['steward', 'admin'];
     const { result } = renderHook(() => useShellPresenter());
-    expect(result.current.hasDrawer).toBe(true);
     expect(result.current.canEdit).toBe(true);
   });
 

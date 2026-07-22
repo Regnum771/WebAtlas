@@ -6,7 +6,7 @@ import { DisplayPanelView } from './DisplayPanel.view';
 const base = {
   title: 'Hoa Binh',
   layerLabel: 'Đập & Hồ chứa',
-  rows: [{ label: 'name', value: 'Hoa Binh' }],
+  rows: [{ iso: 'geographicalName', label: 'name', value: 'Hoa Binh' }],
   collapsed: false,
   canEdit: false,
   onToggleCollapse: vi.fn(),

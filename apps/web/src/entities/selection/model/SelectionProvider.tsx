@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type Map from 'ol/Map';
 import type { EditableLayerKey } from '@webatlas/shared';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { LAYER_REGISTRY } from '../../layer/layerRegistry';
@@ -15,8 +16,7 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     if (!map) return;
     const layerKeyByStateId: Record<string, EditableLayerKey> = {};
     for (const e of LAYER_REGISTRY) layerKeyByStateId[e.layerStateId] = e.layerKey;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const c = new SelectionController(map as any, layerKeyByStateId);
+    const c = new SelectionController(map as Map, layerKeyByStateId);
     c.activate(setSelection);
     controllerRef.current = c;
     return () => {

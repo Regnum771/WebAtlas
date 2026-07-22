@@ -60,7 +60,7 @@ export function DisplayPanelView({
           {children ?? (
             <dl className="display-panel-rows">
               {rows.map((r) => (
-                <div key={r.label} className="display-panel-row">
+                <div key={r.iso} className="display-panel-row">
                   <dt>{r.label}</dt>
                   <dd>{r.value}</dd>
                 </div>
