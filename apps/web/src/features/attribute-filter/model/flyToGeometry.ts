@@ -1,12 +1,29 @@
-import { getCenter } from 'ol/extent';
 import type { Map } from 'ol';
 import type { Geometry } from 'ol/geom';
 
-// Fly the map to a feature's geometry, centred on its EXTENT centre so it works
-// for ANY geometry — point, line, polygon. (Using getCoordinates() breaks on
-// lines/polygons, which return nested arrays that are not a valid view centre.)
-export function flyToGeometry(map: Map | null, geom: Geometry | null | undefined, zoom = 11): void {
+/**
+ * Left padding reserves the drawer + detail panel, which overlay the map:
+ * 12px offset + 360px drawer + 340px panel = 712px, plus a 20px breathing gap.
+ * Keep in step with --drawer-width / --display-panel-width in main.css.
+ */
+export const DEFAULT_FIT_PADDING = [80, 80, 80, 732];
+/** Stops a single point from fitting to street level. */
+export const DEFAULT_FIT_MAX_ZOOM = 14;
+
+/**
+ * Frame a feature. Fits the geometry's EXTENT rather than centring on a coordinate:
+ * a fixed centre+zoom lands mid-way along a long river showing no useful context, and
+ * a line's getCoordinates() is nested and is not a valid view centre at all.
+ */
+export function flyToGeometry(
+  map: Map | null,
+  geom: Geometry | null | undefined,
+  opts: { padding?: number[]; maxZoom?: number } = {},
+): void {
   if (!map || !geom) return;
-  const center = getCenter(geom.getExtent());
-  map.getView().animate({ center, zoom, duration: 1000 });
+  map.getView().fit(geom.getExtent(), {
+    padding: opts.padding ?? DEFAULT_FIT_PADDING,
+    maxZoom: opts.maxZoom ?? DEFAULT_FIT_MAX_ZOOM,
+    duration: 800,
+  });
 }

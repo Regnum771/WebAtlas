@@ -13,7 +13,9 @@ export function FilterPanelView(props: {
   conditions: Condition[];
   results: FilterResult[];
   count: number;
-  layerLoaded: boolean;
+  shownCount: number;
+  unloadedLayers: EditableLayerKey[];
+  error: string | null;
   onSelectLayer: (key: EditableLayerKey) => void;
   onAddCondition: () => void;
   onUpdateCondition: (i: number, patch: Partial<Condition>) => void;
@@ -23,9 +25,11 @@ export function FilterPanelView(props: {
   onResultClick: (id: string) => void;
 }) {
   const {
-    layerKey, fields, conditions, results, count, layerLoaded,
+    layerKey, fields, conditions, results, count, shownCount, unloadedLayers, error,
     onSelectLayer, onAddCondition, onUpdateCondition, onRemoveCondition, onClear, onEnableLayer, onResultClick,
   } = props;
+
+  const layerUnloaded = !!layerKey && unloadedLayers.includes(layerKey);
 
   return (
     <div className="filter-panel glass-panel" aria-label="Bộ lọc dữ liệu">
@@ -44,14 +48,14 @@ export function FilterPanelView(props: {
         </select>
       </label>
 
-      {layerKey && !layerLoaded && (
+      {layerKey && layerUnloaded && (
         <div className="filter-empty">
           <p>Lớp chưa được tải.</p>
           <button type="button" onClick={onEnableLayer}>Bật lớp để lọc</button>
         </div>
       )}
 
-      {layerKey && layerLoaded && (
+      {layerKey && !layerUnloaded && (
         <>
           <div className="filter-conditions">
             {conditions.map((c, i) => (
@@ -67,24 +71,32 @@ export function FilterPanelView(props: {
           </div>
 
           <div className="filter-results-header">
-            <span>{count} kết quả</span>
+            <span>
+              {error ? null : shownCount < count ? `hiển thị ${shownCount} / ${count}` : `${count} kết quả`}
+            </span>
             <button type="button" className="filter-clear" onClick={onClear}>Xóa lọc</button>
           </div>
 
-          <div className="filter-results">
-            {results.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                className="filter-result-item"
-                onClick={() => onResultClick(r.id)}
-                disabled={!r.hasGeometry}
-              >
-                <span className="filter-result-name">{r.label}</span>
-                {r.subLabel && <span className="filter-result-sub">{r.subLabel}</span>}
-              </button>
-            ))}
-          </div>
+          {error ? (
+            <div className="filter-empty">
+              <p>{error}</p>
+            </div>
+          ) : (
+            <div className="filter-results">
+              {results.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  className="filter-result-item"
+                  onClick={() => onResultClick(r.id)}
+                  disabled={!r.hasGeometry}
+                >
+                  <span className="filter-result-name">{r.label}</span>
+                  {r.layerLabel && <span className="filter-result-sub">{r.layerLabel}</span>}
+                </button>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>

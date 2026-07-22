@@ -6,8 +6,14 @@ import XYZ from 'ol/source/XYZ';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import GeoJSON from 'ol/format/GeoJSON';
-import Select from 'ol/interaction/Select';
 import { fromLonLat, transformExtent } from 'ol/proj';
+import {
+  VIETNAM_EXTENT_4326,
+  MAP_MIN_ZOOM,
+  MAP_MAX_ZOOM,
+  MAP_DEFAULT_CENTER_4326,
+  MAP_DEFAULT_ZOOM,
+} from '@webatlas/shared';
 import { createWfsVectorSource } from './wfsSource';
 import {
   provincesStyle,
@@ -19,7 +25,6 @@ import {
   saltwaterIntrusionStyle,
   floodGenerationStyle,
   makeDamsStyle,
-  makeRiverSelectStyle,
 } from './styles';
 
 export type BasemapType = 'satellite' | 'street' | 'dem';
@@ -39,10 +44,11 @@ export class MapModel {
   private map: Map | null = null;
   private basemapLayer: TileLayer<XYZ | OSM> | null = null;
   private layers: Record<string, VectorLayer<VectorSource>> = {};
-  private selectInteraction: Select | null = null;
   private reservoirFilter: ReservoirFilterType = 'all';
   private layerStates: LayerState[] = [];
   private moveendHandler: (() => void) | null = null;
+  private changeSizeHandler: (() => void) | null = null;
+  private vietnamExtent3857: [number, number, number, number] = [0, 0, 0, 0];
 
   init(target: HTMLElement): void {
     // Idempotency guard for React 19 StrictMode double-invoked effects.
@@ -97,6 +103,13 @@ export class MapModel {
 
     const wardsLayer = createVectorLayerFromUrl('layer_wards_2026', './gadm41_VNM_3.geojson', wardsStyle);
 
+    const vietnamExtent3857 = transformExtent(
+      [...VIETNAM_EXTENT_4326],
+      'EPSG:4326',
+      'EPSG:3857',
+    ) as [number, number, number, number];
+    this.vietnamExtent3857 = vietnamExtent3857;
+
     // 3. Khởi tạo Map
     const map = new Map({
       target,
@@ -113,22 +126,40 @@ export class MapModel {
         floodGenerationLayer
       ],
       view: new View({
-        center: fromLonLat([108.2, 13.5]),
-        zoom: 7,
-        minZoom: 4.0,
-        maxZoom: 20,
-        extent: transformExtent([107.0, 10.5, 109.5, 16.5], 'EPSG:4326', 'EPSG:3857'),
+        // Pre-fit initial values; tryFitVietnam() below replaces these
+        // with a proper fit as soon as the map has a real size.
+        center: fromLonLat([...MAP_DEFAULT_CENTER_4326]),
+        zoom: MAP_DEFAULT_ZOOM,
+        minZoom: MAP_MIN_ZOOM,
+        maxZoom: MAP_MAX_ZOOM,
+        extent: vietnamExtent3857,
+        // Vietnam's extent is much taller than it is wide, but most viewports
+        // are wider than tall. Without showFullExtent, OL's resolution
+        // constraint caps zoom-out at Math.min(xResolution, yResolution) —
+        // i.e. the tighter of "fit the width" / "fit the height" — which for
+        // a portrait-shaped extent in a landscape viewport is the WIDTH-based
+        // (more zoomed-in) resolution, so the view could never zoom out far
+        // enough to show the country's full north-south span. showFullExtent
+        // switches the cap to Math.max(...), matching what view.fit() itself
+        // computes, so the fit isn't fighting its own resolution constraint.
+        showFullExtent: true,
+        // By default OL's `extent` option constrains the WHOLE VIEWPORT to
+        // stay inside `extent` (see ol/centerconstraint.js createExtent):
+        // the allowed center range shrinks by half the viewport's world-space
+        // size on every side. At a zoom that fits the whole country, half the
+        // viewport height alone is a large fraction of the country's own
+        // height, so that default would make the true north/south tips
+        // (Ha Giang, Ca Mau) permanently unreachable — confirmed by testing:
+        // even a 15%-buffered extent left the reachable center ~680km short
+        // of the real edge at a 700px-tall viewport. constrainOnlyCenter
+        // switches the constraint to only clamp the CENTER point itself
+        // against the exact country bbox, independent of viewport size, so
+        // the user can pan until the center reaches Ha Giang/Ca Mau and the
+        // edge is fully visible.
+        constrainOnlyCenter: true,
       }),
       controls: []
     });
-
-    // Thêm interaction để highlight sông khi click
-    const selectInteraction = new Select({
-      layers: [riversLayer],
-      style: makeRiverSelectStyle()
-    });
-    map.addInteraction(selectInteraction);
-    this.selectInteraction = selectInteraction;
 
     this.map = map;
 
@@ -137,6 +168,38 @@ export class MapModel {
 
     this.moveendHandler = updateLayersVisibility;
     map.on('moveend', updateLayersVisibility);
+
+    // Fit the whole country into whatever viewport the user actually has.
+    // `view.fit` needs the map to already have a non-zero size; `updateSize()`
+    // runs synchronously inside the `Map` constructor's `setTarget`, so a size
+    // is *usually* already available here. But the target element can still
+    // be zero-sized at construction time (e.g. layout not yet settled, or in
+    // tests), so guard with a size check and, if it's not ready yet, fit on
+    // the first `change:size` event instead of silently doing nothing.
+    if (!this.tryFitVietnam()) {
+      const onChangeSize = () => {
+        if (this.tryFitVietnam() && this.changeSizeHandler) {
+          map.un('change:size', this.changeSizeHandler);
+          this.changeSizeHandler = null;
+        }
+      };
+      this.changeSizeHandler = onChangeSize;
+      map.on('change:size', onChangeSize);
+    }
+  }
+
+  /**
+   * Fit VIETNAM_EXTENT_4326 into the map's current viewport size.
+   * Returns false (without side effects) if the map has no size yet.
+   */
+  private tryFitVietnam(): boolean {
+    const map = this.map;
+    if (!map) return false;
+    const size = map.getSize();
+    if (!size || size.some((n) => n === 0)) return false;
+    const view = map.getView();
+    view.fit(this.vietnamExtent3857, { size, padding: [24, 24, 24, 24] });
+    return true;
   }
 
   // Shared by the moveend listener (init) and applyLayerStates() so both use
@@ -225,21 +288,16 @@ export class MapModel {
     layer.getSource()?.refresh();
   }
 
-  /** Enable/disable the rivers click-highlight Select (disabled during admin edit mode so it doesn't fire alongside the edit selection). */
-  setSelectActive(active: boolean): void {
-    this.selectInteraction?.setActive(active);
-  }
-
   dispose(): void {
     if (!this.map) return;
 
-    if (this.selectInteraction) {
-      this.map.removeInteraction(this.selectInteraction);
-      this.selectInteraction = null;
-    }
     if (this.moveendHandler) {
       this.map.un('moveend', this.moveendHandler);
       this.moveendHandler = null;
+    }
+    if (this.changeSizeHandler) {
+      this.map.un('change:size', this.changeSizeHandler);
+      this.changeSizeHandler = null;
     }
     this.map.setTarget(undefined);
     this.map = null;

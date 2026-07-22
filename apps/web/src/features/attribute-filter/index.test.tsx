@@ -17,10 +17,10 @@ beforeEach(() => {
   layersState = [{ id: 'layer_stations', visible: false }];
   vm = {
     isOpen: false, layerKey: null, fields: [], conditions: [], results: [],
-    count: 0, activeCount: 0, layerLoaded: false,
+    count: 0, shownCount: 0, activeCount: 0, unloadedLayers: [], error: null,
     setLayer: vi.fn(), addCondition: vi.fn(), updateCondition: vi.fn(),
     removeCondition: vi.fn(), clear: vi.fn(), open: vi.fn(), close: vi.fn(),
-    flyTo: vi.fn(),
+    onResultClick: vi.fn(),
   };
 });
 
@@ -44,7 +44,7 @@ describe('AttributeFilter', () => {
   });
 
   it('enable turns the layer on when it is OFF', async () => {
-    vm.isOpen = true; vm.layerKey = 'stations'; vm.layerLoaded = false;
+    vm.isOpen = true; vm.layerKey = 'stations'; vm.unloadedLayers = ['stations'];
     layersState = [{ id: 'layer_stations', visible: false }];
     render(<AttributeFilter />);
     await userEvent.click(screen.getByRole('button', { name: /bật lớp/i }));
@@ -52,7 +52,7 @@ describe('AttributeFilter', () => {
   });
 
   it('enable does NOT toggle a layer that is already visible (regression: was turning it OFF)', async () => {
-    vm.isOpen = true; vm.layerKey = 'stations'; vm.layerLoaded = false;
+    vm.isOpen = true; vm.layerKey = 'stations'; vm.unloadedLayers = ['stations'];
     layersState = [{ id: 'layer_stations', visible: true }]; // visible but still loading
     render(<AttributeFilter />);
     await userEvent.click(screen.getByRole('button', { name: /bật lớp/i }));

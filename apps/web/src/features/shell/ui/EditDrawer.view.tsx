@@ -8,9 +8,9 @@ export function EditDrawerView({ open, onClose, children }: {
 }) {
   if (!open) return null;
   return (
-    <aside className="edit-drawer glass-panel" aria-label="Công cụ biên tập">
+    <aside className="edit-drawer glass-panel" aria-label="Công cụ">
       <header className="edit-drawer-header">
-        <h2>Biên tập dữ liệu</h2>
+        <h2>Công cụ</h2>
         <button type="button" className="edit-drawer-close" onClick={onClose} aria-label="Close">
           <X size={18} />
         </button>

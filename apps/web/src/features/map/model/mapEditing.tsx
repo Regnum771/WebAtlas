@@ -1,14 +1,12 @@
 import { createContext, useContext, useEffect, useRef, useCallback, useState, type ReactNode } from 'react';
-import type { OgcGeometryType, EditableLayerKey } from '@webatlas/shared';
+import type { OgcGeometryType } from '@webatlas/shared';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { DrawController } from './DrawController';
-import { SelectController, type EditSelection } from './SelectController';
 import { ModifyController } from './ModifyController';
-import { LAYER_REGISTRY } from '../../../entities/layer/layerRegistry';
+import { useSelection } from '../../../entities/selection';
 import type { GeoJSONGeometry } from './geo';
 
 export type { GeoJSONGeometry };
-export type { EditSelection };
 
 interface MapEditingValue {
   hasMap: boolean;
@@ -16,42 +14,30 @@ interface MapEditingValue {
   cancelDraw: () => void;
   refreshLayer: (layerStateId: string) => void;
   registerRefresh: (fn: (layerStateId: string) => void) => void;
-  registerSetSelectActive: (fn: (active: boolean) => void) => void;
-  editing: boolean;
-  enterEditMode: (onSelected: (sel: EditSelection) => void) => void;
-  exitEditMode: () => void;
   startModify: (onChange: (g: GeoJSONGeometry) => void) => void;
   cancelModify: () => void;
-  clearSelection: () => void;
 }
 
 const MapEditingContext = createContext<MapEditingValue | undefined>(undefined);
 
 export function MapEditingProvider({ children }: { children: ReactNode }) {
   const { map } = useMapContext();
+  const { selection } = useSelection();
   const controllerRef = useRef<DrawController | null>(null);
-  const selectRef = useRef<SelectController | null>(null);
   const modifyRef = useRef<ModifyController | null>(null);
   const refreshRef = useRef<((id: string) => void) | null>(null);
-  const selectActiveRef = useRef<((active: boolean) => void) | null>(null);
   const [hasMap, setHasMap] = useState(false);
-  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     if (map && !controllerRef.current) {
       controllerRef.current = new DrawController(map);
-      const layerKeyByStateId: Record<string, EditableLayerKey> = {};
-      for (const e of LAYER_REGISTRY) layerKeyByStateId[e.layerStateId] = e.layerKey;
-      selectRef.current = new SelectController(map, layerKeyByStateId);
       modifyRef.current = new ModifyController(map);
       setHasMap(true);
     }
     return () => {
       controllerRef.current?.dispose();
-      selectRef.current?.dispose();
       modifyRef.current?.dispose();
       controllerRef.current = null;
-      selectRef.current = null;
       modifyRef.current = null;
     };
   }, [map]);
@@ -62,30 +48,17 @@ export function MapEditingProvider({ children }: { children: ReactNode }) {
   const cancelDraw = useCallback(() => { controllerRef.current?.cancel(); }, []);
   const refreshLayer = useCallback((id: string) => { refreshRef.current?.(id); }, []);
   const registerRefresh = useCallback((fn: (id: string) => void) => { refreshRef.current = fn; }, []);
-  const registerSetSelectActive = useCallback((fn: (active: boolean) => void) => { selectActiveRef.current = fn; }, []);
 
-  const enterEditMode = useCallback((onSelected: (sel: EditSelection) => void) => {
-    selectRef.current?.activate(onSelected);
-    selectActiveRef.current?.(false);
-    setEditing(true);
-  }, []);
-  const exitEditMode = useCallback(() => {
-    modifyRef.current?.cancel();
-    selectRef.current?.deactivate();
-    selectActiveRef.current?.(true);
-    setEditing(false);
-  }, []);
   const startModify = useCallback((onChange: (g: GeoJSONGeometry) => void) => {
-    const f = selectRef.current?.getSelectedFeature();
+    const f = selection?.feature;
     if (f) modifyRef.current?.start(f, onChange);
-  }, []);
+  }, [selection]);
   const cancelModify = useCallback(() => { modifyRef.current?.cancel(); }, []);
-  const clearSelection = useCallback(() => { selectRef.current?.clear(); }, []);
 
   return (
     <MapEditingContext.Provider value={{
-      hasMap, startDraw, cancelDraw, refreshLayer, registerRefresh, registerSetSelectActive,
-      editing, enterEditMode, exitEditMode, startModify, cancelModify, clearSelection,
+      hasMap, startDraw, cancelDraw, refreshLayer, registerRefresh,
+      startModify, cancelModify,
     }}>
       {children}
     </MapEditingContext.Provider>

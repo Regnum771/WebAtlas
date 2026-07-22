@@ -10,3 +10,4 @@ export * from './layer-attributes';
 export * from './feature-properties';
 export * from './attribute-schema';
 export * from './dam-status';
+export * from './map-view';

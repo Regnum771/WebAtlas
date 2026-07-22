@@ -1,6 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { LAYER_ATTRIBUTE_MAP, denormalizeFeatureProperties, type EditableLayerKey } from '@webatlas/shared';
-import { useMapEditing, type EditSelection, type GeoJSONGeometry } from '../../map/model/mapEditing';
+import { useMapEditing, type GeoJSONGeometry } from '../../map/model/mapEditing';
+import { useSelection } from '../../../entities/selection';
+import { olGeometryTo4326GeoJSON } from '../../map/model/geo';
 import { deleteFeature } from '../api/features.api';
 
 interface SelectionVM {
@@ -10,9 +12,15 @@ interface SelectionVM {
   initialValues: Record<string, string>;
 }
 
+/**
+ * Editing SUBSCRIBES to the shared selection; it no longer owns an interaction of its
+ * own. Selecting a feature is read-only — geometry becomes modifiable only when the
+ * user presses the pen (beginEdit), so browsing results can never nudge a geometry.
+ */
 export function useEditExistingPresenter() {
-  const { enterEditMode, exitEditMode, startModify, cancelModify, clearSelection, refreshLayer } = useMapEditing();
-  const [editMode, setEditMode] = useState(false);
+  const { startModify, cancelModify, refreshLayer } = useMapEditing();
+  const { selection: mapSelection } = useSelection();
+  const [editing, setEditing] = useState(false);
   const [selection, setSelection] = useState<SelectionVM | null>(null);
   const [workingGeometry, setWorkingGeometry] = useState<GeoJSONGeometry | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -21,36 +29,58 @@ export function useEditExistingPresenter() {
 
   const reset = useCallback(() => {
     cancelModify();
-    clearSelection();
+    setEditing(false);
     setSelection(null);
     setWorkingGeometry(null);
     setConfirmOpen(false);
     setError(null);
-  }, [cancelModify, clearSelection]);
+  }, [cancelModify]);
 
-  const onSelected = useCallback((sel: EditSelection) => {
-    const dbProps = denormalizeFeatureProperties(sel.layerKey, sel.isoProps);
-    const attributes = Object.keys(LAYER_ATTRIBUTE_MAP[sel.layerKey].attributes);
+  // reset() is not stable across renders of the mapEditing context (cancelModify's
+  // identity can change), so route it through a ref to keep the watcher effect below
+  // from re-subscribing every render — it should only fire when the SELECTION changes.
+  const resetRef = useRef(reset);
+  resetRef.current = reset;
+
+  // Edit mode is only valid for the feature it was opened on. If the shared selection
+  // moves to a different feature (or is cleared) while editing, the Modify/Translate
+  // interactions must be torn down immediately — geometry must never stay draggable
+  // once its editable surface has disappeared from the panel.
+  useEffect(() => {
+    if (!editing) return;
+    if (!selection) return;
+    const stillEditingSameFeature =
+      mapSelection != null &&
+      mapSelection.layerKey === selection.layerKey &&
+      mapSelection.featureId === selection.featureId;
+    if (!stillEditingSameFeature) resetRef.current();
+  }, [mapSelection, editing, selection]);
+
+  // The pen. Promotes the current read-only selection into an editable one.
+  const beginEdit = useCallback(() => {
+    if (!mapSelection) return;
+    const geom = mapSelection.feature.getGeometry();
+    if (!geom) return; // refuse to edit a feature whose geometry could not be read
+    const dbProps = denormalizeFeatureProperties(mapSelection.layerKey, mapSelection.isoProps);
+    const attributes = Object.keys(LAYER_ATTRIBUTE_MAP[mapSelection.layerKey].attributes);
     const initialValues: Record<string, string> = {};
     for (const col of attributes) {
       const v = dbProps[col];
       initialValues[col] = v == null ? '' : String(v);
     }
-    setSelection({ layerKey: sel.layerKey, featureId: sel.featureId, attributes, initialValues });
-    setWorkingGeometry(sel.geometry);
+    setSelection({
+      layerKey: mapSelection.layerKey,
+      featureId: mapSelection.featureId,
+      attributes,
+      initialValues,
+    });
+    setWorkingGeometry(olGeometryTo4326GeoJSON(geom));
+    setEditing(true);
     startModify((g) => setWorkingGeometry(g));
-  }, [startModify]);
+  }, [mapSelection, startModify]);
 
-  const enter = useCallback(() => {
-    setEditMode(true);
-    enterEditMode(onSelected);
-  }, [enterEditMode, onSelected]);
-
-  const exit = useCallback(() => {
-    exitEditMode();
-    setEditMode(false);
-    reset();
-  }, [exitEditMode, reset]);
+  // Leaves edit mode but keeps the feature selected and highlighted.
+  const cancelEdit = useCallback(() => { reset(); }, [reset]);
 
   const onSaved = useCallback(() => {
     if (selection) refreshLayer(LAYER_ATTRIBUTE_MAP[selection.layerKey].layerStateId);
@@ -75,7 +105,7 @@ export function useEditExistingPresenter() {
   }, [selection, refreshLayer, reset]);
 
   return {
-    editMode, selection, workingGeometry, confirmOpen, deleting, error,
-    enter, exit, onSaved, requestDelete, cancelDelete, confirmDelete,
+    editing, selection, workingGeometry, confirmOpen, deleting, error,
+    beginEdit, cancelEdit, onSaved, requestDelete, cancelDelete, confirmDelete,
   };
 }

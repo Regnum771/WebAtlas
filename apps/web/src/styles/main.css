@@ -228,12 +228,21 @@ body {
   cursor: pointer;
 }
 
-/* Map Controls */
+/* Map Controls
+   Positioned top-right, clear of `.top-bar` (top:0, height:52px, z-index:1200)
+   and to the LEFT of `.panels-wrapper` (top:64px, right:12px, width:320px,
+   z-index:900): right offset = 320px width + 12px panel gutter + 12px gap
+   = 344px. Aligning `top` with the panels-wrapper's `top:64px` keeps the two
+   stacks visually level. This placement holds regardless of
+   `.panels-wrapper.hidden` (opacity/pointer-events only, no layout change),
+   so the controls stay put and reachable whether the right panels are shown
+   or hidden. z-index raised above the panels-wrapper's 900 as a second guard
+   against stacking collisions. */
 .map-controls {
   position: absolute;
-  top: 24px;
-  right: 24px;
-  z-index: 10;
+  top: 64px;
+  right: 344px;
+  z-index: 950;
   display: flex;
   flex-direction: column;
 }
@@ -672,9 +681,10 @@ body {
   border: 1px solid #d1d5db;
   color: #374151;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 5px 10px;
   border-radius: 6px;
   font-size: 11px;
+  line-height: 1.4;
   transition: all 0.2s ease;
 }
 
@@ -912,7 +922,10 @@ body {
 }
 .edit-drawer-header h2 { font-size: 15px; font-weight: 600; }
 .edit-drawer-close { border: none; background: transparent; cursor: pointer; display: flex; }
-.edit-drawer-body { overflow-y: auto; padding: 0 12px 12px; flex: 1; }
+.edit-drawer-body {
+  overflow-y: auto; padding: 12px; flex: 1;
+  display: flex; flex-direction: column; gap: 12px;
+}
 
 /* Right: display controls, stacked */
 .layer-tree-section { margin-bottom: 12px; }
@@ -930,11 +943,19 @@ body {
   cursor: pointer; font: inherit;
 }
 
-/* Attribute filter (roadmap 2.3) */
-.attribute-filter { position: relative; display: flex; align-items: center; }
+/* Attribute filter — hosted inside the drawer body (Task 9), so it flows with the
+   drawer's layout rather than floating with its own absolute position. */
+.attribute-filter { display: flex; flex-direction: column; align-items: stretch; }
 .filter-btn {
   display: inline-flex; align-items: center; justify-content: center; position: relative;
   width: 34px; height: 34px; border: none; cursor: pointer; border-radius: 8px; padding: 0;
+  /* The count badge overhangs this button by 4px (see .filter-btn-badge). Since Task 9
+     moved the filter inside the drawer — whose body scrolls and whose shell is
+     overflow:hidden — that overhang is clipped unless the button reserves room for it.
+     The margin gives the badge space to sit in instead of being cut off at the edge. */
+  margin: 6px 6px 0 0;
+  align-self: flex-start;
+  flex-shrink: 0;
 }
 .filter-btn-badge {
   position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px;
@@ -942,9 +963,9 @@ body {
   font-size: 11px; line-height: 16px; text-align: center;
 }
 .filter-panel {
-  position: absolute; top: calc(100% + 8px); right: 0; width: 320px; max-width: 90vw;
-  z-index: 1050; display: flex; flex-direction: column; gap: 10px; padding: 12px;
-  max-height: 60vh; overflow-y: auto;
+  width: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px 0;
+  /* No overflow/max-height here: .edit-drawer-body is already the scroll container, and a
+     second one would both double-scroll and clip the filter button's overhanging badge. */
 }
 .filter-layer-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .filter-layer-select, .condition-field, .condition-op, .condition-value {
@@ -969,3 +990,91 @@ body {
 .filter-result-name { font-weight: 600; font-size: 13px; }
 .filter-result-sub { font-size: 12px; opacity: 0.7; }
 .filter-empty { display: flex; flex-direction: column; gap: 8px; font-size: 13px; opacity: 0.85; }
+
+/* --- Display panel: attached to the right edge of the left drawer --- */
+/* Mirrors .edit-drawer exactly: width 360px at left 12px, top 64px, bottom 12px
+   (see the .edit-drawer rule above). The panel therefore starts at 12 + 360 = 372px. */
+:root {
+  --drawer-left: 12px;
+  --drawer-width: 360px;
+  --drawer-edge: calc(var(--drawer-left) + var(--drawer-width)); /* 372px */
+  --display-panel-width: 340px;
+}
+
+.display-panel {
+  position: absolute;
+  top: 64px;
+  bottom: 12px;
+  left: var(--drawer-edge);
+  width: var(--display-panel-width);
+  max-width: 88vw;
+  z-index: 1100; /* below the drawer's 1101 so the seam button sits on top */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The panel stays mounted while collapsed (see DisplayPanel.view.tsx) so in-progress
+   edit state survives and the ModifyController's lifecycle stays tied to edit mode,
+   not to visibility. The [hidden] selector must win over the `display: flex` above,
+   since the plain `hidden` attribute alone is overridden by any later `display`
+   declaration — this is what actually removes it from layout, hit-testing and the
+   accessibility tree (not just visibility/opacity, and not an off-screen position). */
+.display-panel[hidden] {
+  display: none;
+}
+
+.display-panel-toggle {
+  position: absolute;
+  top: 96px;
+  left: calc(var(--drawer-edge) - 14px);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 1102; /* straddles the seam, above both panels */
+  cursor: pointer;
+}
+
+.display-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  flex-shrink: 0;
+}
+
+.display-panel-header h2 { font-size: 15px; margin: 0; }
+
+.display-panel-tag {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.display-panel-actions { display: flex; gap: 4px; }
+.display-panel-actions button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.display-panel-body { padding: 12px 14px 14px; overflow-y: auto; flex: 1; }
+.display-panel-rows { margin: 0; }
+.display-panel-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.display-panel-row dt { font-size: 12px; opacity: 0.7; }
+.display-panel-row dd { font-size: 12px; margin: 0; text-align: right; word-break: break-word; }

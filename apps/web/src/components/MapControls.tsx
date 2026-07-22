@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useMapContext } from '../app/providers/MapProvider';
 import { ZoomIn, ZoomOut, Home, Ruler, Square, MousePointer2 } from 'lucide-react';
-import { fromLonLat } from 'ol/proj';
+import { transformExtent } from 'ol/proj';
+import { MAP_MIN_ZOOM, MAP_MAX_ZOOM, MAP_DEFAULT_ZOOM, VIETNAM_EXTENT_4326 } from '@webatlas/shared';
 import Draw from 'ol/interaction/Draw';
 import VectorSource from 'ol/source/Vector';
 import VectorLayer from 'ol/layer/Vector';
@@ -13,17 +14,17 @@ const MapControls: React.FC = () => {
   const { map } = useMapContext();
   const [activeTool, setActiveTool] = useState<'pan' | 'length' | 'area'>('pan');
   const [measureValue, setMeasureValue] = useState<string | null>(null);
-  const [currentZoom, setCurrentZoom] = useState<number>(7);
-  const [minZoom, setMinZoom] = useState<number>(6);
-  const [maxZoom, setMaxZoom] = useState<number>(18);
+  const [currentZoom, setCurrentZoom] = useState<number>(MAP_DEFAULT_ZOOM);
+  const [minZoom, setMinZoom] = useState<number>(MAP_MIN_ZOOM);
+  const [maxZoom, setMaxZoom] = useState<number>(MAP_MAX_ZOOM);
 
   useEffect(() => {
     if (!map) return;
 
     const view = map.getView();
-    setCurrentZoom(view.getZoom() || 7);
-    setMinZoom(view.getMinZoom() || 6);
-    setMaxZoom(view.getMaxZoom() || 18);
+    setCurrentZoom(view.getZoom() || MAP_DEFAULT_ZOOM);
+    setMinZoom(view.getMinZoom() || MAP_MIN_ZOOM);
+    setMaxZoom(view.getMaxZoom() || MAP_MAX_ZOOM);
 
     const handleMoveEnd = () => {
       const zoom = view.getZoom();
@@ -117,7 +118,15 @@ const MapControls: React.FC = () => {
     }
   };
 
-  const handleHome = () => map?.getView().animate({ center: fromLonLat([108.2, 13.5]), zoom: 7, duration: 500 });
+  const handleHome = () => {
+    if (!map) return;
+    const size = map.getSize();
+    if (!size || size.some((n) => n === 0)) return;
+    map.getView().fit(
+      transformExtent([...VIETNAM_EXTENT_4326], 'EPSG:4326', 'EPSG:3857'),
+      { size, padding: [24, 24, 24, 24], duration: 500 },
+    );
+  };
 
   return (
     <div className="map-controls">
@@ -138,7 +147,7 @@ const MapControls: React.FC = () => {
         >
           <ZoomOut size={18} />
         </button>
-        <button className="control-btn" onClick={handleHome} title="Toàn cảnh Nam Trung Bộ & Tây Nguyên">
+        <button className="control-btn" onClick={handleHome} title="Toàn cảnh Việt Nam">
           <Home size={18} />
         </button>
       </div>

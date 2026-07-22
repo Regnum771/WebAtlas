@@ -1,60 +1,220 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-
-const enterEditMode = vi.fn(); const exitEditMode = vi.fn(); const startModify = vi.fn();
-const cancelModify = vi.fn(); const clearSelection = vi.fn(); const refreshLayer = vi.fn();
-vi.mock('../../map/model/mapEditing', () => ({
-  useMapEditing: () => ({ enterEditMode, exitEditMode, startModify, cancelModify, clearSelection, refreshLayer,
-    hasMap: true, startDraw: vi.fn(), cancelDraw: vi.fn(), registerRefresh: vi.fn(), editing: false }),
-}));
-const deleteFeature = vi.fn();
-vi.mock('../api/features.api', () => ({ deleteFeature: (...a: unknown[]) => deleteFeature(...a), createFeature: vi.fn(), updateFeature: vi.fn() }));
 import { useEditExistingPresenter } from './useEditExistingPresenter';
 
+const startModify = vi.fn();
+const cancelModify = vi.fn();
+const refreshLayer = vi.fn();
+const clearSelection = vi.fn();
+const deleteFeature = vi.fn();
+
+let currentSelection: unknown = null;
+
+vi.mock('../../map/model/mapEditing', () => ({
+  useMapEditing: () => ({ startModify, cancelModify, refreshLayer }),
+}));
+
+vi.mock('../../../entities/selection', () => ({
+  useSelection: () => ({
+    selection: currentSelection,
+    clear: () => {
+      clearSelection();
+      currentSelection = null;
+    },
+  }),
+}));
+
+vi.mock('../api/features.api', () => ({
+  deleteFeature: (...args: unknown[]) => deleteFeature(...args),
+}));
+
+vi.mock('../../map/model/geo', () => ({
+  olGeometryTo4326GeoJSON: () => ({ type: 'Point', coordinates: [108, 13] }),
+}));
+
+const damSelection = {
+  layerKey: 'dams',
+  featureId: 'a1',
+  feature: { getGeometry: () => ({ fake: 'geometry' }) },
+  isoProps: { geographicalName: 'Hoa Binh' },
+};
+
+const damSelectionNoGeometry = {
+  layerKey: 'dams',
+  featureId: 'a2',
+  feature: { getGeometry: () => undefined },
+  isoProps: { geographicalName: 'No Geometry Dam' },
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  currentSelection = null;
+});
+
 describe('useEditExistingPresenter', () => {
-  beforeEach(() => { enterEditMode.mockReset(); exitEditMode.mockReset(); startModify.mockReset(); deleteFeature.mockReset(); refreshLayer.mockReset(); });
-
-  it('enter() activates edit mode', () => {
+  it('is not editing initially and starts no modify interaction', () => {
+    currentSelection = damSelection;
     const { result } = renderHook(() => useEditExistingPresenter());
-    act(() => result.current.enter());
-    expect(enterEditMode).toHaveBeenCalledWith(expect.any(Function));
-    expect(result.current.editMode).toBe(true);
+
+    expect(result.current.editing).toBe(false);
+    expect(startModify).not.toHaveBeenCalled();
   });
 
-  it('on selection: builds DB-keyed attributes + prefilled values and starts modify', () => {
+  it('beginEdit starts geometry modification for the selected feature', () => {
+    currentSelection = damSelection;
     const { result } = renderHook(() => useEditExistingPresenter());
-    act(() => result.current.enter());
-    const onSelected = enterEditMode.mock.calls[0][0];
-    act(() => onSelected({ layerKey: 'dams', featureId: 'f1',
-      geometry: { type: 'Point', coordinates: [108, 13] },
-      isoProps: { geographicalName: 'Hoa Binh', operationalStatus: 'Bình thường', layerKey: 'dams' } }));
-    expect(result.current.selection?.featureId).toBe('f1');
-    expect(result.current.selection?.attributes).toContain('name');   // DB column
-    expect(result.current.selection?.initialValues.name).toBe('Hoa Binh');
-    expect(result.current.workingGeometry).toEqual({ type: 'Point', coordinates: [108, 13] });
-    expect(startModify).toHaveBeenCalledWith(expect.any(Function));
+
+    act(() => { result.current.beginEdit(); });
+
+    expect(result.current.editing).toBe(true);
+    expect(startModify).toHaveBeenCalled();
   });
 
-  it('confirmDelete deletes the selected feature, refetches, and resets', async () => {
-    deleteFeature.mockResolvedValue(undefined);
+  it('beginEdit exposes the selection as form values keyed by db column', () => {
+    currentSelection = damSelection;
     const { result } = renderHook(() => useEditExistingPresenter());
-    act(() => result.current.enter());
-    const onSelected = enterEditMode.mock.calls[0][0];
-    act(() => onSelected({ layerKey: 'dams', featureId: 'f1', geometry: { type: 'Point', coordinates: [108, 13] }, isoProps: {} }));
-    act(() => result.current.requestDelete());
-    expect(result.current.confirmOpen).toBe(true);
-    await act(async () => { await result.current.confirmDelete(); });
-    expect(deleteFeature).toHaveBeenCalledWith('dams', 'f1');
+
+    act(() => { result.current.beginEdit(); });
+
+    expect(result.current.selection?.featureId).toBe('a1');
+    expect(result.current.selection?.attributes.length).toBeGreaterThan(0);
+    expect(result.current.selection?.initialValues).toBeDefined();
+  });
+
+  it('beginEdit does nothing when nothing is selected', () => {
+    currentSelection = null;
+    const { result } = renderHook(() => useEditExistingPresenter());
+
+    act(() => { result.current.beginEdit(); });
+
+    expect(result.current.editing).toBe(false);
+    expect(startModify).not.toHaveBeenCalled();
+  });
+
+  it('beginEdit refuses to enter edit mode when the feature has no readable geometry', () => {
+    currentSelection = damSelectionNoGeometry;
+    const { result } = renderHook(() => useEditExistingPresenter());
+
+    act(() => { result.current.beginEdit(); });
+
+    expect(result.current.editing).toBe(false);
+    expect(result.current.selection).toBeNull();
+    expect(startModify).not.toHaveBeenCalled();
+  });
+
+  it('cancelEdit stops modification but leaves the shared selection usable', () => {
+    currentSelection = damSelection;
+    const { result } = renderHook(() => useEditExistingPresenter());
+    act(() => { result.current.beginEdit(); });
+
+    act(() => { result.current.cancelEdit(); });
+
+    expect(result.current.editing).toBe(false);
+    expect(cancelModify).toHaveBeenCalled();
+    expect(clearSelection).not.toHaveBeenCalled();
+
+    // The real guarantee: cancelEdit must not clear the shared map selection, so
+    // beginEdit can be invoked again immediately and still finds the same feature.
+    act(() => { result.current.beginEdit(); });
+    expect(result.current.editing).toBe(true);
+    expect(result.current.selection?.featureId).toBe('a1');
+  });
+
+  it('onSaved refreshes the layer and leaves edit mode', () => {
+    currentSelection = damSelection;
+    const { result } = renderHook(() => useEditExistingPresenter());
+    act(() => { result.current.beginEdit(); });
+
+    act(() => { result.current.onSaved(); });
+
     expect(refreshLayer).toHaveBeenCalled();
+    expect(result.current.editing).toBe(false);
+  });
+
+  it('confirmDelete deletes the selected feature, refreshes the layer, and resets', async () => {
+    deleteFeature.mockResolvedValue(undefined);
+    currentSelection = damSelection;
+    const { result } = renderHook(() => useEditExistingPresenter());
+    act(() => { result.current.beginEdit(); });
+
+    act(() => { result.current.requestDelete(); });
+    expect(result.current.confirmOpen).toBe(true);
+
+    await act(async () => { await result.current.confirmDelete(); });
+
+    expect(deleteFeature).toHaveBeenCalledWith('dams', 'a1');
+    expect(refreshLayer).toHaveBeenCalled();
+    expect(result.current.editing).toBe(false);
+    expect(result.current.selection).toBeNull();
+    expect(result.current.deleting).toBe(false);
+    expect(result.current.confirmOpen).toBe(false);
+  });
+
+  it('confirmDelete sets an error and clears deleting when the delete request fails', async () => {
+    deleteFeature.mockRejectedValue(new Error('network down'));
+    currentSelection = damSelection;
+    const { result } = renderHook(() => useEditExistingPresenter());
+    act(() => { result.current.beginEdit(); });
+
+    act(() => { result.current.requestDelete(); });
+
+    await act(async () => { await result.current.confirmDelete(); });
+
+    expect(deleteFeature).toHaveBeenCalledWith('dams', 'a1');
+    expect(refreshLayer).not.toHaveBeenCalled();
+    expect(result.current.error).toBe('Could not delete — please try again');
+    expect(result.current.deleting).toBe(false);
+  });
+
+  it('cancelDelete closes the confirmation dialog without deleting', () => {
+    currentSelection = damSelection;
+    const { result } = renderHook(() => useEditExistingPresenter());
+    act(() => { result.current.beginEdit(); });
+
+    act(() => { result.current.requestDelete(); });
+    expect(result.current.confirmOpen).toBe(true);
+
+    act(() => { result.current.cancelDelete(); });
+
+    expect(result.current.confirmOpen).toBe(false);
+    expect(deleteFeature).not.toHaveBeenCalled();
+  });
+
+  it('tears down edit mode when the shared selection changes to a different feature', () => {
+    currentSelection = damSelection;
+    const { result, rerender } = renderHook(() => useEditExistingPresenter());
+    act(() => { result.current.beginEdit(); });
+    expect(result.current.editing).toBe(true);
+
+    const damBSelection = {
+      layerKey: 'dams',
+      featureId: 'b1',
+      feature: { getGeometry: () => ({ fake: 'geometry-b' }) },
+      isoProps: { geographicalName: 'Dam B' },
+    };
+    act(() => {
+      currentSelection = damBSelection;
+      rerender();
+    });
+
+    expect(cancelModify).toHaveBeenCalled();
+    expect(result.current.editing).toBe(false);
     expect(result.current.selection).toBeNull();
   });
 
-  it('exit() leaves edit mode and clears selection', () => {
-    const { result } = renderHook(() => useEditExistingPresenter());
-    act(() => result.current.enter());
-    act(() => result.current.exit());
-    expect(exitEditMode).toHaveBeenCalled();
-    expect(result.current.editMode).toBe(false);
+  it('tears down edit mode when the shared selection is cleared to null', () => {
+    currentSelection = damSelection;
+    const { result, rerender } = renderHook(() => useEditExistingPresenter());
+    act(() => { result.current.beginEdit(); });
+    expect(result.current.editing).toBe(true);
+
+    act(() => {
+      currentSelection = null;
+      rerender();
+    });
+
+    expect(cancelModify).toHaveBeenCalled();
+    expect(result.current.editing).toBe(false);
     expect(result.current.selection).toBeNull();
   });
 });
