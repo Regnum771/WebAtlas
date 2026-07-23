@@ -4,10 +4,12 @@ import { versionsService } from './service';
 
 const LAYER = 'zz_svc_dams'; // synthetic layer key; no real table needed for active-flip test
 const LAYER_B = 'zz_svc_bridges'; // second synthetic layer key for cross-layer guard test
+const LAYER_LABELS = 'zz_svc_labels'; // synthetic layer key for sequential-label derivation test
 
 afterAll(async () => {
   await getPool().query(`DELETE FROM app.dataset_versions WHERE layer_key = $1`, [LAYER]);
   await getPool().query(`DELETE FROM app.dataset_versions WHERE layer_key = $1`, [LAYER_B]);
+  await getPool().query(`DELETE FROM app.dataset_versions WHERE layer_key = $1`, [LAYER_LABELS]);
   await closePool();
 });
 
@@ -115,5 +117,54 @@ describe('versionsService ingest lifecycle', () => {
       `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND is_active`, [LAYER_B]
     );
     expect(afterB.rows).toHaveLength(0);
+  });
+
+  it('derives sequential, distinct labels for successive ingest versions of the same layer', async () => {
+    const pool = getPool();
+    const svc = versionsService(pool);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const v1 = await svc.createIngestVersion(client, { layerKey: LAYER_LABELS, source: 'seed' });
+      const v2 = await svc.createIngestVersion(client, { layerKey: LAYER_LABELS, source: 'seed' });
+      const v3 = await svc.createIngestVersion(client, { layerKey: LAYER_LABELS, source: 'seed' });
+
+      const { rows } = await client.query(
+        `SELECT id, label FROM app.dataset_versions WHERE id = ANY($1) ORDER BY ingested_at`,
+        [[v1, v2, v3]]
+      );
+      expect(rows.map((r) => r.label)).toEqual(['version 1', 'version 2', 'version 3']);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  });
+
+  it('honors an explicitly-passed label verbatim instead of deriving one', async () => {
+    const pool = getPool();
+    const svc = versionsService(pool);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const versionId = await svc.createIngestVersion(client, {
+        layerKey: LAYER_LABELS,
+        source: 'seed',
+        label: 'HydroLAKES v10',
+      });
+      const { rows } = await client.query(
+        `SELECT label FROM app.dataset_versions WHERE id = $1`,
+        [versionId]
+      );
+      expect(rows[0].label).toBe('HydroLAKES v10');
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   });
 });

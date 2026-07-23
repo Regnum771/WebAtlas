@@ -115,7 +115,9 @@ describe('seeds create dataset versions (§6)', () => {
        WHERE layer_key = 'dams' AND is_active`
     );
     expect(rows[0].source).toBe('thuydienvietnam.geojson');
-    expect(rows[0].label).toBe('version 1');
+    // Label is derived sequentially per layer ("version N"), not a fixed literal — repeated
+    // seed runs (including across test runs against a persistent dev DB) keep incrementing it.
+    expect(rows[0].label).toMatch(/^version \d+$/);
     expect(rows[0].kind).toBe('ingest');
     expect(rows[0].parent_version_id).toBeNull();
   });

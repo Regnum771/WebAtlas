@@ -13,8 +13,6 @@ export interface SeedLayer {
   file: string;
   /** provenance: origin of this dataset (recorded on the dataset_versions row). */
   source: string;
-  /** human name for the version timeline. */
-  label: string;
   /** true if the source geometry is a single Polygon that must be wrapped as MultiPolygon */
   multiPolygon?: boolean;
   /** true if the source geometry is a single LineString/MultiLineString to normalise as MultiLineString */
@@ -32,7 +30,6 @@ export const SEED_LAYERS: SeedLayer[] = [
     table: 'dams',
     file: resolve(webPublic, 'thuydienvietnam.geojson'),
     source: 'thuydienvietnam.geojson',
-    label: 'version 1',
     columns: (p) => ({
       external_id: p.ID,
       name: p.Vietnamese,
@@ -48,7 +45,6 @@ export const SEED_LAYERS: SeedLayer[] = [
     table: 'rivers',
     file: resolve(webPublic, 'thuyhe.geojson'),
     source: 'thuyhe.geojson',
-    label: 'version 1',
     multiLine: true,
     // NOTE: OBJECTID is not a reliable per-feature key in this source file — 24 groups
     // of genuinely distinct segments (different Cap/Chieu_dai/geometry) share an
@@ -66,14 +62,12 @@ export const SEED_LAYERS: SeedLayer[] = [
     table: 'stations',
     file: resolve(seedData, 'stations.geojson'),
     source: 'stations.geojson',
-    label: 'version 1',
     columns: (p) => ({ external_id: p.id, name: p.name, station_type: p.type, status: p.status, value: p.value }),
   },
   {
     table: 'flood_zones',
     file: resolve(seedData, 'flood_zones.geojson'),
     source: 'flood_zones.geojson',
-    label: 'version 1',
     multiPolygon: true,
     columns: (p) => ({ external_id: p.id, name: p.name, hazard_type: p.type, area: p.area, risk_level: p.riskLevel }),
   },
@@ -81,21 +75,18 @@ export const SEED_LAYERS: SeedLayer[] = [
     table: 'drought_points',
     file: resolve(seedData, 'drought_points.geojson'),
     source: 'drought_points.geojson',
-    label: 'version 1',
     columns: (p) => ({ external_id: p.id, name: p.name, risk_level: p.riskLevel, status: p.status, survey_date: p.surveyDate }),
   },
   {
     table: 'saltwater_intrusion',
     file: resolve(seedData, 'saltwater_intrusion.geojson'),
     source: 'saltwater_intrusion.geojson',
-    label: 'version 1',
     columns: (p) => ({ external_id: p.id, name: p.name, salinity: p.salinity, risk_level: p.riskLevel, status: p.status }),
   },
   {
     table: 'flood_generation',
     file: resolve(seedData, 'flood_generation.geojson'),
     source: 'flood_generation.geojson',
-    label: 'version 1',
     multiPolygon: true,
     columns: (p) => ({ external_id: p.id, name: p.name, risk_level: p.riskLevel, area: p.area, flow_rate: p.flowRate }),
   },

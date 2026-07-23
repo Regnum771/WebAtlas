@@ -68,10 +68,10 @@ export async function runSeeds(): Promise<Record<string, number>> {
       // count, then flip active. A failure anywhere rolls the whole layer back and
       // leaves the previously-active version untouched.
       await client.query('BEGIN');
+      // label is omitted: createIngestVersion derives a sequential "version N" per layer.
       const versionId = await versions.createIngestVersion(client, {
         layerKey: layer.table,
         source: layer.source,
-        label: layer.label,
       });
       result[layer.table] = await loadLayerFeatures(client, layer, versionId);
       await client.query(

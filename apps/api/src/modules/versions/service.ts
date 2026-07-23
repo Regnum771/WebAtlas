@@ -6,7 +6,7 @@ export interface IngestVersionArgs {
   layerKey: string;
   source: string;
   sourceVersion?: string | null;
-  label: string;
+  label?: string;
   ingestedBy?: string | null;
 }
 
@@ -15,12 +15,22 @@ export function versionsService(pg: Pool) {
 
   const svc = {
     async createIngestVersion(client: PoolClient, args: IngestVersionArgs): Promise<string> {
+      // Derive a sequential per-layer label ("version N") when the caller doesn't supply
+      // one. Computed inside the caller's transaction/client (not the pool) so a
+      // concurrent ingest of the same layer can't read a stale count.
+      const label = args.label ?? await (async () => {
+        const { rows } = await client.query(
+          `SELECT count(*)::int AS n FROM app.dataset_versions WHERE layer_key = $1 AND kind = 'ingest'`,
+          [args.layerKey]
+        );
+        return `version ${rows[0].n + 1}`;
+      })();
       const { rows } = await client.query(
         `INSERT INTO app.dataset_versions
            (layer_key, kind, parent_version_id, source, source_version, label, ingested_by, is_active)
          VALUES ($1, 'ingest', NULL, $2, $3, $4, $5, false)
          RETURNING id`,
-        [args.layerKey, args.source, args.sourceVersion ?? null, args.label, args.ingestedBy ?? null]
+        [args.layerKey, args.source, args.sourceVersion ?? null, label, args.ingestedBy ?? null]
       );
       return rows[0].id as string;
     },
