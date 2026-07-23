@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { versionsRepository } from './repository';
-import { NotFoundError } from '../../errors';
+import { ConflictError, NotFoundError } from '../../errors';
 
 export interface IngestVersionArgs {
   layerKey: string;
@@ -63,6 +63,52 @@ export function versionsService(pg: Pool) {
       if (result.rowCount === 0) {
         throw new NotFoundError(`Version ${versionId} not found for layer ${layerKey}`);
       }
+    },
+
+    // Open a draft edit-version branching off the layer's current active version.
+    // The draft is inactive: it holds a steward's in-progress edits and only becomes
+    // "the map" when commitEditDraft flips it. All queries run on the caller's client
+    // so the draft and the feature rows written into it share one transaction.
+    async openEditDraft(client: PoolClient, layerKey: string, actorId?: string | null): Promise<string> {
+      const active = await client.query(
+        `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND is_active`,
+        [layerKey]
+      );
+      const parent = active.rows[0]?.id;
+      // An edit version must branch from something (the kind↔parent check constraint
+      // enforces this too); a layer with no active version has no state to edit.
+      if (!parent) throw new ConflictError(`no active version for layer ${layerKey}`);
+      const label = `${new Date().toISOString().slice(0, 10)} edits`;
+      const { rows } = await client.query(
+        `INSERT INTO app.dataset_versions
+           (layer_key, kind, parent_version_id, source, label, ingested_by, is_active)
+         VALUES ($1, 'edit', $2, 'edit session', $3, $4, false)
+         RETURNING id`,
+        [layerKey, parent, label, actorId ?? null]
+      );
+      return rows[0].id as string;
+    },
+
+    // Publish the draft: record what it stores, then make it the layer's active version.
+    async commitEditDraft(client: PoolClient, layerKey: string, draftId: string): Promise<void> {
+      // feature_count for an edit version is the number of rows it stores (the changed
+      // features, tombstones included) — not the resolved total, which is inherited.
+      const { rows } = await client.query(
+        `SELECT count(*)::int AS n FROM water.${layerKey} WHERE dataset_version_id = $1`,
+        [draftId]
+      );
+      await client.query(
+        `UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`,
+        [rows[0].n, draftId]
+      );
+      await svc.activate(client, layerKey, draftId);
+    },
+
+    // Throw the draft away: its pending rows first (they reference the version row), then
+    // the version itself. The active version never moved, so this leaves no trace.
+    async discardEditDraft(client: PoolClient, layerKey: string, draftId: string): Promise<void> {
+      await client.query(`DELETE FROM water.${layerKey} WHERE dataset_version_id = $1`, [draftId]);
+      await client.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [draftId]);
     },
 
     resolveFeatureIds(layerKey: string, versionId: string): Promise<string[]> {
