@@ -180,4 +180,12 @@ describe('versionsRepository resolver (§4)', () => {
     const ids = await versionsRepository(pg()).resolveFeatureIds('dams', edit2);
     expect(ids).toEqual([v2row]); // the edit2 row wins over edit1 and ingest
   });
+
+  it('resolves an unknown version id to no features, not the whole table', async () => {
+    const unknownVersionId = '00000000-0000-4000-8000-000000000000';
+    const ids = await versionsRepository(pg()).resolveFeatureIds('dams', unknownVersionId);
+    // water.dams has 371 rows; a regression that dropped the empty-chain guard
+    // would return all 371 ids instead of none.
+    expect(ids).toEqual([]);
+  });
 });
