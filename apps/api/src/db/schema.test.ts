@@ -81,6 +81,31 @@ describe('active-version views (§5)', () => {
     }
   });
 
+  it('every _active view exposes a 4326 geometry column matching its base table', async () => {
+    // View-side counterpart to 'every table has a 4326 geometry column' (relkind='r' above):
+    // GeoServer (Task 8) publishes these views directly with srs: 'EPSG:4326', so if a view
+    // definition ever dropped or altered the geom column, this must fail loudly here rather
+    // than surfacing as a broken map layer.
+    const { rows } = await getPool().query(
+      `SELECT base.f_table_name AS layer, view.srid AS view_srid, view.type AS view_type,
+              base.srid AS base_srid, base.type AS base_type
+         FROM geometry_columns view
+         JOIN pg_class vc ON vc.relname = view.f_table_name
+         JOIN pg_namespace vn ON vn.oid = vc.relnamespace AND vn.nspname = view.f_table_schema
+         JOIN geometry_columns base ON base.f_table_schema = view.f_table_schema
+              AND view.f_table_name = base.f_table_name || '_active'
+         JOIN pg_class bc ON bc.relname = base.f_table_name
+         JOIN pg_namespace bn ON bn.oid = bc.relnamespace AND bn.nspname = base.f_table_schema
+        WHERE view.f_table_schema='water' AND vc.relkind='v' AND bc.relkind='r'`
+    );
+    expect(rows).toHaveLength(7);
+    for (const r of rows) {
+      expect(r.view_srid, r.layer).toBe(4326);
+      expect(r.view_srid, r.layer).toBe(r.base_srid);
+      expect(r.view_type, r.layer).toBe(r.base_type);
+    }
+  });
+
   it('the active view returns the active version rows (matches the resolver)', async () => {
     // For a backfilled/seeded ingest-active layer, the view count equals live non-deleted rows.
     const { rows: viaView } = await getPool().query(`SELECT count(*)::int AS n FROM water.dams_active`);
