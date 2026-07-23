@@ -50,3 +50,58 @@ describe('app.dataset_versions constraints', () => {
     })).rejects.toThrow(/dataset_versions_active_per_layer|unique/i);
   });
 });
+
+const THEMATIC = [
+  'dams', 'rivers', 'stations', 'flood_zones',
+  'drought_points', 'saltwater_intrusion', 'flood_generation',
+];
+
+describe('backfill: existing data is version 1', () => {
+  it('each thematic layer has exactly one active ingest version', async () => {
+    for (const layer of THEMATIC) {
+      const { rows } = await getPool().query(
+        `SELECT count(*)::int AS n FROM app.dataset_versions
+         WHERE layer_key = $1 AND kind = 'ingest' AND is_active`,
+        [layer]
+      );
+      expect(rows[0].n).toBe(1);
+    }
+  });
+
+  it('every feature row carries a dataset_version_id', async () => {
+    for (const layer of THEMATIC) {
+      const { rows } = await getPool().query(
+        `SELECT count(*)::int AS bad FROM water.${layer} WHERE dataset_version_id IS NULL`
+      );
+      expect(rows[0].bad).toBe(0);
+    }
+  });
+
+  it('has a composite (dataset_version_id, external_id) unique index and no global external_id unique', async () => {
+    for (const layer of THEMATIC) {
+      const { rows } = await getPool().query(
+        `SELECT indexdef FROM pg_indexes WHERE schemaname='water' AND tablename=$1`,
+        [layer]
+      );
+      const defs = rows.map((r) => r.indexdef);
+      const hasComposite = defs.some(
+        (d) => /unique/i.test(d) && /dataset_version_id/i.test(d) && /external_id/i.test(d)
+      );
+      const hasGlobal = defs.some(
+        (d) => /unique/i.test(d) && /\(external_id\)/i.test(d) && !/dataset_version_id/i.test(d)
+      );
+      expect(hasComposite, `${layer} composite unique`).toBe(true);
+      expect(hasGlobal, `${layer} global unique removed`).toBe(false);
+    }
+  });
+
+  it('has a deleted column defaulting to false', async () => {
+    for (const layer of THEMATIC) {
+      const { rows } = await getPool().query(
+        `SELECT count(*)::int AS n FROM water.${layer} WHERE deleted = false`
+      );
+      const { rows: total } = await getPool().query(`SELECT count(*)::int AS n FROM water.${layer}`);
+      expect(rows[0].n).toBe(total[0].n);
+    }
+  });
+});
