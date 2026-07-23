@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from '../../db/pool';
+import { versionsRepository } from './repository';
 
 afterAll(async () => {
   await getPool().query(`DELETE FROM app.dataset_versions WHERE layer_key LIKE 'zz_%'`);
@@ -103,5 +104,80 @@ describe('backfill: existing data is version 1', () => {
       const { rows: total } = await getPool().query(`SELECT count(*)::int AS n FROM water.${layer}`);
       expect(rows[0].n).toBe(total[0].n);
     }
+  });
+});
+
+describe('versionsRepository resolver (§4)', () => {
+  const pg = () => getPool();
+  const madeVersions: string[] = [];
+
+  afterAll(async () => {
+    // dataset_versions cascade to child edit versions; feature rows FK to them, so
+    // delete feature rows first for our synthetic layer, then versions.
+    await pg().query(`DELETE FROM water.dams WHERE dataset_version_id = ANY($1)`, [madeVersions]);
+    await pg().query(`DELETE FROM app.dataset_versions WHERE id = ANY($1)`, [madeVersions]);
+  });
+
+  async function newIngest(): Promise<string> {
+    const { rows } = await pg().query(
+      `INSERT INTO app.dataset_versions (layer_key, kind, source, label, is_active)
+       VALUES ('dams', 'ingest', 'test', 'ingest', false) RETURNING id`
+    );
+    madeVersions.push(rows[0].id);
+    return rows[0].id;
+  }
+  async function newEdit(parent: string): Promise<string> {
+    const { rows } = await pg().query(
+      `INSERT INTO app.dataset_versions (layer_key, kind, parent_version_id, source, label, is_active)
+       VALUES ('dams', 'edit', $1, 'edit session', 'edits', false) RETURNING id`,
+      [parent]
+    );
+    madeVersions.push(rows[0].id);
+    return rows[0].id;
+  }
+  // Insert a dam row into a version. Returns its uuid pk.
+  async function addFeature(versionId: string, externalId: number, opts: { deleted?: boolean; name?: string } = {}): Promise<string> {
+    const { rows } = await pg().query(
+      `INSERT INTO water.dams (external_id, name, dataset_version_id, deleted, geom)
+       VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint(105.8, 21.0), 4326)) RETURNING id`,
+      [externalId, opts.name ?? `f${externalId}`, versionId, opts.deleted ?? false]
+    );
+    return rows[0].id;
+  }
+
+  it('resolves an ingest version as a flat set', async () => {
+    const v = await newIngest();
+    const a = await addFeature(v, 1001);
+    const b = await addFeature(v, 1002);
+    const ids = await versionsRepository(pg()).resolveFeatureIds('dams', v);
+    expect(new Set(ids)).toEqual(new Set([a, b]));
+  });
+
+  it('resolves an edit version: parent overlaid by session changes, tombstones absent', async () => {
+    const ingest = await newIngest();
+    const keep = await addFeature(ingest, 2001, { name: 'orig-keep' });
+    await addFeature(ingest, 2002, { name: 'orig-changed' });
+    await addFeature(ingest, 2003, { name: 'orig-deleted' });
+
+    const edit = await newEdit(ingest);
+    const changed = await addFeature(edit, 2002, { name: 'edited' });      // update overlays parent
+    await addFeature(edit, 2003, { deleted: true });                        // tombstone removes parent feature
+    const added = await addFeature(edit, 2004, { name: 'new-in-edit' });   // brand-new feature
+
+    const ids = await versionsRepository(pg()).resolveFeatureIds('dams', edit);
+    // keep (inherited), changed (nearest wins), added (new). 2003 tombstoned => absent.
+    expect(new Set(ids)).toEqual(new Set([keep, changed, added]));
+  });
+
+  it('resolves a two-deep edit chain nearest-wins', async () => {
+    const ingest = await newIngest();
+    await addFeature(ingest, 3001, { name: 'v0' });
+    const edit1 = await newEdit(ingest);
+    await addFeature(edit1, 3001, { name: 'v1' });
+    const edit2 = await newEdit(edit1);
+    const v2row = await addFeature(edit2, 3001, { name: 'v2' });
+
+    const ids = await versionsRepository(pg()).resolveFeatureIds('dams', edit2);
+    expect(ids).toEqual([v2row]); // the edit2 row wins over edit1 and ingest
   });
 });
