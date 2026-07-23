@@ -619,7 +619,7 @@ The service layer that ingest (§6) and edit sessions (§7) both call. This task
   - `createIngestVersion(client, args): Promise<string>` where
     `args = { layerKey: string; source: string; sourceVersion?: string | null; label: string; ingestedBy?: string | null }`
     and `client` is a `pg.PoolClient` already inside a transaction. Inserts a `kind='ingest'`, `parent=null`, `is_active=false` row, returns its id. Does **not** flip active (the caller loads features first, then calls `activate`).
-  - `activate(client, layerKey, versionId): Promise<void>` — clears the layer's current active flag and sets `versionId` active, in the caller's transaction. Also sets `feature_count` to the resolved row total for the version.
+  - `activate(client, layerKey, versionId): Promise<void>` — clears the layer's current active flag and sets `versionId` active, in the caller's transaction. It does **not** touch `feature_count`; the caller sets that before calling (Task 5 does so explicitly). The second UPDATE is scoped `AND layer_key = $2` and checks `rowCount`, throwing `NotFoundError` if nothing matched — otherwise a nonexistent or cross-layer version id would clear the old active flag, match nothing, and leave the layer with no active version at all.
   - Type `IngestVersionArgs` exported for §6's use.
 
 - [ ] **Step 1: Write the failing test**
