@@ -4,6 +4,7 @@ import { resolve as resolvePath } from 'node:path';
 import type pg from 'pg';
 import { getPool, closePool } from '../pool';
 import { SEED_LAYERS, type SeedLayer } from './registry';
+import { versionsService } from '../../modules/versions/service';
 
 function geomExpr(layer: SeedLayer): string {
   // $GEOM is the feature geometry as a GeoJSON string
@@ -12,7 +13,13 @@ function geomExpr(layer: SeedLayer): string {
   return base;
 }
 
-export async function seedLayer(client: pg.PoolClient, layer: SeedLayer): Promise<number> {
+// Load every feature of `layer` into a fresh version, stamped with versionId.
+// No ON CONFLICT: a new version starts empty, so there is nothing to conflict with.
+export async function loadLayerFeatures(
+  client: pg.PoolClient,
+  layer: SeedLayer,
+  versionId: string
+): Promise<number> {
   const fc = JSON.parse(readFileSync(layer.file, 'utf8'));
   const features: Array<{ geometry: unknown; properties: Record<string, unknown> }> = fc.features;
   let count = 0;
@@ -33,19 +40,17 @@ export async function seedLayer(client: pg.PoolClient, layer: SeedLayer): Promis
     const colPlaceholders = colNames.map((_, i) => `$${i + 1}`);
     const geomParamIndex = colNames.length + 1;
     const geomSql = hasGeometry ? geomExpr(layer).replace('$GEOM', `$${geomParamIndex}`) : 'NULL';
-
-    const updateSet = colNames
-      .filter((c) => c !== 'external_id')
-      .map((c) => `${c} = EXCLUDED.${c}`)
-      .concat(`geom = EXCLUDED.geom`, `updated_at = now()`)
-      .join(', ');
+    // With geometry the version is the parameter after it; without geometry no
+    // geometry parameter is bound, so the version takes that slot instead.
+    const versionParamIndex = hasGeometry ? colNames.length + 2 : colNames.length + 1;
 
     const sql = `
-      INSERT INTO water.${layer.table} (${colNames.join(', ')}, geom)
-      VALUES (${colPlaceholders.join(', ')}, ${geomSql})
-      ON CONFLICT (external_id) DO UPDATE SET ${updateSet}
+      INSERT INTO water.${layer.table} (${colNames.join(', ')}, geom, dataset_version_id)
+      VALUES (${colPlaceholders.join(', ')}, ${geomSql}, $${versionParamIndex})
     `;
-    const params = hasGeometry ? [...values, JSON.stringify(f.geometry)] : values;
+    const params = hasGeometry
+      ? [...values, JSON.stringify(f.geometry), versionId]
+      : [...values, versionId];
     await client.query(sql, params);
     count++;
   }
@@ -55,14 +60,28 @@ export async function seedLayer(client: pg.PoolClient, layer: SeedLayer): Promis
 export async function runSeeds(): Promise<Record<string, number>> {
   const pool = getPool();
   const client = await pool.connect();
+  const versions = versionsService(pool);
   const result: Record<string, number> = {};
   try {
     for (const layer of SEED_LAYERS) {
+      // One transaction per layer: create the version, load its features, record the
+      // count, then flip active. A failure anywhere rolls the whole layer back and
+      // leaves the previously-active version untouched.
       await client.query('BEGIN');
-      result[layer.table] = await seedLayer(client, layer);
+      const versionId = await versions.createIngestVersion(client, {
+        layerKey: layer.table,
+        source: layer.source,
+        label: layer.label,
+      });
+      result[layer.table] = await loadLayerFeatures(client, layer, versionId);
+      await client.query(
+        `UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`,
+        [result[layer.table], versionId]
+      );
+      await versions.activate(client, layer.table, versionId);
       await client.query('COMMIT');
       // eslint-disable-next-line no-console
-      console.log(`seeded water.${layer.table}: ${result[layer.table]} features`);
+      console.log(`seeded water.${layer.table}: ${result[layer.table]} features (version ${versionId})`);
     }
   } catch (err) {
     await client.query('ROLLBACK');
