@@ -849,8 +849,6 @@ export interface SeedLayer {
   file: string;
   /** provenance: origin of this dataset (recorded on the dataset_versions row). */
   source: string;
-  /** human name for the version timeline. */
-  label: string;
   /** true if the source geometry is a single Polygon that must be wrapped as MultiPolygon */
   multiPolygon?: boolean;
   /** true if the source geometry is a single LineString/MultiLineString to normalise as MultiLineString */
@@ -859,14 +857,13 @@ export interface SeedLayer {
 }
 ```
 
-Add `source` + `label` to each of the seven entries. Use the source filename as `source` and `'version 1'` as `label` (matching the backfill convention). For example, `dams`:
+Add `source` to each of the seven entries — the source filename. **`label` is NOT a registry field:** a hardcoded label would make every ingest of a layer share one name, and §2 defines `label` as the human name for the timeline. Instead `createIngestVersion` derives it per layer as `version N`, where N is that layer's next ingest number (count of existing `kind='ingest'` rows for the layer, plus one). That continues the backfill's "version 1" convention and keeps timeline entries distinguishable. For example, `dams`:
 
 ```typescript
   {
     table: 'dams',
     file: resolve(webPublic, 'thuydienvietnam.geojson'),
     source: 'thuydienvietnam.geojson',
-    label: 'version 1',
     columns: (p) => ({
       external_id: p.ID,
       name: p.Vietnamese,
@@ -880,7 +877,28 @@ Add `source` + `label` to each of the seven entries. Use the source filename as 
   },
 ```
 
-Apply the same two fields to the other six: `rivers` → `source: 'thuyhe.geojson'`; `stations` → `source: 'stations.geojson'`; `flood_zones` → `source: 'flood_zones.geojson'`; `drought_points` → `source: 'drought_points.geojson'`; `saltwater_intrusion` → `source: 'saltwater_intrusion.geojson'`; `flood_generation` → `source: 'flood_generation.geojson'`. All get `label: 'version 1'`.
+Apply `source` to the other six: `rivers` → `'thuyhe.geojson'`; `stations` → `'stations.geojson'`; `flood_zones` → `'flood_zones.geojson'`; `drought_points` → `'drought_points.geojson'`; `saltwater_intrusion` → `'saltwater_intrusion.geojson'`; `flood_generation` → `'flood_generation.geojson'`.
+
+**Label derivation in `createIngestVersion`** (`src/modules/versions/service.ts`): when `args.label` is omitted, derive `version N` from the **highest number ever used for that layer**, not from a row count, and compute it inside the caller's transaction so a concurrent ingest of the same layer cannot read a stale value:
+
+```typescript
+// Max-based, not count-based: count(*) counts SURVIVING rows, so pruning any
+// version makes the counter go backwards and reuse a number that already existed
+// — producing duplicate timeline labels, the exact defect this derivation fixes.
+// Labels that aren't of the form "version N" (e.g. "HydroLAKES v10") are ignored
+// by the max and correctly sit outside the numeric sequence.
+const label = args.label ?? await (async () => {
+  const { rows } = await client.query(
+    `SELECT coalesce(max(substring(label from '^version ([0-9]+)$')::int), 0) AS n
+       FROM app.dataset_versions
+      WHERE layer_key = $1 AND kind = 'ingest' AND label ~ '^version [0-9]+$'`,
+    [args.layerKey]
+  );
+  return `version ${rows[0].n + 1}`;
+})();
+```
+
+`label` therefore becomes optional in `IngestVersionArgs` (`label?: string`). Callers that want an explicit name (a real upstream release, e.g. `"HydroLAKES v10"`) still pass one.
 
 - [ ] **Step 4: Rewrite the ingest transaction**
 
@@ -952,10 +970,10 @@ export async function runSeeds(): Promise<Record<string, number>> {
   try {
     for (const layer of SEED_LAYERS) {
       await client.query('BEGIN');
+      // label omitted: createIngestVersion derives "version N" per layer.
       const versionId = await versions.createIngestVersion(client, {
         layerKey: layer.table,
         source: layer.source,
-        label: layer.label,
       });
       result[layer.table] = await loadLayerFeatures(client, layer, versionId);
       await client.query(
