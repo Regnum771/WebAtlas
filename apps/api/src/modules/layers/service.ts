@@ -61,13 +61,24 @@ export function featuresService(pg: Pool) {
     // a `discard()` after a failed `create()` would run ROLLBACK and DELETE on another
     // caller's connection.
     let settled = false;
+    // Release is tracked separately from settlement: `settled` also guards ROLLBACK,
+    // which must NOT run once COMMIT has been issued, but the client must go back to
+    // the pool on every path — including a COMMIT that throws. Collapsing the two into
+    // one flag leaked the client whenever COMMIT failed.
+    let released = false;
+    function release() {
+      // pg throws on a double release, so this must fire exactly once.
+      if (released) return;
+      released = true;
+      client.release();
+    }
 
     async function fail(e: unknown): Promise<never> {
       if (!settled) {
         settled = true;
-        await client.query('ROLLBACK');
-        client.release();
+        try { await client.query('ROLLBACK'); } catch { /* transaction already ended */ }
       }
+      release();
       throw e;
     }
 
@@ -117,24 +128,36 @@ export function featuresService(pg: Pool) {
       // Publish the draft as the layer's active version.
       async commit(): Promise<void> {
         assertOpen();
+        // Settle up front: after this point the session is over either way, and a
+        // failing COMMIT must not be followed by a second ROLLBACK attempt from fail().
+        settled = true;
         try {
           await versions.commitEditDraft(client, def.key, draftId);
-          settled = true;
           await client.query('COMMIT');
-          client.release();
-        } catch (e) { return fail(e); }
+        } catch (e) {
+          // Safe even if COMMIT itself failed: the transaction is already ended, so
+          // this is a no-op that throws, and we swallow it to surface the real error.
+          try { await client.query('ROLLBACK'); } catch { /* transaction already ended */ }
+          throw e;
+        } finally {
+          release();
+        }
       },
 
       // Throw the draft away. Idempotent and safe after a failed operation already
       // rolled the session back — in that case there is nothing left to discard.
       async discard(): Promise<void> {
         if (settled) return;
+        settled = true;
         try {
           await versions.discardEditDraft(client, def.key, draftId);
-          settled = true;
           await client.query('COMMIT');
-          client.release();
-        } catch (e) { return fail(e); }
+        } catch (e) {
+          try { await client.query('ROLLBACK'); } catch { /* transaction already ended */ }
+          throw e;
+        } finally {
+          release();
+        }
       },
     };
   }

@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from '../../db/pool';
 import { featuresService } from './service';
 import { versionsService } from '../versions/service';
+import { versionsRepository } from '../versions/repository';
 import { ConflictError, GeometryError, NotFoundError } from '../../errors';
 
 const TEST_NAME = 'svc-test-dam@webatlas.test';
@@ -64,12 +65,15 @@ describe('featuresService edit sessions (§7)', () => {
       geometry: { type: 'LineString', coordinates: [[105, 21], [106, 22]] },
       properties: { name: TEST_NAME },
     };
+    const beforeVersions = await editVersionCount('dams');
     const s = await svc().editSession('dams');
     await expect(s.create(feature)).rejects.toBeInstanceOf(GeometryError);
     // The failure already rolled the session back; discard must not touch the
     // now-released client.
     await s.discard();
     expect(s.isSettled()).toBe(true);
+    // The rollback took the draft edit-version with it — no orphan left behind.
+    expect(await editVersionCount('dams')).toBe(beforeVersions);
   });
 
   it('refuses further edits once a session has ended', async () => {
@@ -224,6 +228,101 @@ describe('featuresService edit sessions (§7)', () => {
     // The parent's row survives physically — it is the history.
     const still = await getPool().query(`SELECT deleted FROM water.dams WHERE id = $1`, [original.id]);
     expect(still.rows[0].deleted).toBe(false);
+  });
+
+  // Regression: commit() used to set `settled = true` before awaiting COMMIT, so a
+  // COMMIT that threw fell into fail(), which skipped release() because the session
+  // already looked settled. The client was never returned to the pool — enough of
+  // those and the pool is exhausted and the API deadlocks.
+  it('returns the client to the pool when COMMIT itself fails', async () => {
+    const pool = getPool();
+    const realConnect = pool.connect.bind(pool);
+    // Intercept the one client this session checks out and make its COMMIT reject,
+    // leaving every other query (BEGIN, the draft insert, the feature insert) intact.
+    let intercepted: any;
+    (pool as any).connect = async (...args: unknown[]) => {
+      const client: any = await (realConnect as any)(...args);
+      if (!intercepted) {
+        intercepted = client;
+        const realQuery = client.query.bind(client);
+        client.query = (sql: any, ...rest: any[]) => {
+          if (typeof sql === 'string' && sql.trim().toUpperCase() === 'COMMIT') {
+            return Promise.reject(new Error('injected COMMIT failure'));
+          }
+          return realQuery(sql, ...rest);
+        };
+      }
+      return client;
+    };
+
+    const idleBefore = pool.idleCount;
+    const totalBefore = pool.totalCount;
+    try {
+      const s = await svc().editSession('dams');
+      await s.create({
+        geometry: { type: 'Point', coordinates: [105.3, 20.5] }, properties: { name: TEST_NAME },
+      });
+      await expect(s.commit()).rejects.toThrow('injected COMMIT failure');
+      expect(s.isSettled()).toBe(true);
+      // discard() after a settled session is a no-op and must not double-release.
+      await s.discard();
+    } finally {
+      (pool as any).connect = realConnect;
+      if (intercepted) delete intercepted.query; // restore the prototype method
+    }
+
+    // The client came back: the pool holds no more connections than it did, and the
+    // one it took out is idle again rather than checked out forever.
+    expect(pool.totalCount).toBe(totalBefore + (totalBefore === 0 ? 1 : 0));
+    expect(pool.idleCount).toBeGreaterThanOrEqual(Math.min(idleBefore, 1));
+    expect(pool.totalCount - pool.idleCount).toBe(totalBefore - idleBefore);
+
+    // The transaction never committed, so nothing it wrote survives.
+    const orphan = await pool.query(
+      `SELECT count(*)::int AS n FROM water.dams WHERE ST_X(geom) = 105.3`
+    );
+    expect(orphan.rows[0].n).toBe(0);
+  });
+
+  // Two sessions minting concurrently must not land on the same external_id: they write
+  // into different draft versions, so the per-version unique index cannot catch a
+  // duplicate, and the resolver's DISTINCT ON would later collapse the pair.
+  it('two concurrent sessions on an integer-typed layer cannot mint the same external_id', async () => {
+    const a = await svc().editSession('dams');
+    const b = await svc().editSession('dams');
+
+    const rowA = await a.create({
+      geometry: { type: 'Point', coordinates: [105.21, 20.41] }, properties: { name: TEST_NAME },
+    });
+    // b's mint runs while a's transaction is still open and holding the advisory lock,
+    // so it blocks until a commits and then scans a max that includes a's row.
+    const rowBPromise = b.create({
+      geometry: { type: 'Point', coordinates: [105.22, 20.42] }, properties: { name: TEST_NAME },
+    });
+    await a.commit();
+    const rowB = await rowBPromise;
+    await b.commit();
+
+    const ext = await getPool().query(
+      `SELECT id, external_id FROM water.dams WHERE id = ANY($1)`, [[rowA.id, rowB.id]]
+    );
+    expect(ext.rows).toHaveLength(2);
+    const values = ext.rows.map((r) => Number(r.external_id));
+    expect(new Set(values).size).toBe(2);
+
+    // Distinct ids mean the resolver can keep both. (b branched off the version that
+    // was active when it opened, so a's version is not in b's chain — that is ordinary
+    // branch semantics, not id collision. Resolve over a chain containing both drafts
+    // to prove DISTINCT ON keeps two rows rather than collapsing them into one.)
+    const both = await getPool().query(
+      versionsRepository(getPool()).resolvedSql('dams', [
+        (await getPool().query(`SELECT dataset_version_id FROM water.dams WHERE id = $1`, [rowB.id])).rows[0].dataset_version_id,
+        (await getPool().query(`SELECT dataset_version_id FROM water.dams WHERE id = $1`, [rowA.id])).rows[0].dataset_version_id,
+      ])
+    );
+    const resolved = both.rows.map((r) => r.id as string);
+    expect(resolved).toContain(rowA.id);
+    expect(resolved).toContain(rowB.id);
   });
 
   it('rejects an update to a feature that does not exist', async () => {

@@ -17,6 +17,16 @@ const EDIT_EXTERNAL_ID_FLOOR = 1_000_000;
 
 async function mintExternalId(client: PoolClient, def: LayerDef): Promise<string | number> {
   if (def.externalIdType === 'text') return `edit:${randomUUID()}`;
+  // max+1 is a read-then-write: two concurrent edit sessions would otherwise scan the
+  // same max and mint the same id into two DIFFERENT draft versions, which the
+  // per-version (dataset_version_id, external_id) unique index cannot catch. Once both
+  // drafts commit the §4 resolver's DISTINCT ON (external_id) collapses the pair,
+  // silently dropping a feature. A transaction-scoped advisory lock keyed on the table
+  // name serialises the scan-and-insert across sessions and is released automatically
+  // when the session transaction ends — no unlock path to leak, and no schema change
+  // (a per-layer sequence would need a migration per layer and would still drift from
+  // the floor after an upstream ingest raises max above it).
+  await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [def.table]);
   const { rows } = await client.query(
     `SELECT greatest(coalesce(max(external_id), 0), ${EDIT_EXTERNAL_ID_FLOOR}) + 1 AS next
      FROM ${def.table}`
@@ -70,7 +80,7 @@ export function featuresRepository(pg: Pool) {
       client: PoolClient,
       def: LayerDef,
       versionId: string,
-      input: { attrs: Record<string, unknown>; geometryJson: string | null; actorId?: string; externalId?: string | number }
+      input: { attrs: Record<string, unknown>; geometryJson: string | null; actorId?: string }
     ): Promise<FeatureRow> {
       const cols = Object.keys(input.attrs);
       const vals = Object.values(input.attrs);
@@ -82,7 +92,9 @@ export function featuresRepository(pg: Pool) {
         colList.push(def.geomColumn);
         valPlaceholders.push(geomInsertSql(def, params.length));
       }
-      const externalId = input.externalId ?? await mintExternalId(client, def);
+      // Always minted here: a caller-supplied id could not be validated for
+      // per-version uniqueness, and no caller needed one.
+      const externalId = await mintExternalId(client, def);
       params.push(externalId);
       colList.push('external_id'); valPlaceholders.push(`$${params.length}`);
       params.push(versionId);
