@@ -1031,7 +1031,27 @@ Replaces in-place mutation in `layers/service.ts` with an edit-session model at 
     - `commitEditDraft(client, layerKey, draftId): Promise<void>` — sets `feature_count` to the number of rows the draft stores (changed features), then `activate`s the draft.
     - `discardEditDraft(client, draftId): Promise<void>` — deletes the draft's feature rows then the draft version row.
   - `featuresService(pg)` gains an `editSession(layerKey, actorId?)` factory returning `{ update(id, input), remove(id), create(input), commit(), discard() }`, each operating against the open draft. The existing top-level `create/update/remove` remain for reads/tests but are re-expressed to open-commit a single-change session (see Step 5) so no caller writes the live active version directly.
-  - `featuresRepository` gains `insertIntoVersion(def, versionId, {...})`, `upsertChangeInVersion(def, versionId, externalId, {...})`, and `tombstoneInVersion(def, versionId, externalId)`.
+  - `featuresRepository` gains `insertIntoVersion(client, def, versionId, {...})`, `upsertChangeInVersion(client, def, versionId, sourceId, {...})`, `tombstoneInVersion(client, def, versionId, sourceId)`, plus the client-scoped read/update helpers `findByIdOnClient` and `updateOnClient`.
+
+**Required: steward-created features must get a synthetic `external_id`.** `external_id` is nullable on all seven tables, and the §4 resolver keys on it with `DISTINCT ON (external_id)` — which collapses *all* NULL-external_id rows into a single row, silently dropping features. (Verified against the live DB: two NULL-external_id rows resolve to one.) No such rows exist today, but `create` mints features with no upstream id, so it is this task's create path that would introduce them. Therefore `insertIntoVersion` must supply a stable, unique `external_id` when the caller has none:
+
+```typescript
+import { randomUUID } from 'node:crypto';
+// …inside insertIntoVersion, before building the column list:
+// Steward-created features have no upstream id. The resolver keys on external_id
+// (DISTINCT ON collapses NULLs into one row), so mint a unique, stable one.
+const externalId = input.externalId ?? `edit:${randomUUID()}`;
+params.push(externalId); colList.push('external_id'); valPlaceholders.push(`$${params.length}`);
+```
+
+**The two `external_id` column types must both be handled.** Verified against the live schema: `dams` and `rivers` are `integer` (current max values 371 and 2013); `stations`, `flood_zones`, `drought_points`, `saltwater_intrusion`, and `flood_generation` are `text`. An `edit:<uuid>` string therefore fails to insert on `dams`/`rivers`.
+
+Add an `externalIdType: 'integer' | 'text'` field to `LayerDef` in `apps/api/src/layers/registry.ts` (declarative and testable, rather than querying `information_schema` at runtime), set to `'integer'` for `dams` and `rivers` and `'text'` for the other five. Then in `insertIntoVersion`:
+
+- **text layers:** `edit:${randomUUID()}`.
+- **integer layers:** allocate above the upstream range so a later upstream ingest can never collide — e.g. `SELECT greatest(coalesce(max(external_id), 0), 1000000) + 1 FROM <table>` executed on the session `client` (the draft's own rows are included, so successive creates in one session keep incrementing).
+
+**Add a test** asserting that two features created in one session both resolve — i.e. they did not collapse into one — and cover both an integer-typed layer (`dams`) and a text-typed layer (`stations`).
 
 - [ ] **Step 1: Write the failing test**
 
