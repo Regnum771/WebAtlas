@@ -16,11 +16,22 @@ export function versionsService(pg: Pool) {
   const svc = {
     async createIngestVersion(client: PoolClient, args: IngestVersionArgs): Promise<string> {
       // Derive a sequential per-layer label ("version N") when the caller doesn't supply
-      // one. Computed inside the caller's transaction/client (not the pool) so a
-      // concurrent ingest of the same layer can't read a stale count.
+      // one. Must be the highest label number EVER used for this layer, not a count of
+      // surviving rows: counting rows goes backwards whenever an earlier version is
+      // deleted (e.g. a prune), so the next created version would reuse a number that
+      // was already assigned to a still-existing row, producing duplicate labels — which
+      // is exactly the ambiguity this derivation exists to prevent (the timeline scrubber
+      // needs distinguishable names). Taking the max is monotonic under deletion: pruning
+      // old versions can never cause a later version to reuse a number. Labels that don't
+      // match the "version N" shape (e.g. an explicitly-passed "HydroLAKES v10") are
+      // ignored by the max, which is correct — they don't participate in the numeric
+      // sequence. Computed inside the caller's transaction/client (not the pool) so a
+      // concurrent ingest of the same layer can't read a stale value.
       const label = args.label ?? await (async () => {
         const { rows } = await client.query(
-          `SELECT count(*)::int AS n FROM app.dataset_versions WHERE layer_key = $1 AND kind = 'ingest'`,
+          `SELECT coalesce(max(substring(label from '^version ([0-9]+)$')::int), 0) AS n
+           FROM app.dataset_versions
+           WHERE layer_key = $1 AND kind = 'ingest' AND label ~ '^version [0-9]+$'`,
           [args.layerKey]
         );
         return `version ${rows[0].n + 1}`;

@@ -5,11 +5,13 @@ import { versionsService } from './service';
 const LAYER = 'zz_svc_dams'; // synthetic layer key; no real table needed for active-flip test
 const LAYER_B = 'zz_svc_bridges'; // second synthetic layer key for cross-layer guard test
 const LAYER_LABELS = 'zz_svc_labels'; // synthetic layer key for sequential-label derivation test
+const LAYER_PRUNE = 'zz_svc_prune'; // synthetic layer key for the deletion/reuse regression test
 
 afterAll(async () => {
   await getPool().query(`DELETE FROM app.dataset_versions WHERE layer_key = $1`, [LAYER]);
   await getPool().query(`DELETE FROM app.dataset_versions WHERE layer_key = $1`, [LAYER_B]);
   await getPool().query(`DELETE FROM app.dataset_versions WHERE layer_key = $1`, [LAYER_LABELS]);
+  await getPool().query(`DELETE FROM app.dataset_versions WHERE layer_key = $1`, [LAYER_PRUNE]);
   await closePool();
 });
 
@@ -159,6 +161,54 @@ describe('versionsService ingest lifecycle', () => {
         [versionId]
       );
       expect(rows[0].label).toBe('HydroLAKES v10');
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  });
+
+  it('does not reuse a label number after earlier versions are deleted (pruned)', async () => {
+    const pool = getPool();
+    const svc = versionsService(pool);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Create four ingest versions: version 1, version 2, version 3, version 4.
+      const v1 = await svc.createIngestVersion(client, { layerKey: LAYER_PRUNE, source: 'seed' });
+      const v2 = await svc.createIngestVersion(client, { layerKey: LAYER_PRUNE, source: 'seed' });
+      await svc.createIngestVersion(client, { layerKey: LAYER_PRUNE, source: 'seed' });
+      await svc.createIngestVersion(client, { layerKey: LAYER_PRUNE, source: 'seed' });
+
+      // Simulate a prune: delete the two earliest versions (version 1, version 2),
+      // leaving only version 3 and version 4 behind.
+      await client.query(
+        `DELETE FROM app.dataset_versions WHERE id = ANY($1)`,
+        [[v1, v2]]
+      );
+
+      const remaining = await client.query(
+        `SELECT label FROM app.dataset_versions WHERE layer_key = $1 ORDER BY ingested_at`,
+        [LAYER_PRUNE]
+      );
+      const remainingNumbers = remaining.rows.map((r) => Number(r.label.replace('version ', '')));
+
+      // Create a new version after the prune. A count-based derivation would see
+      // only 2 surviving rows and reuse "version 3" (already used and still present).
+      const v5 = await svc.createIngestVersion(client, { layerKey: LAYER_PRUNE, source: 'seed' });
+      const { rows } = await client.query(
+        `SELECT label FROM app.dataset_versions WHERE id = $1`,
+        [v5]
+      );
+      const newNumber = Number(rows[0].label.replace('version ', ''));
+
+      expect(remainingNumbers).not.toContain(newNumber);
+      expect(newNumber).toBeGreaterThan(Math.max(...remainingNumbers));
+      expect(rows[0].label).toBe('version 5');
+
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK');
