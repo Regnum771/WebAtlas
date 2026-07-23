@@ -340,12 +340,12 @@ Append inside `exports.up`, after the constraint block, the column additions and
     pgm.createIndex(tbl, 'dataset_version_id');
 
     // external_id uniqueness moves from global to per-version.
-    pgm.dropIndex(tbl, 'external_id', { name: `water_${name}_external_id_index`, ifExists: true });
+    pgm.dropIndex(tbl, 'external_id', { name: `${name}_external_id_unique_index`, ifExists: true });
     pgm.createIndex(tbl, ['dataset_version_id', 'external_id'], { unique: true });
   }
 ```
 
-> Note: verify the dropped index name — the original was created by `pgm.createIndex({schema:'water',name}, 'external_id', {unique:true})`, which names it `water_<name>_external_id_index`. `ifExists: true` makes the drop tolerant if the generated name differs.
+> Note: the dropped index name is `<name>_external_id_unique_index` — node-pg-migrate's `generateIndexName` produces `${table.name}_${cols}${uniq}_index` (schema-qualified separately), verified against `node_modules/node-pg-migrate/dist/operations/indexes/shared.js`. `ifExists: true` keeps the drop tolerant, but the name must be right: a wrong name silently leaves the old global unique index in place, which breaks the second-ingest case in Task 5.
 
 Prepend to `exports.down`, before the existing `dropTable`/`dropType`:
 
