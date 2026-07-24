@@ -5,7 +5,7 @@ import { DAM_STATUS_SLUGS } from '@webatlas/shared';
 
 beforeAll(async () => {
   await runSeeds();
-}, 30_000);
+});
 afterAll(async () => {
   await closePool();
 });
@@ -54,9 +54,7 @@ describe('seeds', () => {
     expect(rows[0].n).toBe(19);
   });
 
-  // Re-seeds ~2400 features against the shared dev DB, which accumulates a row-set
-  // per version on every run, so this runs past vitest's 5s default.
-  it('re-running appends a version rather than mutating the active one in place', { timeout: 30_000 }, async () => {
+  it('re-running appends a version rather than mutating the active one in place', async () => {
     const activeBefore = await getPool().query(
       `SELECT id FROM app.dataset_versions WHERE layer_key = 'flood_zones' AND is_active`
     );
@@ -124,7 +122,7 @@ describe('seeds create dataset versions (§6)', () => {
     expect(rows[0].parent_version_id).toBeNull();
   });
 
-  it('a second seed run creates a new active version and leaves the prior one addressable', { timeout: 30_000 }, async () => {
+  it('a second seed run creates a new active version and leaves the prior one addressable', async () => {
     const before = await getPool().query(
       `SELECT id FROM app.dataset_versions WHERE layer_key = 'stations' AND is_active`
     );
