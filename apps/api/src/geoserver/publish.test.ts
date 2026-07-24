@@ -1,5 +1,13 @@
 import 'dotenv/config';
 import { describe, it, expect } from 'vitest';
+import { gsRequest } from './client';
+
+const WS = process.env.GEOSERVER_WORKSPACE ?? 'webatlas';
+const STORE = `${WS}_water`;
+const LAYERS = [
+  'dams', 'rivers', 'stations', 'flood_zones',
+  'drought_points', 'saltwater_intrusion', 'flood_generation',
+];
 
 // Live WFS smoke test: needs a running GeoServer with the layers published
 // (npm run publish:geoserver). Gated on GEOSERVER_URL so CI — which runs
@@ -24,8 +32,21 @@ describe.skipIf(!GS)('WFS publication', () => {
   });
 
   it('serves all seven layers as GeoJSON', async () => {
-    for (const l of ['dams', 'rivers', 'stations', 'flood_zones', 'drought_points', 'saltwater_intrusion', 'flood_generation']) {
+    for (const l of LAYERS) {
       expect(await wfsCount(l)).toBeGreaterThan(0);
+    }
+  });
+
+  // The public layer identity must not change (webatlas:dams stays webatlas:dams),
+  // but each featuretype must be backed by its active-version resolving view so
+  // the served data follows the active-version pointer.
+  it('backs every published layer with its active-version view', async () => {
+    for (const l of LAYERS) {
+      const res = await gsRequest('GET', `/workspaces/${WS}/datastores/${STORE}/featuretypes/${l}`);
+      expect(res.status, `featuretype ${l} should be published`).toBe(200);
+      const json = (await res.json()) as { featureType: { name: string; nativeName: string } };
+      expect(json.featureType.name, `${l} public layer name`).toBe(l);
+      expect(json.featureType.nativeName, `${l} backing relation`).toBe(`${l}_active`);
     }
   });
 });

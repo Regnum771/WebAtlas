@@ -48,12 +48,117 @@ describe('water schema', () => {
   });
 
   it('every table has a 4326 geometry column', async () => {
+    // Restricted to base tables (relkind='r'): the water.*_active views (§5) also
+    // expose geom and are correctly picked up by geometry_columns, but this check
+    // is specifically about the underlying thematic tables.
     const { rows } = await getPool().query(
-      `SELECT f_table_name, srid, type FROM geometry_columns WHERE f_table_schema='water'`
+      `SELECT gc.f_table_name, gc.srid, gc.type
+         FROM geometry_columns gc
+         JOIN pg_class c ON c.relname = gc.f_table_name
+         JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = gc.f_table_schema
+        WHERE gc.f_table_schema='water' AND c.relkind='r'`
     );
     expect(rows).toHaveLength(7);
     for (const r of rows) {
       expect(r.srid).toBe(4326);
+    }
+  });
+});
+
+describe('active-version views (§5)', () => {
+  const tables = [
+    'dams', 'rivers', 'stations', 'flood_zones',
+    'drought_points', 'saltwater_intrusion', 'flood_generation',
+  ];
+
+  it('has a <layer>_active view for every thematic layer', async () => {
+    for (const t of tables) {
+      const { rows } = await getPool().query(
+        `SELECT 1 FROM information_schema.views WHERE table_schema='water' AND table_name=$1`,
+        [`${t}_active`]
+      );
+      expect(rows.length, `${t}_active`).toBe(1);
+    }
+  });
+
+  it('every _active view exposes a 4326 geometry column matching its base table', async () => {
+    // View-side counterpart to 'every table has a 4326 geometry column' (relkind='r' above):
+    // GeoServer (Task 8) publishes these views directly with srs: 'EPSG:4326', so if a view
+    // definition ever dropped or altered the geom column, this must fail loudly here rather
+    // than surfacing as a broken map layer.
+    const { rows } = await getPool().query(
+      `SELECT base.f_table_name AS layer, view.srid AS view_srid, view.type AS view_type,
+              base.srid AS base_srid, base.type AS base_type
+         FROM geometry_columns view
+         JOIN pg_class vc ON vc.relname = view.f_table_name
+         JOIN pg_namespace vn ON vn.oid = vc.relnamespace AND vn.nspname = view.f_table_schema
+         JOIN geometry_columns base ON base.f_table_schema = view.f_table_schema
+              AND view.f_table_name = base.f_table_name || '_active'
+         JOIN pg_class bc ON bc.relname = base.f_table_name
+         JOIN pg_namespace bn ON bn.oid = bc.relnamespace AND bn.nspname = base.f_table_schema
+        WHERE view.f_table_schema='water' AND vc.relkind='v' AND bc.relkind='r'`
+    );
+    expect(rows).toHaveLength(7);
+    for (const r of rows) {
+      expect(r.view_srid, r.layer).toBe(4326);
+      expect(r.view_srid, r.layer).toBe(r.base_srid);
+      expect(r.view_type, r.layer).toBe(r.base_type);
+    }
+  });
+
+  it('the active view returns the active version rows (matches the resolver)', async () => {
+    // For a backfilled/seeded ingest-active layer, the view count equals live non-deleted rows.
+    const { rows: viaView } = await getPool().query(`SELECT count(*)::int AS n FROM water.dams_active`);
+    const { rows: active } = await getPool().query(
+      `SELECT id FROM app.dataset_versions WHERE layer_key = 'dams' AND is_active`
+    );
+    const { rows: direct } = await getPool().query(
+      `SELECT count(*)::int AS n FROM water.dams WHERE dataset_version_id = $1 AND NOT deleted`,
+      [active[0].id]
+    );
+    expect(viaView[0].n).toBe(direct[0].n);
+  });
+
+  it('reflects an edit-version commit (new feature appears via the view)', async () => {
+    const NAME = 'view-flow@webatlas.test';
+    const { rows: b } = await getPool().query(`SELECT count(*)::int AS n FROM water.dams_active`);
+    // Simulate a committed edit-version off the active ingest.
+    const active = await getPool().query(
+      `SELECT id FROM app.dataset_versions WHERE layer_key='dams' AND is_active`
+    );
+    let editId: string | undefined;
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const edit = await client.query(
+        `INSERT INTO app.dataset_versions (layer_key, kind, parent_version_id, source, label)
+         VALUES ('dams','edit',$1,'edit session','view test') RETURNING id`, [active.rows[0].id]
+      );
+      editId = edit.rows[0].id;
+      await client.query(
+        `INSERT INTO water.dams (external_id, name, dataset_version_id, geom)
+         VALUES (999999, $1, $2, ST_SetSRID(ST_MakePoint(105.8,21.0),4326))`,
+        [NAME, edit.rows[0].id]
+      );
+      await client.query(`UPDATE app.dataset_versions SET is_active=false WHERE layer_key='dams' AND is_active`);
+      await client.query(`UPDATE app.dataset_versions SET is_active=true WHERE id=$1`, [edit.rows[0].id]);
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    try {
+      const { rows: a } = await getPool().query(`SELECT count(*)::int AS n FROM water.dams_active`);
+      expect(a[0].n).toBe(b[0].n + 1);
+    } finally {
+      // Restore active pointer and clean up so the suite is repeatable,
+      // even if the assertion above failed.
+      await getPool().query(`UPDATE app.dataset_versions SET is_active=false WHERE layer_key='dams' AND is_active`);
+      await getPool().query(`UPDATE app.dataset_versions SET is_active=true WHERE id=$1`, [active.rows[0].id]);
+      await getPool().query(`DELETE FROM water.dams WHERE name=$1`, [NAME]);
+      if (editId) {
+        await getPool().query(`DELETE FROM app.dataset_versions WHERE id=$1`, [editId]);
+      }
     }
   });
 });

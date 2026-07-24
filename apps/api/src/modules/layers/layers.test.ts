@@ -26,6 +26,21 @@ beforeAll(async () => {
   }
 });
 afterAll(async () => {
+  // Every POST/PUT/DELETE above publishes an edit-version on `dams`, so this suite must
+  // drop the edit-versions it created and restore the seeded ingest version as active.
+  // Without this the suite depends on another file's afterAll sweeping up after it and
+  // leaves a permanently-active orphan edit-version when run in isolation.
+  await getPool().query(
+    `DELETE FROM water.dams WHERE dataset_version_id IN
+       (SELECT id FROM app.dataset_versions WHERE layer_key = 'dams' AND kind = 'edit')`
+  );
+  await getPool().query(`DELETE FROM app.dataset_versions WHERE layer_key = 'dams' AND kind = 'edit'`);
+  await getPool().query(
+    `UPDATE app.dataset_versions SET is_active = true
+     WHERE id = (SELECT id FROM app.dataset_versions
+                 WHERE layer_key = 'dams' AND kind = 'ingest'
+                 ORDER BY ingested_at DESC LIMIT 1)`
+  );
   await getPool().query('DELETE FROM water.dams WHERE name = $1', [NAME]);
   await getPool().query(`DELETE FROM app.users WHERE email LIKE 'layers-%@webatlas.test'`);
   await app.close();

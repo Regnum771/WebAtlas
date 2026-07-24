@@ -39,13 +39,37 @@ async function ensureDatastore(): Promise<void> {
   if (!res.ok) throw new Error(`create datastore failed: ${res.status} ${await res.text()}`);
 }
 
+/**
+ * Publish `table` as a featuretype whose public name is the bare layer key
+ * (webatlas:dams, …) but whose backing relation is the `<layer>_active` view,
+ * so the served data follows the active-version pointer: when an edit session
+ * commits or a new ingest lands, WFS consumers see it with no republish.
+ *
+ * Existing featuretypes are repointed with a PUT rather than delete-and-recreate:
+ * a delete would drop the published layer's styling and other configuration,
+ * which is not recoverable from this repo. The PUT is a no-op once nativeName
+ * already matches, so publishAll() stays safe to run repeatedly.
+ */
 async function ensureLayer(table: string): Promise<void> {
   const ftPath = `/workspaces/${WS}/datastores/${STORE}/featuretypes`;
-  if (await gsExists(`${ftPath}/${table}`)) return;
+  const view = `${table}_active`;
+
+  const existing = await gsRequest('GET', `${ftPath}/${table}`);
+  if (existing.status === 200) {
+    const current = (await existing.json()) as { featureType?: { nativeName?: string } };
+    if (current.featureType?.nativeName === view) return;
+    // Repoint an install published before the active-version views existed.
+    const res = await gsRequest('PUT', `${ftPath}/${table}`, {
+      featureType: { name: table, nativeName: view },
+    });
+    if (!res.ok) throw new Error(`repoint ${table} failed: ${res.status} ${await res.text()}`);
+    return;
+  }
+
   const body = {
     featureType: {
       name: table,
-      nativeName: table,
+      nativeName: view,
       srs: 'EPSG:4326',
       enabled: true,
     },
