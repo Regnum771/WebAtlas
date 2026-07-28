@@ -13,6 +13,7 @@ export const layerGroups = [
     layers: [
       { id: 'layer_dams', name: 'Đập & Hồ chứa', defaultVisible: true, opacity: 1 },
       { id: 'layer_rivers', name: 'Mạng lưới sông ngòi', defaultVisible: true, opacity: 0.8 },
+      { id: 'layer_lakes', name: 'Hồ & Hồ chứa', defaultVisible: true, opacity: 0.85 },
       { id: 'layer_stations', name: 'Trạm quan trắc', defaultVisible: false, opacity: 1 }
     ]
   },

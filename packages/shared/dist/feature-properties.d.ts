@@ -21,6 +21,13 @@ export interface RiverProperties extends BaseFeatureProperties {
     streamOrder?: number;
     length?: number;
 }
+export interface LakeProperties extends BaseFeatureProperties {
+    layerKey: 'lakes';
+    lakeType?: string;
+    area?: number;
+    volume?: number;
+    shorelineLength?: number;
+}
 export interface StationProperties extends BaseFeatureProperties {
     layerKey: 'stations';
     measurementType?: string;
@@ -51,4 +58,4 @@ export interface FloodGenerationProperties extends BaseFeatureProperties {
     catchmentArea?: string;
     flowCharacteristics?: string;
 }
-export type LayerFeatureProperties = DamProperties | RiverProperties | StationProperties | FloodZoneProperties | DroughtPointProperties | SaltwaterIntrusionProperties | FloodGenerationProperties;
+export type LayerFeatureProperties = DamProperties | RiverProperties | LakeProperties | StationProperties | FloodZoneProperties | DroughtPointProperties | SaltwaterIntrusionProperties | FloodGenerationProperties;

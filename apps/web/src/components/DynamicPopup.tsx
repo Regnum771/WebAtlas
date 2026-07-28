@@ -208,6 +208,24 @@ const DynamicPopup: React.FC = () => {
         </>
       );
     }
+    if (props.layerKey === 'lakes') {
+      return (
+        <>
+          {props.lakeType && (
+            <div className="info-row"><Info size={14} className="text-blue-500" />
+              <span>Phân loại: <strong>{props.lakeType}</strong></span></div>)}
+          {props.area != null && (
+            <div className="info-row"><Database size={14} className="text-blue-500" />
+              <span>Diện tích: <strong>{props.area} km²</strong></span></div>)}
+          {props.volume != null && (
+            <div className="info-row"><Droplets size={14} className="text-blue-500" />
+              <span>Dung tích: <strong>{props.volume} triệu m³</strong></span></div>)}
+          {props.shorelineLength != null && (
+            <div className="info-row"><Activity size={14} className="text-blue-500" />
+              <span>Chiều dài bờ: <strong>{props.shorelineLength} km</strong></span></div>)}
+        </>
+      );
+    }
     if (props.layerKey === 'stations') {
       return (
         <>

@@ -43,6 +43,9 @@ export const LAYER_ATTRIBUTE_MAP: Record<EditableLayerKey, LayerAttributeInfo> =
       external_id: 'localId',
       name: 'geographicalName',
       area_km2: 'area',
+      lake_type: 'lakeType',
+      volume_mcm: 'volume',
+      shore_len_km: 'shorelineLength',
     },
   },
   stations: {
