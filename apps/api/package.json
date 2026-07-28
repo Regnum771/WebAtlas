@@ -8,6 +8,7 @@
     "migrate:up": "node-pg-migrate up -m src/db/migrations",
     "migrate:down": "node-pg-migrate down -m src/db/migrations",
     "seed": "tsx src/db/seeds/run.ts",
+    "ingest:rivers": "tsx src/db/seeds/ingestRivers.ts",
     "publish:geoserver": "tsx src/geoserver/publish.ts",
     "dev": "tsx watch src/start.ts",
     "start": "tsx src/start.ts",

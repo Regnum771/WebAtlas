@@ -70,4 +70,37 @@ describe('versioning integration (§6 rollback + addressability)', () => {
     await pool.query(`DELETE FROM water.stations WHERE dataset_version_id=$1`, [supId]);
     await pool.query(`DELETE FROM app.dataset_versions WHERE id=$1`, [supId]);
   });
+
+  // HydroRIVERS is ~26.9k features, inserted row-by-row through the same seed
+  // pipeline as the rest of the suite; a first-time ingest alone runs well past
+  // the shared 30s integration-suite budget, so this test gets a longer local
+  // timeout rather than raising the global one for every other (much smaller) test.
+  it('ingests HydroRIVERS as rivers v2, flips active, leaves thuyhe v1 addressable', async () => {
+    const pool = getPool();
+    const svc = versionsService(pool);
+    const { ingestHydroRivers } = await import('../../db/seeds/ingestRivers');
+
+    const thuyheV1 = await svc.getActiveVersionId('rivers');
+    expect(thuyheV1).not.toBeNull();
+    const thuyheIds = await svc.resolveFeatureIds('rivers', thuyheV1!);
+
+    const { versionId } = await ingestHydroRivers();
+
+    // New version is active + ingest-kind.
+    const active = await svc.getActiveVersionId('rivers');
+    expect(active).toBe(versionId);
+    const v = await svc.getVersion(versionId);
+    expect(v).toMatchObject({ kind: 'ingest', source: 'HydroRIVERS v10', isActive: true });
+
+    // rivers_active now resolves to HydroRIVERS rows, not the old thuyhe set.
+    const newIds = await svc.resolveFeatureIds('rivers', versionId);
+    expect(newIds.length).toBeGreaterThan(0);
+
+    // thuyhe v1 still addressable with its original feature set.
+    expect(await svc.resolveFeatureIds('rivers', thuyheV1!)).toEqual(thuyheIds);
+
+    // Idempotent: a second ingest doesn't create a duplicate active v2.
+    const second = await ingestHydroRivers();
+    expect(second.versionId).toBe(versionId);
+  }, 180_000);
 });
