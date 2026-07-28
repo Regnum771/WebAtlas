@@ -5,7 +5,7 @@ import { gsRequest } from './client';
 const WS = process.env.GEOSERVER_WORKSPACE ?? 'webatlas';
 const STORE = `${WS}_water`;
 const LAYERS = [
-  'dams', 'rivers', 'stations', 'flood_zones',
+  'dams', 'rivers', 'lakes', 'stations', 'flood_zones',
   'drought_points', 'saltwater_intrusion', 'flood_generation',
 ];
 
@@ -31,7 +31,7 @@ describe.skipIf(!GS)('WFS publication', () => {
     expect(await wfsCount('dams')).toBeGreaterThan(0);
   });
 
-  it('serves all seven layers as GeoJSON', async () => {
+  it('serves all eight layers as GeoJSON', async () => {
     for (const l of LAYERS) {
       expect(await wfsCount(l)).toBeGreaterThan(0);
     }

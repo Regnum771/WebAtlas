@@ -6,7 +6,7 @@ import { gsRequest, gsExists } from './client';
 const WS = process.env.GEOSERVER_WORKSPACE ?? 'webatlas';
 const STORE = `${WS}_water`;
 const TABLES = [
-  'dams', 'rivers', 'stations', 'flood_zones',
+  'dams', 'rivers', 'lakes', 'stations', 'flood_zones',
   'drought_points', 'saltwater_intrusion', 'flood_generation',
 ];
 
