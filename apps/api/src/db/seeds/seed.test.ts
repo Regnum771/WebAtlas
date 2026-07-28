@@ -87,6 +87,26 @@ describe('seeds', () => {
     // variety: more than one distinct status present across 371 dams
     expect(statuses.length).toBeGreaterThan(1);
   });
+
+  it('seeds lakes as an active version 1 from HydroLAKES', async () => {
+    const { rows: feat } = await getPool().query('SELECT count(*)::int AS n FROM water.lakes_active');
+    expect(feat[0].n).toBeGreaterThan(0);
+
+    const { rows: ver } = await getPool().query(`
+      SELECT source, label, is_active FROM app.dataset_versions
+      WHERE layer_key = 'lakes' AND is_active
+    `);
+    // Label is derived sequentially per layer ("version N"), not a fixed literal — repeated
+    // seed runs (including across test runs against a persistent dev DB) keep incrementing it.
+    expect(ver[0]).toMatchObject({ source: 'HydroLAKES v10', is_active: true });
+    expect(ver[0].label).toMatch(/^version \d+$/);
+
+    // Attribute mapping landed: at least one lake has a mapped type + area.
+    const { rows: sample } = await getPool().query(`
+      SELECT lake_type, area_km2 FROM water.lakes_active WHERE lake_type IS NOT NULL LIMIT 1
+    `);
+    expect(sample[0].area_km2).not.toBeNull();
+  });
 });
 
 describe('seeds create dataset versions (§6)', () => {

@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { assignDamStatus } from './damStatus';
+import { lakeTypeLabel } from './lakeType';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // apps/api/src/db/seeds -> repo root is five levels up
@@ -89,5 +90,19 @@ export const SEED_LAYERS: SeedLayer[] = [
     source: 'flood_generation.geojson',
     multiPolygon: true,
     columns: (p) => ({ external_id: p.id, name: p.name, risk_level: p.riskLevel, area: p.area, flow_rate: p.flowRate }),
+  },
+  {
+    table: 'lakes',
+    file: resolve(seedData, 'hydrolakes-vn.geojson'),
+    source: 'HydroLAKES v10',
+    multiPolygon: true,
+    columns: (p) => ({
+      external_id: p.Hylak_id,
+      name: p.Lake_name,
+      lake_type: lakeTypeLabel(p.Lake_type),
+      area_km2: p.Lake_area,
+      volume_mcm: p.Vol_total,
+      shore_len_km: p.Shore_len,
+    }),
   },
 ];
