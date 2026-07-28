@@ -2,16 +2,20 @@ import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
 import type { ReservoirFilterType } from './MapModel';
 import { DAM_STATUS_DISPLAY, toDamStatusSlug, type DamStatusSlug } from '@webatlas/shared';
 
-// Stream-order -> [border width, core width]; bucket 0 is the "everything else" default.
+// Strahler stream-order -> [border width, core width]. Higher order = larger river = wider.
+// Bucket 0 is the "everything else / headwaters" thin default.
 const RIVER_WIDTHS: Record<number, [number, number]> = {
-  1: [7, 3.5],
-  2: [5, 2.2],
-  3: [3, 1.2],
-  0: [1.5, 0.5],
+  3: [7, 3.5],   // major rivers (order >= 6)
+  2: [5, 2.2],   // order 4-5
+  1: [3, 1.2],   // order 3
+  0: [1.5, 0.5], // order <= 2 / unknown
 };
 
-function riverBucket(cap: number): 0 | 1 | 2 | 3 {
-  return cap === 1 ? 1 : cap === 2 ? 2 : cap === 3 ? 3 : 0;
+function riverBucket(order: number): 0 | 1 | 2 | 3 {
+  if (order >= 6) return 3;
+  if (order >= 4) return 2;
+  if (order === 3) return 1;
+  return 0;
 }
 
 // Precompute the 4 style arrays once at module load.
@@ -45,6 +49,11 @@ export const stationsStyle = new Style({
 export const floodStyle = new Style({
   fill: new Fill({ color: 'rgba(239, 68, 68, 0.25)' }),
   stroke: new Stroke({ color: '#ef4444', width: 1.5 })
+});
+
+export const lakesStyle = new Style({
+  fill: new Fill({ color: 'rgba(56, 189, 248, 0.35)' }),  // sky-400, translucent water
+  stroke: new Stroke({ color: '#0284c7', width: 1 }),      // sky-600 shoreline
 });
 
 export const droughtSurveyStyle = new Style({

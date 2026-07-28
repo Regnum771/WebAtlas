@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { Style, Circle as CircleStyle } from 'ol/style';
-import { riversStyle, makeDamsStyle } from './styles';
+import { Style, Circle as CircleStyle, Fill, Stroke } from 'ol/style';
+import { riversStyle, makeDamsStyle, lakesStyle } from './styles';
 
 // Minimal fake OL feature: only get() is used by the style functions.
 function fakeFeature(props: Record<string, unknown>) {
@@ -41,5 +41,19 @@ describe('style caching', () => {
     const damsStyle = makeDamsStyle(() => 'nguy_hiem');
     const hidden = damsStyle(fakeFeature({ statusSlug: 'binh_thuong', ratedPower: 100 }));
     expect(hidden).toBeUndefined();
+  });
+
+  it('lakesStyle has a blue fill and a stroke', () => {
+    expect(lakesStyle.getFill()).toBeInstanceOf(Fill);
+    expect(lakesStyle.getStroke()).toBeInstanceOf(Stroke);
+  });
+
+  it('rivers get wider as Strahler order increases', () => {
+    const widthFor = (order: number) => {
+      const styles = riversStyle(fakeFeature({ streamOrder: order }));
+      // main (core) stroke is the last style in the paired array
+      return styles[styles.length - 1].getStroke().getWidth();
+    };
+    expect(widthFor(8)).toBeGreaterThan(widthFor(2));
   });
 });
