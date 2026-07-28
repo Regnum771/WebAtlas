@@ -13,6 +13,7 @@ import {
   provincesStyle,
   wardsStyle,
   riversStyle,
+  lakesStyle,
   stationsStyle,
   floodStyle,
   droughtSurveyStyle,
@@ -86,6 +87,7 @@ export class MapModel {
       this.layers[stateId] = layer;
       return layer;
     };
+    const lakesLayer = mkWfs('layer_lakes', 'lakes', lakesStyle);
     const stationsLayer = mkWfs('layer_stations', 'stations', stationsStyle);
     const floodLayer = mkWfs('layer_flood', 'flood_zones', floodStyle);
     const droughtSurveyLayer = mkWfs('layer_drought_survey', 'drought_points', droughtSurveyStyle);
@@ -105,6 +107,7 @@ export class MapModel {
         provincesLayer,
         wardsLayer,
         floodLayer,
+        lakesLayer,
         riversLayer,
         damsLayer,
         stationsLayer,
