@@ -52,7 +52,11 @@ describe('style caching', () => {
     const widthFor = (order: number) => {
       const styles = riversStyle(fakeFeature({ streamOrder: order }));
       // main (core) stroke is the last style in the paired array
-      return styles[styles.length - 1].getStroke().getWidth();
+      const stroke = styles[styles.length - 1].getStroke();
+      expect(stroke).toBeInstanceOf(Stroke);
+      const width = stroke!.getWidth();
+      expect(width).toBeDefined();
+      return width!;
     };
     expect(widthFor(8)).toBeGreaterThan(widthFor(2));
   });
