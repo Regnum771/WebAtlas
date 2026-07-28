@@ -58,7 +58,7 @@ describe('water schema', () => {
          JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = gc.f_table_schema
         WHERE gc.f_table_schema='water' AND c.relkind='r'`
     );
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(8);
     for (const r of rows) {
       expect(r.srid).toBe(4326);
     }
@@ -98,7 +98,7 @@ describe('active-version views (§5)', () => {
          JOIN pg_namespace bn ON bn.oid = bc.relnamespace AND bn.nspname = base.f_table_schema
         WHERE view.f_table_schema='water' AND vc.relkind='v' AND bc.relkind='r'`
     );
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(8);
     for (const r of rows) {
       expect(r.view_srid, r.layer).toBe(4326);
       expect(r.view_srid, r.layer).toBe(r.base_srid);
@@ -160,5 +160,29 @@ describe('active-version views (§5)', () => {
         await getPool().query(`DELETE FROM app.dataset_versions WHERE id=$1`, [editId]);
       }
     }
+  });
+});
+
+describe('water.lakes', () => {
+  it('exists with MultiPolygon/4326 geom and versioning columns', async () => {
+    const { rows } = await getPool().query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'water' AND table_name = 'lakes'
+    `);
+    const cols = rows.map((r) => r.column_name);
+    expect(cols).toEqual(expect.arrayContaining([
+      'id', 'name', 'external_id', 'lake_type', 'area_km2', 'volume_mcm',
+      'shore_len_km', 'geom', 'dataset_version_id', 'deleted',
+    ]));
+
+    const { rows: geo } = await getPool().query(`
+      SELECT type, srid FROM geometry_columns
+      WHERE f_table_schema = 'water' AND f_table_name = 'lakes'
+    `);
+    expect(geo[0]).toMatchObject({ type: 'MULTIPOLYGON', srid: 4326 });
+  });
+
+  it('lakes_active view resolves', async () => {
+    await expect(getPool().query('SELECT count(*) FROM water.lakes_active')).resolves.toBeDefined();
   });
 });
