@@ -35,7 +35,7 @@ describe.skipIf(!GS)('WFS publication', () => {
     for (const l of LAYERS) {
       expect(await wfsCount(l)).toBeGreaterThan(0);
     }
-  });
+  }, 120_000);
 
   // The public layer identity must not change (webatlas:dams stays webatlas:dams),
   // but each featuretype must be backed by its active-version resolving view so
