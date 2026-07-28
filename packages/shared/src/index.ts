@@ -6,6 +6,7 @@
 export const EDITABLE_LAYER_KEYS = [
   'dams',
   'rivers',
+  'lakes',
   'stations',
   'flood_zones',
   'drought_points',

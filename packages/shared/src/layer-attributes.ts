@@ -36,6 +36,15 @@ export const LAYER_ATTRIBUTE_MAP: Record<EditableLayerKey, LayerAttributeInfo> =
       length_m: 'length',
     },
   },
+  lakes: {
+    wfsTypeName: 'webatlas:lakes',
+    layerStateId: 'layer_lakes',
+    attributes: {
+      external_id: 'localId',
+      name: 'geographicalName',
+      area_km2: 'area',
+    },
+  },
   stations: {
     wfsTypeName: 'webatlas:stations',
     layerStateId: 'layer_stations',
