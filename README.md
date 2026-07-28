@@ -143,6 +143,32 @@ write is recorded in `app.audit_log`; geometry is validated in PostGIS before wr
 API-workspace scripts (run with `-w @webatlas/api`): `dev`, `start`, `create-admin`,
 `migrate:up`, `migrate:down`. Frontend tests: `npm run test -w @webatlas/web`.
 
+## Regenerating HydroSHEDS seed data
+
+The lakes/reservoirs and rivers seed inputs at `apps/api/src/db/seeds/data/hydrolakes-vn.geojson`
+and `hydrorivers-vn.geojson` are clipped to Vietnam (bbox `102 8 110 24`, lon/lat) from the
+upstream global/regional HydroSHEDS datasets and committed as generated artifacts — you don't
+need to regenerate them to run the app. Regenerate only when refreshing to a newer upstream
+release:
+
+1. Download the upstream shapefiles:
+   - **HydroLAKES v1.0 polygons** — https://www.hydrosheds.org/products/hydrolakes
+     (direct: `https://data.hydrosheds.org/file/hydrolakes/HydroLAKES_polys_v10_shp.zip`, ~800 MB)
+   - **HydroRIVERS v1.0 (Asia region)** — https://www.hydrosheds.org/products/hydrorivers
+     (direct: `https://data.hydrosheds.org/file/HydroRIVERS/HydroRIVERS_v10_as_shp.zip`, ~90 MB)
+2. Unzip both, then install the Python geo toolchain used by the clipper (no system GDAL
+   required):
+   ```bash
+   pip install geopandas shapely pyproj fiona
+   ```
+3. Run the prep script against the unzipped `.shp` files:
+   ```bash
+   apps/api/scripts/prep-hydrosheds.sh /path/to/HydroLAKES_polys_v10.shp /path/to/HydroRIVERS_v10_as.shp
+   ```
+   This writes both clipped GeoJSON files into `apps/api/src/db/seeds/data/`. Lakes carry
+   `Hylak_id, Lake_name, Lake_type, Lake_area, Vol_total, Shore_len`; rivers carry
+   `HYRIV_ID, ORD_STRA, LENGTH_KM` and are filtered to `ORD_STRA >= 3` to keep the file small.
+
 ## Project status
 
 The build-out is phased. Each plan produces working, testable software on its own.
