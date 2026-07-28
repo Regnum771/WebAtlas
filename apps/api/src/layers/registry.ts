@@ -32,6 +32,10 @@ const ATTRS: Record<EditableLayerKey, z.ZodObject<z.ZodRawShape>> = {
   rivers: z.object({
     name: nullableStr, code: nullableStr, stream_order: nullableNum, length_m: nullableNum,
   }),
+  lakes: z.object({
+    name: nullableStr, lake_type: nullableStr, area_km2: nullableNum,
+    volume_mcm: nullableNum, shore_len_km: nullableNum,
+  }),
   stations: z.object({
     name: nullableStr, station_type: nullableStr, status: nullableStr, value: nullableStr,
   }),
@@ -50,10 +54,11 @@ const ATTRS: Record<EditableLayerKey, z.ZodObject<z.ZodRawShape>> = {
 };
 
 // Mirrors the live column types in migration 1000000000002_water-schema.cjs:
-// dams/rivers carry a numeric upstream id, the rest a text one.
+// dams/rivers/lakes carry a numeric upstream id, the rest a text one.
 const EXTERNAL_ID_TYPE: Record<EditableLayerKey, 'integer' | 'text'> = {
   dams: 'integer',
   rivers: 'integer',
+  lakes: 'integer',
   stations: 'text',
   flood_zones: 'text',
   drought_points: 'text',

@@ -52,7 +52,7 @@ describe('layers metadata', () => {
     expect(res.statusCode).toBe(200);
     const keys = res.json().layers.map((l: { key: string }) => l.key);
     expect(keys).toContain('dams');
-    expect(keys).toHaveLength(7);
+    expect(keys).toHaveLength(8);
   });
 });
 
