@@ -96,9 +96,11 @@ export class MapModel {
     const floodGenerationLayer = mkWfs('layer_flood_generation', 'flood_generation', floodGenerationStyle);
 
     // Tải layer ranh giới tỉnh và xã từ GeoJSON (quản lý ẩn hiện động theo mức zoom qua event listener để tránh lỗi hiển thị khi di chuyển)
-    const provincesLayer = createVectorLayerFromUrl('layer_provinces_2026', './gadm41_VNM_1.geojson', provincesStyle);
+    // Ranh giới sau sáp nhập (01/7/2025): 34 tỉnh cả nước; xã chỉ có trong vùng
+    // công tác — zoom ra ngoài vùng sẽ thấy ranh giới tỉnh nhưng không có xã.
+    const provincesLayer = createVectorLayerFromUrl('layer_provinces_2026', './provinces-34.geojson', provincesStyle);
 
-    const wardsLayer = createVectorLayerFromUrl('layer_wards_2026', './gadm41_VNM_3.geojson', wardsStyle);
+    const wardsLayer = createVectorLayerFromUrl('layer_wards_2026', './wards-region.geojson', wardsStyle);
 
     // 3. Khởi tạo Map
     const map = new Map({

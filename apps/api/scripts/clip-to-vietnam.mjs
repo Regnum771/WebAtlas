@@ -5,8 +5,8 @@
  * còn lẫn sông/hồ của Lào, Campuchia, Trung Quốc, Thái Lan nằm trong khung đó. Bản đồ chỉ
  * hiển thị địa bàn Việt Nam nên phần ngoài lãnh thổ là nhiễu.
  *
- * Ranh giới quốc gia được hợp nhất từ 63 tỉnh GADM (gadm41_VNM_1.geojson) — không cần
- * thêm tệp nguồn mới. Một đối tượng được giữ nếu có BẤT KỲ đỉnh nào nằm trong lãnh thổ,
+ * Ranh giới quốc gia được hợp nhất từ 34 tỉnh sau sáp nhập (provinces-34.geojson) — không
+ * cần thêm tệp nguồn mới. Một đối tượng được giữ nếu có BẤT KỲ đỉnh nào nằm trong lãnh thổ,
  * nên các con sông biên giới (chỉ một nửa thuộc VN) vẫn được giữ nguyên vẹn thay vì bị
  * cắt cụt giữa dòng.
  *
@@ -20,9 +20,9 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../../..');
 const dataDir = path.join(repoRoot, 'apps/api/src/db/seeds/data');
-const boundaryPath = path.join(repoRoot, 'apps/web/public/gadm41_VNM_1.geojson');
+const boundaryPath = path.join(repoRoot, 'apps/web/public/provinces-34.geojson');
 
-/** Gom mọi vòng ngoài của 63 tỉnh thành một danh sách polygon phẳng. */
+/** Gom mọi vòng ngoài của 34 tỉnh thành một danh sách polygon phẳng. */
 function loadVietnamRings() {
   const fc = JSON.parse(fs.readFileSync(boundaryPath, 'utf8'));
   const polygons = [];
@@ -82,7 +82,7 @@ function anyVertexInVietnam(geometry, polygons) {
 }
 
 const polygons = loadVietnamRings();
-console.log(`Ranh giới: ${polygons.length} polygon từ 63 tỉnh GADM`);
+console.log(`Ranh giới: ${polygons.length} polygon từ 34 tỉnh sau sáp nhập`);
 
 for (const file of ['hydrorivers-vn.geojson', 'hydrolakes-vn.geojson']) {
   const filePath = path.join(dataDir, file);
