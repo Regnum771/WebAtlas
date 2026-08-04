@@ -11,6 +11,10 @@ const DynamicLegend: React.FC = () => {
 
   if (visibleLayers.length === 0) return null;
 
+  const showOsmAttribution = visibleLayers.some(
+    l => l.id === 'layer_rivers' || l.id === 'layer_lakes'
+  );
+
   return (
     <div className="dynamic-legend glass-panel">
       <div className="legend-header">
@@ -63,12 +67,17 @@ const DynamicLegend: React.FC = () => {
           }
           if (layer.id === 'layer_rivers') {
             return (
-              <div key={layer.id} className="legend-item-group" style={{ display: 'flex', flexDirection: 'column' }}>
-                <div className="legend-item">
-                  <span className="legend-color-box" style={{ background: '#0ea5e9', height: '3px' }}></span>
-                  <span className="legend-label">Sông ngòi</span>
-                </div>
-                <div className="legend-attribution">Sông, hồ: © OpenStreetMap contributors (ODbL)</div>
+              <div key={layer.id} className="legend-item">
+                <span className="legend-color-box" style={{ background: '#0ea5e9', height: '3px' }}></span>
+                <span className="legend-label">Sông ngòi</span>
+              </div>
+            );
+          }
+          if (layer.id === 'layer_lakes') {
+            return (
+              <div key={layer.id} className="legend-item">
+                <span className="legend-color-box" style={{ background: 'rgba(56, 189, 248, 0.35)', border: '1px solid #0284c7' }}></span>
+                <span className="legend-label">Hồ &amp; Hồ chứa</span>
               </div>
             );
           }
@@ -131,6 +140,9 @@ const DynamicLegend: React.FC = () => {
           
           return null;
         })}
+        {showOsmAttribution && (
+          <div className="legend-attribution">Sông, hồ: © OpenStreetMap contributors (ODbL)</div>
+        )}
       </div>
     </div>
   );

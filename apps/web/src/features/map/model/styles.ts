@@ -2,13 +2,13 @@ import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
 import type { ReservoirFilterType } from './MapModel';
 import { DAM_STATUS_DISPLAY, toDamStatusSlug, type DamStatusSlug } from '@webatlas/shared';
 
-// Strahler stream-order -> [border width, core width]. Higher order = larger river = wider.
-// Bucket 0 is the "everything else / headwaters" thin default.
+// Bucket (từ riverBucket, theo hạng OSM waterway) -> [độ rộng viền, độ rộng lõi]. Bucket càng cao càng rộng.
+// Bucket 0 là mặc định mỏng cho "mương / còn lại".
 const RIVER_WIDTHS: Record<number, [number, number]> = {
-  3: [7, 3.5],   // major rivers (order >= 6)
-  2: [5, 2.2],   // order 4-5
-  1: [3, 1.2],   // order 3
-  0: [1.5, 0.5], // order <= 2 / unknown
+  3: [7, 3.5],   // sông chính
+  2: [5, 2.2],   // kênh đào
+  1: [3, 1.2],   // suối
+  0: [1.5, 0.5], // mương / không xác định
 };
 
 // Hạng theo loại OSM (xem packages/shared/src/osm-water.ts):
