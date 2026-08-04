@@ -1465,7 +1465,7 @@ git commit -m "feat(api): cắt dữ liệu chuyên đề theo vùng công tác,
 
 **Interfaces:**
 - Consumes: cache thô (Task 6); `waterwayToStreamOrder`, `osmWaterToLakeType` (Task 7); `clip-to-region.mjs` (Task 8)
-- Produces: hai file seed. Feature sông có `properties`: `osmId`, `name`, `waterway`, `streamOrder`. Feature hồ có: `osmId`, `name`, `lakeType`. Task 10 tiêu thụ.
+- Produces: hai file seed. Feature sông có `properties`: `osmId`, `name`, `waterway`, `streamOrder`, `lengthM` (mét, tính từ hình học). Feature hồ có: `osmId`, `name`, `lakeType`. Task 10 tiêu thụ.
 
 - [ ] **Step 1: Viết script**
 
@@ -1490,6 +1490,32 @@ const repoRoot = path.resolve(scriptDir, '../../..');
 const cacheDir = path.join(scriptDir, '.osm-cache');
 const seedDir = path.join(repoRoot, 'apps/api/src/db/seeds/data');
 
+const EARTH_RADIUS_M = 6378137;
+
+/**
+ * Độ dài trắc địa của một chuỗi toạ độ lon/lat, tính bằng mét (haversine).
+ *
+ * OSM không có trường độ dài như HydroRIVERS (LENGTH_KM), nhưng popup đang
+ * hiển thị "Chiều dài" nên phải tự tính — nếu để null thì mọi con sông hiện
+ * dấu gạch. Cùng cách tiếp cận với công cụ đo trong app (ol/sphere getLength).
+ */
+function geodesicLengthM(coordinates) {
+  let total = 0;
+  for (let i = 1; i < coordinates.length; i++) {
+    const [lon1, lat1] = coordinates[i - 1];
+    const [lon2, lat2] = coordinates[i];
+    const phi1 = (lat1 * Math.PI) / 180;
+    const phi2 = (lat2 * Math.PI) / 180;
+    const dPhi = phi2 - phi1;
+    const dLambda = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dPhi / 2) ** 2 +
+      Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLambda / 2) ** 2;
+    total += 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+  return Math.round(total);
+}
+
 function read(file) {
   const filePath = path.join(cacheDir, file);
   if (!fs.existsSync(filePath)) {
@@ -1512,6 +1538,7 @@ for (const f of rawWaterways.features) {
       name: f.properties.name ?? null,
       waterway: f.properties.waterway,
       streamOrder: order,
+      lengthM: geodesicLengthM(f.geometry.coordinates),
     },
     geometry: f.geometry,
   });
@@ -1541,7 +1568,8 @@ fs.writeFileSync(path.join(seedDir, 'osm-lakes-region.geojson'),
   JSON.stringify({ type: 'FeatureCollection', features: lakes }));
 
 const named = (arr) => arr.filter((f) => f.properties.name).length;
-console.log(`osm-rivers-region.geojson: ${rivers.length} đối tượng, ${named(rivers)} có tên`);
+const totalKm = rivers.reduce((s, f) => s + f.properties.lengthM, 0) / 1000;
+console.log(`osm-rivers-region.geojson: ${rivers.length} đối tượng, ${named(rivers)} có tên, tổng ${totalKm.toFixed(0)} km`);
 console.log(`osm-lakes-region.geojson:  ${lakes.length} đối tượng, ${named(lakes)} có tên`);
 console.log('Chạy tiếp clip-to-region.mjs để cắt xuống đúng vùng.');
 ```
@@ -1571,6 +1599,20 @@ for (const f of ['osm-rivers-region.geojson','osm-lakes-region.geojson']) {
 ```
 
 Expected: cả hai file có features > 0 và số có tên > 0. Đây là điểm mấu chốt của cả thay đổi — nguồn cũ có 0 tên.
+
+Kiểm tra thêm độ dài tính được là hợp lý:
+
+```bash
+node -e "
+const fc=JSON.parse(require('fs').readFileSync('apps/api/src/db/seeds/data/osm-rivers-region.geojson','utf8'));
+const lens=fc.features.map(f=>f.properties.lengthM);
+const bad=lens.filter(v=>typeof v!=='number'||!isFinite(v)||v<=0).length;
+console.log('độ dài không hợp lệ:',bad);
+console.log('ngắn nhất',Math.min(...lens),'m | dài nhất',Math.max(...lens),'m');
+"
+```
+
+Expected: `độ dài không hợp lệ: 0`. Đoạn dài nhất phải dưới ~500.000 m (500 km) — lớn hơn nghĩa là có lỗi tính toán.
 
 - [ ] **Step 4: Ghi tài liệu vào README**
 
@@ -1732,7 +1774,8 @@ Sau đó xem phần còn lại của khối `columns` và sửa cho khớp bản
 ```ts
     name: p.name,
     stream_order: p.streamOrder,
-    length_m: null,
+    // Độ dài do build-osm-seeds.mjs tính từ hình học (OSM không có sẵn trường này).
+    length_m: p.lengthM,
   }),
 };
 ```
