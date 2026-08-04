@@ -24,13 +24,33 @@ async function count(table: string): Promise<number> {
 }
 
 describe('seeds', () => {
-  it('loads dams and rivers from the source GeoJSON', async () => {
+  it('loads dams from the source GeoJSON', async () => {
     // 151 = số đập còn lại sau khi clip-to-region.mjs cắt danh mục 371 đập toàn quốc
     // xuống vùng công tác 6 tỉnh (132 có toạ độ trong vùng + 19 bản ghi thiếu toạ độ
     // được giữ lại vì vẫn là dòng danh mục hợp lệ).
     expect(await count('dams')).toBe(151);
-    // runSeeds() nạp thuyhe làm rivers v1; ingest:rivers sau đó mới kích hoạt OSM v2.
-    expect(await count('rivers')).toBe(2013);
+  });
+
+  it('does NOT seed thuyhe.geojson (nationwide legacy rivers) — OSM is the sole rivers source', async () => {
+    // thuyhe.geojson (2013 sông toàn quốc, ngoài vùng công tác) đã bị loại khỏi
+    // SEED_LAYERS: một second rivers producer bên cạnh `ingest:rivers` (OSM) là một
+    // cái bẫy, không phải tính năng. runSeeds() một mình không được tạo bất kỳ
+    // version 'rivers' mới nào có source 'thuyhe.geojson'.
+    const { rows } = await getPool().query(
+      `SELECT count(*)::int AS n FROM app.dataset_versions
+       WHERE layer_key = 'rivers' AND source = 'thuyhe.geojson' AND ingested_at > now() - interval '1 minute'`
+    );
+    expect(rows[0].n).toBe(0);
+
+    // Whatever was active for 'rivers' before this test run (nothing, or an OSM
+    // ingest from `npm run ingest:rivers` against this persistent dev DB) must NOT
+    // have been replaced by a thuyhe version: it's never our seed's active source.
+    const { rows: active } = await getPool().query(
+      `SELECT source FROM app.dataset_versions WHERE layer_key = 'rivers' AND is_active`
+    );
+    if (active.length > 0) {
+      expect(active[0].source).not.toBe('thuyhe.geojson');
+    }
   });
 
   it('loads the five mock layers (2 features each)', async () => {
@@ -116,7 +136,9 @@ describe('seeds', () => {
 
 describe('seeds create dataset versions (§6)', () => {
   it('each seeded layer has an active ingest version whose feature_count matches its rows', async () => {
-    for (const layer of ['dams', 'rivers', 'stations']) {
+    // 'rivers' is no longer in SEED_LAYERS (thuyhe.geojson removed) — OSM rivers
+    // arrive only via `npm run ingest:rivers`, so it's excluded from this check.
+    for (const layer of ['dams', 'stations']) {
       const { rows } = await getPool().query(
         `SELECT id, feature_count FROM app.dataset_versions
          WHERE layer_key = $1 AND kind = 'ingest' AND is_active`,

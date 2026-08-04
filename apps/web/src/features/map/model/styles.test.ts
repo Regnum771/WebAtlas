@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { Style, Circle as CircleStyle, Fill, Stroke } from 'ol/style';
-import { riversStyle, makeDamsStyle, lakesStyle } from './styles';
+import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
+import { riversStyle, makeDamsStyle, lakesStyle, provincesStyle, wardsStyle } from './styles';
 
 // Minimal fake OL feature: only get() is used by the style functions.
 function fakeFeature(props: Record<string, unknown>) {
@@ -81,5 +81,52 @@ describe('độ rộng nét sông theo hạng OSM', () => {
     for (const order of [5, 4, 2, 1]) {
       expect(STREAM_ORDER_LABELS[order]).toBeTruthy();
     }
+  });
+});
+
+// Ranh giới hành chính mới (sau sáp nhập) mang thuộc tính hoàn toàn khác GADM 4.1:
+// code, name, nameEn, fullName, fullNameEn, codeName, gisServerId, areaKm2 — KHÔNG
+// còn NAME_1/GID_1 (tỉnh) hay NAME_3/GID_3 (xã). Test này dùng đúng bộ thuộc tính
+// thật để tránh tái diễn lỗi provincesStyle/wardsStyle đọc nhầm key GADM cũ.
+describe('provincesStyle / wardsStyle dùng đúng thuộc tính ranh giới mới (không phải GADM)', () => {
+  function fakeBoundaryFeature(props: Record<string, unknown>) {
+    return {
+      get: (k: string) => props[k],
+      set: () => {},
+      getGeometry: () => undefined,
+    } as any;
+  }
+
+  it('provincesStyle hiển thị tên tỉnh từ thuộc tính "name" (không phải NAME_1)', () => {
+    const feature = fakeBoundaryFeature({
+      code: '48',
+      name: 'Đắk Lắk',
+      nameEn: 'Dak Lak',
+      fullName: 'Tỉnh Đắk Lắk',
+      fullNameEn: 'Dak Lak Province',
+      codeName: 'dak_lak',
+      gisServerId: 48,
+      areaKm2: 13125.4,
+    });
+    const styles = provincesStyle(feature) as Style[];
+    const labelStyle = styles[styles.length - 1];
+    const text = labelStyle.getText() as Text;
+    expect(text.getText()).toBe('Đắk Lắk');
+  });
+
+  it('wardsStyle hiển thị tên xã từ thuộc tính "name" (không phải NAME_3)', () => {
+    const feature = fakeBoundaryFeature({
+      code: '48012',
+      name: 'Xã Ea Tul',
+      nameEn: 'Ea Tul Commune',
+      fullName: 'Xã Ea Tul',
+      fullNameEn: 'Ea Tul Commune',
+      codeName: 'ea_tul',
+      gisServerId: 480123,
+      areaKm2: 42.1,
+    });
+    const style = wardsStyle(feature) as Style;
+    const text = style.getText() as Text;
+    expect(text.getText()).toBe('Xã Ea Tul');
   });
 });

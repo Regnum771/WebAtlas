@@ -75,14 +75,21 @@ describe('versioning integration (§6 rollback + addressability)', () => {
   // pipeline as the rest of the suite; a first-time ingest alone runs well past
   // the shared 30s integration-suite budget, so this test gets a longer local
   // timeout rather than raising the global one for every other (much smaller) test.
-  it('ingests HydroRIVERS as rivers v2, flips active, leaves thuyhe v1 addressable', async () => {
+  it('ingests OSM waterways as the rivers version and flips it active (no thuyhe seed layer precedes it)', async () => {
     const pool = getPool();
     const svc = versionsService(pool);
     const { ingestHydroRivers } = await import('../../db/seeds/ingestRivers');
 
-    const thuyheV1 = await svc.getActiveVersionId('rivers');
-    expect(thuyheV1).not.toBeNull();
-    const thuyheIds = await svc.resolveFeatureIds('rivers', thuyheV1!);
+    // thuyhe.geojson was removed from SEED_LAYERS (Finding 2): runSeeds() in this
+    // suite's beforeAll no longer creates/activates a 'rivers' version at all. So
+    // whatever is active for 'rivers' right now is either nothing (fresh DB) or a
+    // prior OSM ingest already sitting active in this persistent dev DB — never a
+    // freshly-seeded thuyhe version.
+    const beforeActiveId = await svc.getActiveVersionId('rivers');
+    if (beforeActiveId) {
+      const beforeVersion = await svc.getVersion(beforeActiveId);
+      expect(beforeVersion?.source).not.toBe('thuyhe.geojson');
+    }
 
     const { versionId } = await ingestHydroRivers();
 
@@ -92,12 +99,9 @@ describe('versioning integration (§6 rollback + addressability)', () => {
     const v = await svc.getVersion(versionId);
     expect(v).toMatchObject({ kind: 'ingest', source: 'OSM waterways', isActive: true });
 
-    // rivers_active now resolves to HydroRIVERS rows, not the old thuyhe set.
+    // rivers_active resolves to the OSM rows.
     const newIds = await svc.resolveFeatureIds('rivers', versionId);
     expect(newIds.length).toBeGreaterThan(0);
-
-    // thuyhe v1 still addressable with its original feature set.
-    expect(await svc.resolveFeatureIds('rivers', thuyheV1!)).toEqual(thuyheIds);
 
     // Idempotent: a second ingest doesn't create a duplicate active v2.
     const second = await ingestHydroRivers();

@@ -171,18 +171,47 @@ Sai số 11 m nằm dưới nửa pixel ở mức zoom tối đa của app (1:10
 Nguồn: OpenStreetMap qua Overpass API, giấy phép **ODbL** (bắt buộc ghi công
 "© OpenStreetMap contributors").
 
-Chạy lại khi muốn cập nhật dữ liệu OSM:
+OSM là nguồn `rivers`/`lakes` duy nhất (không còn `thuyhe.geojson` — xem
+"Project status"). `npm run seed` KHÔNG nạp rivers từ OSM; bước đó là
+`ingest:rivers` riêng, **bắt buộc chạy sau `seed`** vì nó tạo và kích hoạt một
+version `rivers` mới đè lên bất kỳ version nào `seed` để lại active.
+
+Toàn bộ pipeline tái tạo dữ liệu OSM, theo đúng thứ tự (có các ràng buộc thứ tự
+bắt buộc — xem danh sách ngay dưới):
 
 ```bash
-node apps/api/scripts/fetch-osm-waterways.mjs   # tải thô (không commit)
-node apps/api/scripts/explore-osm.mjs           # xem phân bố tag đã đổi chưa
-node apps/api/scripts/build-osm-seeds.mjs       # chuyển thành file seed
-node apps/api/scripts/clip-to-region.mjs        # cắt xuống vùng công tác
+node apps/api/scripts/fetch-osm-waterways.mjs      # 1. tải thô từ Overpass (không commit)
+node apps/api/scripts/explore-osm.mjs              # 2. xem phân bố tag đã đổi chưa
+node apps/api/scripts/report-dam-crosscheck.mjs    # 3. đối chiếu đập OSM vs danh mục (chỉ sinh báo cáo)
+node apps/api/scripts/build-osm-seeds.mjs          # 4. chuyển thành file seed
+node apps/api/scripts/clip-to-region.mjs           # 5. cắt xuống vùng công tác
+npm run seed -w @webatlas/api                      # 6. nạp lại các layer chuyên đề khác
+npm run ingest:rivers -w @webatlas/api             # 7. nạp OSM rivers làm version active
 ```
 
-Luôn chạy `explore-osm.mjs` và đối chiếu với bảng ánh xạ trong
-`packages/shared/src/osm-water.ts`: nếu OSM xuất hiện giá trị tag mới đáng kể,
-cập nhật bảng trước khi nạp.
+**Ràng buộc thứ tự bắt buộc:**
+
+- **Bước 2 trước bước 4** — luôn chạy `explore-osm.mjs` và đối chiếu với bảng
+  ánh xạ trong `packages/shared/src/osm-water.ts`: nếu OSM xuất hiện giá trị
+  tag mới đáng kể, cập nhật bảng trước khi nạp.
+- **Bước 3 trước bước 5** — `clip-to-region.mjs` ghi đè
+  `apps/web/public/thuydienvietnam.geojson` **tại chỗ** (cắt xuống vùng công
+  tác). `report-dam-crosscheck.mjs` cần bản đầy đủ (toàn quốc) để đối chiếu
+  đúng; nó có fallback đọc từ `git show HEAD:` nếu file trên đĩa đã bị cắt,
+  nhưng fallback đó chỉ in cảnh báo ra console chứ không chặn chạy sai — chạy
+  đúng thứ tự để khỏi phụ thuộc fallback.
+- **Bước 7 phải chạy sau bước 6** — `seed` không đụng tới `rivers` (không còn
+  layer seed nào cho `rivers`), nhưng nếu có version `rivers` khác đang active
+  từ trước, `ingest:rivers` là bước duy nhất kích hoạt version OSM mới nhất.
+
+`prune-hydrosheds-versions.mjs` dọn các version `rivers`/`lakes` cũ (HydroSHEDS,
+`thuyhe.geojson`) khỏi DB sau khi OSM đã lên active — **từ chối chạy** nếu
+version cũ nào đó đang active (để không xoá nhầm dữ liệu đang phục vụ). Chạy
+sau bước 7, không bắt buộc:
+
+```bash
+node apps/api/scripts/prune-hydrosheds-versions.mjs
+```
 
 ## Regenerating HydroSHEDS seed data
 

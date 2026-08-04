@@ -42,23 +42,6 @@ export const SEED_LAYERS: SeedLayer[] = [
     }),
   },
   {
-    table: 'rivers',
-    file: resolve(webPublic, 'thuyhe.geojson'),
-    source: 'thuyhe.geojson',
-    multiLine: true,
-    // NOTE: OBJECTID is not a reliable per-feature key in this source file — 24 groups
-    // of genuinely distinct segments (different Cap/Chieu_dai/geometry) share an
-    // OBJECTID, which would collapse 2013 features down to 1979 rows under
-    // ON CONFLICT (external_id). Use the feature's stable position in the file instead.
-    columns: (p, index) => ({
-      external_id: index + 1,
-      code: p.Ma,
-      name: p.Ten,
-      stream_order: p.Cap,
-      length_m: p.Chieu_dai,
-    }),
-  },
-  {
     table: 'stations',
     file: resolve(seedData, 'stations.geojson'),
     source: 'stations.geojson',

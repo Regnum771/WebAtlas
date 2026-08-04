@@ -117,10 +117,10 @@ export const provinceColors = [
   'rgba(254, 215, 170, 0.45)', // orange-200
 ];
 
-// Style cho các tỉnh thành (GADM Cấp 1)
+// Style cho các tỉnh thành (ranh giới sau sáp nhập 2025 — properties: code, name, ...)
 export const provincesStyle = (feature: any) => {
-  const name = feature.get('NAME_1') || '';
-  const idStr = feature.get('GID_1') || '0';
+  const name = feature.get('name') || '';
+  const idStr = feature.get('code') || '0';
   const idMatch = idStr.match(/\d+/);
   const id = idMatch ? parseInt(idMatch[0], 10) : 0;
   const colorIndex = id % provinceColors.length;
@@ -172,11 +172,11 @@ export const hashCode = (str: string) => {
   return Math.abs(hash);
 };
 
-// Style cho Phường/Xã (GADM Cấp 3, chỉ hiện nét đứt, nhạt)
+// Style cho Phường/Xã (ranh giới sau sáp nhập 2025, chỉ hiện nét đứt, nhạt)
 export const wardsStyle = (feature: any) => {
-  const name = feature.get('NAME_3') || '';
-  const gid3 = feature.get('GID_3') || name || '';
-  const hue = Math.round((hashCode(gid3) * 137.5) % 360);
+  const name = feature.get('name') || '';
+  const code = feature.get('code') || name || '';
+  const hue = Math.round((hashCode(code) * 137.5) % 360);
   const fillColor = `hsla(${hue}, 65%, 80%, 0.25)`;
 
   return new Style({
