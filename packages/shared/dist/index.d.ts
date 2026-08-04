@@ -9,3 +9,4 @@ export { LAYER_GEOMETRY, type OgcGeometryType } from './layer-geometry';
 export * from './layer-attributes';
 export * from './feature-properties';
 export * from './dam-status';
+export * from './region';
