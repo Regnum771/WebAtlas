@@ -6,7 +6,10 @@ import { loadLayerFeatures } from './run';
 import type { SeedLayer } from './registry';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const HYDRORIVERS_SOURCE = 'HydroRIVERS v10';
+// Bumped when the seed file's contents change so the idempotency check below sees a
+// genuinely new ingest instead of reactivating the stale version. "vn-clip" = lọc xuống
+// đúng lãnh thổ Việt Nam (xem apps/api/scripts/clip-to-vietnam.mjs).
+const HYDRORIVERS_SOURCE = 'HydroRIVERS v10 vn-clip';
 
 // HydroRIVERS → the existing `rivers` columns. No per-segment names in the source.
 const RIVERS_HYDRO_LAYER: SeedLayer = {

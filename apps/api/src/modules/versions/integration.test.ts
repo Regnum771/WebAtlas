@@ -90,7 +90,7 @@ describe('versioning integration (§6 rollback + addressability)', () => {
     const active = await svc.getActiveVersionId('rivers');
     expect(active).toBe(versionId);
     const v = await svc.getVersion(versionId);
-    expect(v).toMatchObject({ kind: 'ingest', source: 'HydroRIVERS v10', isActive: true });
+    expect(v).toMatchObject({ kind: 'ingest', source: 'HydroRIVERS v10 vn-clip', isActive: true });
 
     // rivers_active now resolves to HydroRIVERS rows, not the old thuyhe set.
     const newIds = await svc.resolveFeatureIds('rivers', versionId);

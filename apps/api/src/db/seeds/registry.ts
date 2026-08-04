@@ -94,7 +94,8 @@ export const SEED_LAYERS: SeedLayer[] = [
   {
     table: 'lakes',
     file: resolve(seedData, 'hydrolakes-vn.geojson'),
-    source: 'HydroLAKES v10',
+    // "vn-clip": đã lọc xuống đúng lãnh thổ VN (apps/api/scripts/clip-to-vietnam.mjs).
+    source: 'HydroLAKES v10 vn-clip',
     multiPolygon: true,
     columns: (p) => ({
       external_id: p.Hylak_id,

@@ -98,7 +98,7 @@ describe('seeds', () => {
     `);
     // Label is derived sequentially per layer ("version N"), not a fixed literal — repeated
     // seed runs (including across test runs against a persistent dev DB) keep incrementing it.
-    expect(ver[0]).toMatchObject({ source: 'HydroLAKES v10', is_active: true });
+    expect(ver[0]).toMatchObject({ source: 'HydroLAKES v10 vn-clip', is_active: true });
     expect(ver[0].label).toMatch(/^version \d+$/);
 
     // Attribute mapping landed: at least one lake has a mapped type + area.
