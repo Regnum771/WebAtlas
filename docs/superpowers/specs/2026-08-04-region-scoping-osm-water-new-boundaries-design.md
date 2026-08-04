@@ -41,7 +41,7 @@ Nam Trung Bộ & Tây Nguyên theo đơn vị hành chính sau sáp nhập — 6
 
 Phần lớn các tỉnh mới gộp một tỉnh duyên hải với một tỉnh Tây Nguyên, nên vùng theo đơn vị mới gọn hơn hẳn và ranh giới vùng gần trùng khớp tự nhiên.
 
-**Mã tỉnh phải được xác minh lại** khi triển khai bằng cách đối chiếu với `provinces-34.geojson` đã tải. Các mã trên lấy từ cấu trúc thư mục của kho nguồn (ví dụ `48_da_nang` đã kiểm chứng trực tiếp), nhưng năm mã còn lại chưa được kiểm từng cái.
+**Mã tỉnh đã xác minh** bằng cách liệt kê thư mục `json/geojson/` của kho nguồn: đúng 34 thư mục, trong đó có `48_da_nang`, `51_quang_ngai`, `52_gia_lai`, `56_khanh_hoa`, `66_dak_lak`, `68_lam_dong`. Sáu mã trên khớp hoàn toàn.
 
 ### Nguồn sự thật duy nhất
 
@@ -90,10 +90,41 @@ Cấu trúc kho: `json/geojson/{code}_{codeName}/{code}_{codeName}.geojson` + th
 
 Chạy một lần, kết quả commit như generated artifact (giống `prep-hydrosheds.sh`):
 
-- `provinces-34.geojson` — ghép 34 file tỉnh, ~13 MB
+- `provinces-34.geojson` — ghép 34 file tỉnh
 - `wards-region.geojson` — ghép xã của 6 tỉnh trong vùng
 
-So với hiện tại: tỉnh 3,6 MB → ~13 MB (tăng, chi tiết hơn); xã 31 MB → ~6 MB (giảm mạnh). Tổng nhẹ hơn đáng kể.
+#### Bắt buộc phải đơn giản hóa hình học
+
+Đo thực tế trên kho nguồn (không phải ước lượng):
+
+| Tỉnh | Số xã | Dung lượng thô |
+|---|---|---|
+| Đà Nẵng | 94 | 14,2 MB |
+| Quảng Ngãi | 96 | 17,9 MB |
+| Gia Lai | 135 | 34,3 MB |
+| Khánh Hòa | 65 | 13,5 MB |
+| Đắk Lắk | 102 | 33,7 MB |
+| Lâm Đồng | 124 | 43,7 MB |
+| **Tổng** | **616** | **157,3 MB** |
+
+157 MB gấp 5 lần file GADM 31 MB đang thay thế — nạp vào trình duyệt sẽ làm treo app. Kho nguồn **không có bản giản lược** (đã kiểm tra README).
+
+Nguyên nhân: mỗi xã ~2.487 điểm với toạ độ ~14 chữ số thập phân, vượt xa độ phân giải màn hình.
+
+Xử lý bắt buộc trong `fetch-boundaries.mjs` — đo trên một xã Khánh Hòa (212 KB gốc):
+
+| Xử lý | Kích thước | Giảm |
+|---|---|---|
+| Gốc | 212 KB | — |
+| Làm tròn 5 chữ số (~1,1 m) | 51 KB | 76% |
+| + Douglas–Peucker tol 0,0001 (~11 m) | **13 KB** | **94%** |
+| + Douglas–Peucker tol 0,0002 (~22 m) | 9 KB | 96% |
+
+Chọn **tol = 0,0001 (~11 m) + làm tròn 5 chữ số**. Ở mức zoom tối đa của app (1:100.000, ~26 m/px) thì 11 m nằm dưới nửa pixel — mắt không phân biệt được.
+
+Dự kiến: xã 157 MB → **~10 MB**, tỉnh ~13 MB → ~2 MB. Tổng nhẹ hơn GADM hiện tại (34,6 MB) đáng kể, đồng thời cập nhật và chính xác hơn.
+
+Hàm đơn giản hóa phải **giữ nguyên topology cơ bản**: vòng khép kín vẫn khép, không sinh polygon rỗng. Test phải kiểm điều này.
 
 ### Thay đổi kéo theo
 
