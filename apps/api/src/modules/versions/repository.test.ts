@@ -184,8 +184,8 @@ describe('versionsRepository resolver (§4)', () => {
   it('resolves an unknown version id to no features, not the whole table', async () => {
     const unknownVersionId = '00000000-0000-4000-8000-000000000000';
     const ids = await versionsRepository(pg()).resolveFeatureIds('dams', unknownVersionId);
-    // water.dams has 371 rows; a regression that dropped the empty-chain guard
-    // would return all 371 ids instead of none.
+    // water.dams is non-empty; a regression that dropped the empty-chain guard
+    // would return every dam id instead of none.
     expect(ids).toEqual([]);
   });
 });

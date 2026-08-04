@@ -25,7 +25,11 @@ async function count(table: string): Promise<number> {
 
 describe('seeds', () => {
   it('loads dams and rivers from the source GeoJSON', async () => {
-    expect(await count('dams')).toBe(371);
+    // 151 = số đập còn lại sau khi clip-to-region.mjs cắt danh mục 371 đập toàn quốc
+    // xuống vùng công tác 6 tỉnh (132 có toạ độ trong vùng + 19 bản ghi thiếu toạ độ
+    // được giữ lại vì vẫn là dòng danh mục hợp lệ).
+    expect(await count('dams')).toBe(151);
+    // runSeeds() nạp thuyhe làm rivers v1; ingest:rivers sau đó mới kích hoạt OSM v2.
     expect(await count('rivers')).toBe(2013);
   });
 
@@ -84,7 +88,7 @@ describe('seeds', () => {
     for (const s of statuses) {
       expect(DAM_STATUS_SLUGS).toContain(s);
     }
-    // variety: more than one distinct status present across 371 dams
+    // variety: more than one distinct status present across the seeded dams
     expect(statuses.length).toBeGreaterThan(1);
   });
 
