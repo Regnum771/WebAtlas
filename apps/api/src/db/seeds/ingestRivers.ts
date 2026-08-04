@@ -6,23 +6,25 @@ import { loadLayerFeatures } from './run';
 import type { SeedLayer } from './registry';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-// Bumped when the seed file's contents change so the idempotency check below sees a
-// genuinely new ingest instead of reactivating the stale version. "vn-clip" = lọc xuống
-// đúng lãnh thổ Việt Nam (xem apps/api/scripts/clip-to-vietnam.mjs).
-const HYDRORIVERS_SOURCE = 'HydroRIVERS v10 vn-clip';
+// Đổi chuỗi này mỗi khi nội dung file seed đổi: hàm ingest dưới đây idempotent
+// THEO SOURCE, nên giữ nguyên chuỗi sẽ khiến nó kích hoạt lại version cũ thay vì
+// nạp dữ liệu mới.
+const HYDRORIVERS_SOURCE = 'OSM waterways';
 
-// HydroRIVERS → the existing `rivers` columns. No per-segment names in the source.
+// OSM waterways → các cột `rivers` sẵn có. Khác HydroRIVERS: OSM CÓ tên sông,
+// và `stream_order` giờ là hạng theo loại chứ không phải bậc Strahler.
 const RIVERS_HYDRO_LAYER: SeedLayer = {
   table: 'rivers',
-  file: resolvePath(here, 'data/hydrorivers-vn.geojson'),
+  file: resolvePath(here, 'data/osm-rivers-region.geojson'),
   source: HYDRORIVERS_SOURCE,
   multiLine: true,
   columns: (p) => ({
-    external_id: p.HYRIV_ID,
-    code: null,
-    name: null,
-    stream_order: p.ORD_STRA,
-    length_m: typeof p.LENGTH_KM === 'number' ? p.LENGTH_KM * 1000 : null,
+    external_id: p.osmId,
+    code: p.waterway,
+    name: p.name,
+    stream_order: p.streamOrder,
+    // Độ dài do build-osm-seeds.mjs tính từ hình học (OSM không có sẵn trường này).
+    length_m: p.lengthM,
   }),
 };
 

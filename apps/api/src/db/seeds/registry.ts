@@ -1,7 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { assignDamStatus } from './damStatus';
-import { lakeTypeLabel } from './lakeType';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // apps/api/src/db/seeds -> repo root is five levels up
@@ -93,17 +92,18 @@ export const SEED_LAYERS: SeedLayer[] = [
   },
   {
     table: 'lakes',
-    file: resolve(seedData, 'hydrolakes-vn.geojson'),
-    // "vn-clip": đã lọc xuống đúng lãnh thổ VN (apps/api/scripts/clip-to-vietnam.mjs).
-    source: 'HydroLAKES v10 vn-clip',
+    file: resolve(seedData, 'osm-lakes-region.geojson'),
+    // OSM có tên hồ (HydroLAKES không có) và độ phủ cao hơn nhiều.
+    // Đánh đổi: mất Vol_total/Shore_len — OSM không có hai trường này.
+    source: 'OSM water bodies',
     multiPolygon: true,
     columns: (p) => ({
-      external_id: p.Hylak_id,
-      name: p.Lake_name,
-      lake_type: lakeTypeLabel(p.Lake_type),
-      area_km2: p.Lake_area,
-      volume_mcm: p.Vol_total,
-      shore_len_km: p.Shore_len,
+      external_id: p.osmId,
+      name: p.name,
+      lake_type: p.lakeType,
+      area_km2: null,
+      volume_mcm: null,
+      shore_len_km: null,
     }),
   },
 ];

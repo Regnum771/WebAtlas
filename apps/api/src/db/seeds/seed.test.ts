@@ -88,7 +88,7 @@ describe('seeds', () => {
     expect(statuses.length).toBeGreaterThan(1);
   });
 
-  it('seeds lakes as an active version 1 from HydroLAKES', async () => {
+  it('seeds lakes as an active version from OSM water bodies', async () => {
     const { rows: feat } = await getPool().query('SELECT count(*)::int AS n FROM water.lakes_active');
     expect(feat[0].n).toBeGreaterThan(0);
 
@@ -98,14 +98,15 @@ describe('seeds', () => {
     `);
     // Label is derived sequentially per layer ("version N"), not a fixed literal — repeated
     // seed runs (including across test runs against a persistent dev DB) keep incrementing it.
-    expect(ver[0]).toMatchObject({ source: 'HydroLAKES v10 vn-clip', is_active: true });
+    expect(ver[0]).toMatchObject({ source: 'OSM water bodies', is_active: true });
     expect(ver[0].label).toMatch(/^version \d+$/);
 
-    // Attribute mapping landed: at least one lake has a mapped type + area.
+    // Attribute mapping landed: at least one lake has a mapped type. OSM không có
+    // Lake_area/Vol_total/Shore_len như HydroLAKES nên area_km2 luôn NULL ở nguồn này.
     const { rows: sample } = await getPool().query(`
       SELECT lake_type, area_km2 FROM water.lakes_active WHERE lake_type IS NOT NULL LIMIT 1
     `);
-    expect(sample[0].area_km2).not.toBeNull();
+    expect(sample[0].lake_type).not.toBeNull();
   });
 });
 
