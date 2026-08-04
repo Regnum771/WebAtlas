@@ -56,6 +56,16 @@ describe('simplify', () => {
     expect(out.coordinates).toEqual([108.12346, 12.98765]);
   });
 
+  it('vòng suy biến 3 điểm (khép kín) vẫn hợp lệ sau đơn giản hóa', () => {
+    // Vòng khép kín chỉ có 3 điểm — isClosedRing() không được loại nó ra
+    // khỏi đường xử lý bảo vệ chỉ vì độ dài dưới 4.
+    const geom = { type: 'Polygon', coordinates: [[[0, 0], [1, 1], [0, 0]]] };
+    const out = simplifyGeometry(geom, 10);
+    const ring = out.coordinates[0];
+    expect(ring.length).toBeGreaterThanOrEqual(4);
+    expect(ring[0]).toEqual(ring[ring.length - 1]);
+  });
+
   it('không sửa geometry gốc (immutable)', () => {
     const geom = squareWithRedundantPoints();
     const before = countPoints(geom);

@@ -41,9 +41,14 @@ function douglasPeucker(points, tolerance) {
   return [points[0], points[last]];
 }
 
-/** Vòng khép kín (điểm đầu trùng điểm cuối)? */
+/**
+ * Vòng khép kín (điểm đầu trùng điểm cuối)?
+ * Chỉ dựa vào toạ độ, không loại trừ theo độ dài — kể cả vòng suy biến
+ * (vd. 3 điểm) mà điểm đầu = điểm cuối vẫn được coi là khép kín, để
+ * simplifyRing xử lý qua đường bảo vệ thay vì douglasPeucker thông thường.
+ */
 function isClosedRing(points) {
-  if (points.length < 4) return false;
+  if (points.length < 2) return false;
   const a = points[0];
   const b = points[points.length - 1];
   return a[0] === b[0] && a[1] === b[1];
@@ -61,10 +66,12 @@ function simplifyRing(points, tolerance) {
   let simplified = douglasPeucker(body, tolerance);
 
   // Chặn dưới: vòng cần tối thiểu 3 đỉnh phân biệt + 1 điểm khép = 4.
-  if (simplified.length < 3) {
-    // Lấy đều 3 điểm từ vòng gốc thay vì trả về hình suy biến.
+  // Dùng modulo để lấy chỉ số hợp lệ ngay cả khi thân vòng có dưới 3 điểm
+  // (vòng suy biến, vd. tam giác khép kín 3 điểm) — tránh index vượt quá
+  // mảng gốc (undefined/null) mà bản cũ có thể gặp phải.
+  if (simplified.length < 3 && body.length > 0) {
     const step = Math.max(1, Math.floor(body.length / 3));
-    simplified = [body[0], body[step] ?? body[1], body[step * 2] ?? body[body.length - 1]];
+    simplified = [body[0], body[step % body.length], body[(step * 2) % body.length]];
   }
   return [...simplified, simplified[0]];
 }
