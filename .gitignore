@@ -36,3 +36,6 @@ infra/.env
 
 # API local env
 apps/api/.env
+
+# Dữ liệu OSM thô — chỉ commit bản đã cắt theo vùng
+apps/api/scripts/.osm-cache/
