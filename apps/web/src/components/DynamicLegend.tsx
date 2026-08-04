@@ -63,9 +63,12 @@ const DynamicLegend: React.FC = () => {
           }
           if (layer.id === 'layer_rivers') {
             return (
-              <div key={layer.id} className="legend-item">
-                <span className="legend-color-box" style={{ background: '#0ea5e9', height: '3px' }}></span>
-                <span className="legend-label">Sông ngòi</span>
+              <div key={layer.id} className="legend-item-group" style={{ display: 'flex', flexDirection: 'column' }}>
+                <div className="legend-item">
+                  <span className="legend-color-box" style={{ background: '#0ea5e9', height: '3px' }}></span>
+                  <span className="legend-label">Sông ngòi</span>
+                </div>
+                <div className="legend-attribution">Sông, hồ: © OpenStreetMap contributors (ODbL)</div>
               </div>
             );
           }

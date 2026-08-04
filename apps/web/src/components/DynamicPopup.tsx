@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useMapContext } from '../app/providers/MapProvider';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
-import { damStatusDisplay } from '@webatlas/shared';
+import { damStatusDisplay, STREAM_ORDER_LABELS } from '@webatlas/shared';
 import { useMapEditing } from '../features/map/model/mapEditing';
 
 interface PopupData {
@@ -200,9 +200,11 @@ const DynamicPopup: React.FC = () => {
           {props.hydroId && (
             <div className="info-row"><Database size={14} className="text-blue-500" />
               <span>Mã phân đoạn: <strong>{props.hydroId}</strong></span></div>)}
-          {props.streamOrder != null && (
+          {/* stream_order giờ là hạng theo LOẠI dòng chảy (OSM), không phải bậc
+              Strahler — nên hiển thị nhãn loại thay vì "Cấp N". */}
+          {props.streamOrder != null && STREAM_ORDER_LABELS[props.streamOrder] && (
             <div className="info-row"><Info size={14} className="text-blue-500" />
-              <span>Cấp sông: <strong>Cấp {props.streamOrder}</strong></span></div>)}
+              <span>Loại: <strong>{STREAM_ORDER_LABELS[props.streamOrder]}</strong></span></div>)}
           <div className="info-row"><Droplets size={14} className="text-blue-500" />
             <span>Chiều dài: <strong>{lengthStr}</strong></span></div>
         </>

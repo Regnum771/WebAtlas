@@ -61,3 +61,25 @@ describe('style caching', () => {
     expect(widthFor(8)).toBeGreaterThan(widthFor(2));
   });
 });
+
+import { STREAM_ORDER_LABELS } from '@webatlas/shared';
+
+describe('độ rộng nét sông theo hạng OSM', () => {
+  const widthOf = (order: number): number => {
+    const styles = riversStyle({ get: (k: string) => (k === 'streamOrder' ? order : undefined) } as any);
+    const stroke = (Array.isArray(styles) ? styles[1] : styles).getStroke();
+    return stroke?.getWidth() ?? 0;
+  };
+
+  it('sông chính vẽ đậm hơn kênh, kênh đậm hơn suối, suối đậm hơn mương', () => {
+    expect(widthOf(5)).toBeGreaterThan(widthOf(4));
+    expect(widthOf(4)).toBeGreaterThan(widthOf(2));
+    expect(widthOf(2)).toBeGreaterThanOrEqual(widthOf(1));
+  });
+
+  it('mọi hạng OSM đều có nhãn hiển thị', () => {
+    for (const order of [5, 4, 2, 1]) {
+      expect(STREAM_ORDER_LABELS[order]).toBeTruthy();
+    }
+  });
+});

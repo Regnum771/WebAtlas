@@ -11,10 +11,12 @@ const RIVER_WIDTHS: Record<number, [number, number]> = {
   0: [1.5, 0.5], // order <= 2 / unknown
 };
 
+// Hạng theo loại OSM (xem packages/shared/src/osm-water.ts):
+// 5 = sông chính, 4 = kênh đào, 2 = suối, 1 = mương.
 function riverBucket(order: number): 0 | 1 | 2 | 3 {
-  if (order >= 6) return 3;
-  if (order >= 4) return 2;
-  if (order === 3) return 1;
+  if (order >= 5) return 3;
+  if (order === 4) return 2;
+  if (order === 3 || order === 2) return 1;
   return 0;
 }
 
