@@ -221,6 +221,7 @@ The build-out is phased. Each plan produces working, testable software on its ow
 - [x] **Plan 5 — Layers feature CRUD API** (layer registry, generic GeoJSON CRUD, geometry validation, audit).
 - [x] **Plan 6 — Frontend admin auth foundation** (apiClient, session/login, RequireRole guard).
 - [ ] **Plan 7 (next)** — Admin map editing UI (draw/modify/delete + attribute forms → API → WFS refetch).
+- [x] **Vùng công tác + OSM waterways + ranh giới 34 tỉnh** (dữ liệu chuyên đề giới hạn trong 6 tỉnh Nam Trung Bộ & Tây Nguyên; sông/hồ từ OpenStreetMap có tên riêng; ranh giới hành chính sau sáp nhập 01/7/2025).
 
 ## Documentation
 
