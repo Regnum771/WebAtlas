@@ -1033,6 +1033,10 @@ describe('ánh xạ OSM waterway -> stream_order', () => {
     expect(waterwayToStreamOrder('ditch')).toBe(1);
   });
 
+  it('mương tiêu (drain) cùng hạng với mương dẫn (ditch)', () => {
+    expect(waterwayToStreamOrder('drain')).toBe(1);
+  });
+
   it('loại trừ công trình — không phải dòng chảy', () => {
     expect(waterwayToStreamOrder('dam')).toBeNull();
     expect(waterwayToStreamOrder('weir')).toBeNull();
@@ -1047,10 +1051,11 @@ describe('ánh xạ OSM waterway -> stream_order', () => {
   });
 
   it('RIVER_WATERWAY_VALUES khớp với các giá trị có stream_order', () => {
+    expect(RIVER_WATERWAY_VALUES.length).toBeGreaterThan(0);
     for (const v of RIVER_WATERWAY_VALUES) {
       expect(waterwayToStreamOrder(v)).not.toBeNull();
     }
-    expect(RIVER_WATERWAY_VALUES).toHaveLength(4);
+    expect(RIVER_WATERWAY_VALUES).toHaveLength(5);
   });
 
   it('mỗi bậc đều có nhãn tiếng Việt', () => {
@@ -1068,10 +1073,19 @@ describe('ánh xạ OSM mặt nước -> lake_type', () => {
     expect(osmWaterToLakeType({ water: 'reservoir' })).toBe('Hồ chứa');
   });
 
-  it('phân biệt hồ tự nhiên, ao và mặt nước chung', () => {
+  it('phân biệt hồ tự nhiên, ao, bể chứa và mặt nước chung', () => {
     expect(osmWaterToLakeType({ water: 'lake' })).toBe('Hồ tự nhiên');
     expect(osmWaterToLakeType({ water: 'pond' })).toBe('Ao');
+    expect(osmWaterToLakeType({ water: 'basin' })).toBe('Bể chứa');
     expect(osmWaterToLakeType({ natural: 'water' })).toBe('Mặt nước');
+  });
+
+  it('LOẠI dòng chảy vẽ dạng vùng — chúng đã nằm trong layer rivers', () => {
+    // water=river là mặt nước của chính con sông đã có tim tuyến; đưa vào layer
+    // hồ sẽ khiến một con sông xuất hiện ở cả hai layer.
+    expect(osmWaterToLakeType({ natural: 'water', water: 'river' })).toBeNull();
+    expect(osmWaterToLakeType({ natural: 'water', water: 'canal' })).toBeNull();
+    expect(osmWaterToLakeType({ natural: 'water', water: 'stream' })).toBeNull();
   });
 
   it('landuse=reservoir thắng water=lake khi cả hai cùng có', () => {
@@ -1112,7 +1126,8 @@ const WATERWAY_ORDER: Record<string, number> = {
   river: 5,   // sông chính
   canal: 4,   // kênh đào (công trình thủy lợi)
   stream: 2,  // suối
-  ditch: 1,   // mương
+  ditch: 1,   // mương dẫn
+  drain: 1,   // mương tiêu — cùng hạng với ditch (khảo sát OSM: 245 đối tượng trong vùng)
 };
 
 /** Nhãn tiếng Việt cho từng hạng — dùng ở popup và chú giải. */
@@ -1120,7 +1135,7 @@ export const STREAM_ORDER_LABELS: Record<number, string> = {
   5: 'Sông chính',
   4: 'Kênh đào',
   2: 'Suối',
-  1: 'Mương',
+  1: 'Mương', // gồm cả ditch (mương dẫn) và drain (mương tiêu)
 };
 
 /** Các giá trị `waterway` được nhận vào layer sông. */
@@ -1136,13 +1151,21 @@ export function waterwayToStreamOrder(waterway: unknown): number | null {
 }
 
 /**
- * Loại mặt nước từ tag OSM, hoặc null nếu không phải mặt nước.
+ * Loại mặt nước từ tag OSM, hoặc null nếu không phải thủy vực đứng.
  * `landuse=reservoir` được ưu tiên vì nó khẳng định hồ nhân tạo.
+ *
+ * CỐ Ý LOẠI `water=river` (600 đối tượng trong vùng): đó là MẶT NƯỚC của chính
+ * những con sông đã có tim tuyến trong layer `rivers`. Đưa vào layer hồ sẽ khiến
+ * một con sông xuất hiện ở cả hai layer, và click vào có thể ra popup sai layer.
+ * Tương tự với `water=canal` / `water=stream`.
  */
 export function osmWaterToLakeType(props: Record<string, unknown>): string | null {
+  // Dòng chảy vẽ dạng vùng — đã có trong layer rivers, không nhân bản sang lakes.
+  if (props.water === 'river' || props.water === 'canal' || props.water === 'stream') return null;
   if (props.landuse === 'reservoir' || props.water === 'reservoir') return 'Hồ chứa';
   if (props.water === 'lake') return 'Hồ tự nhiên';
   if (props.water === 'pond') return 'Ao';
+  if (props.water === 'basin') return 'Bể chứa';
   if (props.natural === 'water') return 'Mặt nước';
   return null;
 }
