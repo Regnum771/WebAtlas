@@ -162,6 +162,28 @@ Hình học được đơn giản hóa (Douglas–Peucker tol 0,0001 ≈ 11 m, t
 5 chữ số). Bước này bắt buộc: dữ liệu xã thô là 157 MB, sau xử lý còn ~10 MB.
 Sai số 11 m nằm dưới nửa pixel ở mức zoom tối đa của app (1:100.000).
 
+## Regenerating OSM water data
+
+`apps/api/src/db/seeds/data/osm-rivers-region.geojson` và
+`osm-lakes-region.geojson` là generated artifact đã commit — không cần chạy lại
+để chạy app.
+
+Nguồn: OpenStreetMap qua Overpass API, giấy phép **ODbL** (bắt buộc ghi công
+"© OpenStreetMap contributors").
+
+Chạy lại khi muốn cập nhật dữ liệu OSM:
+
+```bash
+node apps/api/scripts/fetch-osm-waterways.mjs   # tải thô (không commit)
+node apps/api/scripts/explore-osm.mjs           # xem phân bố tag đã đổi chưa
+node apps/api/scripts/build-osm-seeds.mjs       # chuyển thành file seed
+node apps/api/scripts/clip-to-region.mjs        # cắt xuống vùng công tác
+```
+
+Luôn chạy `explore-osm.mjs` và đối chiếu với bảng ánh xạ trong
+`packages/shared/src/osm-water.ts`: nếu OSM xuất hiện giá trị tag mới đáng kể,
+cập nhật bảng trước khi nạp.
+
 ## Regenerating HydroSHEDS seed data
 
 The lakes/reservoirs and rivers seed inputs at `apps/api/src/db/seeds/data/hydrolakes-vn.geojson`
