@@ -18,7 +18,9 @@ describe('ranh giới hành chính', () => {
   });
 
   it('mọi tỉnh đều có mã và tên', () => {
-    for (const f of load('provinces-34.geojson').features) {
+    const features = load('provinces-34.geojson').features;
+    expect(features.length).toBeGreaterThan(0);
+    for (const f of features) {
       expect(typeof f.properties.code).toBe('string');
       expect(typeof f.properties.name).toBe('string');
       expect((f.properties.name as string).length).toBeGreaterThan(0);
