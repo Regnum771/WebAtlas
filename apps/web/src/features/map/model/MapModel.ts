@@ -9,6 +9,7 @@ import GeoJSON from 'ol/format/GeoJSON';
 import Select from 'ol/interaction/Select';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
+import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, VIETNAM_CENTER_4326 } from './zoomScale';
 import {
   provincesStyle,
   wardsStyle,
@@ -116,11 +117,18 @@ export class MapModel {
         floodGenerationLayer
       ],
       view: new View({
-        center: fromLonLat([108.2, 13.5]),
-        zoom: 7,
-        minZoom: 4.0,
-        maxZoom: 20,
-        extent: transformExtent([107.0, 10.5, 109.5, 16.5], 'EPSG:4326', 'EPSG:3857'),
+        center: fromLonLat(VIETNAM_CENTER_4326),
+        zoom: MIN_ZOOM,
+        // Giới hạn zoom theo tỷ lệ bản đồ (Web Mercator, 96 DPI, vĩ độ ~16°N):
+        // MIN_ZOOM ~ 1:7.500.000 (thu nhỏ vừa đủ thấy hết Việt Nam),
+        // MAX_ZOOM ~ 1:100.000. Xem ZOOM_SCALE_LEVELS trong MapControls.
+        minZoom: MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
+        extent: transformExtent(VIETNAM_EXTENT_4326, 'EPSG:4326', 'EPSG:3857'),
+        // Việt Nam hẹp ngang (~431px ở MIN_ZOOM) nên nếu ràng buộc cả khung nhìn,
+        // OpenLayers sẽ chặn thu nhỏ lại để khung vừa extent -> kẹt ở ~1:1.750.000.
+        // Chỉ ràng buộc TÂM: rìa bản đồ được phép tràn ra ngoài extent.
+        constrainOnlyCenter: true,
       }),
       controls: []
     });
