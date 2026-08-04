@@ -143,6 +143,25 @@ write is recorded in `app.audit_log`; geometry is validated in PostGIS before wr
 API-workspace scripts (run with `-w @webatlas/api`): `dev`, `start`, `create-admin`,
 `migrate:up`, `migrate:down`. Frontend tests: `npm run test -w @webatlas/web`.
 
+## Regenerating administrative boundaries
+
+`apps/web/public/provinces-34.geojson` (34 tỉnh sau sáp nhập, cả nước) và
+`wards-region.geojson` (xã của 6 tỉnh trong vùng công tác) là generated
+artifact đã commit — không cần chạy lại để chạy app.
+
+Nguồn: [thanglequoc/vietnamese-provinces-database](https://github.com/thanglequoc/vietnamese-provinces-database)
+(MIT), dữ liệu gốc từ NXB Tài nguyên – Môi trường và Bản đồ (Bộ NN&MT).
+
+Chạy lại khi ranh giới hành chính thay đổi:
+
+```bash
+node apps/api/scripts/fetch-boundaries.mjs
+```
+
+Hình học được đơn giản hóa (Douglas–Peucker tol 0,0001 ≈ 11 m, toạ độ làm tròn
+5 chữ số). Bước này bắt buộc: dữ liệu xã thô là 157 MB, sau xử lý còn ~10 MB.
+Sai số 11 m nằm dưới nửa pixel ở mức zoom tối đa của app (1:100.000).
+
 ## Regenerating HydroSHEDS seed data
 
 The lakes/reservoirs and rivers seed inputs at `apps/api/src/db/seeds/data/hydrolakes-vn.geojson`
