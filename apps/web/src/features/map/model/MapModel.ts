@@ -150,6 +150,12 @@ export class MapModel {
 
     this.moveendHandler = updateLayersVisibility;
     map.on('moveend', updateLayersVisibility);
+
+    // Chỉ để script đo hiệu năng (apps/web/scripts/profile-map.mjs) truy cập được map.
+    // Dev-only: production build không đặt biến này.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __olMap?: Map }).__olMap = map;
+    }
   }
 
   // Shared by the moveend listener (init) and applyLayerStates() so both use

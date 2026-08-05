@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "profile": "node scripts/profile-map.mjs",
     "test": "vitest run"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "jsdom": "^25.0.1",
     "oxlint": "^1.69.0",
+    "puppeteer-core": "^24.0.0",
     "typescript": "~6.0.2",
     "vite": "^8.1.0",
     "vitest": "^3.0.0"

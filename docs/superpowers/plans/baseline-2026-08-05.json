@@ -1,0 +1,49 @@
+{
+  "scenario": "cold load @MIN_ZOOM -> settle -> pan x4 -> zoom 10.5 -> settle",
+  "timestamp": "2026-08-05T03:57:20.960Z",
+  "firstRenderMs": 11305,
+  "longTaskTotalMs": 5621,
+  "featuresAfterLoad": {
+    "layer_provinces_2026": 34,
+    "layer_wards_2026": 0,
+    "layer_flood": 0,
+    "layer_lakes": 0,
+    "layer_rivers": 0,
+    "layer_dams": 132,
+    "layer_stations": 0,
+    "layer_drought_survey": 0,
+    "layer_saltwater_intrusion": 0,
+    "layer_flood_generation": 0
+  },
+  "featuresAfterZoom": {
+    "layer_provinces_2026": 34,
+    "layer_wards_2026": 616,
+    "layer_flood": 0,
+    "layer_lakes": 0,
+    "layer_rivers": 0,
+    "layer_dams": 132,
+    "layer_stations": 0,
+    "layer_drought_survey": 0,
+    "layer_saltwater_intrusion": 0,
+    "layer_flood_generation": 0
+  },
+  "transfer": {
+    "file:provinces-34": {
+      "requests": 1,
+      "bytes": 1222340
+    },
+    "wfs:dams": {
+      "requests": 3,
+      "bytes": 271911
+    },
+    "file:wards-region": {
+      "requests": 1,
+      "bytes": 6937342
+    }
+  },
+  "panFrames": {
+    "count": 5,
+    "avgMs": 500.3800000011921,
+    "worstMs": 1795.7999999970198
+  }
+}
