@@ -45,6 +45,34 @@ export function createOneShotLoadGate(minZoom: number, load: () => void): (zoom:
 }
 
 /**
+ * Hàng đợi refresh cho các lớp đang bị cổng zoom gỡ source.
+ *
+ * Bài toán: sông và hồ đều CHO PHÉP SỬA. Khi quản trị viên lưu một đối tượng ở mức
+ * zoom dưới ngưỡng, `layer.getSource()` trả `null` nên `refresh()` im lặng không làm
+ * gì — đối tượng vừa lưu không hiện ra, nhìn hệt như lưu hỏng. Hàng đợi này ghi nhận
+ * yêu cầu đó để nạp bù đúng lúc source được gắn lại.
+ */
+export function createPendingRefreshQueue() {
+  const pending = new Set<string>();
+  return {
+    /** Ghi nhận một lớp cần refresh khi source quay lại. */
+    add(layerId: string): void {
+      pending.add(layerId);
+    },
+    /** Lấy ra và xoá khỏi hàng đợi — trả `true` nếu lớp này đang chờ refresh. */
+    take(layerId: string): boolean {
+      return pending.delete(layerId);
+    },
+    clear(): void {
+      pending.clear();
+    },
+    get size(): number {
+      return pending.size;
+    },
+  };
+}
+
+/**
  * Cổng bật/tắt cho lớp WFS bbox: gọi `enable()` khi vượt lên ngưỡng và `disable()`
  * khi tụt xuống dưới, và CHỈ gọi khi trạng thái thực sự đổi (không gọi lại mỗi lần
  * `moveend` trong cùng một trạng thái).

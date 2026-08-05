@@ -10,7 +10,13 @@ import Select from 'ol/interaction/Select';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
 import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
-import { createBboxLoadGate, createOneShotLoadGate, WATER_MIN_ZOOM, WARDS_MIN_ZOOM } from './zoomLoadGate';
+import {
+  createBboxLoadGate,
+  createOneShotLoadGate,
+  createPendingRefreshQueue,
+  WATER_MIN_ZOOM,
+  WARDS_MIN_ZOOM,
+} from './zoomLoadGate';
 import {
   provincesStyle,
   wardsStyle,
@@ -50,6 +56,15 @@ export class MapModel {
   private waterGate: ((zoom: number) => void) | null = null;
   /** Cổng tải ranh giới xã — chỉ nạp một lần khi vượt zoom 10. */
   private wardsGate: ((zoom: number) => void) | null = null;
+  /**
+   * Lớp đã bị cổng zoom gỡ source nhưng có yêu cầu refresh trong lúc đó.
+   *
+   * Vì sao cần: sông và hồ đều là lớp CHO PHÉP SỬA. Nếu quản trị viên vẽ/sửa ở
+   * mức zoom dưới ngưỡng, API ghi thành công nhưng refreshLayer() gọi vào source
+   * null nên im lặng không làm gì — đối tượng vừa lưu KHÔNG hiện ra, y hệt như
+   * lưu thất bại. Ghi nhận lại ở đây để nạp bù đúng lúc gắn source trở lại.
+   */
+  private pendingRefresh = createPendingRefreshQueue();
 
   init(target: HTMLElement): void {
     // Idempotency guard for React 19 StrictMode double-invoked effects.
@@ -108,6 +123,10 @@ export class MapModel {
       () => {
         riversLayer.setSource(riversSource);
         lakesLayer.setSource(lakesSource);
+        // Nạp bù cho yêu cầu refresh đã rơi vào lúc source bị gỡ (xem pendingRefresh).
+        for (const id of ['layer_rivers', 'layer_lakes']) {
+          if (this.pendingRefresh.take(id)) this.layers[id]?.getSource()?.refresh();
+        }
       },
       () => {
         riversLayer.setSource(null);
@@ -208,8 +227,9 @@ export class MapModel {
     this.moveendHandler = updateLayersVisibility;
     map.on('moveend', updateLayersVisibility);
 
-    // Chạy cổng NGAY lúc khởi tạo: 'moveend' chỉ bắn sau tương tác đầu tiên, nên
-    // nếu chờ sự kiện thì sông/hồ vẫn kịp tải hết ở khung nhìn ban đầu.
+    // Chạy cổng ngay lúc khởi tạo cho chắc. ('moveend' CÓ bắn ở lần render đầu tiên
+    // — ol/Map.js nhánh idle — nên đây là lớp bảo hiểm, không phải bắt buộc: lần
+    // moveend sau đó cùng mức zoom sẽ tự early-return vì trạng thái không đổi.)
     this.waterGate?.(INITIAL_ZOOM);
 
     // Chỉ để script đo hiệu năng (apps/web/scripts/profile-map.mjs) truy cập được map.
@@ -236,6 +256,11 @@ export class MapModel {
         } else if (state.id === 'layer_wards_2026') {
           // Cùng ngưỡng với cổng TẢI ở zoomLoadGate.ts — một nguồn sự thật duy nhất.
           zoomVisible = currentZoom >= WARDS_MIN_ZOOM; // Chỉ hiện ranh giới xã khi phóng to
+        } else if (state.id === 'layer_rivers' || state.id === 'layer_lakes') {
+          // Khớp ngưỡng VẼ với ngưỡng TẢI: dưới 8,5 source bị gỡ nên lớp rỗng.
+          // Nếu vẫn để "hiện", chú giải sẽ liệt kê sông/hồ (kèm ghi công ODbL) cho
+          // những lớp đang không vẽ gì — người dùng tưởng bản đồ hỏng.
+          zoomVisible = currentZoom >= WATER_MIN_ZOOM;
         }
 
         layer.setVisible(state.visible && zoomVisible);
@@ -303,7 +328,14 @@ export class MapModel {
     if (!this.map) return;
     const layer = this.layers[layerStateId];
     if (!layer) return;
-    layer.getSource()?.refresh();
+    const source = layer.getSource();
+    if (!source) {
+      // Source đang bị cổng zoom gỡ ra: refresh() sẽ rơi vào hư không và đối tượng
+      // vừa lưu sẽ không bao giờ hiện. Ghi nhận để nạp bù khi cổng mở lại.
+      this.pendingRefresh.add(layerStateId);
+      return;
+    }
+    source.refresh();
   }
 
   /** Enable/disable the rivers click-highlight Select (disabled during admin edit mode so it doesn't fire alongside the edit selection). */
@@ -324,6 +356,7 @@ export class MapModel {
     }
     this.waterGate = null;
     this.wardsGate = null;
+    this.pendingRefresh.clear();
     this.map.setTarget(undefined);
     this.map = null;
     this.basemapLayer = null;

@@ -37,8 +37,8 @@
 | `apps/web/scripts/README.md` | **Create.** How to run the harness and read its output. | 1 |
 | `apps/web/src/features/map/model/wfsSource.ts` | **Modify.** Add bbox strategy + idempotent normalization + error logging. | 2, 3 |
 | `apps/web/src/features/map/model/wfsSource.test.ts` | **Create.** Unit tests for the URL builder and normalizer idempotency. | 2, 3 |
-| `apps/web/src/features/map/model/wardsLoader.ts` | **Create.** The one-shot zoom≥10 load gate, isolated so it is testable without a real `Map`. | 4 |
-| `apps/web/src/features/map/model/wardsLoader.test.ts` | **Create.** Gate fires exactly once. | 4 |
+| ~~`apps/web/src/features/map/model/wardsLoader.ts`~~ → `zoomLoadGate.ts` | **Superseded by Task 3b.** The gate was generalized to serve rivers/lakes as well as wards, so it landed as `zoomLoadGate.ts` with `createOneShotLoadGate(minZoom, load)`. The isolation rationale below still applies — only the filename changed. | 3b, 4 |
+| ~~`apps/web/src/features/map/model/wardsLoader.test.ts`~~ → `zoomLoadGate.test.ts` | **Superseded by Task 3b.** | 3b, 4 |
 | `apps/web/src/features/map/model/MapModel.ts` | **Modify.** Wire the wards gate; wards source starts with no URL. | 4 |
 | `apps/web/public/thuyhe.geojson` | **Delete.** 5.3 MB, zero references. | 5 |
 
@@ -777,6 +777,47 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 EOF
 )"
 ```
+
+---
+
+## Task 3b: Initial region view + water zoom gate (ADDED MID-FLIGHT)
+
+**This task was not in the original plan.** It was added after Task 3's measurements
+disproved the plan's core premise, and was approved by the user before implementation.
+
+**Why it exists.** Task 3 shipped bbox loading correctly, but measurement showed it made
+**no difference to initial load**. The default view was the whole country: at `MIN_ZOOM`
+the viewport is 2,172 km wide while Vietnam is 854 km wide, so the "viewport bbox" *was*
+the national bbox. Measured: 17.6 MB at MIN_ZOOM, still 17.6 MB after moving the initial
+view to zoom 7.
+
+The working region's shape makes this unfixable by zoom alone — it is 374 km wide but
+988 km tall, so no zoom level both fits the region and narrows the bbox meaningfully.
+
+**Files:**
+- Create: `apps/web/src/features/map/model/zoomLoadGate.ts` — `createOneShotLoadGate`,
+  `createBboxLoadGate`, `createPendingRefreshQueue`, `WARDS_MIN_ZOOM`, `WATER_MIN_ZOOM`
+- Create: `apps/web/src/features/map/model/zoomLoadGate.test.ts`
+- Modify: `apps/web/src/features/map/model/zoomScale.ts` — add `INITIAL_CENTER_4326`,
+  `INITIAL_ZOOM`
+- Modify: `apps/web/src/features/map/model/MapModel.ts` — open at the region; wire the gate
+
+**What it does:**
+1. Opens the app at the working region (108.93°E, 11.77°N, zoom 7) instead of nationwide.
+   `MIN_ZOOM` is unchanged, so users can still zoom out to the whole country.
+2. Detaches the rivers/lakes sources below zoom 8.5 via `Layer#setSource(null)` — a public
+   OpenLayers API, not an internals workaround.
+
+**OpenLayers traps verified in source and deliberately avoided:**
+- An empty URL does **not** suppress a request — `ol/featureloader.js:71-76` still issues
+  an XHR against the app's own page.
+- `loadedExtentsRtree_` is written **unconditionally**, even when the loader reports
+  failure (`ol/source/Vector.js:1051`), so gating by failing the loader does not work.
+- `clear()` does **not** reset `loadedExtentsRtree_` (line ~566); `refresh()` does
+  (line ~1058). Using `clear()` would leave OL believing extents were loaded, so
+  re-attaching would render an empty layer forever.
+
+**Result:** `settleMs` 35,570 → 3,479 ms. See spec §11.
 
 ---
 

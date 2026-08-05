@@ -23,6 +23,11 @@ by direct request against the running GeoServer.
 
 ### 1.1 Transfer is not the bottleneck — parse is
 
+> **Correction (added after measurement): see §11.1.** This section concludes that bbox
+> loading is the lever. That turned out to be wrong — the default view already covered
+> the whole country, so the "viewport bbox" *was* the national bbox. Zoom-gating, not
+> bbox, delivered the improvement.
+
 **GeoServer already gzips.** It honours `Accept-Encoding: gzip`, which every browser
 sends, so rivers cross the wire at ~2.7 MB rather than 16.8 MB — a 6.3× reduction we
 already get for free. Earlier framing of this work as "cut ~23 MB of transfer" was
@@ -134,6 +139,11 @@ a **load** gate beside it; it does not replace the render gate.
 
 ## 5. Data flow
 
+> **Correction (see §11.1):** this section describes the design as planned, not as built.
+> WFS sources are created *full* and then **detached** below zoom 8.5 by `zoomLoadGate.ts`;
+> only the wards source is created empty. At the initial view no bbox request is made for
+> rivers/lakes at all, because their layers have no source.
+
 Map init creates the **WFS and wards sources empty**. (`provinces-34.geojson` still loads
 eagerly at init — it is small, always visible at every zoom, and out of scope here.)
 
@@ -213,9 +223,11 @@ Caching does not reduce parse, feature construction, or normalization on a **col
 — and the cold load is the complaint. It only helps repeat visits. Since §1.1 establishes
 parse as the bottleneck, caching is aimed at the wrong cost.
 
-Ranked by expected impact:
+Ranked by expected impact (**this ranking was written before measurement; item 1 turned
+out to be wrong — see §11.1**):
 
 1. **BBOX loading** — cuts features parsed, not merely bytes fetched. This spec.
+   *(Measured: no effect on initial load. Zoom-gating was the actual lever.)*
 2. **`Cache-Control` on WFS responses** — cheap, real benefit for repeat visits and for
    panning back over already-seen extents. Deferred deliberately: bbox loading changes
    *what* is worth caching (small per-extent responses instead of one national blob), so

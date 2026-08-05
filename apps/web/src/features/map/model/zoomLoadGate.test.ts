@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   createOneShotLoadGate,
   createBboxLoadGate,
+  createPendingRefreshQueue,
   WARDS_MIN_ZOOM,
   WATER_MIN_ZOOM,
 } from './zoomLoadGate';
@@ -97,5 +98,117 @@ describe('createBboxLoadGate', () => {
 
   it('ngưỡng nước thấp hơn ngưỡng xã (sông/hồ hiện trước ranh giới xã)', () => {
     expect(WATER_MIN_ZOOM).toBeLessThan(WARDS_MIN_ZOOM);
+  });
+});
+
+describe('createPendingRefreshQueue', () => {
+  it('take() trả false cho lớp chưa từng ghi nhận', () => {
+    const q = createPendingRefreshQueue();
+    expect(q.take('layer_rivers')).toBe(false);
+  });
+
+  it('ghi nhận rồi lấy ra đúng một lần', () => {
+    const q = createPendingRefreshQueue();
+    q.add('layer_rivers');
+    expect(q.take('layer_rivers')).toBe(true);
+    expect(q.take('layer_rivers')).toBe(false); // đã lấy rồi thì thôi
+  });
+
+  it('ghi nhận trùng không làm phát sinh hai lần nạp bù', () => {
+    const q = createPendingRefreshQueue();
+    q.add('layer_rivers');
+    q.add('layer_rivers');
+    expect(q.size).toBe(1);
+    expect(q.take('layer_rivers')).toBe(true);
+    expect(q.take('layer_rivers')).toBe(false);
+  });
+
+  it('các lớp độc lập với nhau', () => {
+    const q = createPendingRefreshQueue();
+    q.add('layer_rivers');
+    expect(q.take('layer_lakes')).toBe(false);
+    expect(q.take('layer_rivers')).toBe(true);
+  });
+
+  it('clear() xoá sạch hàng đợi', () => {
+    const q = createPendingRefreshQueue();
+    q.add('layer_rivers');
+    q.add('layer_lakes');
+    q.clear();
+    expect(q.size).toBe(0);
+    expect(q.take('layer_rivers')).toBe(false);
+  });
+});
+
+describe('kịch bản hồi quy: quản trị viên lưu đối tượng ở zoom thấp', () => {
+  /**
+   * Dựng lại đúng lỗi mà rà soát cuối phát hiện: sông/hồ là lớp CHO PHÉP SỬA.
+   * Nếu lưu ở mức zoom dưới ngưỡng, source đang bị gỡ nên refresh() rơi vào hư không
+   * và đối tượng vừa lưu KHÔNG hiện ra — trông y hệt lưu thất bại.
+   */
+  function makeMapStub() {
+    const queue = createPendingRefreshQueue();
+    const refreshed: string[] = [];
+    // `null` nghĩa là source đang bị cổng gỡ ra.
+    const sources: Record<string, { refresh: () => void } | null> = {
+      layer_rivers: null,
+      layer_lakes: null,
+    };
+    const attach = (id: string) => {
+      sources[id] = { refresh: () => refreshed.push(id) };
+    };
+    const detach = (id: string) => {
+      sources[id] = null;
+    };
+    const refreshLayer = (id: string) => {
+      const src = sources[id];
+      if (!src) {
+        queue.add(id);
+        return;
+      }
+      src.refresh();
+    };
+    const openGate = () => {
+      for (const id of ['layer_rivers', 'layer_lakes']) {
+        attach(id);
+        if (queue.take(id)) sources[id]!.refresh();
+      }
+    };
+    return { queue, refreshed, refreshLayer, openGate, detach };
+  }
+
+  it('lưu khi cổng ĐANG ĐÓNG thì được nạp bù lúc cổng mở', () => {
+    const m = makeMapStub();
+    m.refreshLayer('layer_rivers'); // quản trị viên lưu ở zoom 8 (dưới ngưỡng)
+    expect(m.refreshed).toEqual([]); // chưa nạp được gì — đúng như hiện trạng
+    m.openGate();                    // người dùng phóng qua 8,5
+    expect(m.refreshed).toContain('layer_rivers'); // ĐÃ nạp bù
+  });
+
+  it('không nạp bù cho lớp không có yêu cầu nào', () => {
+    const m = makeMapStub();
+    m.refreshLayer('layer_rivers');
+    m.openGate();
+    expect(m.refreshed).toEqual(['layer_rivers']); // KHÔNG kèm layer_lakes
+  });
+
+  it('lưu khi cổng ĐANG MỞ thì nạp ngay, không qua hàng đợi', () => {
+    const m = makeMapStub();
+    m.openGate();
+    m.refreshed.length = 0;
+    m.refreshLayer('layer_lakes');
+    expect(m.refreshed).toEqual(['layer_lakes']);
+    expect(m.queue.size).toBe(0);
+  });
+
+  it('mở cổng lần hai không nạp lại yêu cầu đã xử lý', () => {
+    const m = makeMapStub();
+    m.refreshLayer('layer_rivers');
+    m.openGate();
+    m.refreshed.length = 0;
+    m.detach('layer_rivers');
+    m.detach('layer_lakes');
+    m.openGate();
+    expect(m.refreshed).toEqual([]); // hàng đợi đã rỗng
   });
 });
