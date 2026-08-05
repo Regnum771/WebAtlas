@@ -10,18 +10,35 @@ The map loads eagerly and globally. Every vector source fetches its entire natio
 extent when the map initializes, regardless of the viewport or of zoom gates that hide
 the layer anyway.
 
-Static file sizes are exact (measured on disk, `feat/region-scoping-osm-water`). The
-rivers/lakes figures come from the **seed GeoJSON files**, which stand in for the WFS
-response — the wire payload will differ, since GeoServer emits its own property naming
-and formatting. Establishing the real WFS numbers is the harness's first job (§4.1).
+All figures measured on `feat/region-scoping-osm-water`: static files on disk, WFS layers
+by direct request against the running GeoServer.
 
-| Source | Size | Features / vertices | Loaded when |
-|---|---|---|---|
-| `wards-region.geojson` | 6.9 MB (exact) | — | Map init, though it renders only at zoom ≥ 10 |
-| Rivers (WFS) | ~18 MB (seed proxy) | 9,486 / 675,151 | Map init, unbounded extent |
-| Lakes (WFS) | ~4.7 MB (seed proxy) | 3,868 / 169,840 | Map init, unbounded extent |
-| `provinces-34.geojson` | 1.2 MB (exact) | — | Map init |
-| `thuyhe.geojson` | 5.3 MB (exact) | — | Never — dead file, zero references |
+| Source | Raw | Gzipped | Features / vertices | Loaded when |
+|---|---|---|---|---|
+| `wards-region.geojson` | 6.9 MB | — | — | Map init, though it renders only at zoom ≥ 10 |
+| Rivers (WFS) | 16.8 MB | **2.7 MB** | 9,486 / 675,151 | Map init, unbounded extent |
+| Lakes (WFS) | 5.1 MB | **0.7 MB** | 3,868 / 169,840 | Map init, unbounded extent |
+| `provinces-34.geojson` | 1.2 MB | — | — | Map init |
+| `thuyhe.geojson` | 5.3 MB | — | — | Never — dead file, zero references |
+
+### 1.1 Transfer is not the bottleneck — parse is
+
+**GeoServer already gzips.** It honours `Accept-Encoding: gzip`, which every browser
+sends, so rivers cross the wire at ~2.7 MB rather than 16.8 MB — a 6.3× reduction we
+already get for free. Earlier framing of this work as "cut ~23 MB of transfer" was
+wrong, and it matters: it would have pointed the optimization at the wrong target.
+
+The real cost is what happens *after* the bytes arrive, all of it on the main thread and
+all of it scaling with **feature and vertex count, not compressed size**:
+
+1. Parsing ~17 MB of decompressed JSON.
+2. Constructing 9,486 OpenLayers features spanning 675k vertices, reprojected
+   EPSG:4326 → EPSG:3857.
+3. The normalization loop (§1, cause 3) mutating every feature's properties.
+
+This is why **bbox loading is the lever and caching is not.** Bbox cuts the number of
+features parsed and constructed; HTTP caching would not reduce any of this work on a
+cold load, which is the case that hurts. See §9.1.
 
 Three structural causes:
 
@@ -37,8 +54,9 @@ river, dam, and select styles. The remaining cost is transfer and parse.
 
 ## 2. Goal
 
-Cut the bytes and main-thread work on the critical path to first usable map, without
-changing the layer model, the visual output, or the admin editing flows.
+Cut the main-thread work — parse, feature construction, normalization — on the critical
+path to first usable map, without changing the layer model, the visual output, or the
+admin editing flows. Reduced transfer is a welcome side effect, not the objective (§1.1).
 
 Every optimization must be justified by a before/after number from the same harness.
 
@@ -156,12 +174,59 @@ loading does not affect it.
 
 ## 8. Success criteria
 
-- Initial transfer drops substantially against the measured baseline.
-- Time to first render improves against the measured baseline.
+Primary, in priority order:
+
+- **Features parsed and constructed on initial load** drops substantially against the
+  measured baseline. This is the target metric — it drives the main-thread cost (§1.1).
+- **Time to first render** improves against the measured baseline.
+- **Main-thread long-task time** during initial load drops.
+
+Secondary: initial transfer drops too, but it is a weaker signal — responses are already
+gzipped, so byte savings understate the real gain.
+
+Must not regress:
+
 - Admin create/edit/delete and the rivers click-highlight still work.
 - All existing tests pass.
 
-## 9. Out of scope
+## 9. Caching — audit and deferral
+
+### 9.1 What is cached today
+
+**OpenLayers style objects, and nothing else.** The predecessor spec did this work well:
+river style arrays precomputed at module load (`styles.ts`), dam circles memoized by
+`slug|radius`, select-highlight styles precomputed. The one gap is `wardsStyle`, which
+still allocates a `Style` + `Text` per ward per redraw (§10).
+
+Everything else is uncached:
+
+| Layer | Status |
+|---|---|
+| HTTP response caching | **None.** WFS responses carry no `Cache-Control`, `ETag`, or `Last-Modified` |
+| GeoWebCache | **Not enabled** — no GWC or tile-cache service in `infra/docker-compose.yml` |
+| React Query | Configured for auth only; map layers bypass it and go through OpenLayers directly |
+| Vector data in-session | None — `refreshLayer()` discards and refetches |
+
+### 9.2 Why caching is not the first lever
+
+Caching does not reduce parse, feature construction, or normalization on a **cold load**
+— and the cold load is the complaint. It only helps repeat visits. Since §1.1 establishes
+parse as the bottleneck, caching is aimed at the wrong cost.
+
+Ranked by expected impact:
+
+1. **BBOX loading** — cuts features parsed, not merely bytes fetched. This spec.
+2. **`Cache-Control` on WFS responses** — cheap, real benefit for repeat visits and for
+   panning back over already-seen extents. Deferred deliberately: bbox loading changes
+   *what* is worth caching (small per-extent responses instead of one national blob), so
+   designing the cache policy first would mean designing it twice.
+3. **GeoWebCache** — real infrastructure work, and aimed at tiled delivery, which points
+   back toward MVT (rejected in §3 for breaking the edit controllers).
+4. **Wards style caching** — helps pan/zoom smoothness, not load time. Different axis.
+
+Item 2 is the natural follow-up once the harness reports real repeat-visit numbers.
+
+## 10. Out of scope
 
 - Vector tiles (MVT).
 - `ST_Simplify` or any geometry simplification, server- or build-side.
@@ -169,6 +234,10 @@ loading does not affect it.
 - Moving boundary files into PostGIS to serve them via WFS.
 - Retry logic or user-facing load-error UI.
 - A CI byte-budget gate.
+- **HTTP response caching** (`Cache-Control` / `ETag` on WFS). Worthwhile, but sequenced
+  after this spec — see §9.2 for why bbox loading must land first.
+- **GeoWebCache / tile caching.** See §9.2.
 - **Wards style caching.** The predecessor spec (§ Component B) flagged `wardsStyle` as
   the one uncached style function, "lower priority; include if clean." It remains
-  uncached. Still a valid follow-up, but this spec targets transfer, not allocation.
+  uncached. Still a valid follow-up, but it improves pan/zoom smoothness rather than
+  load time — a different axis from what this spec targets.
