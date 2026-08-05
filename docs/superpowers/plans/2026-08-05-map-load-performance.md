@@ -68,7 +68,14 @@
   }
   ```
 
-This task is measurement only. It must NOT change any application code — that is what makes the later before/after comparison trustworthy.
+This task adds **no behavioral change to the map** — that is what makes the later
+before/after comparison trustworthy.
+
+One deliberate exception: Step 4 adds a dev-only `window.__olMap` hook to `MapModel.ts`.
+It is required because the plan's primary success metric is *features constructed*, which
+can only be read from live OpenLayers sources. It is guarded by `import.meta.env.DEV`, so
+production builds never set it, and it changes no map behavior. This exception is
+approved — do not remove it, and do not treat it as scope creep.
 
 - [ ] **Step 1: Verify the stack is up**
 
