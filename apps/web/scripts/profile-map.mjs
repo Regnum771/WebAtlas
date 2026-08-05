@@ -13,7 +13,10 @@ import puppeteer from 'puppeteer-core';
 const CHROME = process.env.CHROME_PATH
   ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/';
-const SETTLE_MS = 4000;
+/** Trần thời gian chờ các source nạp xong. Không phải thời gian chờ cố định. */
+const SETTLE_TIMEOUT_MS = 60000;
+/** Khoảng thăm dò trạng thái idle. */
+const POLL_MS = 250;
 
 const outArg = process.argv.indexOf('--out');
 const OUT = outArg !== -1 ? process.argv[outArg + 1] : 'profile-result.json';
@@ -67,7 +70,34 @@ const run = async () => {
   await page.waitForSelector('canvas', { timeout: 30000 });
   const firstRenderMs = Date.now() - t0;
 
-  await new Promise((r) => setTimeout(r, SETTLE_MS));
+  /**
+   * Chờ tới khi MỌI vector source ngừng nạp (source.loading === 0), có trần thời gian.
+   *
+   * KHÔNG dùng thời gian chờ cố định: chính thời gian nạp là thứ ta đang tối ưu, nên
+   * một mốc cố định sẽ chụp ở hai thời điểm khác nhau giữa lần đo trước và sau, khiến
+   * so sánh trở nên vô nghĩa. Chờ theo ĐIỀU KIỆN thì cả hai lần đều đo "tới khi xong".
+   * Trả về số ms đã chờ — đây chính là chỉ số "thời gian tới khi dùng được".
+   */
+  const waitUntilIdle = async () => {
+    const start = Date.now();
+    while (Date.now() - start < SETTLE_TIMEOUT_MS) {
+      const busy = await page.evaluate(() => {
+        const map = window.__olMap;
+        if (!map) return -1;
+        let pending = 0;
+        map.getLayers().forEach((layer) => {
+          const src = layer.getSource?.();
+          if (src && typeof src.loading === 'number') pending += src.loading;
+        });
+        return pending;
+      });
+      if (busy === 0) return Date.now() - start;
+      await new Promise((r) => setTimeout(r, POLL_MS));
+    }
+    return -1; // chạm trần: còn source chưa nạp xong
+  };
+
+  const settleMs = await waitUntilIdle();
 
   // Đếm feature thực sự đã dựng trong từng source (chi phí main-thread thật sự).
   const countFeatures = () => page.evaluate(() => {
@@ -115,7 +145,7 @@ const run = async () => {
 
   // Vượt ngưỡng zoom 10 để kích hoạt lớp xã.
   await page.evaluate(() => window.__olMap?.getView().setZoom(10.5));
-  await new Promise((r) => setTimeout(r, SETTLE_MS));
+  const settleAfterZoomMs = await waitUntilIdle();
 
   const featuresAfterZoom = await countFeatures();
   const longTaskTotalMs = await page.evaluate(
@@ -123,9 +153,11 @@ const run = async () => {
   );
 
   const result = {
-    scenario: 'cold load @MIN_ZOOM -> settle -> pan x4 -> zoom 10.5 -> settle',
+    scenario: 'cold load @MIN_ZOOM -> chờ idle -> pan x4 -> zoom 10.5 -> chờ idle',
     timestamp: new Date().toISOString(),
     firstRenderMs,
+    settleMs,
+    settleAfterZoomMs,
     longTaskTotalMs,
     featuresAfterLoad,
     featuresAfterZoom,
@@ -136,6 +168,8 @@ const run = async () => {
   writeFileSync(OUT, JSON.stringify(result, null, 2));
 
   console.log(`\nfirst render      ${firstRenderMs} ms`);
+  console.log(`settle (idle)     ${settleMs === -1 ? 'TIMEOUT' : settleMs + ' ms'}`);
+  console.log(`settle after zoom ${settleAfterZoomMs === -1 ? 'TIMEOUT' : settleAfterZoomMs + ' ms'}`);
   console.log(`long tasks total  ${longTaskTotalMs.toFixed(0)} ms`);
   console.log(`pan avg / worst   ${panFrames.avgMs.toFixed(1)} / ${panFrames.worstMs.toFixed(1)} ms`);
   console.log('\nfeatures after initial load:');
