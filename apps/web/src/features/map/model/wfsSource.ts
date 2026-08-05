@@ -1,10 +1,16 @@
 import VectorSource from 'ol/source/Vector';
 import GeoJSON from 'ol/format/GeoJSON';
 import type Feature from 'ol/Feature';
+import { bbox as bboxStrategy } from 'ol/loadingstrategy';
 import { LAYER_ATTRIBUTE_MAP, normalizeFeatureProperties, toDamStatusSlug, DAM_STATUS_DISPLAY, type EditableLayerKey } from '@webatlas/shared';
 import { GEOSERVER_URL } from '../../../shared/config';
 
-function wfsUrl(typeName: string): string {
+/**
+ * URL WFS GetFeature. Có `extent` (EPSG:3857, do OpenLayers cấp) thì giới hạn theo bbox.
+ * `srsName` vẫn là EPSG:4326 vì đó là hệ toạ độ GeoServer trả về; chỉ bbox dùng 3857
+ * để khớp với hệ chiếu khung nhìn.
+ */
+export function wfsUrl(typeName: string, extent?: number[]): string {
   const params = new URLSearchParams({
     service: 'WFS',
     version: '2.0.0',
@@ -13,6 +19,9 @@ function wfsUrl(typeName: string): string {
     outputFormat: 'application/json',
     srsName: 'EPSG:4326',
   });
+  if (extent) {
+    params.set('bbox', `${extent.join(',')},EPSG:3857`);
+  }
   return `${GEOSERVER_URL}/ows?${params.toString()}`;
 }
 
@@ -58,7 +67,15 @@ export function createWfsVectorSource(layerKey: EditableLayerKey): VectorSource 
   const format = new GeoJSON();
   const source = new VectorSource({
     format,
-    url: wfsUrl(info.wfsTypeName),
+    strategy: bboxStrategy,
+    url: (extent) => wfsUrl(info.wfsTypeName, extent),
+  });
+
+  // Dưới bbox, số request tăng nhiều nên lỗi tạm thời dễ xảy ra hơn và để lại
+  // "lỗ hổng" trên bản đồ. Ghi log để chẩn đoán. Không tự thử lại (ngoài phạm vi spec).
+  // Lưu ý: sự kiện featuresloaderror của OpenLayers KHÔNG kèm extent.
+  source.on('featuresloaderror', () => {
+    console.error(`[wfs] tải feature thất bại cho lớp "${layerKey}"`);
   });
 
   source.on('featuresloadend', (evt) => {

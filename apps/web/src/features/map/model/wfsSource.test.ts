@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
-import { normalizeLoadedFeatures } from './wfsSource';
+import { normalizeLoadedFeatures, wfsUrl } from './wfsSource';
 
 describe('normalizeLoadedFeatures', () => {
   it('đổi tên thuộc tính DB sang tên ISO và đóng dấu layerKey', () => {
@@ -60,5 +60,31 @@ describe('normalizeLoadedFeatures', () => {
     const f = new Feature({ name: 'không toạ độ' });
     expect(() => normalizeLoadedFeatures('dams', [f])).not.toThrow();
     expect(f.get('layerKey')).toBeUndefined();
+  });
+});
+
+describe('wfsUrl', () => {
+  it('dựng URL WFS 2.0.0 GetFeature cơ bản', () => {
+    const url = wfsUrl('webatlas:rivers');
+    expect(url).toContain('service=WFS');
+    expect(url).toContain('version=2.0.0');
+    expect(url).toContain('request=GetFeature');
+    expect(url).toContain('typeNames=webatlas%3Arivers');
+    expect(url).toContain('outputFormat=application%2Fjson');
+  });
+
+  it('không có tham số bbox khi không truyền extent', () => {
+    expect(wfsUrl('webatlas:rivers')).not.toContain('bbox');
+  });
+
+  it('thêm bbox theo EPSG:3857 khi có extent', () => {
+    const url = wfsUrl('webatlas:rivers', [1, 2, 3, 4]);
+    const decoded = decodeURIComponent(url);
+    expect(decoded).toContain('bbox=1,2,3,4,EPSG:3857');
+  });
+
+  it('srsName vẫn là EPSG:4326 để feature trả về đúng hệ toạ độ nguồn', () => {
+    const decoded = decodeURIComponent(wfsUrl('webatlas:rivers', [1, 2, 3, 4]));
+    expect(decoded).toContain('srsName=EPSG:4326');
   });
 });
