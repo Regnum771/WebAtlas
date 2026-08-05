@@ -1,10 +1,10 @@
 {
   "scenario": "cold load @MIN_ZOOM -> chờ idle -> pan x4 -> zoom 10.5 -> chờ idle",
-  "timestamp": "2026-08-05T04:12:54.762Z",
-  "firstRenderMs": 7239,
-  "settleMs": 42612,
-  "settleAfterZoomMs": 3643,
-  "longTaskTotalMs": 10501,
+  "timestamp": "2026-08-05T04:19:21.780Z",
+  "firstRenderMs": 3009,
+  "settleMs": 35570,
+  "settleAfterZoomMs": 3031,
+  "longTaskTotalMs": 4045,
   "featuresAfterLoad": {
     "layer_provinces_2026": 34,
     "layer_wards_2026": 0,
@@ -36,15 +36,15 @@
     },
     "wfs:dams": {
       "requests": 3,
-      "bytes": 35597
+      "bytes": 35616
     },
     "wfs:lakes": {
       "requests": 1,
-      "bytes": 698983
+      "bytes": 699012
     },
     "wfs:rivers": {
       "requests": 1,
-      "bytes": 2816183
+      "bytes": 2816244
     },
     "file:wards-region": {
       "requests": 1,
@@ -52,8 +52,8 @@
     }
   },
   "panFrames": {
-    "count": 13,
-    "avgMs": 137.26923076923077,
-    "worstMs": 460.09999999403954
+    "count": 88,
+    "avgMs": 23.029545454477724,
+    "worstMs": 91.70000000298023
   }
 }

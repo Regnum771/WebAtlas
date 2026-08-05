@@ -63,6 +63,8 @@ const run = async () => {
     slot.bytes += e.encodedDataLength ?? 0;
     urlByRequestId.delete(e.requestId);
   });
+  // Request hỏng/bị huỷ cũng phải dọn khỏi map, nếu không sẽ rò rỉ theo từng lần chạy.
+  cdp.on('Network.loadingFailed', (e) => urlByRequestId.delete(e.requestId));
 
   // Ghi nhận long task trước khi app khởi động.
   await page.evaluateOnNewDocument(() => {
@@ -144,9 +146,15 @@ const run = async () => {
     };
     requestAnimationFrame(tick);
 
+    // Pan theo BỀ RỘNG KHUNG NHÌN, không theo khoảng cách mét cố định.
+    // Lý do: dưới chiến lược bbox, OpenLayers chỉ tải thêm khi khung nhìn chạm
+    // vùng CHƯA có dữ liệu. Một quãng pan cố định 160km chỉ bằng ~6% bề rộng khung
+    // ở MIN_ZOOM (~2.482km) nên sẽ KHÔNG kích hoạt request nào -> lần đo "sau"
+    // trông đẹp giả tạo. Mỗi bước dịch 0,75 bề rộng khung để luôn lộ vùng mới.
     const [x, y] = view.getCenter();
+    const step = view.getResolution() * map.getSize()[0] * 0.75;
     for (let i = 1; i <= 4; i++) {
-      view.setCenter([x + i * 40000, y + i * 20000]);
+      view.setCenter([x + i * step, y + i * step * 0.5]);
       await new Promise((r) => setTimeout(r, 500));
     }
     running = false;
