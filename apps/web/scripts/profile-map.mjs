@@ -17,6 +17,8 @@ const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/';
 const SETTLE_TIMEOUT_MS = 60000;
 /** Khoảng thăm dò trạng thái idle. */
 const POLL_MS = 250;
+/** Số nhịp idle LIÊN TIẾP cần có mới coi là đã nạp xong (chống điều kiện tranh chấp). */
+const IDLE_STREAK = 8;
 
 const outArg = process.argv.indexOf('--out');
 const OUT = outArg !== -1 ? process.argv[outArg + 1] : 'profile-result.json';
@@ -41,18 +43,25 @@ const run = async () => {
   await page.setCacheEnabled(false); // luôn đo cold load
 
   const transfer = {};
-  page.on('response', async (res) => {
-    const name = layerNameFor(res.url());
+  // Đếm byte qua CDP thay vì res.buffer()/Content-Length:
+  //  - GeoServer trả Transfer-Encoding: chunked nên KHÔNG có Content-Length;
+  //  - res.buffer() ném lỗi với response lớn dạng stream (rivers ~17MB) rồi âm thầm
+  //    ghi 0 byte, làm hỏng phép so sánh lưu lượng.
+  // Network.loadingFinished cho encodedDataLength = số byte THẬT trên dây (đã nén).
+  const cdp = await page.createCDPSession();
+  await cdp.send('Network.enable');
+  const urlByRequestId = new Map();
+  cdp.on('Network.responseReceived', (e) => {
+    const name = layerNameFor(e.response.url);
+    if (name) urlByRequestId.set(e.requestId, name);
+  });
+  cdp.on('Network.loadingFinished', (e) => {
+    const name = urlByRequestId.get(e.requestId);
     if (!name) return;
-    let bytes = 0;
-    try {
-      bytes = (await res.buffer()).length;
-    } catch {
-      bytes = 0; // response bị huỷ khi điều hướng
-    }
     const slot = transfer[name] ?? (transfer[name] = { requests: 0, bytes: 0 });
     slot.requests += 1;
-    slot.bytes += bytes;
+    slot.bytes += e.encodedDataLength ?? 0;
+    urlByRequestId.delete(e.requestId);
   });
 
   // Ghi nhận long task trước khi app khởi động.
@@ -80,6 +89,7 @@ const run = async () => {
    */
   const waitUntilIdle = async () => {
     const start = Date.now();
+    let idleStreak = 0;
     while (Date.now() - start < SETTLE_TIMEOUT_MS) {
       const busy = await page.evaluate(() => {
         const map = window.__olMap;
@@ -91,7 +101,11 @@ const run = async () => {
         });
         return pending;
       });
-      if (busy === 0) return Date.now() - start;
+      // Cần idle LIÊN TIẾP nhiều nhịp: một fetch vừa được kích hoạt (vd. lớp xã sau
+      // khi zoom) chưa kịp tăng source.loading, nên nếu chấp nhận idle ngay nhịp đầu
+      // ta sẽ báo "xong" trước khi nó kịp bắt đầu.
+      idleStreak = busy === 0 ? idleStreak + 1 : 0;
+      if (idleStreak >= IDLE_STREAK) return Date.now() - start;
       await new Promise((r) => setTimeout(r, POLL_MS));
     }
     return -1; // chạm trần: còn source chưa nạp xong

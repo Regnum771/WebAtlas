@@ -1,10 +1,10 @@
 {
   "scenario": "cold load @MIN_ZOOM -> chờ idle -> pan x4 -> zoom 10.5 -> chờ idle",
-  "timestamp": "2026-08-05T04:05:33.196Z",
-  "firstRenderMs": 2976,
-  "settleMs": 22016,
-  "settleAfterZoomMs": 19,
-  "longTaskTotalMs": 4880,
+  "timestamp": "2026-08-05T04:12:54.762Z",
+  "firstRenderMs": 7239,
+  "settleMs": 42612,
+  "settleAfterZoomMs": 3643,
+  "longTaskTotalMs": 10501,
   "featuresAfterLoad": {
     "layer_provinces_2026": 34,
     "layer_wards_2026": 0,
@@ -19,7 +19,7 @@
   },
   "featuresAfterZoom": {
     "layer_provinces_2026": 34,
-    "layer_wards_2026": 0,
+    "layer_wards_2026": 616,
     "layer_flood": 0,
     "layer_lakes": 3868,
     "layer_rivers": 9486,
@@ -32,24 +32,28 @@
   "transfer": {
     "file:provinces-34": {
       "requests": 1,
-      "bytes": 1222340
+      "bytes": 1222622
     },
     "wfs:dams": {
       "requests": 3,
-      "bytes": 271911
+      "bytes": 35597
     },
     "wfs:lakes": {
       "requests": 1,
-      "bytes": 5329218
+      "bytes": 698983
     },
     "wfs:rivers": {
       "requests": 1,
-      "bytes": 0
+      "bytes": 2816183
+    },
+    "file:wards-region": {
+      "requests": 1,
+      "bytes": 6937624
     }
   },
   "panFrames": {
-    "count": 3,
-    "avgMs": 554.7333333293597,
-    "worstMs": 846.2000000029802
+    "count": 13,
+    "avgMs": 137.26923076923077,
+    "worstMs": 460.09999999403954
   }
 }
