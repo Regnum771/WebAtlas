@@ -241,3 +241,45 @@ Item 2 is the natural follow-up once the harness reports real repeat-visit numbe
   the one uncached style function, "lower priority; include if clean." It remains
   uncached. Still a valid follow-up, but it improves pan/zoom smoothness rather than
   load time — a different axis from what this spec targets.
+
+## 11. Results (measured 2026-08-05)
+
+Harness: `apps/web/scripts/profile-map.mjs`, identical scenario for both runs.
+Raw data: `docs/superpowers/plans/baseline-2026-08-05.json` and `result-2026-08-05.json`.
+The "after" figure is the **median of three runs** (7081 / 3479 / 3267 ms) — a single
+sample is unreliable because GeoServer response time varies with warmth and host load.
+
+| Metric | Before | After | Change |
+|---|---|---|---|
+| **Time until all sources idle** | 35,570 ms | **3,479 ms** | **10.2× faster** |
+| Main-thread long tasks | 4,045 ms | 2,051 ms | 2.0× less |
+| Features built on initial load — rivers | 9,486 | **0** | gated below zoom 8.5 |
+| Features built on initial load — lakes | 3,868 | **0** | gated below zoom 8.5 |
+| Features built on initial load — wards | 0 | 0 | now gated (was fetched, unrendered) |
+| Total session transfer | 11.17 MB | 7.82 MB | 30% less |
+| Time to first render | 3,009 ms | 3,660 ms | ~unchanged (within variance) |
+| Pan frames avg / worst | 23.0 / 91.7 ms | 26.0 / 89.3 ms | unchanged |
+
+Wards (6.9 MB) is no longer requested on initial load; it is fetched exactly once on the
+first crossing of zoom 10 — verified by request counting: 0 requests at zoom 7 and 9,
+exactly 1 at zoom 10.5, still 1 after repeatedly crossing the threshold.
+
+### 11.1 What actually delivered the win — and a correction to §1.1
+
+**The bbox strategy alone changed nothing on initial load.** §1.1 assumed viewport-scoped
+fetching would cut the features parsed at startup. It does not, because the default view
+was the whole country: at MIN_ZOOM the viewport is 2,172 km wide while Vietnam is 854 km
+wide, so the "viewport bbox" *was* the national bbox. Measured payloads confirmed it —
+17.6 MB at MIN_ZOOM, and still 17.6 MB after moving the initial view to zoom 7.
+
+The working region's shape makes this unavoidable: it is 374 km wide but 988 km tall, so
+no zoom level both fits the region and meaningfully narrows the bbox.
+
+What delivered the improvement was **zoom-gating the heavy layers** (`zoomLoadGate.ts`):
+rivers and lakes have their source detached below zoom 8.5, and wards below zoom 10. The
+bbox strategy is still necessary and valuable — it is what keeps the layers cheap *after*
+the gate opens (2,729 rivers at zoom 9 instead of 9,486) — but it is the gate, not bbox,
+that fixes the cold start.
+
+The spec's ranking in §9.2 therefore holds in spirit (loading less beats caching more)
+but its top item was wrong: zoom-gating, not bbox, was the lever.
