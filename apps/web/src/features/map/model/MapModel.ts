@@ -10,7 +10,7 @@ import Select from 'ol/interaction/Select';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
 import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
-import { createBboxLoadGate, WATER_MIN_ZOOM } from './zoomLoadGate';
+import { createBboxLoadGate, createOneShotLoadGate, WATER_MIN_ZOOM, WARDS_MIN_ZOOM } from './zoomLoadGate';
 import {
   provincesStyle,
   wardsStyle,
@@ -48,6 +48,8 @@ export class MapModel {
   private moveendHandler: (() => void) | null = null;
   /** Cổng tải sông/hồ theo zoom — chạy mỗi lần moveend (xem zoomLoadGate.ts). */
   private waterGate: ((zoom: number) => void) | null = null;
+  /** Cổng tải ranh giới xã — chỉ nạp một lần khi vượt zoom 10. */
+  private wardsGate: ((zoom: number) => void) | null = null;
 
   init(target: HTMLElement): void {
     // Idempotency guard for React 19 StrictMode double-invoked effects.
@@ -129,7 +131,22 @@ export class MapModel {
     // công tác — zoom ra ngoài vùng sẽ thấy ranh giới tỉnh nhưng không có xã.
     const provincesLayer = createVectorLayerFromUrl('layer_provinces_2026', './provinces-34.geojson', provincesStyle);
 
-    const wardsLayer = createVectorLayerFromUrl('layer_wards_2026', './wards-region.geojson', wardsStyle);
+    // Source ranh giới xã khởi tạo RỖNG: file ~6,9 MB mà chỉ hiển thị từ zoom 10.
+    // setMinZoom của OpenLayers chỉ chặn VẼ chứ không chặn TẢI, nên phải chặn ở
+    // tầng source: chỉ nạp URL vào lần đầu người dùng vượt ngưỡng (xem zoomLoadGate.ts).
+    // `format` bắt buộc phải có ngay từ đầu vì setUrl() có assert yêu cầu
+    // (ol/source/Vector.js:1192).
+    const wardsSource = new VectorSource({ format: new GeoJSON() });
+    const wardsLayer = new VectorLayer({
+      source: wardsSource,
+      style: wardsStyle,
+      properties: { id: 'layer_wards_2026' },
+    });
+    this.layers['layer_wards_2026'] = wardsLayer;
+    this.wardsGate = createOneShotLoadGate(WARDS_MIN_ZOOM, () => {
+      wardsSource.setUrl('./wards-region.geojson');
+      wardsSource.refresh();
+    });
 
     // 3. Khởi tạo Map
     const map = new Map({
@@ -181,7 +198,10 @@ export class MapModel {
     // Lắng nghe thay đổi LayerState và zoom/pan để cập nhật hiển thị ranh giới
     const updateLayersVisibility = () => {
       const zoom = map.getView().getZoom();
-      if (zoom !== undefined) this.waterGate?.(zoom);
+      if (zoom !== undefined) {
+        this.waterGate?.(zoom);
+        this.wardsGate?.(zoom);
+      }
       this.recomputeVisibility();
     };
 
@@ -214,7 +234,8 @@ export class MapModel {
         if (state.id === 'layer_provinces_2026') {
           zoomVisible = true; // Luôn hiển thị ranh giới tỉnh
         } else if (state.id === 'layer_wards_2026') {
-          zoomVisible = currentZoom >= 10.0; // Chỉ hiện ranh giới xã khi phóng to
+          // Cùng ngưỡng với cổng TẢI ở zoomLoadGate.ts — một nguồn sự thật duy nhất.
+          zoomVisible = currentZoom >= WARDS_MIN_ZOOM; // Chỉ hiện ranh giới xã khi phóng to
         }
 
         layer.setVisible(state.visible && zoomVisible);
@@ -302,6 +323,7 @@ export class MapModel {
       this.moveendHandler = null;
     }
     this.waterGate = null;
+    this.wardsGate = null;
     this.map.setTarget(undefined);
     this.map = null;
     this.basemapLayer = null;
