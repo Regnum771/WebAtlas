@@ -132,6 +132,8 @@ const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/';
 const SETTLE_TIMEOUT_MS = 60000;
 /** Khoảng thăm dò trạng thái idle. */
 const POLL_MS = 250;
+/** Số nhịp idle LIÊN TIẾP cần có mới coi là đã nạp xong (chống điều kiện tranh chấp). */
+const IDLE_STREAK = 8;
 
 const outArg = process.argv.indexOf('--out');
 const OUT = outArg !== -1 ? process.argv[outArg + 1] : 'profile-result.json';
@@ -159,11 +161,15 @@ const run = async () => {
   page.on('response', async (res) => {
     const name = layerNameFor(res.url());
     if (!name) return;
-    let bytes = 0;
-    try {
-      bytes = (await res.buffer()).length;
-    } catch {
-      bytes = 0; // response bị huỷ khi điều hướng
+    // Ưu tiên Content-Length: res.buffer() NÉM LỖI với response lớn dạng stream
+    // (rivers ~17MB) và sẽ âm thầm ghi 0 byte, làm hỏng phép so sánh lưu lượng.
+    let bytes = Number(res.headers()['content-length'] ?? 0);
+    if (!bytes) {
+      try {
+        bytes = (await res.buffer()).length;
+      } catch {
+        bytes = 0; // response bị huỷ; ghi 0 nhưng vẫn đếm request
+      }
     }
     const slot = transfer[name] ?? (transfer[name] = { requests: 0, bytes: 0 });
     slot.requests += 1;
@@ -195,6 +201,7 @@ const run = async () => {
    */
   const waitUntilIdle = async () => {
     const start = Date.now();
+    let idleStreak = 0;
     while (Date.now() - start < SETTLE_TIMEOUT_MS) {
       const busy = await page.evaluate(() => {
         const map = window.__olMap;
@@ -206,7 +213,11 @@ const run = async () => {
         });
         return pending;
       });
-      if (busy === 0) return Date.now() - start;
+      // Cần idle LIÊN TIẾP nhiều nhịp: một fetch vừa được kích hoạt (vd. lớp xã sau
+      // khi zoom) chưa kịp tăng source.loading, nên nếu chấp nhận idle ngay nhịp đầu
+      // ta sẽ báo "xong" trước khi nó kịp bắt đầu.
+      idleStreak = busy === 0 ? idleStreak + 1 : 0;
+      if (idleStreak >= IDLE_STREAK) return Date.now() - start;
       await new Promise((r) => setTimeout(r, POLL_MS));
     }
     return -1; // chạm trần: còn source chưa nạp xong
@@ -340,6 +351,26 @@ numbers; they are the baseline every later task is measured against.**
 the honest cost of loading everything nationwide, and it is the number bbox loading
 should shrink most. If `settleMs` prints `TIMEOUT`, raise `SETTLE_TIMEOUT_MS` and re-run;
 do NOT record a timed-out baseline.
+
+**A baseline is only valid if ALL of these hold.** Check before committing:
+
+```bash
+node -e "
+const b=require('./docs/superpowers/plans/baseline-2026-08-05.json');
+const bad=[];
+if (b.featuresAfterLoad.layer_rivers !== 9486) bad.push('rivers != 9486');
+if (b.featuresAfterLoad.layer_lakes !== 3868) bad.push('lakes != 3868');
+if (b.featuresAfterZoom.layer_wards_2026 !== 616) bad.push('wards@zoom != 616');
+if (b.settleMs <= 0) bad.push('settleMs invalid');
+for (const k of ['wfs:rivers','wfs:lakes','file:wards-region']) {
+  if (!(b.transfer[k]?.bytes > 0)) bad.push(k + ' has 0 bytes');
+}
+console.log(bad.length ? 'INVALID: ' + bad.join('; ') : 'baseline OK');
+"
+```
+
+Expected: `baseline OK`. Anything else means re-run — a baseline with zeros silently
+inverts the Task 6 comparison.
 
 > **Do not run the profiler in a tight loop.** GeoServer's WFS response degrades sharply
 > under back-to-back heavy requests (observed: 2.3s → 60s+, needing a container restart).
