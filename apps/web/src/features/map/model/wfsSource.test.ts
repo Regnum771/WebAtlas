@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
 import { normalizeLoadedFeatures } from './wfsSource';
@@ -40,6 +40,20 @@ describe('normalizeLoadedFeatures', () => {
     normalizeLoadedFeatures('dams', [f]);
     expect(f.get('statusSlug')).toBe(slug1);
     expect(f.get('operationalStatus')).toBe(label1);
+  });
+
+  it('feature đã đóng dấu layerKey thì lần gọi thứ hai không ghi lại thuộc tính (guard idempotency)', () => {
+    const f = new Feature({ geometry: new Point([0, 0]), name: 'Sông Ba', stream_order: 4 });
+    normalizeLoadedFeatures('rivers', [f]);
+    expect(f.get('layerKey')).toBe('rivers');
+
+    const setPropertiesSpy = vi.spyOn(f, 'setProperties');
+    const unsetSpy = vi.spyOn(f, 'unset');
+
+    normalizeLoadedFeatures('rivers', [f]);
+
+    expect(setPropertiesSpy).not.toHaveBeenCalled();
+    expect(unsetSpy).not.toHaveBeenCalled();
   });
 
   it('bỏ qua feature không có hình học', () => {
