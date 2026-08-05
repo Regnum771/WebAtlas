@@ -17,6 +17,37 @@ function wfsUrl(typeName: string): string {
 }
 
 /**
+ * Chuẩn hoá feature vừa tải: bỏ feature không hình học, đổi tên thuộc tính DB -> ISO,
+ * đóng dấu `layerKey`, và với lớp đập thì tính sẵn `statusSlug` + nhãn hiển thị.
+ *
+ * PHẢI idempotent: dưới chiến lược bbox, `featuresloadend` bắn theo từng extent nên
+ * một feature có thể được xử lý nhiều lần. Dấu `layerKey` đóng vai trò cờ "đã xử lý".
+ */
+export function normalizeLoadedFeatures(layerKey: EditableLayerKey, features: Feature[]): void {
+  for (const f of features) {
+    if (!f.getGeometry()) continue;
+    // Đã chuẩn hoá rồi thì bỏ qua — tránh churn thuộc tính mỗi lần pan.
+    if (f.get('layerKey') === layerKey) continue;
+
+    const raw = f.getProperties();
+    const geomKey = f.getGeometryName();
+    const dbProps: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (k !== geomKey) dbProps[k] = v;
+    }
+    const iso = normalizeFeatureProperties(layerKey, dbProps);
+    for (const k of Object.keys(dbProps)) f.unset(k, true);
+    f.setProperties(iso, true);
+
+    if (layerKey === 'dams') {
+      const slug = toDamStatusSlug(f.get('operationalStatus'));
+      f.set('statusSlug', slug, true);
+      f.set('operationalStatus', DAM_STATUS_DISPLAY[slug].label, true);
+    }
+  }
+}
+
+/**
  * VectorSource for a thematic layer served from GeoServer WFS as GeoJSON.
  * - Reprojects EPSG:4326 -> EPSG:3857 (map view projection).
  * - Drops features with no geometry (e.g. coordinate-less dams).
@@ -30,37 +61,12 @@ export function createWfsVectorSource(layerKey: EditableLayerKey): VectorSource 
     url: wfsUrl(info.wfsTypeName),
   });
 
-  // Normalize + filter once features are loaded for this source.
   source.on('featuresloadend', (evt) => {
-    const loaded = (evt as unknown as { features?: Feature[] }).features ?? source.getFeatures();
+    const loaded = (evt as unknown as { features?: Feature[] }).features ?? [];
+    normalizeLoadedFeatures(layerKey, loaded);
+    // Feature không hình học không dùng được để vẽ — loại khỏi source.
     for (const f of loaded) {
-      if (!f.getGeometry()) {
-        source.removeFeature(f);
-        continue;
-      }
-      const raw = f.getProperties();
-      // OpenLayers stores geometry under the geometry key; drop it before renaming props.
-      const geomKey = f.getGeometryName();
-      const dbProps: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(raw)) {
-        if (k !== geomKey) dbProps[k] = v;
-      }
-      const iso = normalizeFeatureProperties(layerKey, dbProps);
-      // Replace all non-geometry properties with the ISO-named set.
-      for (const k of Object.keys(dbProps)) f.unset(k, true);
-      f.setProperties(iso, true);
-    }
-    if (layerKey === 'dams') {
-      for (const f of loaded) {
-        if (!f.getGeometry()) continue;
-        // The ISO-normalized props keep the raw DB `status` under operationalStatus? No —
-        // `status` maps to operationalStatus via LAYER_ATTRIBUTE_MAP. Read whatever is there,
-        // coerce to a canonical slug, and stamp both the slug and the display label once.
-        const raw = f.get('operationalStatus');
-        const slug = toDamStatusSlug(raw);
-        f.set('statusSlug', slug, true);
-        f.set('operationalStatus', DAM_STATUS_DISPLAY[slug].label, true);
-      }
+      if (!f.getGeometry()) source.removeFeature(f);
     }
     source.changed();
   });
