@@ -9,7 +9,8 @@ import GeoJSON from 'ol/format/GeoJSON';
 import Select from 'ol/interaction/Select';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
-import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, VIETNAM_CENTER_4326 } from './zoomScale';
+import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
+import { createBboxLoadGate, WATER_MIN_ZOOM } from './zoomLoadGate';
 import {
   provincesStyle,
   wardsStyle,
@@ -45,6 +46,8 @@ export class MapModel {
   private reservoirFilter: ReservoirFilterType = 'all';
   private layerStates: LayerState[] = [];
   private moveendHandler: (() => void) | null = null;
+  /** Cổng tải sông/hồ theo zoom — chạy mỗi lần moveend (xem zoomLoadGate.ts). */
+  private waterGate: ((zoom: number) => void) | null = null;
 
   init(target: HTMLElement): void {
     // Idempotency guard for React 19 StrictMode double-invoked effects.
@@ -89,6 +92,32 @@ export class MapModel {
       return layer;
     };
     const lakesLayer = mkWfs('layer_lakes', 'lakes', lakesStyle);
+
+    // Cổng tải sông/hồ theo zoom. Gỡ hẳn source khỏi layer khi ở dưới ngưỡng —
+    // layer không có source thì không tải gì cả, và đây là API công khai của
+    // OpenLayers (Layer#setSource) nên không phải lách nội bộ thư viện.
+    //
+    // Vì sao cần: khung nhìn lúc mở (zoom 7) trải 101–116°Đ nên bbox vẫn kéo về
+    // trọn 17,6 MB dữ liệu sông. Chỉ từ zoom 8,5 bbox mới thực sự cắt bớt.
+    const riversSource = riversLayer.getSource();
+    const lakesSource = lakesLayer.getSource();
+    this.waterGate = createBboxLoadGate(
+      WATER_MIN_ZOOM,
+      () => {
+        riversLayer.setSource(riversSource);
+        lakesLayer.setSource(lakesSource);
+      },
+      () => {
+        riversLayer.setSource(null);
+        lakesLayer.setSource(null);
+        // PHẢI dùng refresh() chứ không phải clear(): clear() chỉ xoá feature mà
+        // GIỮ NGUYÊN loadedExtentsRtree_, nên khi gắn source lại OpenLayers tưởng
+        // các extent đã tải xong và sẽ không gửi request nào (ol/source/Vector.js:566
+        // so với refresh() ở dòng 1058 — refresh xoá cả hai).
+        riversSource?.refresh();
+        lakesSource?.refresh();
+      }
+    );
     const stationsLayer = mkWfs('layer_stations', 'stations', stationsStyle);
     const floodLayer = mkWfs('layer_flood', 'flood_zones', floodStyle);
     const droughtSurveyLayer = mkWfs('layer_drought_survey', 'drought_points', droughtSurveyStyle);
@@ -119,8 +148,12 @@ export class MapModel {
         floodGenerationLayer
       ],
       view: new View({
-        center: fromLonLat(VIETNAM_CENTER_4326),
-        zoom: MIN_ZOOM,
+        // Mở ứng dụng ngay tại VÙNG CÔNG TÁC, không phải toàn quốc: dữ liệu chuyên
+        // đề chỉ có trong vùng này, và khung nhìn toàn quốc buộc chiến lược bbox
+        // phải tải sạch dữ liệu ngay từ đầu. Xem INITIAL_CENTER_4326 trong zoomScale.
+        // Người dùng vẫn thu nhỏ được tới MIN_ZOOM để xem cả nước.
+        center: fromLonLat(INITIAL_CENTER_4326),
+        zoom: INITIAL_ZOOM,
         // Giới hạn zoom theo tỷ lệ bản đồ (Web Mercator, 96 DPI, vĩ độ ~16°N):
         // MIN_ZOOM ~ 1:7.500.000 (thu nhỏ vừa đủ thấy hết Việt Nam),
         // MAX_ZOOM ~ 1:100.000. Xem ZOOM_SCALE_LEVELS trong MapControls.
@@ -146,10 +179,18 @@ export class MapModel {
     this.map = map;
 
     // Lắng nghe thay đổi LayerState và zoom/pan để cập nhật hiển thị ranh giới
-    const updateLayersVisibility = () => this.recomputeVisibility();
+    const updateLayersVisibility = () => {
+      const zoom = map.getView().getZoom();
+      if (zoom !== undefined) this.waterGate?.(zoom);
+      this.recomputeVisibility();
+    };
 
     this.moveendHandler = updateLayersVisibility;
     map.on('moveend', updateLayersVisibility);
+
+    // Chạy cổng NGAY lúc khởi tạo: 'moveend' chỉ bắn sau tương tác đầu tiên, nên
+    // nếu chờ sự kiện thì sông/hồ vẫn kịp tải hết ở khung nhìn ban đầu.
+    this.waterGate?.(INITIAL_ZOOM);
 
     // Chỉ để script đo hiệu năng (apps/web/scripts/profile-map.mjs) truy cập được map.
     // Dev-only: production build không đặt biến này.
@@ -260,6 +301,7 @@ export class MapModel {
       this.map.un('moveend', this.moveendHandler);
       this.moveendHandler = null;
     }
+    this.waterGate = null;
     this.map.setTarget(undefined);
     this.map = null;
     this.basemapLayer = null;

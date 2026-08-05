@@ -53,6 +53,25 @@ export const VIETNAM_EXTENT_4326: [number, number, number, number] = [102.0, 8.0
 /** Tâm mặc định khi bấm "về toàn cảnh" (lon/lat). */
 export const VIETNAM_CENTER_4326: [number, number] = [106.5, 16.0];
 
+/**
+ * Khung nhìn KHI MỞ ỨNG DỤNG — vùng công tác (Nam Trung Bộ & Tây Nguyên),
+ * phần ĐẤT LIỀN: 107,2–110,6°Đ / 7,3–16,2°B, tức 374 x 988 km.
+ * (Bỏ Hoàng Sa/Trường Sa: tuy thuộc Đà Nẵng/Khánh Hòa nhưng nằm xa ngoài khơi,
+ * lấy vào sẽ đẩy tâm bản đồ ra giữa Biển Đông.)
+ *
+ * Vì sao mở ở đây thay vì toàn quốc: dữ liệu chuyên đề chỉ tồn tại trong vùng
+ * công tác, nên mở ở mức toàn quốc vừa hiển thị vùng trống mênh mông vừa buộc
+ * chiến lược bbox phải tải TOÀN BỘ dữ liệu ngay từ đầu (khung nhìn ở MIN_ZOOM
+ * rộng 2.172 km, bao trọn Việt Nam). Mở đúng vùng công tác giúp bbox chỉ tải
+ * phần thực sự nhìn thấy.
+ *
+ * Đây KHÔNG phải giới hạn: người dùng vẫn thu nhỏ được tới MIN_ZOOM để xem cả nước.
+ */
+export const INITIAL_CENTER_4326: [number, number] = [108.93, 11.77];
+
+/** Mức zoom khi mở ứng dụng — vừa đủ trọn chiều Bắc–Nam của vùng công tác. */
+export const INITIAL_ZOOM = 7;
+
 /** Định dạng mẫu số tỷ lệ thành nhãn "1:100.000" (dấu chấm ngăn nghìn kiểu VN). */
 export function formatScale(scale: number): string {
   const rounded = Math.round(scale);

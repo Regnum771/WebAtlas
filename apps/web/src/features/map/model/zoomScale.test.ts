@@ -6,6 +6,9 @@ import {
   MAX_SCALE,
   ZOOM_SCALE_LEVELS,
   VIETNAM_EXTENT_4326,
+  VIETNAM_CENTER_4326,
+  INITIAL_CENTER_4326,
+  INITIAL_ZOOM,
   scaleAtZoom,
   zoomForScale,
   resolutionAtZoom,
@@ -53,5 +56,49 @@ describe('zoomScale', () => {
   it('định dạng nhãn tỷ lệ theo kiểu Việt Nam', () => {
     expect(formatScale(100_000)).toBe('1:100.000');
     expect(formatScale(1_750_000)).toBe('1:1.750.000');
+  });
+});
+
+describe('khung nhìn khi mở ứng dụng', () => {
+  // Đất liền vùng công tác (Nam Trung Bộ & Tây Nguyên), tính từ wards-region.geojson
+  // sau khi loại các đỉnh ngoài khơi (>111°Đ): 107,206–110,648°Đ / 7,316–16,216°B.
+  const LAND = { minLon: 107.206, maxLon: 110.648, minLat: 7.316, maxLat: 16.216 };
+
+  it('tâm mở đầu nằm trong đất liền vùng công tác', () => {
+    const [lon, lat] = INITIAL_CENTER_4326;
+    expect(lon).toBeGreaterThan(LAND.minLon);
+    expect(lon).toBeLessThan(LAND.maxLon);
+    expect(lat).toBeGreaterThan(LAND.minLat);
+    expect(lat).toBeLessThan(LAND.maxLat);
+  });
+
+  it('tâm mở đầu KHÔNG bị Hoàng Sa/Trường Sa kéo ra giữa Biển Đông', () => {
+    // Nếu tính extent gộp cả đảo xa bờ, tâm sẽ rơi vào ~112,5°Đ — giữa biển.
+    expect(INITIAL_CENTER_4326[0]).toBeLessThan(111);
+  });
+
+  it('zoom mở đầu phóng gần hơn MIN_ZOOM (nếu không thì bbox lại tải toàn quốc)', () => {
+    expect(INITIAL_ZOOM).toBeGreaterThan(MIN_ZOOM);
+  });
+
+  it('zoom mở đầu vẫn nằm trong dải zoom cho phép', () => {
+    expect(INITIAL_ZOOM).toBeGreaterThanOrEqual(MIN_ZOOM);
+    expect(INITIAL_ZOOM).toBeLessThanOrEqual(MAX_ZOOM);
+  });
+
+  it('khung nhìn mở đầu hẹp hơn khung ở MIN_ZOOM (điều kiện để bbox có tác dụng)', () => {
+    // Đây là lý do tồn tại của INITIAL_ZOOM. Ở MIN_ZOOM khung rộng ~2.172 km,
+    // bao trọn Việt Nam (854 km ngang), nên bbox buộc phải tải toàn bộ dữ liệu.
+    // Khung lúc mở phải hẹp hơn rõ rệt thì bbox mới cắt bớt được.
+    const initialWidthKm = (resolutionAtZoom(INITIAL_ZOOM, INITIAL_CENTER_4326[1]) * 1400) / 1000;
+    const minZoomWidthKm = (resolutionAtZoom(MIN_ZOOM, VIETNAM_CENTER_4326[1]) * 1400) / 1000;
+    expect(initialWidthKm).toBeLessThan(minZoomWidthKm);
+  });
+
+  it('khung nhìn mở đầu phủ trọn chiều Bắc–Nam của đất liền vùng công tác', () => {
+    // Vùng cao 988 km; nếu khung thấp hơn, người dùng mở app sẽ thấy vùng bị cắt.
+    const heightKm = (resolutionAtZoom(INITIAL_ZOOM, INITIAL_CENTER_4326[1]) * 900) / 1000;
+    const regionHeightKm = (LAND.maxLat - LAND.minLat) * 111;
+    expect(heightKm).toBeGreaterThan(regionHeightKm);
   });
 });
