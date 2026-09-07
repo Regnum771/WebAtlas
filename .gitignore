@@ -28,9 +28,6 @@ dist-ssr
 sapnhapbando_geojson/
 geojson_11Mar2026/
 
-# Shared package build output
-packages/shared/dist/
-
 # Local infra secrets
 infra/.env
 
@@ -39,3 +36,5 @@ apps/api/.env
 
 # Dữ liệu OSM thô — chỉ commit bản đã cắt theo vùng
 apps/api/scripts/.osm-cache/
+# Visual brainstorming companion scratch (not source)
+.superpowers/

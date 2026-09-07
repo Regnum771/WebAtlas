@@ -25,3 +25,4 @@ export * from './feature-properties.js';
 export * from './dam-status.js';
 export * from './region.js';
 export * from './osm-water.js';
+export * from './map-commands.js';
