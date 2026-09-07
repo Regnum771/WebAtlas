@@ -1,7 +1,9 @@
+import { useMemo } from 'react';
 import { useMapContext, type LayerState } from '../../../app/providers/MapProvider';
 import { LAYER_DISPLAY, type LayerDisplayMeta } from '../../../entities/layer/layerDisplay';
 import { LAYER_REGISTRY } from '../../../entities/layer/layerRegistry';
 import { useLayerCatalog } from '../../../entities/layer/useLayerCatalog';
+import { createCommandExecutor } from '../../map/model/mapCommands';
 
 export interface PanelLayer {
   id: string;
@@ -55,7 +57,7 @@ export function buildPanelGroups(input: {
 }
 
 export function useLayersPanel(currentZoom: number) {
-  const { layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
+  const { map, setBasemap, layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
   const catalog = useLayerCatalog();
 
   const groups = buildPanelGroups({ display: LAYER_DISPLAY, layersState, currentZoom });
@@ -68,5 +70,39 @@ export function useLayersPanel(currentZoom: number) {
     .filter((layerStateId): layerStateId is string => layerStateId !== undefined)
     .filter((layerStateId) => LAYER_DISPLAY[layerStateId] === undefined);
 
-  return { groups, toggleLayerVisibility, setLayerOpacity, catalogError: catalog.isError, missingDisplay };
+  // Panel mutations go through the same command layer every other layer
+  // mutator uses (MapToolbar, search) — see mapCommands.ts. Before this, the
+  // panel called the context setters directly, so setLayerVisible/
+  // setLayerOpacity had zero UI producers.
+  const run = useMemo(
+    () =>
+      createCommandExecutor({
+        map,
+        setBasemap,
+        toggleLayerVisibility,
+        setLayerOpacity,
+        getLayerVisible: (id) => layersState.find((l) => l.id === id)?.visible ?? false,
+        layerExists: (id) => layersState.some((l) => l.id === id),
+      }),
+    [map, setBasemap, toggleLayerVisibility, setLayerOpacity, layersState],
+  );
+
+  const onToggleLayerVisibility = (layerStateId: string) => {
+    // The context setter toggles; setLayerVisible carries the intended
+    // ABSOLUTE value, so compute the new state from the current one here.
+    const current = layersState.find((l) => l.id === layerStateId)?.visible ?? false;
+    run({ kind: 'setLayerVisible', layerStateId, visible: !current });
+  };
+
+  const onSetLayerOpacity = (layerStateId: string, opacity: number) => {
+    run({ kind: 'setLayerOpacity', layerStateId, opacity });
+  };
+
+  return {
+    groups,
+    toggleLayerVisibility: onToggleLayerVisibility,
+    setLayerOpacity: onSetLayerOpacity,
+    catalogError: catalog.isError,
+    missingDisplay,
+  };
 }

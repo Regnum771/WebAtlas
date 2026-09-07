@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { buildPanelGroups } from './useLayersPanel';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { buildPanelGroups, useLayersPanel } from './useLayersPanel';
 
 const display = {
   layer_dams: { name: 'Đập & Hồ chứa', group: 'Tài nguyên nước' },
@@ -41,5 +42,72 @@ describe('buildPanelGroups', () => {
       currentZoom: 10,
     });
     expect(groups.flatMap((g) => g.layers).map((l) => l.id)).not.toContain('layer_unknown');
+  });
+});
+
+// --- useLayersPanel (the hook): must dispatch through createCommandExecutor,
+// not call the MapProvider context setters directly (see mapCommands.ts —
+// setLayerVisible/setLayerOpacity had zero UI producers before this change).
+
+const panelLayersState = [
+  { id: 'layer_dams', visible: true, opacity: 1 },
+  { id: 'layer_rivers', visible: false, opacity: 0.5 },
+];
+const contextToggleLayerVisibility = vi.fn();
+const contextSetLayerOpacity = vi.fn();
+vi.mock('../../../app/providers/MapProvider', () => ({
+  useMapContext: () => ({
+    map: null,
+    setBasemap: vi.fn(),
+    layersState: panelLayersState,
+    toggleLayerVisibility: contextToggleLayerVisibility,
+    setLayerOpacity: contextSetLayerOpacity,
+  }),
+}));
+
+vi.mock('../../../entities/layer/useLayerCatalog', () => ({
+  useLayerCatalog: () => ({ data: [], isError: false }),
+}));
+
+const run = vi.fn(() => ({ ok: true as const, text: '' }));
+vi.mock('../../map/model/mapCommands', () => ({
+  createCommandExecutor: vi.fn(() => run),
+}));
+
+describe('useLayersPanel dispatch', () => {
+  beforeEach(() => {
+    run.mockClear();
+    contextToggleLayerVisibility.mockClear();
+    contextSetLayerOpacity.mockClear();
+  });
+
+  it('toggling a visible layer issues setLayerVisible with the new (opposite) value, not the current one', () => {
+    const { result } = renderHook(() => useLayersPanel(10));
+    act(() => result.current.toggleLayerVisibility('layer_dams'));
+    expect(run).toHaveBeenCalledWith({ kind: 'setLayerVisible', layerStateId: 'layer_dams', visible: false });
+  });
+
+  it('toggling a hidden layer issues setLayerVisible with visible:true', () => {
+    const { result } = renderHook(() => useLayersPanel(10));
+    act(() => result.current.toggleLayerVisibility('layer_rivers'));
+    expect(run).toHaveBeenCalledWith({ kind: 'setLayerVisible', layerStateId: 'layer_rivers', visible: true });
+  });
+
+  it('does not call the context toggle setter directly — only the executor does', () => {
+    const { result } = renderHook(() => useLayersPanel(10));
+    act(() => result.current.toggleLayerVisibility('layer_dams'));
+    expect(contextToggleLayerVisibility).not.toHaveBeenCalled();
+  });
+
+  it('changing opacity issues setLayerOpacity through the executor', () => {
+    const { result } = renderHook(() => useLayersPanel(10));
+    act(() => result.current.setLayerOpacity('layer_dams', 0.4));
+    expect(run).toHaveBeenCalledWith({ kind: 'setLayerOpacity', layerStateId: 'layer_dams', opacity: 0.4 });
+  });
+
+  it('does not call the context opacity setter directly — only the executor does', () => {
+    const { result } = renderHook(() => useLayersPanel(10));
+    act(() => result.current.setLayerOpacity('layer_dams', 0.4));
+    expect(contextSetLayerOpacity).not.toHaveBeenCalled();
   });
 });
