@@ -29,13 +29,24 @@ body {
   height: 100vh;
 }
 
+/* Docked, not overlaid: the rail (always) and the flyout (when open) push the
+   map's own box inward rather than sitting over it — see IconRail/.rail-flyout
+   below. transition matches JS: MapView listens for transitionend on this
+   element and calls MapModel#updateSize() once it fires (OL caches viewport
+   size and does not observe container resizes on its own). */
 .map-container {
   position: absolute;
   top: 0;
-  left: 0;
-  width: 100%;
+  left: var(--rail-width);
+  width: calc(100% - var(--rail-width));
   height: 100%;
   z-index: 0;
+  transition: left 200ms ease, width 200ms ease;
+}
+
+.map-container.flyout-open {
+  left: calc(var(--rail-width) + var(--flyout-width));
+  width: calc(100% - var(--rail-width) - var(--flyout-width));
 }
 
 /* Custom styling for high-resolution green terrain hillshade basemap */

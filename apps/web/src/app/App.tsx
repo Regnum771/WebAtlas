@@ -24,7 +24,7 @@ function App() {
           {/* MapView is a SIBLING of <Routes>, never inside one: navigating to
               /admin/users overlays a live map instead of unmounting it, so
               center/zoom/layer state survives navigation. */}
-          <MapView />
+          <MapView flyoutOpen={rail.active !== null} />
           <MapToolbar />
 
           <TopBar />

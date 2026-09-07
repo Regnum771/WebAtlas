@@ -273,6 +273,20 @@ export class MapModel {
     return this.map;
   }
 
+  /**
+   * OpenLayers caches the viewport size at init and after each explicit
+   * updateSize() call — it does not observe its container's box on its own.
+   * The rail flyout inset (.map-container's left/width in main.css) resizes
+   * that container without the OL canvas ever changing size itself, so the
+   * canvas would keep rendering at the pre-toggle size and clip/misplace
+   * content until a manual resize. Call this once the CSS transition that
+   * animates the inset has finished (see MapView's transitionend listener) —
+   * calling it mid-transition would read the interpolated, not final, size.
+   */
+  updateSize(): void {
+    this.map?.updateSize();
+  }
+
   // Lắng nghe thay đổi Basemap (Yêu cầu 1.1)
   setBasemap(type: BasemapType): void {
     if (!this.basemapLayer) return;
