@@ -1,7 +1,11 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, configDefaults } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // Live-model suites cost real API tokens on every execution, so they are
+    // opt-in (`npm run test:api:live`) rather than part of the default run.
+    exclude: [...configDefaults.exclude, '**/*.live.test.ts'],
+
     // Integration suites share one dev PostGIS database and clean up their own
     // rows by an `@webatlas.test` namespace. Running test files in parallel lets
     // one suite's afterAll cleanup delete another suite's in-flight fixture rows

@@ -35,6 +35,27 @@ const FACTORIES: ToolFactory[] = [
   relatedFeaturesTool,
 ];
 
+/**
+ * A tool that throws must not fail the whole request. The database can time out,
+ * a geometry can be degenerate — the model should see the failure as a result it
+ * can respond to ("thử cách khác, hoặc báo cho người dùng"), the same way it sees
+ * an empty result. A thrown error inside the runner ends the turn with a 500 and
+ * the user sees nothing.
+ */
+export function guardToolErrors<T extends { run: (input: never) => unknown }>(tool: T): T {
+  const original = tool.run.bind(tool);
+  return Object.assign(tool, {
+    run: async (input: never) => {
+      try {
+        return await original(input);
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : 'lỗi không rõ';
+        return `Công cụ gặp lỗi: ${detail}. Hãy thử cách khác hoặc nói cho người dùng biết là chưa truy vấn được.`;
+      }
+    },
+  });
+}
+
 export function buildTools(ctx: ToolContext) {
-  return FACTORIES.map((factory) => factory(ctx));
+  return FACTORIES.map((factory) => guardToolErrors(factory(ctx) as never));
 }
