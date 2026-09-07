@@ -1,3 +1,6 @@
+// Dùng 'zod/v4', không phải 'zod': betaZodTool gọi toJSONSchema() của zod/v4/core,
+// hàm này đọc nội bộ schema theo định dạng v4 (.def). Schema v3 cổ điển ném TypeError
+// ngay khi dựng công cụ. zod@3.25 có sẵn cả hai nhánh.
 import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { REGION_PROVINCE_CODES, REGION_PROVINCE_NAMES, isMapCommand } from '@webatlas/shared';

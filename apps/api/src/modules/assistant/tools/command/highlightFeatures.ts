@@ -1,3 +1,4 @@
+// Xem zoomToRegion.ts: 'zod/v4' là bắt buộc do betaZodTool.
 import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { MAX_HIGHLIGHT_POINTS, isMapCommand, type HighlightPoint } from '@webatlas/shared';
