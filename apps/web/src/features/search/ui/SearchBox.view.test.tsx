@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SearchBoxView } from './SearchBox.view';
 
@@ -32,5 +32,43 @@ describe('SearchBoxView', () => {
     render(<SearchBoxView query="" results={[]} loading={false} onQuery={onQuery} onSelect={vi.fn()} />);
     await userEvent.type(screen.getByPlaceholderText('Tìm kiếm đối tượng…'), 'h');
     expect(onQuery).toHaveBeenCalledWith('h');
+  });
+
+  it('closes the dropdown on blur (clicking elsewhere on the map, tabbing away)', () => {
+    render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
+    expect(screen.getByText('Hồ Lắk')).toBeInTheDocument();
+
+    fireEvent.blur(screen.getByPlaceholderText('Tìm kiếm đối tượng…'));
+
+    expect(screen.queryByText('Hồ Lắk')).not.toBeInTheDocument();
+  });
+
+  it('closes the dropdown on Escape', () => {
+    render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
+    expect(screen.getByText('Hồ Lắk')).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByPlaceholderText('Tìm kiếm đối tượng…'), { key: 'Escape' });
+
+    expect(screen.queryByText('Hồ Lắk')).not.toBeInTheDocument();
+  });
+
+  it('reopens on a fresh results set even after a prior dismissal', () => {
+    const { rerender } = render(
+      <SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />
+    );
+    fireEvent.blur(screen.getByPlaceholderText('Tìm kiếm đối tượng…'));
+    expect(screen.queryByText('Hồ Lắk')).not.toBeInTheDocument();
+
+    const moreHits = [...hits, { layerKey: 'rivers' as const, featureId: 'r1', name: 'Sông Thu Bồn', lonLat: [108.3, 15.8] as [number, number] }];
+    rerender(<SearchBoxView query="thu" results={moreHits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
+
+    expect(screen.getByText('Sông Thu Bồn')).toBeInTheDocument();
+  });
+
+  it('does not close on a mousedown inside the results list (so a result click still registers)', async () => {
+    const onSelect = vi.fn();
+    render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={onSelect} />);
+    await userEvent.click(screen.getByText('Hồ Lắk'));
+    expect(onSelect).toHaveBeenCalledWith(hits[1]);
   });
 });

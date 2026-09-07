@@ -29,4 +29,28 @@ describe('useSearch', () => {
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
     expect(spy).toHaveBeenCalledWith('thuy');
   });
+
+  it('does not leave loading stuck at true when clear() runs while a request is still in flight', async () => {
+    // A request that never resolves during the test — stands in for "the user
+    // picked a result (which calls clear()) before the in-flight fetch settled".
+    let resolveFetch: (hits: []) => void = () => {};
+    const spy = vi.spyOn(api, 'fetchSearch').mockImplementation(
+      () => new Promise((resolve) => { resolveFetch = resolve; })
+    );
+    const { result } = renderHook(() => useSearch());
+
+    act(() => result.current.setQuery('thu'));
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(result.current.loading).toBe(true);
+
+    act(() => result.current.clear());
+    expect(result.current.loading).toBe(false);
+    expect(result.current.query).toBe('');
+    expect(result.current.results).toEqual([]);
+
+    // The stale request finally resolves — must not resurrect loading/results.
+    await act(async () => { resolveFetch([]); });
+    expect(result.current.loading).toBe(false);
+  });
 });

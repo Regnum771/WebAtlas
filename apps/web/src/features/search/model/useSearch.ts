@@ -36,9 +36,16 @@ export function useSearch() {
   // a result) never renders an intermediate frame with an empty input but a
   // still-populated dropdown — setQuery('') alone would leave `results` stale
   // until this effect re-runs on the next commit.
+  //
+  // Also resets `loading` directly: calling clear() while a request is still
+  // in flight changes `query`, which runs the effect's cleanup and sets that
+  // request's local `cancelled = true` — so its `.finally` no longer calls
+  // setLoading(false) when the response eventually arrives. Without this,
+  // `loading` stays true forever (a permanent "Đang tìm…" under an empty box).
   const clear = () => {
     setQuery('');
     setResults([]);
+    setLoading(false);
   };
 
   return { query, setQuery, results, loading, clear };
