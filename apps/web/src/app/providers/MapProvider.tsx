@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, type ReactNode } from 'react';
 import type { Map } from 'ol';
 import type { BasemapType, ReservoirFilterType, LayerState } from '../../features/map/model/MapModel';
-import { layerGroups } from '../../entities/layer/layerRegistry';
+import { LAYER_DISPLAY } from '../../entities/layer/layerDisplay';
 
 export type { BasemapType, ReservoirFilterType, LayerState };
 
@@ -24,17 +24,12 @@ export const MapProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [basemap, setBasemap] = useState<BasemapType>('street');
   const [reservoirFilter, setReservoirFilter] = useState<ReservoirFilterType>('all');
   
-  // Initialize layers state from mockData
-  const initialLayersState: LayerState[] = [];
-  layerGroups.forEach(group => {
-    group.layers.forEach(layer => {
-      initialLayersState.push({
-        id: layer.id,
-        visible: layer.defaultVisible,
-        opacity: layer.opacity
-      });
-    });
-  });
+  // Initialize layers state from LAYER_DISPLAY (presentation metadata for the layers panel)
+  const initialLayersState: LayerState[] = Object.entries(LAYER_DISPLAY).map(([id, meta]) => ({
+    id,
+    visible: meta.defaultVisible,
+    opacity: meta.opacity
+  }));
 
   const [layersState, setLayersState] = useState<LayerState[]>(initialLayersState);
 
