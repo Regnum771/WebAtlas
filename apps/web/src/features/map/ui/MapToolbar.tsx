@@ -64,7 +64,7 @@ export function MapToolbarView({
             className={`control-btn ${measureMode === 'length' ? 'active' : ''}`}
             aria-pressed={measureMode === 'length'}
             onClick={() => onMeasure('length')}
-            title="Đo chiều dài"
+            title="Đo chiều dài (sông)"
           >
             <Ruler size={18} />
           </button>
@@ -72,7 +72,7 @@ export function MapToolbarView({
             className={`control-btn ${measureMode === 'area' ? 'active' : ''}`}
             aria-pressed={measureMode === 'area'}
             onClick={() => onMeasure('area')}
-            title="Đo diện tích"
+            title="Đo diện tích (ngập)"
           >
             <Square size={18} />
           </button>
@@ -128,9 +128,11 @@ export function MapToolbarView({
 
 /**
  * Container: wires `useMapZoom` (zoom readout), `useMeasure` (Draw interaction,
- * quarantined behind `features/map/model`), and `createCommandExecutor` (the only
- * path from a button press to an OpenLayers view change). No `ol` import here —
- * `map` arrives already typed via `useMapContext`.
+ * quarantined behind `features/map/model`), and `createCommandExecutor` — every
+ * button here, including the zoom in/out steppers, issues a `MapCommand` through
+ * `run(...)` rather than touching `map.getView()` itself. No `ol` import here —
+ * `map` arrives already typed via `useMapContext`, and is only ever handed to
+ * `createCommandExecutor`, never called directly.
  */
 export default function MapToolbar() {
   const { map, basemap, setBasemap, layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
@@ -163,20 +165,14 @@ export default function MapToolbar() {
     return best;
   }, [zoomStops, zoom]);
 
-  const animateToZoom = (target: number) => {
-    if (!map) return;
-    const view = map.getView();
-    const min = view.getMinZoom() ?? MIN_ZOOM;
-    const max = view.getMaxZoom() ?? MAX_ZOOM;
-    view.animate({ zoom: Math.min(max, Math.max(min, target)), duration: 250 });
-  };
-
   const stepZoom = (direction: 1 | -1) => {
     const currentStop = zoomStops[nearestStopIndex];
     const alreadyMoving = direction === 1 ? currentStop > zoom + 0.05 : currentStop < zoom - 0.05;
     const targetIndex = alreadyMoving ? nearestStopIndex : nearestStopIndex + direction;
     const clamped = Math.min(zoomStops.length - 1, Math.max(0, targetIndex));
-    animateToZoom(zoomStops[clamped]);
+    // Clamping to the view's actual min/max happens inside the executor
+    // (features/map/model/mapCommands.ts) — this only picks the target scale stop.
+    run({ kind: 'zoomTo', zoom: zoomStops[clamped] });
   };
 
   const onMeasure = (mode: MeasureMode) => {

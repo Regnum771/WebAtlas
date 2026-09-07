@@ -35,6 +35,6 @@ describe('MapToolbarView', () => {
 
   it('marks the active measure tool as pressed', () => {
     render(<MapToolbarView {...base} measureMode="area" />);
-    expect(screen.getByRole('button', { name: 'Đo diện tích' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /Đo diện tích/ })).toHaveAttribute('aria-pressed', 'true');
   });
 });

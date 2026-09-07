@@ -7,6 +7,7 @@ import {
 } from '@webatlas/shared';
 import type { BasemapType } from './MapModel';
 import { PROVINCE_CENTROIDS } from './provinceCentroids';
+import { MIN_ZOOM, MAX_ZOOM } from './zoomScale';
 
 // Guard: BasemapName (shared contract) and BasemapType (MapModel) are independent
 // types with the same literal set. If either drifts, this fails to compile.
@@ -27,6 +28,10 @@ export type CommandResult = { ok: true; text: string } | { ok: false; reason: st
 const FEATURE_ZOOM = 12;
 const PROVINCE_ZOOM = 9;
 const ANIMATE_MS = 800;
+// Faster than ANIMATE_MS: a zoom-button step is a small, local nudge (one scale
+// stop), not a long jump across the map like zoomToRegion/zoomToFeature — this
+// matches the 250ms the zoom buttons animated with before this command existed.
+const ZOOM_STEP_ANIMATE_MS = 250;
 
 /**
  * Executes MapCommands against OpenLayers. Dependencies are injected so this is
@@ -50,6 +55,15 @@ export function createCommandExecutor(deps: CommandDeps) {
         if (!centre) return { ok: false, reason: 'Không có toạ độ cho tỉnh này.' };
         if (!animateTo(centre, PROVINCE_ZOOM)) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
         return { ok: true, text: `Đã phóng to tới ${REGION_PROVINCE_NAMES[cmd.provinceCode]}.` };
+      }
+      case 'zoomTo': {
+        if (!deps.map) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
+        const view = deps.map.getView();
+        const min = view.getMinZoom?.() ?? MIN_ZOOM;
+        const max = view.getMaxZoom?.() ?? MAX_ZOOM;
+        const zoom = Math.min(max, Math.max(min, cmd.zoom));
+        view.animate({ zoom, duration: ZOOM_STEP_ANIMATE_MS });
+        return { ok: true, text: 'Đã đổi mức thu phóng.' };
       }
       case 'setLayerVisible': {
         if (deps.getLayerVisible(cmd.layerStateId) !== cmd.visible) {

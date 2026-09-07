@@ -1,12 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 
-const setBasemap = vi.fn();
 vi.mock('../app/providers/MapProvider', () => ({
   useMapContext: () => ({
-    basemap: 'street',
-    setBasemap,
     layersState: [{ id: 'layer_dams', visible: true, opacity: 1 }],
     toggleLayerVisibility: vi.fn(),
     setLayerOpacity: vi.fn(),
@@ -20,20 +16,13 @@ vi.mock('../data/mockData', () => ({
 
 import LayerTree from './LayerTree';
 
-describe('LayerTree with the merged basemap section', () => {
-  it('renders the Bản đồ nền section', () => {
-    render(<LayerTree />);
-    expect(screen.getByText('Bản đồ nền')).toBeInTheDocument();
-  });
-
+// LayerTree is dead code (nothing mounts it — see task-7-report.md), and its
+// basemap section was removed rather than duplicated when BasemapSwitcher.tsx
+// was deleted (basemap selection now lives only in features/map/ui/MapToolbar).
+// This is the one assertion left that isn't about a feature no user can reach.
+describe('LayerTree', () => {
   it('still renders the layer groups', () => {
     render(<LayerTree />);
     expect(screen.getByText('Tài nguyên nước')).toBeInTheDocument();
-  });
-
-  it('basemap buttons still switch the basemap', async () => {
-    render(<LayerTree />);
-    await userEvent.click(screen.getByRole('button', { name: /vệ tinh/i }));
-    expect(setBasemap).toHaveBeenCalledWith('satellite');
   });
 });

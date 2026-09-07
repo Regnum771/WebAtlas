@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, type ReactNode } from 'react';
-import { Map } from 'ol';
+import type { Map } from 'ol';
 import type { BasemapType, ReservoirFilterType, LayerState } from '../../features/map/model/MapModel';
 import { layerGroups } from '../../entities/layer/layerRegistry';
 

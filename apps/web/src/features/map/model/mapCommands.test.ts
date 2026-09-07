@@ -1,9 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createCommandExecutor, type CommandDeps } from './mapCommands';
 
-function makeDeps(overrides: Partial<CommandDeps> = {}): CommandDeps & { animate: ReturnType<typeof vi.fn> } {
+function makeDeps(
+  overrides: Partial<CommandDeps> = {},
+  viewOverrides: { getMinZoom?: () => number | undefined; getMaxZoom?: () => number | undefined } = {},
+): CommandDeps & { animate: ReturnType<typeof vi.fn> } {
   const animate = vi.fn();
-  const map = { getView: () => ({ animate }) } as unknown as CommandDeps['map'];
+  const map = {
+    getView: () => ({
+      animate,
+      getMinZoom: viewOverrides.getMinZoom ?? (() => undefined),
+      getMaxZoom: viewOverrides.getMaxZoom ?? (() => undefined),
+    }),
+  } as unknown as CommandDeps['map'];
   return {
     map,
     animate,
@@ -56,6 +65,32 @@ describe('createCommandExecutor', () => {
     const result = createCommandExecutor(deps)({ kind: 'setBasemap', basemap: 'satellite' });
     expect(deps.setBasemap).toHaveBeenCalledWith('satellite');
     expect(result.ok).toBe(true);
+  });
+
+  it('zoomTo animates to the requested zoom', () => {
+    const deps = makeDeps({}, { getMinZoom: () => 3, getMaxZoom: () => 12 });
+    const result = createCommandExecutor(deps)({ kind: 'zoomTo', zoom: 8 });
+
+    expect(deps.animate).toHaveBeenCalledWith(expect.objectContaining({ zoom: 8 }));
+    expect(result).toEqual({ ok: true, text: 'Đã đổi mức thu phóng.' });
+  });
+
+  it('zoomTo clamps a request below the view minimum', () => {
+    const deps = makeDeps({}, { getMinZoom: () => 3, getMaxZoom: () => 12 });
+    createCommandExecutor(deps)({ kind: 'zoomTo', zoom: 1 });
+    expect(deps.animate).toHaveBeenCalledWith(expect.objectContaining({ zoom: 3 }));
+  });
+
+  it('zoomTo clamps a request above the view maximum', () => {
+    const deps = makeDeps({}, { getMinZoom: () => 3, getMaxZoom: () => 12 });
+    createCommandExecutor(deps)({ kind: 'zoomTo', zoom: 20 });
+    expect(deps.animate).toHaveBeenCalledWith(expect.objectContaining({ zoom: 12 }));
+  });
+
+  it('zoomTo fails cleanly when the map is not ready', () => {
+    const deps = makeDeps({ map: null });
+    const result = createCommandExecutor(deps)({ kind: 'zoomTo', zoom: 8 });
+    expect(result).toEqual({ ok: false, reason: 'Bản đồ chưa sẵn sàng.' });
   });
 
   it('fails cleanly when the map is not ready', () => {

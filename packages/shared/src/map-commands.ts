@@ -12,6 +12,7 @@ import { REGION_PROVINCE_CODES } from './region.js';
 export const MAP_COMMAND_KINDS = [
   'zoomToRegion',
   'zoomToFeature',
+  'zoomTo',
   'setLayerVisible',
   'setLayerOpacity',
   'setBasemap',
@@ -25,6 +26,7 @@ export type BasemapName = (typeof BASEMAP_TYPES)[number];
 export type MapCommand =
   | { kind: 'zoomToRegion'; provinceCode: string }
   | { kind: 'zoomToFeature'; layerKey: EditableLayerKey; featureId: string; lonLat: [number, number] }
+  | { kind: 'zoomTo'; zoom: number }
   | { kind: 'setLayerVisible'; layerStateId: string; visible: boolean }
   | { kind: 'setLayerOpacity'; layerStateId: string; opacity: number }
   | { kind: 'setBasemap'; basemap: BasemapName };
@@ -62,6 +64,8 @@ export function isMapCommand(value: unknown): value is MapCommand {
       );
     case 'zoomToFeature':
       return isLayerKey(c.layerKey) && typeof c.featureId === 'string' && isLonLat(c.lonLat);
+    case 'zoomTo':
+      return typeof c.zoom === 'number' && Number.isFinite(c.zoom);
     case 'setLayerVisible':
       return typeof c.layerStateId === 'string' && typeof c.visible === 'boolean';
     case 'setLayerOpacity':

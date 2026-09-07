@@ -31,6 +31,23 @@ describe('isMapCommand', () => {
     ).toBe(false);
   });
 
+  it('accepts a well-formed zoomTo command', () => {
+    const cmd: MapCommand = { kind: 'zoomTo', zoom: 9.5 };
+    expect(isMapCommand(cmd)).toBe(true);
+  });
+
+  it('rejects zoomTo with a non-finite zoom (NaN)', () => {
+    expect(isMapCommand({ kind: 'zoomTo', zoom: NaN })).toBe(false);
+  });
+
+  it('rejects zoomTo with a non-finite zoom (Infinity)', () => {
+    expect(isMapCommand({ kind: 'zoomTo', zoom: Infinity })).toBe(false);
+  });
+
+  it('rejects zoomTo with a non-number zoom', () => {
+    expect(isMapCommand({ kind: 'zoomTo', zoom: '9' })).toBe(false);
+  });
+
   it('rejects opacity outside 0..1', () => {
     expect(isMapCommand({ kind: 'setLayerOpacity', layerStateId: 'layer_dams', opacity: 1.5 })).toBe(false);
   });
@@ -53,6 +70,7 @@ describe('isMapCommand', () => {
       'setBasemap',
       'setLayerOpacity',
       'setLayerVisible',
+      'zoomTo',
       'zoomToFeature',
       'zoomToRegion',
     ]);
