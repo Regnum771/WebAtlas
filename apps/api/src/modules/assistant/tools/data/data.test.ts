@@ -69,6 +69,21 @@ describe('features_in_view', () => {
     await run(featuresInViewTool(ctx), { layerKey: 'dams' });
     expect(typeof records[0].datasetVersion).toBe('string');
   });
+
+  // Catches a rewrite that is fast but wrong: the tool's count now comes from
+  // a candidate-then-resolve CTE chain (see helpers.ts's candidateCtes) built
+  // to reach the geometry index, rather than the water.rivers_active view
+  // directly. A plain count against that view is the ground truth it must
+  // still agree with.
+  it('counts the same as a plain scan of the active view', async () => {
+    const { ctx } = makeCtx();
+    const parsed = JSON.parse(await run(featuresInViewTool(ctx), { layerKey: 'rivers' })) as { count: number };
+    const { rows } = await pool.query<{ n: string }>(
+      'SELECT count(*)::text AS n FROM water.rivers_active WHERE geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)',
+      MAP_CONTEXT.bbox
+    );
+    expect(parsed.count).toBe(Number(rows[0].n));
+  });
 });
 
 describe('nearest_features', () => {
@@ -89,5 +104,28 @@ describe('nearest_features', () => {
     const text = await run(nearestFeaturesTool(ctx), { layerKey: 'dams', lon: 0, lat: 0, limit: 5 });
     expect(text).toContain('Toạ độ không hợp lệ');
     expect(records).toHaveLength(0);
+  });
+
+  // Catches a rewrite that is fast but wrong: the tool now finds nearest
+  // candidates off the base table with planar `<->` (so the GiST index can
+  // serve the KNN), resolves the version chain for just those, then
+  // re-orders by true ::geography distance (see helpers.ts's candidateCtes
+  // and NEAREST_OVERFETCH_FACTOR). The feature ids and order it returns must
+  // still match a straightforward exact query against water.rivers_active
+  // for the same point.
+  it('returns the same feature ids in the same order as an exact query against the active view', async () => {
+    const { ctx } = makeCtx();
+    const point = { layerKey: 'rivers' as const, lon: 108.05, lat: 12.68, limit: 5 };
+    const parsed = JSON.parse(await run(nearestFeaturesTool(ctx), point)) as {
+      rows: Array<{ featureId: string }>;
+    };
+    const { rows: reference } = await pool.query<{ featureId: string }>(
+      `SELECT id::text AS "featureId"
+         FROM water.rivers_active
+        ORDER BY geom::geography <-> ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+        LIMIT $3`,
+      [point.lon, point.lat, point.limit]
+    );
+    expect(parsed.rows.map((r) => r.featureId)).toEqual(reference.map((r) => r.featureId));
   });
 });
