@@ -19,7 +19,7 @@ export const MAP_COMMAND_KINDS = [
 
 export type MapCommandKind = (typeof MAP_COMMAND_KINDS)[number];
 
-export const BASEMAP_TYPES = ['street', 'satellite', 'terrain'] as const;
+export const BASEMAP_TYPES = ['street', 'satellite', 'dem'] as const;
 export type BasemapName = (typeof BASEMAP_TYPES)[number];
 
 export type MapCommand =

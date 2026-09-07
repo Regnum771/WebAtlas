@@ -35,6 +35,14 @@ describe('isMapCommand', () => {
     expect(isMapCommand({ kind: 'setLayerOpacity', layerStateId: 'layer_dams', opacity: 1.5 })).toBe(false);
   });
 
+  it('accepts a well-formed setBasemap command with dem', () => {
+    expect(isMapCommand({ kind: 'setBasemap', basemap: 'dem' })).toBe(true);
+  });
+
+  it('rejects an invalid basemap type (terrain)', () => {
+    expect(isMapCommand({ kind: 'setBasemap', basemap: 'terrain' })).toBe(false);
+  });
+
   it('rejects non-objects', () => {
     expect(isMapCommand(null)).toBe(false);
     expect(isMapCommand('zoomToRegion')).toBe(false);

@@ -15,7 +15,7 @@ export const MAP_COMMAND_KINDS = [
     'setLayerOpacity',
     'setBasemap',
 ];
-export const BASEMAP_TYPES = ['street', 'satellite', 'terrain'];
+export const BASEMAP_TYPES = ['street', 'satellite', 'dem'];
 // NOTE: a `highlightFeatures` variant was deliberately left out. Nothing in this
 // plan highlights anything; Plan B adds it with a real highlight source and tests
 // when the assistant needs it.

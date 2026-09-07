@@ -9,7 +9,7 @@
 import { type EditableLayerKey } from './index.js';
 export declare const MAP_COMMAND_KINDS: readonly ["zoomToRegion", "zoomToFeature", "setLayerVisible", "setLayerOpacity", "setBasemap"];
 export type MapCommandKind = (typeof MAP_COMMAND_KINDS)[number];
-export declare const BASEMAP_TYPES: readonly ["street", "satellite", "terrain"];
+export declare const BASEMAP_TYPES: readonly ["street", "satellite", "dem"];
 export type BasemapName = (typeof BASEMAP_TYPES)[number];
 export type MapCommand = {
     kind: 'zoomToRegion';
