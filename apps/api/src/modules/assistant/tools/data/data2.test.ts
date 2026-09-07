@@ -107,12 +107,38 @@ describe('filter_by_attribute', () => {
   it('filters dams by operational status', async () => {
     const { ctx, records } = makeCtx();
     const text = await run(filterByAttributeTool(ctx), {
+      // Seeded water.dams status values are 'binh_thuong' / 'xa_lu' /
+      // 'nguy_hiem' (verified against water.dams_active), not English
+      // words — this must be a value that genuinely matches so the match
+      // path (JSON shape, row contents, truncated flag) actually runs.
+      layerKey: 'dams', column: 'status', value: 'binh_thuong',
+    });
+    expect(text.startsWith('{')).toBe(true);
+    const parsed = JSON.parse(text) as {
+      layerKey: string; column: string; value: string; truncated: boolean;
+      rows: Array<{ featureId: string; name: string | null; matchedValue: string; lon: number | null; lat: number | null }>;
+    };
+    expect(parsed).toMatchObject({ layerKey: 'dams', column: 'status', value: 'binh_thuong' });
+    expect(parsed.rows.length).toBeGreaterThan(0);
+    for (const row of parsed.rows) {
+      expect(row.matchedValue).toContain('binh_thuong');
+      // A few seeded dams have no geometry, so lon/lat legitimately come back
+      // null (ST_PointOnSurface of null) — that is real data shape, not
+      // something this test should paper over.
+      expect(row.lon === null || typeof row.lon === 'number').toBe(true);
+      expect(row.lat === null || typeof row.lat === 'number').toBe(true);
+    }
+    expect(records[0]).toMatchObject({ tool: 'filter_by_attribute', layerKey: 'dams' });
+    expect((records[0] as { rowCount: number }).rowCount).toBeGreaterThan(0);
+  });
+
+  it('reports no data for a value that matches no seeded status', async () => {
+    const { ctx, records } = makeCtx();
+    const text = await run(filterByAttributeTool(ctx), {
       layerKey: 'dams', column: 'status', value: 'Operating',
     });
-    // Either matches or an explicit no-data answer — both are correct; what
-    // must not happen is an error or a silent empty structure.
-    expect(text.startsWith('{') || text.includes('Không có dữ liệu')).toBe(true);
-    expect(records[0]).toMatchObject({ tool: 'filter_by_attribute', layerKey: 'dams' });
+    expect(text).toContain('Không có dữ liệu');
+    expect(records[0]).toMatchObject({ tool: 'filter_by_attribute', layerKey: 'dams', rowCount: 0 });
   });
 
   it('refuses a column outside the allowlist without querying', async () => {

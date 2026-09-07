@@ -3,7 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, candidateCtes, layerTable } from './helpers';
+import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, layerView } from './helpers';
 
 /**
  * Which columns may be filtered, per layer. A column name cannot be a bind
@@ -51,20 +51,27 @@ export const filterByAttributeTool: ToolFactory = (ctx) =>
 
       // input.column is a member of the allowlist above, never raw model
       // text — the same rule layerView/layerTable enforce for layer keys.
-      // Candidate predicate on the base table: no trigram index backs an
-      // arbitrary column, so this still scans, but it scans the base table
-      // once instead of the _active view's full recursive-resolve-then-dedup
-      // of every row before the filter runs.
-      const ctes = candidateCtes(
-        input.layerKey,
-        `SELECT external_id FROM ${layerTable(input.layerKey)} WHERE ${input.column}::text ILIKE $1`
-      );
-
+      //
+      // Deliberately NOT using candidateCtes here, unlike this file's three
+      // siblings. That pattern only pays off when the candidate predicate is
+      // index-servable (a GiST hit for geometry, a primary-key hit for
+      // `id = $1`) so the candidate step is cheap and shrinks the set before
+      // the expensive recursive resolve runs. Here the predicate is `ILIKE`
+      // on an arbitrary text column, and none of FILTERABLE_COLUMNS is
+      // trigram- or btree-indexed — so the "candidate" step would itself be
+      // a full unindexed scan of the base table, and that table would then
+      // be scanned a second time inside resolved's join, where querying the
+      // view directly scans it once. Measured with EXPLAIN ANALYZE against
+      // water.dams: the view form runs ~43ms regardless of match; the
+      // candidate-then-resolve form ran 82-130ms for the same queries. If an
+      // index is ever added on one of these columns, this call site is where
+      // the candidate form would start earning its keep again — but adding
+      // that index is a separate decision with its own migration and
+      // write-path cost.
       const [{ rows: allRows }, datasetVersion] = await Promise.all([
         ctx.pool.query(
-          `WITH RECURSIVE ${ctes}
-           SELECT id::text AS "featureId", name, ${input.column}::text AS "matchedValue", ${POINT_SQL}
-             FROM resolved
+          `SELECT id::text AS "featureId", name, ${input.column}::text AS "matchedValue", ${POINT_SQL}
+             FROM ${layerView(input.layerKey)}
             WHERE NOT deleted AND ${input.column}::text ILIKE $1
             ORDER BY name NULLS LAST
             LIMIT ${ROW_LIMIT + 1}`,
