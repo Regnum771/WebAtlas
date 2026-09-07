@@ -1,6 +1,16 @@
 import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
 import type { ReservoirFilterType } from './MapModel';
-import { DAM_STATUS_DISPLAY, toDamStatusSlug, type DamStatusSlug } from '@webatlas/shared';
+import { DAM_STATUS_DISPLAY, toDamStatusSlug, type DamStatusSlug, LAYER_PALETTE } from '@webatlas/shared';
+
+// LAYER_PALETTE (packages/shared) holds the raw '#rrggbb' identity colors so the
+// legend and the map can't silently diverge; opacity variants are still built
+// here, since OL Style/Fill objects and translucency are a map-only concern.
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 // Bucket (từ riverBucket, theo hạng OSM waterway) -> [độ rộng viền, độ rộng lõi]. Bucket càng cao càng rộng.
 // Bucket 0 là mặc định mỏng cho "mương / còn lại".
@@ -28,7 +38,7 @@ const RIVER_STYLES: Record<number, Style[]> = Object.fromEntries(
       b,
       [
         new Style({ stroke: new Stroke({ color: '#1e3a8a', width: borderWidth }) }),
-        new Style({ stroke: new Stroke({ color: '#38bdf8', width: mainWidth }) }),
+        new Style({ stroke: new Stroke({ color: LAYER_PALETTE.layer_rivers.color, width: mainWidth }) }),
       ],
     ];
   })
@@ -43,25 +53,25 @@ export const riversStyle = (feature: any) => {
 export const stationsStyle = new Style({
   image: new CircleStyle({
     radius: 5,
-    fill: new Fill({ color: '#10b981' }),
+    fill: new Fill({ color: LAYER_PALETTE.layer_stations.color }),
     stroke: new Stroke({ color: '#ffffff', width: 1.5 })
   })
 });
 
 export const floodStyle = new Style({
-  fill: new Fill({ color: 'rgba(239, 68, 68, 0.25)' }),
-  stroke: new Stroke({ color: '#ef4444', width: 1.5 })
+  fill: new Fill({ color: hexToRgba(LAYER_PALETTE.layer_flood.color, 0.25) }),
+  stroke: new Stroke({ color: LAYER_PALETTE.layer_flood.color, width: 1.5 })
 });
 
 export const lakesStyle = new Style({
-  fill: new Fill({ color: 'rgba(56, 189, 248, 0.35)' }),  // sky-400, translucent water
-  stroke: new Stroke({ color: '#0284c7', width: 1 }),      // sky-600 shoreline
+  fill: new Fill({ color: hexToRgba(LAYER_PALETTE.layer_lakes.color, 0.35) }),  // sky-400, translucent water
+  stroke: new Stroke({ color: LAYER_PALETTE.layer_lakes.stroke, width: 1 }),      // sky-600 shoreline
 });
 
 export const droughtSurveyStyle = new Style({
   image: new CircleStyle({
     radius: 6,
-    fill: new Fill({ color: '#b45309' }),
+    fill: new Fill({ color: LAYER_PALETTE.layer_drought_survey.color }),
     stroke: new Stroke({ color: '#ffffff', width: 1.5 })
   })
 });
@@ -69,14 +79,14 @@ export const droughtSurveyStyle = new Style({
 export const saltwaterIntrusionStyle = new Style({
   image: new CircleStyle({
     radius: 6,
-    fill: new Fill({ color: '#7c3aed' }),
+    fill: new Fill({ color: LAYER_PALETTE.layer_saltwater_intrusion.color }),
     stroke: new Stroke({ color: '#ffffff', width: 1.5 })
   })
 });
 
 export const floodGenerationStyle = new Style({
-  fill: new Fill({ color: 'rgba(79, 70, 229, 0.2)' }),
-  stroke: new Stroke({ color: '#4f46e5', width: 1.5 })
+  fill: new Fill({ color: hexToRgba(LAYER_PALETTE.layer_flood_generation.color, 0.2) }),
+  stroke: new Stroke({ color: LAYER_PALETTE.layer_flood_generation.color, width: 1.5 })
 });
 
 // Bảng màu pastel cho 34 tỉnh thành 2026
@@ -148,7 +158,7 @@ export const provincesStyle = (feature: any) => {
   return [
     new Style({
       fill: new Fill({ color: provinceColors[colorIndex] }),
-      stroke: new Stroke({ color: '#4338ca', width: 2.5 }),
+      stroke: new Stroke({ color: LAYER_PALETTE.layer_provinces_2026.color, width: 2.5 }),
     }),
     new Style({
       geometry: labelGeometry,
@@ -181,7 +191,7 @@ export const wardsStyle = (feature: any) => {
 
   return new Style({
     fill: new Fill({ color: fillColor }),
-    stroke: new Stroke({ color: 'rgba(107, 114, 128, 0.4)', width: 1, lineDash: [4, 4] }),
+    stroke: new Stroke({ color: hexToRgba(LAYER_PALETTE.layer_wards_2026.color, 0.4), width: 1, lineDash: [4, 4] }),
     text: new Text({
       text: name,
       font: 'normal 10.5px Inter, system-ui, sans-serif',

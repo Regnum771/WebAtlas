@@ -21,7 +21,34 @@ describe('legendFor', () => {
   });
 
   it('returns an empty array for a layer with no legend', () => {
-    expect(legendFor('layer_provinces_2026')).toEqual([]);
+    expect(legendFor('layer_nonexistent')).toEqual([]);
+  });
+
+  it('returns a boundary-line entry for provinces, noting the fill is decorative', () => {
+    const sections = legendFor('layer_provinces_2026');
+    expect(sections).toHaveLength(1);
+    expect(sections[0].entries[0].shape).toBe('line');
+    expect(sections[0].note).toBeTruthy();
+  });
+
+  it('returns a boundary-line entry for wards, noting the fill is decorative', () => {
+    const sections = legendFor('layer_wards_2026');
+    expect(sections).toHaveLength(1);
+    expect(sections[0].entries[0].shape).toBe('line');
+    expect(sections[0].note).toBeTruthy();
+  });
+
+  it('returns a swatch for every hazard layer', () => {
+    for (const id of [
+      'layer_flood',
+      'layer_drought_survey',
+      'layer_saltwater_intrusion',
+      'layer_flood_generation',
+    ]) {
+      const sections = legendFor(id);
+      expect(sections.length, id).toBeGreaterThan(0);
+      expect(sections[0].entries[0].swatch, id).toMatch(/^#[0-9a-f]{6}$/i);
+    }
   });
 
   it('carries ODbL attribution for the OSM-sourced layers', () => {

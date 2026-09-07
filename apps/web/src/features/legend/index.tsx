@@ -14,7 +14,9 @@ export default function Legend() {
       sections: legendFor(l.id),
       attribution: LEGEND_ATTRIBUTION[l.id],
     }))
-    .filter((l) => l.sections.length > 0);
+    // Keep a layer with no color sections but a licence attribution — an OSM
+    // layer must not lose its ODbL notice just because it has nothing to swatch.
+    .filter((l) => l.sections.length > 0 || l.attribution);
 
   return <LegendView layers={layers} />;
 }

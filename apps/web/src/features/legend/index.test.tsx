@@ -2,8 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 // Mutable box so each test can drive a different layersState through the
-// same mocked useMapContext (see components/LayerTree.test.tsx for the
-// convention this follows).
+// same mocked useMapContext.
 let mockLayersState: { id: string; visible: boolean; opacity: number }[] = [];
 vi.mock('../../app/providers/MapProvider', () => ({
   useMapContext: () => ({ layersState: mockLayersState }),

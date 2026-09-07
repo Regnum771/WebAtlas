@@ -1,6 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
-import { riversStyle, makeDamsStyle, lakesStyle, provincesStyle, wardsStyle } from './styles';
+import { LAYER_PALETTE } from '@webatlas/shared';
+import {
+  riversStyle,
+  makeDamsStyle,
+  lakesStyle,
+  provincesStyle,
+  wardsStyle,
+  stationsStyle,
+  floodStyle,
+  droughtSurveyStyle,
+  saltwaterIntrusionStyle,
+  floodGenerationStyle,
+} from './styles';
 
 // Minimal fake OL feature: only get() is used by the style functions.
 function fakeFeature(props: Record<string, unknown>) {
@@ -46,6 +58,61 @@ describe('style caching', () => {
   it('lakesStyle has a blue fill and a stroke', () => {
     expect(lakesStyle.getFill()).toBeInstanceOf(Fill);
     expect(lakesStyle.getStroke()).toBeInstanceOf(Stroke);
+  });
+});
+
+// Guards against the map styles and the legend swatches (packages/shared/src/legend.ts)
+// drifting apart again: both must read the same LAYER_PALETTE, so a hex color
+// changed on only one side fails here.
+describe('map styles stay on the shared LAYER_PALETTE (legend/map colour parity)', () => {
+  function hexToRgbTuple(hex: string): [number, number, number] {
+    return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+  }
+
+  function colorOfFill(fill: Fill | null): string | undefined {
+    const c = fill?.getColor();
+    return typeof c === 'string' ? c : undefined;
+  }
+
+  it('stationsStyle fill matches LAYER_PALETTE.layer_stations', () => {
+    const image = stationsStyle.getImage() as CircleStyle;
+    expect(colorOfFill(image.getFill())).toBe(LAYER_PALETTE.layer_stations.color);
+  });
+
+  it('riversStyle core stroke matches LAYER_PALETTE.layer_rivers', () => {
+    const styles = riversStyle(fakeFeature({ streamOrder: 5 }));
+    const core = styles[styles.length - 1].getStroke();
+    expect(core?.getColor()).toBe(LAYER_PALETTE.layer_rivers.color);
+  });
+
+  it('lakesStyle stroke matches LAYER_PALETTE.layer_lakes.stroke, fill matches its hue', () => {
+    expect(lakesStyle.getStroke()?.getColor()).toBe(LAYER_PALETTE.layer_lakes.stroke);
+    const [r, g, b] = hexToRgbTuple(LAYER_PALETTE.layer_lakes.color);
+    expect(colorOfFill(lakesStyle.getFill())).toBe(`rgba(${r}, ${g}, ${b}, 0.35)`);
+  });
+
+  it('floodStyle stroke matches LAYER_PALETTE.layer_flood', () => {
+    expect(floodStyle.getStroke()?.getColor()).toBe(LAYER_PALETTE.layer_flood.color);
+  });
+
+  it('droughtSurveyStyle fill matches LAYER_PALETTE.layer_drought_survey', () => {
+    const image = droughtSurveyStyle.getImage() as CircleStyle;
+    expect(colorOfFill(image.getFill())).toBe(LAYER_PALETTE.layer_drought_survey.color);
+  });
+
+  it('saltwaterIntrusionStyle fill matches LAYER_PALETTE.layer_saltwater_intrusion', () => {
+    const image = saltwaterIntrusionStyle.getImage() as CircleStyle;
+    expect(colorOfFill(image.getFill())).toBe(LAYER_PALETTE.layer_saltwater_intrusion.color);
+  });
+
+  it('floodGenerationStyle stroke matches LAYER_PALETTE.layer_flood_generation', () => {
+    expect(floodGenerationStyle.getStroke()?.getColor()).toBe(LAYER_PALETTE.layer_flood_generation.color);
+  });
+
+  it('provincesStyle boundary stroke matches LAYER_PALETTE.layer_provinces_2026', () => {
+    const feature = { get: () => undefined, set: () => {}, getGeometry: () => undefined } as any;
+    const styles = provincesStyle(feature) as Style[];
+    expect(styles[0].getStroke()?.getColor()).toBe(LAYER_PALETTE.layer_provinces_2026.color);
   });
 
   it('rivers get wider as Strahler order increases', () => {
