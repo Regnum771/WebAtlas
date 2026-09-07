@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppProviders } from './providers/AppProviders';
 import TopBar from '../widgets/top-bar';
@@ -11,11 +10,13 @@ import SearchBar from '../components/SearchBar';
 import DynamicPopup from '../components/DynamicPopup';
 import DynamicLegend from '../components/DynamicLegend';
 import OGCClient from '../components/OGCClient';
-import { PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { IconRail } from '../features/shell/ui/IconRail.view';
+import { useRail } from '../features/shell/model/useRail';
+import { Layers, List } from 'lucide-react';
 import '../styles/main.css';
 
 function App() {
-  const [panelsVisible, setPanelsVisible] = useState(true);
+  const rail = useRail();
 
   return (
     <AppProviders>
@@ -34,23 +35,25 @@ function App() {
 
           <SearchBar />
 
-          {/* Right: seeing. Layers + basemap + legend as one stacked panel. */}
-          <div className={`panels-wrapper ${panelsVisible ? '' : 'hidden'}`}>
-            <LayerTree />
-            <DynamicLegend />
-            <OGCClient />
-          </div>
+          {/* Right: seeing. Icon rail + docked flyout replace the floating panels. */}
+          <IconRail
+            items={[
+              { id: 'layers', label: 'Lớp dữ liệu', icon: <Layers size={20} /> },
+              { id: 'legend', label: 'Chú giải', icon: <List size={20} /> },
+            ]}
+            active={rail.active}
+            onToggle={rail.toggle}
+          />
+          {rail.active !== null && (
+            <aside className="rail-flyout">
+              {rail.active === 'layers' && <LayerTree />}
+              {rail.active === 'legend' && <DynamicLegend />}
+            </aside>
+          )}
+
+          <OGCClient />
 
           <DynamicPopup />
-
-          <button
-            className="toggle-panels-btn glass-panel"
-            onClick={() => setPanelsVisible(!panelsVisible)}
-            title={panelsVisible ? 'Ẩn các panel' : 'Hiện các panel'}
-          >
-            {panelsVisible ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
-            <span>{panelsVisible ? 'Ẩn giao diện' : 'Hiện giao diện'}</span>
-          </button>
 
           <Routes>
             <Route path="/" element={null} />

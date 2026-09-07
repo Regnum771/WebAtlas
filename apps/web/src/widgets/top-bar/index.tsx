@@ -5,7 +5,7 @@ import { TopBarView } from './ui/TopBar.view';
 export default function TopBar() {
   const { status, currentUser, logout } = useSession();
   return (
-    <header className="top-bar glass-panel">
+    <header className="top-bar">
       <span className="top-bar-brand">WebATLAS</span>
       <div className="top-bar-right">
         {status === 'authenticated' && currentUser ? (

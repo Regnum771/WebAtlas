@@ -1011,3 +1011,26 @@ body {
   margin-top: 16px; padding: 8px 14px; border: none; border-radius: 8px;
   cursor: pointer; font: inherit;
 }
+
+/* Icon rail + docked flyout: replaces the floating panels-wrapper */
+.icon-rail {
+  position: absolute; top: var(--topbar-height); left: 0; bottom: 0;
+  width: var(--rail-width);
+  background: var(--chrome-bg); color: var(--chrome-fg);
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding-top: var(--space-2); z-index: 20;
+}
+.icon-rail-btn {
+  width: 100%; height: var(--rail-width);
+  background: transparent; border: none; color: var(--chrome-fg-muted);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.icon-rail-btn:hover { background: var(--chrome-bg-hover); color: var(--chrome-fg); }
+.icon-rail-btn.active { background: var(--surface); color: var(--chrome-bg); }
+
+.rail-flyout {
+  position: absolute; top: var(--topbar-height); left: var(--rail-width); bottom: 0;
+  width: var(--flyout-width);
+  background: var(--surface); border-right: 1px solid var(--border);
+  overflow-y: auto; z-index: 19;
+}
