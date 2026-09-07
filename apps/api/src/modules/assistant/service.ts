@@ -45,6 +45,35 @@ export interface AssistantDeps {
   mapContext: MapContext;
 }
 
+/**
+ * Tokens actually billed for one API response. The SDK's own doc comment on
+ * `usage` states the rule: total input tokens is the summation of
+ * `input_tokens`, `cache_creation_input_tokens`, and `cache_read_input_tokens`
+ * — all three are real input, not just the first. This matters especially
+ * here: the system block carries a cache breakpoint specifically because the
+ * tool definitions dominate the prompt and are resent every turn, so on most
+ * iterations the bulk of real input tokens arrives as `cache_read_input_tokens`.
+ * Dropping it would let a cache-heavy conversation blow past the daily
+ * ceiling while the tracker still reports headroom.
+ *
+ * The cache fields are typed nullable by the SDK (absent when caching wasn't
+ * used on that call), so they are coalesced to 0 rather than left to poison
+ * the sum with `undefined`.
+ */
+export function usageTokens(usage: {
+  input_tokens: number | null;
+  output_tokens: number;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+}): number {
+  return (
+    (usage.input_tokens ?? 0) +
+    (usage.output_tokens ?? 0) +
+    (usage.cache_creation_input_tokens ?? 0) +
+    (usage.cache_read_input_tokens ?? 0)
+  );
+}
+
 export async function runAssistant(deps: AssistantDeps): Promise<AssistantReply> {
   const commands: MapCommand[] = [];
   const provenance: Provenance[] = [];
@@ -72,17 +101,24 @@ export async function runAssistant(deps: AssistantDeps): Promise<AssistantReply>
   });
 
   let last: Anthropic.Beta.BetaMessage | undefined;
+  // A tool runner iteration is a separate API call that resends the whole
+  // prompt, so input tokens legitimately recur across iterations — summing
+  // them is correct, not double-counting, because that is what was actually
+  // billed for each call.
   let tokens = 0;
   try {
     for await (const message of runner) {
-      tokens += message.usage.input_tokens + message.usage.output_tokens;
+      tokens += usageTokens(message.usage);
       last = message;
     }
   } catch (e) {
     throw toAppError(e);
+  } finally {
+    // Charge whatever was actually spent even when a later iteration throws:
+    // iterations 1..k-1 were real, billed calls, and discarding their tokens
+    // here would let repeated failures spend against the budget for free.
+    budget.record(deps.userId, tokens);
   }
-
-  budget.record(deps.userId, tokens);
 
   const text = (last?.content ?? [])
     .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
