@@ -20,6 +20,8 @@ export const MAP_COMMAND_KINDS = [
     'setLayerVisible',
     'setLayerOpacity',
     'setBasemap',
+    'highlightFeatures',
+    'clearHighlights',
 ];
 export const BASEMAP_TYPES = ['street', 'satellite', 'dem'];
 /**
@@ -57,9 +59,9 @@ export const LAYER_STATE_IDS = [
 function isLayerStateId(value) {
     return typeof value === 'string' && LAYER_STATE_IDS.includes(value);
 }
-// NOTE: a `highlightFeatures` variant was deliberately left out. Nothing in this
-// plan highlights anything; Plan B adds it with a real highlight source and tests
-// when the assistant needs it.
+/** Cap on one highlight command. Beyond this the map is noise, and a runaway
+ *  tool result would push an unbounded payload through the route. */
+export const MAX_HIGHLIGHT_POINTS = 50;
 function isLonLat(value) {
     return (Array.isArray(value) &&
         value.length === 2 &&
@@ -97,6 +99,20 @@ export function isMapCommand(value) {
                 c.opacity <= 1);
         case 'setBasemap':
             return typeof c.basemap === 'string' && BASEMAP_TYPES.includes(c.basemap);
+        case 'highlightFeatures':
+            return (Array.isArray(c.points) &&
+                c.points.length > 0 &&
+                c.points.length <= MAX_HIGHLIGHT_POINTS &&
+                c.points.every((p) => {
+                    if (typeof p !== 'object' || p === null)
+                        return false;
+                    const point = p;
+                    if (!isLonLat(point.lonLat))
+                        return false;
+                    return point.label === undefined || typeof point.label === 'string';
+                }));
+        case 'clearHighlights':
+            return true;
         default:
             return false;
     }

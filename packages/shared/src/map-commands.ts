@@ -21,6 +21,8 @@ export const MAP_COMMAND_KINDS = [
   'setLayerVisible',
   'setLayerOpacity',
   'setBasemap',
+  'highlightFeatures',
+  'clearHighlights',
 ] as const;
 
 export type MapCommandKind = (typeof MAP_COMMAND_KINDS)[number];
@@ -67,6 +69,20 @@ function isLayerStateId(value: unknown): value is string {
   return typeof value === 'string' && LAYER_STATE_IDS.includes(value);
 }
 
+/**
+ * A point the assistant wants drawn on the map. Coordinates, not feature ids:
+ * every data tool already returns lonLat for the rows it reports, so the browser
+ * needs no second lookup and the executor needs no WFS access.
+ */
+export interface HighlightPoint {
+  lonLat: [number, number];
+  label?: string;
+}
+
+/** Cap on one highlight command. Beyond this the map is noise, and a runaway
+ *  tool result would push an unbounded payload through the route. */
+export const MAX_HIGHLIGHT_POINTS = 50;
+
 export type MapCommand =
   | { kind: 'zoomToRegion'; provinceCode: string }
   | { kind: 'zoomToFeature'; layerKey: EditableLayerKey; featureId: string; lonLat: [number, number] }
@@ -78,11 +94,9 @@ export type MapCommand =
   | { kind: 'resetView' }
   | { kind: 'setLayerVisible'; layerStateId: string; visible: boolean }
   | { kind: 'setLayerOpacity'; layerStateId: string; opacity: number }
-  | { kind: 'setBasemap'; basemap: BasemapName };
-
-// NOTE: a `highlightFeatures` variant was deliberately left out. Nothing in this
-// plan highlights anything; Plan B adds it with a real highlight source and tests
-// when the assistant needs it.
+  | { kind: 'setBasemap'; basemap: BasemapName }
+  | { kind: 'highlightFeatures'; points: HighlightPoint[] }
+  | { kind: 'clearHighlights' };
 
 function isLonLat(value: unknown): value is [number, number] {
   return (
@@ -129,6 +143,20 @@ export function isMapCommand(value: unknown): value is MapCommand {
       );
     case 'setBasemap':
       return typeof c.basemap === 'string' && (BASEMAP_TYPES as readonly string[]).includes(c.basemap);
+    case 'highlightFeatures':
+      return (
+        Array.isArray(c.points) &&
+        c.points.length > 0 &&
+        c.points.length <= MAX_HIGHLIGHT_POINTS &&
+        c.points.every((p) => {
+          if (typeof p !== 'object' || p === null) return false;
+          const point = p as Record<string, unknown>;
+          if (!isLonLat(point.lonLat)) return false;
+          return point.label === undefined || typeof point.label === 'string';
+        })
+      );
+    case 'clearHighlights':
+      return true;
     default:
       return false;
   }

@@ -5,6 +5,7 @@ import {
   LAYER_STATE_IDS,
   ADMIN_BOUNDARY_LAYER_STATE_IDS,
   BASEMAP_CONTEXT_LAYER_STATE_IDS,
+  MAX_HIGHLIGHT_POINTS,
   type MapCommand,
 } from './map-commands.js';
 import { LAYER_ATTRIBUTE_MAP } from './layer-attributes.js';
@@ -80,6 +81,8 @@ describe('isMapCommand', () => {
 
   it('lists every kind in MAP_COMMAND_KINDS', () => {
     expect([...MAP_COMMAND_KINDS].sort()).toEqual([
+      'clearHighlights',
+      'highlightFeatures',
       'resetView',
       'setBasemap',
       'setLayerOpacity',
@@ -134,5 +137,37 @@ describe('LAYER_STATE_IDS', () => {
 
   it('contains no duplicates', () => {
     expect(new Set(LAYER_STATE_IDS).size).toBe(LAYER_STATE_IDS.length);
+  });
+});
+
+describe('isMapCommand — highlight variants', () => {
+  it('accepts a highlightFeatures command with labelled points', () => {
+    expect(
+      isMapCommand({
+        kind: 'highlightFeatures',
+        points: [{ lonLat: [108.1, 12.7], label: 'Đập Buôn Kuốp' }, { lonLat: [108.3, 12.9] }],
+      })
+    ).toBe(true);
+  });
+
+  it('accepts clearHighlights', () => {
+    expect(isMapCommand({ kind: 'clearHighlights' })).toBe(true);
+  });
+
+  it('rejects highlightFeatures with an empty points array', () => {
+    expect(isMapCommand({ kind: 'highlightFeatures', points: [] })).toBe(false);
+  });
+
+  it('rejects more points than MAX_HIGHLIGHT_POINTS', () => {
+    const points = Array.from({ length: MAX_HIGHLIGHT_POINTS + 1 }, () => ({ lonLat: [108, 12] }));
+    expect(isMapCommand({ kind: 'highlightFeatures', points })).toBe(false);
+  });
+
+  it('rejects a point whose lonLat is malformed', () => {
+    expect(isMapCommand({ kind: 'highlightFeatures', points: [{ lonLat: [108] }] })).toBe(false);
+  });
+
+  it('rejects a non-string label', () => {
+    expect(isMapCommand({ kind: 'highlightFeatures', points: [{ lonLat: [108, 12], label: 7 }] })).toBe(false);
   });
 });

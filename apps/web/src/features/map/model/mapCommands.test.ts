@@ -14,6 +14,7 @@ function makeDeps(
       getMinZoom: viewOverrides.getMinZoom ?? (() => undefined),
       getMaxZoom: viewOverrides.getMaxZoom ?? (() => undefined),
     }),
+    addLayer: vi.fn(),
   } as unknown as CommandDeps['map'];
   return {
     map,
@@ -130,5 +131,29 @@ describe('createCommandExecutor', () => {
     const deps = makeDeps({ map: null });
     const result = createCommandExecutor(deps)({ kind: 'zoomToRegion', provinceCode: '66' });
     expect(result).toEqual({ ok: false, reason: 'Bản đồ chưa sẵn sàng.' });
+  });
+});
+
+describe('createCommandExecutor — highlights', () => {
+  it('highlightFeatures draws the points and reports how many', () => {
+    const deps = makeDeps();
+    const result = createCommandExecutor(deps)({
+      kind: 'highlightFeatures',
+      points: [{ lonLat: [108.1, 12.7] }, { lonLat: [108.2, 12.8] }],
+    });
+    expect(result).toEqual({ ok: true, text: 'Đã đánh dấu 2 vị trí trên bản đồ.' });
+  });
+
+  it('highlightFeatures fails cleanly when the map is not ready', () => {
+    const result = createCommandExecutor(makeDeps({ map: null }))({
+      kind: 'highlightFeatures',
+      points: [{ lonLat: [108.1, 12.7] }],
+    });
+    expect(result).toEqual({ ok: false, reason: 'Bản đồ chưa sẵn sàng.' });
+  });
+
+  it('clearHighlights reports success even with nothing highlighted', () => {
+    const result = createCommandExecutor(makeDeps())({ kind: 'clearHighlights' });
+    expect(result).toEqual({ ok: true, text: 'Đã xoá đánh dấu.' });
   });
 });

@@ -8,6 +8,7 @@ import {
 import type { BasemapType } from './MapModel';
 import { PROVINCE_CENTROIDS } from './provinceCentroids';
 import { MIN_ZOOM, MAX_ZOOM, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
+import { showHighlights, clearHighlights } from './highlightLayer';
 
 // Guard: BasemapName (shared contract) and BasemapType (MapModel) are independent
 // types with the same literal set. If either drifts, this fails to compile.
@@ -96,6 +97,15 @@ export function createCommandExecutor(deps: CommandDeps) {
       case 'setBasemap': {
         deps.setBasemap(cmd.basemap);
         return { ok: true, text: 'Đã đổi bản đồ nền.' };
+      }
+      case 'highlightFeatures': {
+        if (!deps.map) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
+        showHighlights(deps.map, cmd.points);
+        return { ok: true, text: `Đã đánh dấu ${cmd.points.length} vị trí trên bản đồ.` };
+      }
+      case 'clearHighlights': {
+        if (deps.map) clearHighlights(deps.map);
+        return { ok: true, text: 'Đã xoá đánh dấu.' };
       }
     }
   };

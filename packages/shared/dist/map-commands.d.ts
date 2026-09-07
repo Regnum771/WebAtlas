@@ -7,7 +7,7 @@
  * and must not add a validator dependency to it.
  */
 import { type EditableLayerKey } from './index.js';
-export declare const MAP_COMMAND_KINDS: readonly ["zoomToRegion", "zoomToFeature", "zoomTo", "resetView", "setLayerVisible", "setLayerOpacity", "setBasemap"];
+export declare const MAP_COMMAND_KINDS: readonly ["zoomToRegion", "zoomToFeature", "zoomTo", "resetView", "setLayerVisible", "setLayerOpacity", "setBasemap", "highlightFeatures", "clearHighlights"];
 export type MapCommandKind = (typeof MAP_COMMAND_KINDS)[number];
 export declare const BASEMAP_TYPES: readonly ["street", "satellite", "dem"];
 export type BasemapName = (typeof BASEMAP_TYPES)[number];
@@ -34,6 +34,18 @@ export declare const BASEMAP_CONTEXT_LAYER_STATE_IDS: readonly ["layer_bm_roads"
  * basemap context ids above.
  */
 export declare const LAYER_STATE_IDS: readonly string[];
+/**
+ * A point the assistant wants drawn on the map. Coordinates, not feature ids:
+ * every data tool already returns lonLat for the rows it reports, so the browser
+ * needs no second lookup and the executor needs no WFS access.
+ */
+export interface HighlightPoint {
+    lonLat: [number, number];
+    label?: string;
+}
+/** Cap on one highlight command. Beyond this the map is noise, and a runaway
+ *  tool result would push an unbounded payload through the route. */
+export declare const MAX_HIGHLIGHT_POINTS = 50;
 export type MapCommand = {
     kind: 'zoomToRegion';
     provinceCode: string;
@@ -58,6 +70,11 @@ export type MapCommand = {
 } | {
     kind: 'setBasemap';
     basemap: BasemapName;
+} | {
+    kind: 'highlightFeatures';
+    points: HighlightPoint[];
+} | {
+    kind: 'clearHighlights';
 };
 /**
  * Runtime guard. The API validates assistant-produced commands with this before
