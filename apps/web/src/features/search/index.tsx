@@ -5,7 +5,7 @@ import { useMapContext } from '../../app/providers/MapProvider';
 import type { SearchHit } from './api/search.api';
 
 export default function Search() {
-  const { query, setQuery, results, loading } = useSearch();
+  const { query, setQuery, results, loading, clear } = useSearch();
   const { map, setBasemap, toggleLayerVisibility, setLayerOpacity, layersState } = useMapContext();
 
   const run = createCommandExecutor({
@@ -13,8 +13,13 @@ export default function Search() {
     getLayerVisible: (id) => layersState.find((l) => l.id === id)?.visible ?? false,
   });
 
-  const onSelect = (hit: SearchHit) =>
+  const onSelect = (hit: SearchHit) => {
     run({ kind: 'zoomToFeature', layerKey: hit.layerKey, featureId: hit.featureId, lonLat: hit.lonLat });
+    // clear(), not setQuery(''): it resets query + results in the same batch,
+    // so the dropdown never flashes stale results before useSearch's effect
+    // catches up to the emptied query.
+    clear();
+  };
 
   return (
     <SearchBoxView query={query} results={results} loading={loading} onQuery={setQuery} onSelect={onSelect} />

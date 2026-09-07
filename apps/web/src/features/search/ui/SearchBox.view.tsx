@@ -29,7 +29,7 @@ export function SearchBoxView({ query, results, loading, onQuery, onSelect }: Pr
           {results.map((hit) => (
             <li key={`${hit.layerKey}:${hit.featureId}`}>
               <button type="button" className="search-result" onClick={() => onSelect(hit)}>
-                <span className="search-badge">{LAYER_BADGE[hit.layerKey] ?? hit.layerKey}</span>
+                <span className="search-badge">{LAYER_BADGE[hit.layerKey] ?? hit.layerKey}</span>{' '}
                 <span>{hit.name}</span>
               </button>
             </li>
