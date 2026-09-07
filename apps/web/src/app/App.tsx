@@ -35,7 +35,7 @@ function App() {
 
           <SearchBar />
 
-          {/* Right: seeing. Icon rail + docked flyout replace the floating panels. */}
+          {/* Left: seeing. Icon rail + docked flyout replace the floating panels. */}
           <IconRail
             items={[
               { id: 'layers', label: 'Lớp dữ liệu', icon: <Layers size={20} /> },
