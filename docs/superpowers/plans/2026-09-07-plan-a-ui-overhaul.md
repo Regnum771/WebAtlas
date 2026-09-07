@@ -86,7 +86,6 @@ describe('isMapCommand', () => {
 
   it('lists every kind in MAP_COMMAND_KINDS', () => {
     expect([...MAP_COMMAND_KINDS].sort()).toEqual([
-      'highlightFeatures',
       'setBasemap',
       'setLayerOpacity',
       'setLayerVisible',
@@ -123,7 +122,6 @@ export const MAP_COMMAND_KINDS = [
   'zoomToFeature',
   'setLayerVisible',
   'setLayerOpacity',
-  'highlightFeatures',
   'setBasemap',
 ] as const;
 
@@ -137,8 +135,11 @@ export type MapCommand =
   | { kind: 'zoomToFeature'; layerKey: EditableLayerKey; featureId: string; lonLat: [number, number] }
   | { kind: 'setLayerVisible'; layerStateId: string; visible: boolean }
   | { kind: 'setLayerOpacity'; layerStateId: string; opacity: number }
-  | { kind: 'highlightFeatures'; layerKey: EditableLayerKey; featureIds: string[] }
   | { kind: 'setBasemap'; basemap: BasemapName };
+
+// NOTE: a `highlightFeatures` variant was deliberately left out. Nothing in this
+// plan highlights anything; Plan B adds it with a real highlight source and tests
+// when the assistant needs it.
 
 function isLonLat(value: unknown): value is [number, number] {
   return (
@@ -177,12 +178,6 @@ export function isMapCommand(value: unknown): value is MapCommand {
         typeof c.opacity === 'number' &&
         c.opacity >= 0 &&
         c.opacity <= 1
-      );
-    case 'highlightFeatures':
-      return (
-        isLayerKey(c.layerKey) &&
-        Array.isArray(c.featureIds) &&
-        c.featureIds.every((id) => typeof id === 'string')
       );
     case 'setBasemap':
       return typeof c.basemap === 'string' && (BASEMAP_TYPES as readonly string[]).includes(c.basemap);
@@ -376,11 +371,6 @@ export function createCommandExecutor(deps: CommandDeps) {
       case 'setBasemap': {
         deps.setBasemap(cmd.basemap);
         return { ok: true, text: 'Đã đổi bản đồ nền.' };
-      }
-      case 'highlightFeatures': {
-        // Highlighting is a map-layer concern handled by the highlight source in
-        // MapModel; the executor only validates and reports. Wired in Task 7.
-        return { ok: true, text: `Đã đánh dấu ${cmd.featureIds.length} đối tượng.` };
       }
     }
   };
@@ -950,20 +940,39 @@ const groups = [
 
 describe('LayersPanelView', () => {
   it('shows the gate hint on a zoom-gated layer', () => {
-    render(<LayersPanelView groups={groups} onToggle={vi.fn()} onOpacity={vi.fn()} />);
+    render(<LayersPanelView groups={groups} missingDisplay={[]} onToggle={vi.fn()} onOpacity={vi.fn()} />);
     expect(screen.getByText('hiện từ mức 8,5')).toBeInTheDocument();
   });
 
   it('calls onToggle with the layer id', async () => {
     const onToggle = vi.fn();
-    render(<LayersPanelView groups={groups} onToggle={onToggle} onOpacity={vi.fn()} />);
+    render(<LayersPanelView groups={groups} missingDisplay={[]} onToggle={onToggle} onOpacity={vi.fn()} />);
     await userEvent.click(screen.getByRole('checkbox', { name: /Đập & Hồ chứa/ }));
     expect(onToggle).toHaveBeenCalledWith('layer_dams');
   });
 
   it('renders the group heading', () => {
-    render(<LayersPanelView groups={groups} onToggle={vi.fn()} onOpacity={vi.fn()} />);
+    render(<LayersPanelView groups={groups} missingDisplay={[]} onToggle={vi.fn()} onOpacity={vi.fn()} />);
     expect(screen.getByRole('heading', { name: 'Tài nguyên nước' })).toBeInTheDocument();
+  });
+
+  it('warns about catalog layers that have no display metadata', () => {
+    render(
+      <LayersPanelView
+        groups={groups}
+        missingDisplay={['layer_new_thing']}
+        onToggle={vi.fn()}
+        onOpacity={vi.fn()}
+      />
+    );
+    const warning = screen.getByRole('status');
+    expect(warning).toHaveTextContent('layer_new_thing');
+    expect(warning).toHaveTextContent('chưa có mô tả hiển thị');
+  });
+
+  it('renders no warning when nothing is missing', () => {
+    render(<LayersPanelView groups={groups} missingDisplay={[]} onToggle={vi.fn()} onOpacity={vi.fn()} />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });
 ```
@@ -979,15 +988,23 @@ import type { PanelGroup } from '../model/useLayersPanel';
 
 interface Props {
   groups: PanelGroup[];
+  /** layerStateIds the API catalog knows about but LAYER_DISPLAY does not cover. */
+  missingDisplay: string[];
   onToggle: (layerStateId: string) => void;
   onOpacity: (layerStateId: string, opacity: number) => void;
 }
 
 /** Passive: renders grouped layer rows. No data fetching, no map access. */
-export function LayersPanelView({ groups, onToggle, onOpacity }: Props) {
+export function LayersPanelView({ groups, missingDisplay, onToggle, onOpacity }: Props) {
   return (
     <div className="layers-panel">
       <h2 className="panel-title">Quản lý dữ liệu</h2>
+      {missingDisplay.length > 0 && (
+        <p role="status" className="layers-warning">
+          {missingDisplay.length} lớp có trong hệ thống nhưng chưa có mô tả hiển thị:{' '}
+          {missingDisplay.join(', ')}
+        </p>
+      )}
       {groups.map((group) => (
         <section key={group.name} className="layers-group">
           <h3 className="layers-group-title">{group.name}</h3>
@@ -1033,8 +1050,15 @@ import { useMapZoom } from '../map/model/useMapZoom';
 
 export default function LayersPanel() {
   const zoom = useMapZoom();
-  const { groups, toggleLayerVisibility, setLayerOpacity } = useLayersPanel(zoom);
-  return <LayersPanelView groups={groups} onToggle={toggleLayerVisibility} onOpacity={setLayerOpacity} />;
+  const { groups, missingDisplay, toggleLayerVisibility, setLayerOpacity } = useLayersPanel(zoom);
+  return (
+    <LayersPanelView
+      groups={groups}
+      missingDisplay={missingDisplay}
+      onToggle={toggleLayerVisibility}
+      onOpacity={setLayerOpacity}
+    />
+  );
 }
 ```
 
