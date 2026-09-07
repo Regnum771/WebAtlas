@@ -11,22 +11,61 @@ Scale denominators (EPSG:3857, 96 DPI, approx):
     z12 ~ 1:68,000     z14 ~ 1:17,000
 """
 import os
+import pathlib
+import re
 import subprocess
 import sys
 
 GS = os.environ.get("GEOSERVER_URL", "http://localhost:8080/geoserver") + "/rest"
 WS = os.environ.get("GEOSERVER_WORKSPACE", "webatlas")
 
-# --- palette -------------------------------------------------------------
-WATER = "#d3e3f0"
-WATER_LINE = "#b9d3e6"
-LANDUSE_GREEN = "#e8ebe4"
-LANDUSE_GREY = "#ebebeb"
-ROAD_FILL = "#ffffff"
-ROAD_CASING = "#e2e2e2"
+# --- palette ------------------------------------------------------------
+# READ from packages/shared/src/layer-palette.ts — the SAME values the legend
+# swatches use. Keeping a second copy here would be the exact drift bug that
+# palette exists to prevent, except across a Python/TypeScript boundary where
+# no TS test could ever catch it. Parse is deliberately strict: a missing key
+# raises rather than silently falling back to a stale colour.
+PALETTE_TS = (
+    pathlib.Path(__file__).resolve().parents[4]
+    / "packages" / "shared" / "src" / "layer-palette.ts"
+)
+
+
+def _palette() -> dict:
+    src = PALETTE_TS.read_text(encoding="utf-8")
+    out = {}
+    for key, body in re.findall(r"(layer_bm_\w+):\s*\{([^}]*)\}", src):
+        entry = dict(re.findall(r"(\w+):\s*'(#[0-9a-fA-F]{6})'", body))
+        out[key] = entry
+    required = {
+        "layer_bm_roads": ("color", "stroke"),
+        "layer_bm_railways": ("color",),
+        "layer_bm_water": ("color", "stroke"),
+        "layer_bm_landuse": ("color", "secondary"),
+    }
+    for key, fields in required.items():
+        if key not in out:
+            raise SystemExit(f"layer-palette.ts: missing {key} — cannot generate SLD")
+        for f in fields:
+            if f not in out[key]:
+                raise SystemExit(f"layer-palette.ts: {key} missing '{f}'")
+    return out
+
+
+_P = _palette()
+
+WATER = _P["layer_bm_water"]["color"]
+WATER_LINE = _P["layer_bm_water"]["stroke"]
+LANDUSE_GREEN = _P["layer_bm_landuse"]["color"]
+LANDUSE_GREY = _P["layer_bm_landuse"]["secondary"]
+ROAD_FILL = _P["layer_bm_roads"]["color"]
+ROAD_CASING = _P["layer_bm_roads"]["stroke"]
+RAIL = _P["layer_bm_railways"]["color"]
+
+# Local shade variants, not identity colours — the same reason styles.ts builds
+# its own opacity variants from the shared hex instead of storing them shared.
 ROAD_MAJOR = "#fdfdfd"
 ROAD_MAJOR_CASING = "#d8d8d8"
-RAIL = "#d0d0d0"
 LABEL = "#7a7a7a"
 LABEL_HALO = "#ffffff"
 

@@ -2,9 +2,19 @@ import { DAM_STATUS_SLUGS, DAM_STATUS_DISPLAY } from './dam-status.js';
 import { LAYER_PALETTE } from './layer-palette.js';
 /** Attribution required by the data licence, keyed by layerStateId.
  *  OSM data is ODbL and MUST carry this wherever the layer is shown. */
+const OSM_ODBL = '© OpenStreetMap contributors (ODbL)';
 export const LEGEND_ATTRIBUTION = {
-    layer_rivers: '© OpenStreetMap contributors (ODbL)',
-    layer_lakes: '© OpenStreetMap contributors (ODbL)',
+    layer_rivers: OSM_ODBL,
+    layer_lakes: OSM_ODBL,
+    // The basemap context layers are OSM-derived too. The tile source in
+    // MapModel already declares this on the map's attribution control, so the
+    // licence obligation is met either way — but attributing two OSM layers and
+    // silently not the other four is precisely the inconsistency that produced
+    // the earlier dropped-attribution bug.
+    layer_bm_roads: OSM_ODBL,
+    layer_bm_railways: OSM_ODBL,
+    layer_bm_water: OSM_ODBL,
+    layer_bm_landuse: OSM_ODBL,
 };
 const CAPACITY_ENTRIES = [
     { swatch: '#6b7280', shape: 'dot', size: 6, label: 'Nhỏ (< 200 MW)' },
@@ -45,13 +55,41 @@ export function legendFor(layerStateId) {
             return [{
                     title: 'Ranh giới tỉnh',
                     entries: [{ swatch: LAYER_PALETTE.layer_provinces_2026.color, shape: 'line', label: 'Đường ranh giới' }],
-                    note: 'Màu nền mỗi tỉnh chỉ để phân biệt trực quan, không mang ý nghĩa dữ liệu.',
                 }];
         case 'layer_wards_2026':
             return [{
                     title: 'Ranh giới xã/phường',
                     entries: [{ swatch: LAYER_PALETTE.layer_wards_2026.color, shape: 'line', label: 'Đường ranh giới' }],
-                    note: 'Màu nền mỗi xã/phường chỉ để phân biệt trực quan, không mang ý nghĩa dữ liệu.',
+                }];
+        // Lớp ngữ cảnh của nền bản đồ (raster GeoServer, dữ liệu OSM/ODbL).
+        // Màu lấy từ LAYER_PALETTE — chính là giá trị mà styles.py đọc để sinh SLD,
+        // nên ô màu trong chú giải không thể lệch khỏi thứ đang được vẽ.
+        case 'layer_bm_roads':
+            return [{
+                    title: 'Giao thông đường bộ',
+                    entries: [
+                        { swatch: LAYER_PALETTE.layer_bm_roads.color, shape: 'line', label: 'Đường bộ' },
+                    ],
+                    note: 'Đường lớn hiện ở mọi mức thu phóng; đường nhỏ chỉ hiện khi phóng to.',
+                }];
+        case 'layer_bm_railways':
+            return [{
+                    title: 'Đường sắt',
+                    entries: [{ swatch: LAYER_PALETTE.layer_bm_railways.color, shape: 'line', label: 'Tuyến đường sắt' }],
+                }];
+        case 'layer_bm_water':
+            return [{
+                    title: 'Mặt nước nền',
+                    entries: [{ swatch: LAYER_PALETTE.layer_bm_water.color, shape: 'box', label: 'Mặt nước' }],
+                    note: 'Nền tham chiếu từ OpenStreetMap — khác với lớp "Hồ & Hồ chứa" là dữ liệu chuyên đề.',
+                }];
+        case 'layer_bm_landuse':
+            return [{
+                    title: 'Sử dụng đất',
+                    entries: [
+                        { swatch: LAYER_PALETTE.layer_bm_landuse.color, shape: 'box', label: 'Cây xanh, rừng' },
+                        { swatch: LAYER_PALETTE.layer_bm_landuse.secondary ?? LAYER_PALETTE.layer_bm_landuse.color, shape: 'box', label: 'Đất xây dựng' },
+                    ],
                 }];
         default:
             return [];

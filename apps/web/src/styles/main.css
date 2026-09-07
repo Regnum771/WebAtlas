@@ -861,3 +861,33 @@ body {
   font-size: 11px; color: var(--text-muted); white-space: nowrap;
 }
 .layer-row input[type='range'] { width: 72px; }
+
+/* Chú giải — các quy tắc còn thiếu từ slice legend (Task 6): view dùng
+   .legend-panel/.legend-layer/.legend-layer-title/.legend-note nhưng chưa có
+   CSS, nên h3 rơi về cỡ mặc định của trình duyệt và panel trông như vỡ. */
+.legend-panel {
+  padding: var(--space-3);
+  color: var(--text-main);
+}
+.legend-layer {
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.legend-layer:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.legend-layer-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+  color: var(--text-main);
+}
+.legend-note {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  margin-top: var(--space-2);
+}

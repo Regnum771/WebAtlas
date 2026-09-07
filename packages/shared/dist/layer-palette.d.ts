@@ -15,5 +15,9 @@ export interface LayerPaletteEntry {
     /** Secondary color, e.g. a distinct outline, when the map style uses one
      *  that differs from `color` (not just a decorative white/black border). */
     stroke?: string;
+    /** A second *fill* — not an outline — for layers that legitimately render two
+     *  categories under one panel row (basemap landuse: vegetation vs built-up).
+     *  Kept optional so nothing else has to care. */
+    secondary?: string;
 }
 export declare const LAYER_PALETTE: Record<string, LayerPaletteEntry>;

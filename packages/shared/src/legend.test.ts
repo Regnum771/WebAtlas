@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { legendFor, LEGEND_ATTRIBUTION } from './legend.js';
 import { DAM_STATUS_SLUGS } from './dam-status.js';
+import { LAYER_PALETTE } from './layer-palette.js';
+import { BASEMAP_CONTEXT_LAYER_STATE_IDS } from './map-commands.js';
 
 describe('legendFor', () => {
   it('returns a status section and a capacity section for dams', () => {
@@ -24,18 +26,38 @@ describe('legendFor', () => {
     expect(legendFor('layer_nonexistent')).toEqual([]);
   });
 
-  it('returns a boundary-line entry for provinces, noting the fill is decorative', () => {
+  // The decorative pastel fill was removed (styles.ts renders a transparent
+  // fill now), so the legend must NOT carry a note apologising for it — an
+  // explanation of something the map no longer does is worse than no note.
+  it('returns a boundary-line entry for provinces with no decorative-fill note', () => {
     const sections = legendFor('layer_provinces_2026');
     expect(sections).toHaveLength(1);
     expect(sections[0].entries[0].shape).toBe('line');
-    expect(sections[0].note).toBeTruthy();
+    expect(sections[0].note).toBeUndefined();
   });
 
-  it('returns a boundary-line entry for wards, noting the fill is decorative', () => {
+  it('returns a boundary-line entry for wards with no decorative-fill note', () => {
     const sections = legendFor('layer_wards_2026');
     expect(sections).toHaveLength(1);
     expect(sections[0].entries[0].shape).toBe('line');
-    expect(sections[0].note).toBeTruthy();
+    expect(sections[0].note).toBeUndefined();
+  });
+
+  it('returns a legend for every basemap context layer, coloured from the shared palette', () => {
+    for (const id of BASEMAP_CONTEXT_LAYER_STATE_IDS) {
+      const sections = legendFor(id);
+      expect(sections.length, `${id} has no legend`).toBeGreaterThan(0);
+      for (const entry of sections.flatMap((s) => s.entries)) {
+        expect(entry.swatch, `${id} swatch`).toMatch(/^#[0-9a-f]{6}$/i);
+      }
+    }
+  });
+
+  it('takes basemap swatches from LAYER_PALETTE, not hand-typed literals', () => {
+    // styles.py parses the same LAYER_PALETTE entries to generate the SLD, so a
+    // mismatch here means the legend would show a colour the map never renders.
+    expect(legendFor('layer_bm_water')[0].entries[0].swatch).toBe(LAYER_PALETTE.layer_bm_water.color);
+    expect(legendFor('layer_bm_railways')[0].entries[0].swatch).toBe(LAYER_PALETTE.layer_bm_railways.color);
   });
 
   it('returns a swatch for every hazard layer', () => {

@@ -89,51 +89,15 @@ export const floodGenerationStyle = new Style({
   stroke: new Stroke({ color: LAYER_PALETTE.layer_flood_generation.color, width: 1.5 })
 });
 
-// Bảng màu pastel cho 34 tỉnh thành 2026
-export const provinceColors = [
-  'rgba(239, 246, 255, 0.55)', // blue-50
-  'rgba(254, 242, 242, 0.55)', // red-50
-  'rgba(236, 253, 245, 0.55)', // emerald-50
-  'rgba(255, 251, 235, 0.55)', // amber-50
-  'rgba(245, 243, 255, 0.55)', // violet-50
-  'rgba(255, 241, 242, 0.55)', // rose-50
-  'rgba(240, 253, 250, 0.55)', // teal-50
-  'rgba(254, 252, 232, 0.55)', // yellow-50
-  'rgba(238, 242, 255, 0.55)', // indigo-50
-  'rgba(255, 247, 237, 0.55)', // orange-50
-  'rgba(250, 245, 255, 0.55)', // purple-50
-  'rgba(240, 249, 255, 0.55)', // sky-50
-  'rgba(254, 249, 195, 0.55)', // yellow-100
-  'rgba(252, 231, 243, 0.55)', // pink-100
-  'rgba(219, 234, 254, 0.55)', // blue-100
-  'rgba(209, 250, 229, 0.55)', // emerald-100
-  'rgba(254, 243, 199, 0.55)', // amber-100
-  'rgba(237, 233, 254, 0.55)', // violet-100
-  'rgba(204, 251, 241, 0.55)', // teal-100
-  'rgba(254, 226, 226, 0.55)', // red-100
-  'rgba(224, 231, 255, 0.55)', // indigo-100
-  'rgba(255, 237, 213, 0.55)', // orange-100
-  'rgba(243, 232, 255, 0.55)', // purple-100
-  'rgba(224, 242, 254, 0.55)', // sky-100
-  'rgba(253, 230, 138, 0.45)', // yellow-200
-  'rgba(251, 207, 232, 0.45)', // pink-200
-  'rgba(191, 219, 254, 0.45)', // blue-200
-  'rgba(167, 243, 208, 0.45)', // emerald-200
-  'rgba(253, 230, 138, 0.45)', // amber-200
-  'rgba(221, 214, 254, 0.45)', // violet-200
-  'rgba(153, 246, 228, 0.45)', // teal-200
-  'rgba(254, 202, 202, 0.45)', // red-200
-  'rgba(199, 210, 254, 0.45)', // indigo-200
-  'rgba(254, 215, 170, 0.45)', // orange-200
-];
+// ARCHIVED: dải màu pastel tô nền tỉnh/xã đã được gỡ (nền bản đồ tự lưu trữ đã
+// cung cấp ngữ cảnh, và màu trang trí tranh chấp với màu DỮ LIỆU của lớp hiểm hoạ).
+// Muốn khôi phục: `git show b84bf50:apps/web/src/features/map/model/styles.ts`
+// — chứa provinceColors[] và hàm hashCode() băm màu theo mã xã.
+
 
 // Style cho các tỉnh thành (ranh giới sau sáp nhập 2025 — properties: code, name, ...)
 export const provincesStyle = (feature: any) => {
   const name = feature.get('name') || '';
-  const idStr = feature.get('code') || '0';
-  const idMatch = idStr.match(/\d+/);
-  const id = idMatch ? parseInt(idMatch[0], 10) : 0;
-  const colorIndex = id % provinceColors.length;
 
   const geom = feature.getGeometry();
   let labelGeometry = feature.get('_labelGeom');
@@ -157,7 +121,10 @@ export const provincesStyle = (feature: any) => {
 
   return [
     new Style({
-      fill: new Fill({ color: provinceColors[colorIndex] }),
+      // Tô nền trong SUỐT: bỏ dải màu pastel trang trí (xem ghi chú ARCHIVED ở
+      // trên). Vẫn phải có fill — OpenLayers cần nó để hit-test phần RUỘT đa giác;
+      // bỏ hẳn thì tỉnh chỉ còn bấm được đúng trên đường viền.
+      fill: new Fill({ color: 'rgba(0,0,0,0)' }),
       stroke: new Stroke({ color: LAYER_PALETTE.layer_provinces_2026.color, width: 2.5 }),
     }),
     new Style({
@@ -174,23 +141,14 @@ export const provincesStyle = (feature: any) => {
   ];
 };
 
-export const hashCode = (str: string) => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return Math.abs(hash);
-};
 
 // Style cho Phường/Xã (ranh giới sau sáp nhập 2025, chỉ hiện nét đứt, nhạt)
 export const wardsStyle = (feature: any) => {
   const name = feature.get('name') || '';
-  const code = feature.get('code') || name || '';
-  const hue = Math.round((hashCode(code) * 137.5) % 360);
-  const fillColor = `hsla(${hue}, 65%, 80%, 0.25)`;
 
   return new Style({
-    fill: new Fill({ color: fillColor }),
+    // Trong suốt — xem ghi chú ARCHIVED và lý do giữ lại fill ở provincesStyle.
+    fill: new Fill({ color: 'rgba(0,0,0,0)' }),
     stroke: new Stroke({ color: hexToRgba(LAYER_PALETTE.layer_wards_2026.color, 0.4), width: 1, lineDash: [4, 4] }),
     text: new Text({
       text: name,
