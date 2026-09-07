@@ -891,3 +891,66 @@ body {
   color: var(--text-muted);
   margin-top: var(--space-2);
 }
+
+/* Trợ lý — khung chat trong flyout. Dùng chung token với các bảng khác. */
+.assistant-panel {
+  display: flex; flex-direction: column; height: 100%;
+  padding: var(--space-3); color: var(--text-main);
+}
+.assistant-transcript { flex: 1; overflow-y: auto; font-size: 13px; }
+.assistant-hint { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.assistant-turn { margin: 0 0 var(--space-3); line-height: 1.5; }
+.assistant-turn-user {
+  background: var(--surface-sunken); border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3); font-weight: 500;
+}
+.assistant-turn-bot p { margin: 0 0 var(--space-2); }
+
+/* Khối kiến thức chung: viền và nền riêng, có nhãn hiện rõ — theo thiết kế,
+   KHÔNG dùng chữ nghiêng, vì nhãn mờ là thứ người đọc lướt qua. */
+.assistant-knowledge {
+  border: 1px solid #d97706; border-left-width: 3px;
+  background: #fffbeb; border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3); margin: var(--space-2) 0;
+}
+.assistant-knowledge-label {
+  display: block; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.02em; color: #92400e;
+  margin-bottom: var(--space-1);
+}
+.assistant-knowledge p { margin: 0; }
+
+.assistant-provenance { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-2); }
+.assistant-chip {
+  font-size: 11px; color: var(--text-muted);
+  background: var(--surface-sunken); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 1px var(--space-2);
+}
+.assistant-sql {
+  width: 100%; margin: var(--space-1) 0 0; padding: var(--space-2);
+  background: var(--surface-sunken); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 11px;
+  overflow-x: auto; white-space: pre;
+}
+.assistant-status { color: var(--text-muted); font-size: 12px; }
+.assistant-error {
+  display: flex; align-items: center; gap: var(--space-2);
+  background: #fef2f2; border: 1px solid var(--danger);
+  border-radius: var(--radius-sm); color: var(--danger);
+  font-size: 12px; padding: var(--space-2);
+}
+.assistant-error button {
+  background: var(--danger); color: #fff; border: none;
+  border-radius: var(--radius-sm); padding: 2px var(--space-2); cursor: pointer;
+}
+.assistant-composer { display: flex; gap: var(--space-2); padding-top: var(--space-2); }
+.assistant-composer textarea {
+  flex: 1; resize: none; font: inherit; font-size: 13px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: var(--space-2);
+}
+.assistant-composer button {
+  background: var(--accent); color: #fff; border: none;
+  border-radius: var(--radius-sm); padding: 0 var(--space-3); cursor: pointer;
+}
+.assistant-composer button:disabled { background: var(--border-strong); cursor: default; }
