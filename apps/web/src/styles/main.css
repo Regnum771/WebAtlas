@@ -997,3 +997,35 @@ body {
   background: var(--surface); border-right: 1px solid var(--border);
   overflow-y: auto; z-index: 19;
 }
+
+/* Layers panel: real-catalog replacement for the legacy LayerTree */
+.layers-panel { padding: var(--space-3) var(--space-4); }
+.layers-panel .panel-title {
+  font-size: 15px; font-weight: 600; color: var(--text-main);
+  margin: 0 0 var(--space-3);
+}
+.layers-warning {
+  background: var(--surface-sunken); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-muted);
+  font-size: 12px; padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+.layers-group { margin-bottom: var(--space-4); }
+.layers-group-title {
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.02em;
+  margin: 0 0 var(--space-2);
+}
+.layer-row {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+.layer-row.gated { opacity: 0.7; }
+.layer-row .layer-label {
+  display: flex; align-items: center; gap: var(--space-2);
+  color: var(--text-main); font-size: 13px; flex: 1; cursor: pointer;
+}
+.layer-gate-hint {
+  font-size: 11px; color: var(--text-muted); white-space: nowrap;
+}
+.layer-row input[type='range'] { width: 72px; }

@@ -4,7 +4,7 @@ import TopBar from '../widgets/top-bar';
 import Shell from '../features/shell';
 import AdminUsersRoute from '../pages/admin-users';
 import MapView from '../features/map/ui/MapView';
-import LayerTree from '../components/LayerTree';
+import LayersPanel from '../features/layers-panel';
 import MapControls from '../components/MapControls';
 import SearchBar from '../components/SearchBar';
 import DynamicPopup from '../components/DynamicPopup';
@@ -46,7 +46,7 @@ function App() {
           />
           {rail.active !== null && (
             <aside className="rail-flyout">
-              {rail.active === 'layers' && <LayerTree />}
+              {rail.active === 'layers' && <LayersPanel />}
               {rail.active === 'legend' && <DynamicLegend />}
             </aside>
           )}
