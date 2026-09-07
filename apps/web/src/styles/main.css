@@ -373,7 +373,10 @@ body {
 /* Search Bar */
 .search-bar-container {
   position: absolute;
-  top: 24px;
+  /* Clear of the opaque top bar (var(--topbar-height)), plus a token gap —
+     the old 24px hardcode predates Task 3's opaque chrome and left 24px of
+     this element's 41px height hidden under the bar. */
+  top: calc(var(--topbar-height) + var(--space-3));
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
@@ -595,8 +598,12 @@ body {
 /* OGC Client */
 .ogc-trigger-btn {
   position: absolute;
-  bottom: 80px;
-  right: 24px;
+  /* Docked top-right, below the top bar — kept out of the bottom-right
+     .map-controls stack, whose height grows with its content (e.g. an
+     active measurement pill) and cannot be bounded to guarantee clearance
+     from a fixed bottom offset. */
+  top: calc(var(--topbar-height) + var(--space-3));
+  right: var(--space-3);
   width: 40px;
   height: 40px;
   border-radius: 50%;
