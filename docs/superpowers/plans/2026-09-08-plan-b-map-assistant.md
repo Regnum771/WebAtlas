@@ -1805,7 +1805,7 @@ Create `apps/api/src/modules/assistant/tools/data/helpers.test.ts`:
 ```typescript
 import { describe, it, expect } from 'vitest';
 import { getPool, closePool } from '../../../../db/pool';
-import { layerView, activeVersionLabel, LAYER_LABELS } from './helpers';
+import { layerView, activeVersionLabel, LAYER_LABELS, isFeatureId } from './helpers';
 
 describe('layerView', () => {
   it('maps a layer key to its active-version view', () => {
@@ -1824,6 +1824,19 @@ describe('layerView', () => {
     for (const key of Object.keys(LAYER_LABELS)) {
       expect(LAYER_LABELS[key as keyof typeof LAYER_LABELS].length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('isFeatureId', () => {
+  it('accepts a uuid in either case', () => {
+    expect(isFeatureId('3f8a1c2d-4b5e-6f70-8192-a3b4c5d6e7f8')).toBe(true);
+    expect(isFeatureId('3F8A1C2D-4B5E-6F70-8192-A3B4C5D6E7F8')).toBe(true);
+  });
+
+  it('rejects anything that would make Postgres raise 22P02 instead of returning no rows', () => {
+    expect(isFeatureId('not-a-uuid')).toBe(false);
+    expect(isFeatureId('')).toBe(false);
+    expect(isFeatureId("1' OR '1'='1")).toBe(false);
   });
 });
 
@@ -1910,12 +1923,21 @@ export async function activeVersionLabel(
 /** A representative point for any geometry type — ST_PointOnSurface keeps line
  *  and polygon results navigable, the same choice modules/search made. */
 export const POINT_SQL = 'ST_X(ST_PointOnSurface(geom)) AS lon, ST_Y(ST_PointOnSurface(geom)) AS lat';
+
+/**
+ * Feature ids are uuids and arrive as model-chosen tool arguments. A malformed
+ * one makes Postgres raise 22P02 rather than return no rows, which reaches the
+ * model as a database error instead of an honest "no such feature".
+ */
+export function isFeatureId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
 ```
 
 - [ ] **Step 4: Run it to verify it passes**
 
 Run: `npm run test:api -- helpers.test`
-Expected: PASS (4 tests). Requires the dev database with seeded dams.
+Expected: PASS (6 tests). Requires the dev database with seeded dams.
 
 - [ ] **Step 5: Write the failing data-tool tests**
 
@@ -2384,12 +2406,7 @@ import { z } from 'zod';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { activeVersionLabel, layerView } from './helpers';
-
-/** Feature ids are uuids; a malformed one would make Postgres raise 22P02
- *  rather than return no rows, which reaches the model as a database error
- *  instead of an honest "no such feature". */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { activeVersionLabel, isFeatureId, layerView } from './helpers';
 
 export const distanceBetweenTool: ToolFactory = (ctx) =>
   betaZodTool({
@@ -2403,7 +2420,7 @@ export const distanceBetweenTool: ToolFactory = (ctx) =>
       toFeatureId: z.string(),
     }),
     run: async (input) => {
-      if (!UUID.test(input.fromFeatureId) || !UUID.test(input.toFeatureId)) {
+      if (!isFeatureId(input.fromFeatureId) || !isFeatureId(input.toFeatureId)) {
         return 'Không có dữ liệu: mã đối tượng không hợp lệ.';
       }
       const fromView = layerView(input.fromLayerKey);
@@ -2441,9 +2458,7 @@ import { z } from 'zod';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS, LAYER_GEOMETRY, type EditableLayerKey } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { LAYER_LABELS, activeVersionLabel, layerView } from './helpers';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { LAYER_LABELS, activeVersionLabel, isFeatureId, layerView } from './helpers';
 
 /** Read from the shared geometry registry rather than listed a second time
  *  here — a hand-copied list is exactly what drifts when a layer changes type. */
@@ -2464,7 +2479,7 @@ export const areaOfTool: ToolFactory = (ctx) =>
       if (!hasArea(input.layerKey)) {
         return `Lớp ${LAYER_LABELS[input.layerKey]} không có diện tích — đây là lớp điểm hoặc đường.`;
       }
-      if (!UUID.test(input.featureId)) return 'Không có dữ liệu: mã đối tượng không hợp lệ.';
+      if (!isFeatureId(input.featureId)) return 'Không có dữ liệu: mã đối tượng không hợp lệ.';
 
       const { rows } = await ctx.pool.query(
         `SELECT name,
@@ -2586,9 +2601,7 @@ import { z } from 'zod';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, layerView } from './helpers';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, isFeatureId, layerView } from './helpers';
 
 /** A radius beyond this stops being a relationship and becomes a full scan of
  *  the layer — rivers alone is ~9,500 rows. */
@@ -2609,7 +2622,7 @@ export const relatedFeaturesTool: ToolFactory = (ctx) =>
       if (input.radiusKm > MAX_RADIUS_KM) {
         return `Bán kính tối đa là ${MAX_RADIUS_KM} km.`;
       }
-      if (!UUID.test(input.featureId)) return 'Không có dữ liệu: mã đối tượng không hợp lệ.';
+      if (!isFeatureId(input.featureId)) return 'Không có dữ liệu: mã đối tượng không hợp lệ.';
 
       const anchorView = layerView(input.layerKey);
       const relatedView = layerView(input.relatedLayerKey);
