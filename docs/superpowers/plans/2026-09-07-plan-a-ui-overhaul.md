@@ -2015,8 +2015,11 @@ git rm apps/web/src/components/LayerTree.tsx apps/web/src/components/LayerTree.t
 ```bash
 grep -rn "from 'ol" apps/web/src --include=*.tsx --include=*.ts \
   | grep -v "src/features/map/model/" | grep -v ".test." \
-  | grep -v "src/components/OGCClient.tsx"
+  | grep -v "src/components/OGCClient.tsx" \
+  | grep -v "import type "
 ```
+
+The `import type` exclusion is load-bearing, not cosmetic: a type-only import is erased at compile time and creates no runtime OpenLayers dependency, which is what the quarantine actually protects. A plain text search for `from 'ol` cannot tell the two apart and would flag `MapProvider.tsx` forever.
 
 Expected: no output. This is the Global Constraint gate.
 
