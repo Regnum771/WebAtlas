@@ -9,6 +9,7 @@ import GeoJSON from 'ol/format/GeoJSON';
 import Select from 'ol/interaction/Select';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
+import { GEOSERVER_URL } from '../../../shared/config';
 import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
 import {
   createBboxLoadGate,
@@ -33,6 +34,30 @@ import {
 
 export type BasemapType = 'satellite' | 'street' | 'dem';
 export type ReservoirFilterType = 'all' | 'binh_thuong' | 'xa_lu' | 'nguy_hiem';
+
+/**
+ * Nền đường phố: TỰ LƯU TRỮ trên GeoServer, không phụ thuộc bên thứ ba.
+ *
+ * Trước đây dùng CARTO `light_nolabels`. CARTO đã chuyển sang bắt buộc API key,
+ * và endpoint cũ vẫn trả HTTP 200 nhưng nội dung là ô xám ghi "API KEY REQUIRED"
+ * — hỏng mà không hề báo lỗi. Nay dựng lại từ dữ liệu OpenStreetMap (Geofabrik)
+ * nạp vào PostGIS và render qua layer group `webatlas:basemap`, phục vụ qua
+ * GeoWebCache nên tile được cache chứ không render lại mỗi lần.
+ *
+ * Dữ liệu OSM là ODbL: BẮT BUỘC ghi công "© OpenStreetMap contributors".
+ */
+function streetBasemapSource(): XYZ {
+  const wmts =
+    `${GEOSERVER_URL}/gwc/service/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0` +
+    `&LAYER=webatlas:basemap&STYLE=&TILEMATRIXSET=EPSG:900913&FORMAT=image/png` +
+    `&TILEMATRIX=EPSG:900913:{z}&TILEROW={y}&TILECOL={x}`;
+  return new XYZ({
+    url: wmts,
+    attributions:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)',
+    maxZoom: 18,
+  });
+}
 
 export interface LayerState {
   id: string;
@@ -70,14 +95,10 @@ export class MapModel {
     // Idempotency guard for React 19 StrictMode double-invoked effects.
     if (this.map) return;
 
-    // 1. Khởi tạo Basemap Layer (CartoDB Positron No Labels - không hiển thị ranh giới hành chính cũ)
+    // 1. Khởi tạo Basemap Layer (nền tự lưu trữ, xem streetBasemapSource)
     const initialBasemap = new TileLayer({
       className: 'basemap-tile-layer',
-      source: new XYZ({
-        url: 'https://{a-d}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
-        attributions: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: 20
-      }),
+      source: streetBasemapSource(),
     });
     this.basemapLayer = initialBasemap;
 
@@ -308,11 +329,7 @@ export class MapModel {
         break;
       case 'street':
       default:
-        newSource = new XYZ({
-          url: 'https://{a-d}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
-          attributions: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-          maxZoom: 20
-        });
+        newSource = streetBasemapSource();
         break;
     }
     this.basemapLayer.setSource(newSource);
