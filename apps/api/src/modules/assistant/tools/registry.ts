@@ -4,6 +4,8 @@ import { zoomToFeatureTool } from './command/zoomToFeature';
 import { setLayerVisibleTool } from './command/setLayerVisible';
 import { setBasemapTool } from './command/setBasemap';
 import { highlightFeaturesTool } from './command/highlightFeatures';
+import { featuresInViewTool } from './data/featuresInView';
+import { nearestFeaturesTool } from './data/nearestFeatures';
 
 /**
  * The whole tool surface, in a fixed order.
@@ -21,6 +23,8 @@ const FACTORIES: ToolFactory[] = [
   setLayerVisibleTool,
   setBasemapTool,
   highlightFeaturesTool,
+  featuresInViewTool,
+  nearestFeaturesTool,
 ];
 
 export function buildTools(ctx: ToolContext) {
