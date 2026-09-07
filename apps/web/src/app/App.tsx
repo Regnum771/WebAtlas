@@ -8,7 +8,7 @@ import LayersPanel from '../features/layers-panel';
 import MapControls from '../components/MapControls';
 import SearchBar from '../components/SearchBar';
 import DynamicPopup from '../components/DynamicPopup';
-import DynamicLegend from '../components/DynamicLegend';
+import Legend from '../features/legend';
 import OGCClient from '../components/OGCClient';
 import { IconRail } from '../features/shell/ui/IconRail.view';
 import { useRail } from '../features/shell/model/useRail';
@@ -47,7 +47,7 @@ function App() {
           {rail.active !== null && (
             <aside className="rail-flyout">
               {rail.active === 'layers' && <LayersPanel />}
-              {rail.active === 'legend' && <DynamicLegend />}
+              {rail.active === 'legend' && <Legend />}
             </aside>
           )}
 

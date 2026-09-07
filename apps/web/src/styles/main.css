@@ -595,6 +595,13 @@ body {
   line-height: 1.3;
 }
 
+/* Data-driven legend (features/legend) */
+.legend-swatch-dot { display: inline-block; border-radius: 50%; }
+.legend-swatch-box { display: inline-block; border-radius: var(--radius-sm); }
+.legend-swatch-line { display: inline-block; width: 16px; height: 3px; }
+.legend-entry { display: flex; align-items: center; gap: var(--space-2); font-size: 12px; }
+.legend-section-title { font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: var(--space-2); }
+
 /* OGC Client */
 .ogc-trigger-btn {
   position: absolute;
