@@ -7,9 +7,12 @@ import type { MapContext } from '@webatlas/shared';
 
 let app: ReturnType<typeof buildApp>;
 let token: string;
+let tokenB: string;
 
 const EMAIL = 'assistant-viewer@webatlas.test';
 const PW = 'assistant-pass-123';
+const EMAIL_B = 'assistant-viewer-b@webatlas.test';
+const PW_B = 'assistant-pass-456';
 
 const MAP_CONTEXT: MapContext = {
   bbox: [107.5, 12.0, 109.0, 13.5],
@@ -31,11 +34,23 @@ beforeAll(async () => {
     payload: { email: EMAIL, password: PW },
   });
   token = (res.json() as { token: string }).token;
+
+  if (!(await repo.findByEmailWithHash(EMAIL_B))) {
+    await repo.insert({ email: EMAIL_B, password_hash: await hashPassword(PW_B), full_name: 'assistant-viewer-b', role: 'viewer' });
+  }
+  const resB = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: EMAIL_B, password: PW_B },
+  });
+  tokenB = (resB.json() as { token: string }).token;
 });
 afterAll(async () => {
   const repo = usersRepository(getPool());
   const user = await repo.findByEmailWithHash(EMAIL);
   if (user) await repo.remove(user.id);
+  const userB = await repo.findByEmailWithHash(EMAIL_B);
+  if (userB) await repo.remove(userB.id);
   await app.close();
 });
 
@@ -101,5 +116,35 @@ describe('POST /api/assistant/messages', () => {
       expect(Array.isArray(body.commands)).toBe(true);
       expect(Array.isArray(body.provenance)).toBe(true);
     }
+  });
+
+  it('rate-limits per user, not per client IP', async () => {
+    // app.inject has no real network path, so req.ip is the same constant value
+    // for every request in this test — the only thing that can distinguish user
+    // A's burst from user B's request is the per-user key. This suite has already
+    // sent several authenticated requests as user A above, so we cannot assume a
+    // fixed request count triggers the limit; loop (bounded, well under the
+    // global 100/min IP limiter) until a 429 is actually observed.
+    let sawTooManyRequests = false;
+    for (let i = 0; i < 40; i++) {
+      const res = await post({ sessionId: 'rl-a', message: 'xin chào', mapContext: MAP_CONTEXT });
+      if (res.statusCode === 429) {
+        sawTooManyRequests = true;
+        break;
+      }
+    }
+    expect(sawTooManyRequests).toBe(true);
+
+    // User B, same client IP, has made no requests yet: must be served, not
+    // throttled by user A's burst. This is the assertion that actually fails
+    // under the old onRequest-hook bug, where keyGenerator always fell back to
+    // req.ip and both users shared one bucket.
+    const resB = await app.inject({
+      method: 'POST',
+      url: '/api/assistant/messages',
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { sessionId: 'rl-b', message: 'xin chào', mapContext: MAP_CONTEXT },
+    });
+    expect(resB.statusCode).not.toBe(429);
   });
 });

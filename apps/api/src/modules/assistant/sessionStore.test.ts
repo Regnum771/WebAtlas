@@ -59,6 +59,15 @@ describe('createSessionStore', () => {
     expect(store.get('s1', 'u1').map((t) => t.content)).toEqual(['2', '3', '4']);
   });
 
+  it('returns a copy of the turns array, so mutating it does not corrupt the store', () => {
+    const store = createSessionStore({ ttlMs: 1000, maxTurns: 20 });
+    store.append('s1', 'u1', A);
+    const turns = store.get('s1', 'u1');
+    turns.push({ role: 'assistant', content: 'injected' });
+    turns.length = 0;
+    expect(store.get('s1', 'u1')).toEqual(A);
+  });
+
   it('sweeps expired sessions out of memory rather than leaking them', () => {
     const store = createSessionStore({ ttlMs: 1000, maxTurns: 20 });
     store.append('s1', 'u1', A);

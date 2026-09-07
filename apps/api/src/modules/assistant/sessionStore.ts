@@ -59,7 +59,7 @@ export function createSessionStore({ ttlMs, maxTurns }: SessionStoreOptions) {
       const s = live(sessionId, userId, now);
       if (!s) return [];
       s.lastUsedAt = now;
-      return s.turns;
+      return s.turns.slice();
     },
 
     append(sessionId: string, userId: string, turns: Turn[]): void {
