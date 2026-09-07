@@ -183,7 +183,7 @@ export default function MapToolbar() {
     }
   };
 
-  const onReset = () => run({ kind: 'zoomToRegion', provinceCode: '66' });
+  const onReset = () => run({ kind: 'resetView' });
   const onBasemap = (b: BasemapName) => run({ kind: 'setBasemap', basemap: b });
 
   return (

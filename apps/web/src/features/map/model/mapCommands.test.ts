@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createCommandExecutor, type CommandDeps } from './mapCommands';
+import { INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
+import { fromLonLat } from 'ol/proj';
 
 function makeDeps(
   overrides: Partial<CommandDeps> = {},
@@ -41,6 +43,22 @@ describe('createCommandExecutor', () => {
 
     expect(deps.animate).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ ok: true, text: 'Đã phóng to tới Đắk Lắk.' });
+  });
+
+  it('resetView animates to the whole working region (INITIAL_CENTER_4326/INITIAL_ZOOM), not a single province', () => {
+    const deps = makeDeps();
+    const result = createCommandExecutor(deps)({ kind: 'resetView' });
+
+    expect(deps.animate).toHaveBeenCalledWith(
+      expect.objectContaining({ center: fromLonLat(INITIAL_CENTER_4326), zoom: INITIAL_ZOOM })
+    );
+    expect(result).toEqual({ ok: true, text: 'Đã về vùng công tác.' });
+  });
+
+  it('resetView fails cleanly when the map is not ready', () => {
+    const deps = makeDeps({ map: null });
+    const result = createCommandExecutor(deps)({ kind: 'resetView' });
+    expect(result).toEqual({ ok: false, reason: 'Bản đồ chưa sẵn sàng.' });
   });
 
   it('setLayerVisible only toggles when the current state differs', () => {

@@ -7,7 +7,7 @@
  * and must not add a validator dependency to it.
  */
 import { type EditableLayerKey } from './index.js';
-export declare const MAP_COMMAND_KINDS: readonly ["zoomToRegion", "zoomToFeature", "zoomTo", "setLayerVisible", "setLayerOpacity", "setBasemap"];
+export declare const MAP_COMMAND_KINDS: readonly ["zoomToRegion", "zoomToFeature", "zoomTo", "resetView", "setLayerVisible", "setLayerOpacity", "setBasemap"];
 export type MapCommandKind = (typeof MAP_COMMAND_KINDS)[number];
 export declare const BASEMAP_TYPES: readonly ["street", "satellite", "dem"];
 export type BasemapName = (typeof BASEMAP_TYPES)[number];
@@ -22,6 +22,8 @@ export type MapCommand = {
 } | {
     kind: 'zoomTo';
     zoom: number;
+} | {
+    kind: 'resetView';
 } | {
     kind: 'setLayerVisible';
     layerStateId: string;

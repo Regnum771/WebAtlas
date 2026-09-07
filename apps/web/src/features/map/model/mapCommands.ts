@@ -7,7 +7,7 @@ import {
 } from '@webatlas/shared';
 import type { BasemapType } from './MapModel';
 import { PROVINCE_CENTROIDS } from './provinceCentroids';
-import { MIN_ZOOM, MAX_ZOOM } from './zoomScale';
+import { MIN_ZOOM, MAX_ZOOM, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
 
 // Guard: BasemapName (shared contract) and BasemapType (MapModel) are independent
 // types with the same literal set. If either drifts, this fails to compile.
@@ -55,6 +55,10 @@ export function createCommandExecutor(deps: CommandDeps) {
         if (!centre) return { ok: false, reason: 'Không có toạ độ cho tỉnh này.' };
         if (!animateTo(centre, PROVINCE_ZOOM)) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
         return { ok: true, text: `Đã phóng to tới ${REGION_PROVINCE_NAMES[cmd.provinceCode]}.` };
+      }
+      case 'resetView': {
+        if (!animateTo(INITIAL_CENTER_4326, INITIAL_ZOOM)) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
+        return { ok: true, text: 'Đã về vùng công tác.' };
       }
       case 'zoomTo': {
         if (!deps.map) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };

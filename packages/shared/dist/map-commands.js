@@ -12,6 +12,7 @@ export const MAP_COMMAND_KINDS = [
     'zoomToRegion',
     'zoomToFeature',
     'zoomTo',
+    'resetView',
     'setLayerVisible',
     'setLayerOpacity',
     'setBasemap',
@@ -45,6 +46,8 @@ export function isMapCommand(value) {
             return isLayerKey(c.layerKey) && typeof c.featureId === 'string' && isLonLat(c.lonLat);
         case 'zoomTo':
             return typeof c.zoom === 'number' && Number.isFinite(c.zoom);
+        case 'resetView':
+            return true;
         case 'setLayerVisible':
             return typeof c.layerStateId === 'string' && typeof c.visible === 'boolean';
         case 'setLayerOpacity':

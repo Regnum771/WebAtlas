@@ -13,6 +13,7 @@ export const MAP_COMMAND_KINDS = [
   'zoomToRegion',
   'zoomToFeature',
   'zoomTo',
+  'resetView',
   'setLayerVisible',
   'setLayerOpacity',
   'setBasemap',
@@ -27,6 +28,11 @@ export type MapCommand =
   | { kind: 'zoomToRegion'; provinceCode: string }
   | { kind: 'zoomToFeature'; layerKey: EditableLayerKey; featureId: string; lonLat: [number, number] }
   | { kind: 'zoomTo'; zoom: number }
+  // Whole working region (all 6 provinces), not any single province — see
+  // features/map/model/zoomScale.ts INITIAL_CENTER_4326/INITIAL_ZOOM, the same
+  // view the app opens on. zoomToRegion always targets one provinceCode, so it
+  // cannot express "back to the whole region".
+  | { kind: 'resetView' }
   | { kind: 'setLayerVisible'; layerStateId: string; visible: boolean }
   | { kind: 'setLayerOpacity'; layerStateId: string; opacity: number }
   | { kind: 'setBasemap'; basemap: BasemapName };
@@ -66,6 +72,8 @@ export function isMapCommand(value: unknown): value is MapCommand {
       return isLayerKey(c.layerKey) && typeof c.featureId === 'string' && isLonLat(c.lonLat);
     case 'zoomTo':
       return typeof c.zoom === 'number' && Number.isFinite(c.zoom);
+    case 'resetView':
+      return true;
     case 'setLayerVisible':
       return typeof c.layerStateId === 'string' && typeof c.visible === 'boolean';
     case 'setLayerOpacity':

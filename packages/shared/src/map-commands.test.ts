@@ -31,6 +31,11 @@ describe('isMapCommand', () => {
     ).toBe(false);
   });
 
+  it('accepts a well-formed resetView command (no payload to validate)', () => {
+    const cmd: MapCommand = { kind: 'resetView' };
+    expect(isMapCommand(cmd)).toBe(true);
+  });
+
   it('accepts a well-formed zoomTo command', () => {
     const cmd: MapCommand = { kind: 'zoomTo', zoom: 9.5 };
     expect(isMapCommand(cmd)).toBe(true);
@@ -67,6 +72,7 @@ describe('isMapCommand', () => {
 
   it('lists every kind in MAP_COMMAND_KINDS', () => {
     expect([...MAP_COMMAND_KINDS].sort()).toEqual([
+      'resetView',
       'setBasemap',
       'setLayerOpacity',
       'setLayerVisible',
