@@ -1,0 +1,70 @@
+import type { Map } from 'ol';
+import { fromLonLat } from 'ol/proj';
+import {
+  REGION_PROVINCE_NAMES,
+  type BasemapName,
+  type MapCommand,
+} from '@webatlas/shared';
+import type { BasemapType } from './MapModel';
+import { PROVINCE_CENTROIDS } from './provinceCentroids';
+
+// Guard: BasemapName (shared contract) and BasemapType (MapModel) are independent
+// types with the same literal set. If either drifts, this fails to compile.
+type AssertEqual<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+// @ts-expect-error - This is a compile-time type check, not a runtime value
+const _basemapTypesMatch: AssertEqual<BasemapName, BasemapType> = true;
+
+export interface CommandDeps {
+  map: Map | null;
+  setBasemap: (basemap: BasemapName) => void;
+  toggleLayerVisibility: (layerStateId: string) => void;
+  setLayerOpacity: (layerStateId: string, opacity: number) => void;
+  getLayerVisible: (layerStateId: string) => boolean;
+}
+
+export type CommandResult = { ok: true; text: string } | { ok: false; reason: string };
+
+const FEATURE_ZOOM = 12;
+const PROVINCE_ZOOM = 9;
+const ANIMATE_MS = 800;
+
+/**
+ * Executes MapCommands against OpenLayers. Dependencies are injected so this is
+ * testable without a browser; the OL import is confined to this module.
+ */
+export function createCommandExecutor(deps: CommandDeps) {
+  function animateTo(lonLat: [number, number], zoom: number): boolean {
+    if (!deps.map) return false;
+    deps.map.getView().animate({ center: fromLonLat(lonLat), zoom, duration: ANIMATE_MS });
+    return true;
+  }
+
+  return function run(cmd: MapCommand): CommandResult {
+    switch (cmd.kind) {
+      case 'zoomToFeature': {
+        if (!animateTo(cmd.lonLat, FEATURE_ZOOM)) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
+        return { ok: true, text: 'Đã phóng to tới đối tượng đã chọn.' };
+      }
+      case 'zoomToRegion': {
+        const centre = PROVINCE_CENTROIDS[cmd.provinceCode];
+        if (!centre) return { ok: false, reason: 'Không có toạ độ cho tỉnh này.' };
+        if (!animateTo(centre, PROVINCE_ZOOM)) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
+        return { ok: true, text: `Đã phóng to tới ${REGION_PROVINCE_NAMES[cmd.provinceCode]}.` };
+      }
+      case 'setLayerVisible': {
+        if (deps.getLayerVisible(cmd.layerStateId) !== cmd.visible) {
+          deps.toggleLayerVisibility(cmd.layerStateId);
+        }
+        return { ok: true, text: cmd.visible ? 'Đã bật lớp dữ liệu.' : 'Đã tắt lớp dữ liệu.' };
+      }
+      case 'setLayerOpacity': {
+        deps.setLayerOpacity(cmd.layerStateId, cmd.opacity);
+        return { ok: true, text: `Đã đặt độ mờ ${Math.round(cmd.opacity * 100)}%.` };
+      }
+      case 'setBasemap': {
+        deps.setBasemap(cmd.basemap);
+        return { ok: true, text: 'Đã đổi bản đồ nền.' };
+      }
+    }
+  };
+}

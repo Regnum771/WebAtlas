@@ -1,0 +1,66 @@
+import { describe, it, expect, vi } from 'vitest';
+import { createCommandExecutor, type CommandDeps } from './mapCommands';
+
+function makeDeps(overrides: Partial<CommandDeps> = {}): CommandDeps & { animate: ReturnType<typeof vi.fn> } {
+  const animate = vi.fn();
+  const map = { getView: () => ({ animate }) } as unknown as CommandDeps['map'];
+  return {
+    map,
+    animate,
+    setBasemap: vi.fn(),
+    toggleLayerVisibility: vi.fn(),
+    setLayerOpacity: vi.fn(),
+    getLayerVisible: vi.fn().mockReturnValue(false),
+    ...overrides,
+  };
+}
+
+describe('createCommandExecutor', () => {
+  it('zoomToFeature animates the view and reports the feature', () => {
+    const deps = makeDeps();
+    const run = createCommandExecutor(deps);
+
+    const result = run({ kind: 'zoomToFeature', layerKey: 'dams', featureId: 'x1', lonLat: [108.1, 12.7] });
+
+    expect(deps.animate).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: true, text: 'Đã phóng to tới đối tượng đã chọn.' });
+  });
+
+  it('zoomToRegion names the province in Vietnamese', () => {
+    const deps = makeDeps();
+    const result = createCommandExecutor(deps)({ kind: 'zoomToRegion', provinceCode: '66' });
+
+    expect(deps.animate).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: true, text: 'Đã phóng to tới Đắk Lắk.' });
+  });
+
+  it('setLayerVisible only toggles when the current state differs', () => {
+    const deps = makeDeps({ getLayerVisible: vi.fn().mockReturnValue(true) });
+    const run = createCommandExecutor(deps);
+
+    run({ kind: 'setLayerVisible', layerStateId: 'layer_dams', visible: true });
+    expect(deps.toggleLayerVisibility).not.toHaveBeenCalled();
+
+    run({ kind: 'setLayerVisible', layerStateId: 'layer_dams', visible: false });
+    expect(deps.toggleLayerVisibility).toHaveBeenCalledWith('layer_dams');
+  });
+
+  it('setLayerOpacity forwards the value', () => {
+    const deps = makeDeps();
+    createCommandExecutor(deps)({ kind: 'setLayerOpacity', layerStateId: 'layer_rivers', opacity: 0.4 });
+    expect(deps.setLayerOpacity).toHaveBeenCalledWith('layer_rivers', 0.4);
+  });
+
+  it('setBasemap forwards the basemap', () => {
+    const deps = makeDeps();
+    const result = createCommandExecutor(deps)({ kind: 'setBasemap', basemap: 'satellite' });
+    expect(deps.setBasemap).toHaveBeenCalledWith('satellite');
+    expect(result.ok).toBe(true);
+  });
+
+  it('fails cleanly when the map is not ready', () => {
+    const deps = makeDeps({ map: null });
+    const result = createCommandExecutor(deps)({ kind: 'zoomToRegion', provinceCode: '66' });
+    expect(result).toEqual({ ok: false, reason: 'Bản đồ chưa sẵn sàng.' });
+  });
+});
