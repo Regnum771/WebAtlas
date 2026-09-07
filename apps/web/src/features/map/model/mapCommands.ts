@@ -11,8 +11,8 @@ import { PROVINCE_CENTROIDS } from './provinceCentroids';
 // Guard: BasemapName (shared contract) and BasemapType (MapModel) are independent
 // types with the same literal set. If either drifts, this fails to compile.
 type AssertEqual<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
-// @ts-expect-error - This is a compile-time type check, not a runtime value
 const _basemapTypesMatch: AssertEqual<BasemapName, BasemapType> = true;
+void _basemapTypesMatch;
 
 export interface CommandDeps {
   map: Map | null;
