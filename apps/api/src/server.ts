@@ -6,6 +6,7 @@ import authentication from './plugins/authentication';
 import authRoutes from './modules/auth/routes';
 import usersRoutes from './modules/users/routes';
 import layersRoutes from './modules/layers/routes';
+import searchRoutes from './modules/search/routes';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -28,6 +29,7 @@ export function buildApp(): FastifyInstance {
   app.register(authRoutes, { prefix: '/api/auth' });
   app.register(usersRoutes, { prefix: '/api/users' });
   app.register(layersRoutes, { prefix: '/api' });
+  app.register(searchRoutes, { prefix: '/api' });
 
   return app;
 }
