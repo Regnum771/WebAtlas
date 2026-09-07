@@ -10,6 +10,7 @@ import Select from 'ol/interaction/Select';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
 import { GEOSERVER_URL } from '../../../shared/config';
+import { BASEMAP_CONTEXT_LAYER_STATE_IDS } from '@webatlas/shared';
 import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
 import {
   createBboxLoadGate,
@@ -46,10 +47,13 @@ export type ReservoirFilterType = 'all' | 'binh_thuong' | 'xa_lu' | 'nguy_hiem';
  *
  * Dữ liệu OSM là ODbL: BẮT BUỘC ghi công "© OpenStreetMap contributors".
  */
-function streetBasemapSource(): XYZ {
+function gwcSource(layer: string): XYZ {
+  // WMTS TILEROW is top-origin, matching OpenLayers' {y}. (TMS is bottom-origin —
+  // mixing the two yields TileOutOfRange.) Every basemap layer group is published
+  // with identical national bounds so no tile OL asks for falls out of range.
   const wmts =
     `${GEOSERVER_URL}/gwc/service/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0` +
-    `&LAYER=webatlas:basemap&STYLE=&TILEMATRIXSET=EPSG:900913&FORMAT=image/png` +
+    `&LAYER=${encodeURIComponent(layer)}&STYLE=&TILEMATRIXSET=EPSG:900913&FORMAT=image/png` +
     `&TILEMATRIX=EPSG:900913:{z}&TILEROW={y}&TILECOL={x}`;
   return new XYZ({
     url: wmts,
@@ -58,6 +62,28 @@ function streetBasemapSource(): XYZ {
     maxZoom: 18,
   });
 }
+
+function streetBasemapSource(): XYZ {
+  return gwcSource('webatlas:basemap');
+}
+
+/**
+ * Lớp ngữ cảnh của nền bản đồ — tách riêng để BẬT/TẮT ĐỘC LẬP.
+ *
+ * Mỗi lớp là một layer group riêng trên GeoServer nên có cache GWC RIÊNG: tách ra
+ * không làm mất lợi ích cache, chỉ thêm request. Tắt một lớp cũng không giải phóng
+ * source — tile đã tải vẫn nằm trong cache của OpenLayers, bật lại là hiện ngay.
+ */
+const [BM_ROADS, BM_RAILWAYS, BM_WATER, BM_LANDUSE] = BASEMAP_CONTEXT_LAYER_STATE_IDS;
+
+/** Draw order, bottom to top. Ids come from the shared constant so this cannot
+ *  drift from LAYER_DISPLAY or from what `isMapCommand` accepts. */
+const CONTEXT_LAYERS: ReadonlyArray<{ stateId: string; gwc: string }> = [
+  { stateId: BM_LANDUSE, gwc: 'webatlas:bm_landuse' },
+  { stateId: BM_WATER, gwc: 'webatlas:bm_water' },
+  { stateId: BM_RAILWAYS, gwc: 'webatlas:bm_railways' },
+  { stateId: BM_ROADS, gwc: 'webatlas:basemap_roads' },
+];
 
 export interface LayerState {
   id: string;
@@ -73,6 +99,9 @@ export class MapModel {
   private map: Map | null = null;
   private basemapLayer: TileLayer<XYZ | OSM> | null = null;
   private layers: Record<string, VectorLayer<VectorSource>> = {};
+  /** Raster context layers (roads/rail/landuse/water). Separate registry because
+   *  `layers` is typed for vector sources and its consumers call getSource().refresh(). */
+  private contextLayers: Record<string, TileLayer<XYZ>> = {};
   private selectInteraction: Select | null = null;
   private reservoirFilter: ReservoirFilterType = 'all';
   private layerStates: LayerState[] = [];
@@ -100,6 +129,15 @@ export class MapModel {
       className: 'basemap-tile-layer',
       source: streetBasemapSource(),
     });
+
+    // Lớp ngữ cảnh: nằm TRÊN nền (kể cả ảnh vệ tinh) nhưng DƯỚI dữ liệu chuyên đề.
+    // Đăng ký vào contextLayers để recomputeVisibility() điều khiển qua layersState.
+    for (const { stateId, gwc } of CONTEXT_LAYERS) {
+      this.contextLayers[stateId] = new TileLayer({
+        className: `context-tile-${stateId}`,
+        source: gwcSource(gwc),
+      });
+    }
     this.basemapLayer = initialBasemap;
 
     // Helper tạo vector layer từ URL GeoJSON
@@ -193,6 +231,9 @@ export class MapModel {
       target,
       layers: [
         initialBasemap,
+        // Ngữ cảnh nền: trên nền, dưới ranh giới và dữ liệu chuyên đề. Thứ tự trong
+        // CONTEXT_LAYERS là thứ tự vẽ (sử dụng đất -> mặt nước -> đường sắt -> đường bộ).
+        ...CONTEXT_LAYERS.map(({ stateId }) => this.contextLayers[stateId]),
         provincesLayer,
         wardsLayer,
         floodLayer,
@@ -286,6 +327,14 @@ export class MapModel {
 
         layer.setVisible(state.visible && zoomVisible);
         layer.setOpacity(state.opacity);
+      }
+
+      // Lớp ngữ cảnh raster: không có cổng zoom riêng — chi tiết đã được điều khiển
+      // bằng scale denominator trong SLD phía GeoServer, nên chỉ cần theo layersState.
+      const context = this.contextLayers[state.id];
+      if (context) {
+        context.setVisible(state.visible);
+        context.setOpacity(state.opacity);
       }
     });
   }

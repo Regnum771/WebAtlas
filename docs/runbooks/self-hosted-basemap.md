@@ -27,6 +27,20 @@ The region tier is clipped to the **province polygons**, not their bounding box:
 
 **The basemap has no labels.** The app draws its own province and ward labels; adding basemap labels double-renders every place name. This mirrors the original `light_nolabels` choice.
 
+**Context layers are separate, not composited.** Roads, railways, water and landuse are each their own GeoServer layer group with its own tile cache, and each appears as its own row under **Nền bản đồ** in the layers panel. Separation costs one HTTP request per layer per tile — it does **not** cost caching (each group caches independently) and toggling one off does not free its source, so re-enabling is instant from OpenLayers' own tile cache.
+
+| Layer group | Panel row | Default |
+|---|---|---|
+| `webatlas:basemap` | *(base — land/sea, not toggleable)* | always on |
+| `webatlas:basemap_roads` | Giao thông đường bộ | on |
+| `webatlas:bm_railways` | Đường sắt | on |
+| `webatlas:bm_water` | Mặt nước nền | on |
+| `webatlas:bm_landuse` | Sử dụng đất | off |
+
+Their ids live in `BASEMAP_CONTEXT_LAYER_STATE_IDS` (`packages/shared`), so `layerDisplay.ts`, `MapModel.ts` and `isMapCommand` all read one list — and they are deliberately valid command targets, so an assistant can be asked to turn the roads off.
+
+**All groups are published with identical national bounds.** This is load-bearing: OpenLayers does not know each layer's extent, so if a group's bounds were its own tighter native bbox, OL would request tiles outside it and GWC would answer `400 TileOutOfRange`, leaving visible gaps.
+
 ## Rebuilding
 
 ### 1. Download the extract (~684 MB)

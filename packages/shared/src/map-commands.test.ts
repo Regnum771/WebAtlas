@@ -4,6 +4,7 @@ import {
   MAP_COMMAND_KINDS,
   LAYER_STATE_IDS,
   ADMIN_BOUNDARY_LAYER_STATE_IDS,
+  BASEMAP_CONTEXT_LAYER_STATE_IDS,
   type MapCommand,
 } from './map-commands.js';
 import { LAYER_ATTRIBUTE_MAP } from './layer-attributes.js';
@@ -115,12 +116,20 @@ describe('isMapCommand', () => {
 });
 
 describe('LAYER_STATE_IDS', () => {
-  it('is derived from LAYER_ATTRIBUTE_MAP plus the two admin-boundary ids, not a hand-typed list', () => {
+  it('is derived from LAYER_ATTRIBUTE_MAP plus the admin-boundary and basemap-context ids, not a hand-typed list', () => {
     const expected = [
       ...Object.values(LAYER_ATTRIBUTE_MAP).map((info) => info.layerStateId),
       ...ADMIN_BOUNDARY_LAYER_STATE_IDS,
+      ...BASEMAP_CONTEXT_LAYER_STATE_IDS,
     ];
     expect([...LAYER_STATE_IDS].sort()).toEqual([...expected].sort());
+  });
+
+  it('accepts a basemap context layer as a command target', () => {
+    // The basemap context layers are deliberately commandable: an assistant
+    // should be able to turn the roads off, not just the thematic layers.
+    expect(isMapCommand({ kind: 'setLayerVisible', layerStateId: 'layer_bm_roads', visible: false })).toBe(true);
+    expect(isMapCommand({ kind: 'setLayerOpacity', layerStateId: 'layer_bm_landuse', opacity: 0.5 })).toBe(true);
   });
 
   it('contains no duplicates', () => {

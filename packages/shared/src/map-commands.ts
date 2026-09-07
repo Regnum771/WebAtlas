@@ -39,12 +39,28 @@ export type BasemapName = (typeof BASEMAP_TYPES)[number];
 export const ADMIN_BOUNDARY_LAYER_STATE_IDS = ['layer_provinces_2026', 'layer_wards_2026'] as const;
 
 /**
+ * Basemap context layers: raster tiles served from GeoServer (OpenStreetMap data,
+ * ODbL), each its own layer group with its own tile cache so they toggle
+ * independently. Not editable data, but real rows in the layers panel and real
+ * `layersState` ids — and deliberately valid command targets, so an assistant can
+ * be asked to turn the roads off.
+ */
+export const BASEMAP_CONTEXT_LAYER_STATE_IDS = [
+  'layer_bm_roads',
+  'layer_bm_railways',
+  'layer_bm_water',
+  'layer_bm_landuse',
+] as const;
+
+/**
  * Every valid `layerStateId`: the 8 editable layers' ids (derived from
- * LAYER_ATTRIBUTE_MAP, not hand-copied) plus the 2 admin-boundary ids above.
+ * LAYER_ATTRIBUTE_MAP, not hand-copied), the 2 admin-boundary ids, and the 4
+ * basemap context ids above.
  */
 export const LAYER_STATE_IDS: readonly string[] = [
   ...Object.values(LAYER_ATTRIBUTE_MAP).map((info) => info.layerStateId),
   ...ADMIN_BOUNDARY_LAYER_STATE_IDS,
+  ...BASEMAP_CONTEXT_LAYER_STATE_IDS,
 ];
 
 function isLayerStateId(value: unknown): value is string {
