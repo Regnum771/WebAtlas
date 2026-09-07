@@ -384,10 +384,12 @@ body {
   color: var(--primary);
   /* Bounded + wrapping, not nowrap: a large drawn area can format to a long
      string (e.g. "Diện tích: 244666.48 km²"). Left unbounded, that string's
-     width pushes this right-docked pill's LEFT edge past .search-bar-container
-     at the 768px minimum viewport — confirmed empirically (see task-7-report.md).
-     Wrapping to a second line keeps the value fully visible without growing
-     sideways into the search bar. */
+     width could push this right-docked pill's LEFT edge into neighbouring
+     chrome at the 768px minimum viewport (originally measured against the
+     floating .search-bar-container — see task-7-report.md; search now lives
+     inside .top-bar instead, but the same 768px width budget is still tight,
+     so the bound stays). Wrapping to a second line keeps the value fully
+     visible without growing sideways. */
   max-width: 160px;
   white-space: normal;
   overflow-wrap: break-word;
@@ -399,87 +401,94 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Search Bar */
-.search-bar-container {
-  position: absolute;
-  /* Clear of the opaque top bar (var(--topbar-height)), plus a token gap —
-     the old 24px hardcode predates Task 3's opaque chrome and left 24px of
-     this element's 41px height hidden under the bar. */
-  top: calc(var(--topbar-height) + var(--space-3));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
+/* Search (features/search) — lives inside .top-bar now, not floating over the
+   map, so it needs no standalone top/left offset. .top-bar-search sizes the
+   flex slot between the brand and the profile/auth widget; .search-box just
+   fills it and anchors the results dropdown. */
+.top-bar-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 360px;
+  margin: 0 var(--space-3);
+}
+
+.search-box {
+  position: relative;
   width: 100%;
-  max-width: 400px;
-}
-
-.search-input-wrapper {
-  display: flex;
-  align-items: center;
-  padding: 10px 16px;
-  gap: 12px;
-}
-
-.search-icon {
-  color: var(--text-muted);
 }
 
 .search-input {
-  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
   border: none;
-  background: transparent;
-  outline: none;
+  border-radius: var(--radius-md);
+  padding: 7px var(--space-3);
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--chrome-fg);
   font-family: inherit;
-  font-size: 15px;
-  color: var(--text-main);
+  font-size: 13px;
+  outline: none;
+  transition: background 0.2s;
+}
+
+.search-input:focus {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .search-input::placeholder {
+  color: var(--chrome-fg-muted);
+}
+
+.search-loading {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
 .search-results {
-  margin-top: 8px;
-  max-height: 300px;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: var(--space-2);
+  max-height: 320px;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-2);
+  z-index: 10;
 }
 
-.search-result-item {
+.search-result {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
   border: none;
   background: transparent;
   cursor: pointer;
   text-align: left;
-  border-bottom: 1px solid var(--border-color);
-  transition: background 0.2s;
-}
-
-.search-result-item:last-child {
-  border-bottom: none;
-}
-
-.search-result-item:hover {
-  background: rgba(255, 255, 255, 0.5);
-}
-
-.result-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.result-name {
-  font-weight: 500;
   color: var(--text-main);
+  font: inherit;
+  font-size: 13px;
 }
 
-.result-desc {
-  font-size: 12px;
-  color: var(--text-muted);
+.search-result:hover {
+  background: var(--surface-sunken);
+}
+
+.search-badge {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 10px;
+  font-weight: 600;
 }
 
 /* Dynamic Popup */

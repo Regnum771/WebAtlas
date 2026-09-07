@@ -37,14 +37,18 @@
 
 /* Minimum supported viewport width: ~768px.
    This app has no responsive layout by design (one @media query exists in
-   the whole stylesheet). Below ~504px the centered .search-bar-container
-   collides with .icon-rail on its left and .ogc-trigger-btn on its right,
-   and .map-controls (436px wide) overflows the viewport outright. Measured:
+   the whole stylesheet). Below ~504px .icon-rail on the left and
+   .ogc-trigger-btn on the right collide with the floating controls between
+   them, and .map-controls (436px wide) overflows the viewport outright.
+   Measured (pre-Task-9, search still a floating .search-bar-container):
      390px -> 22px of map visible, .map-controls overflows, both collisions
      504px -> 136px of map visible, no collisions
      768px -> 400px of map visible, no collisions (minimum supported)
      1440px -> 1072px of map visible, no collisions
-   Narrow-viewport support would need to address the floating controls as a
-   set (rail, flyout, search bar, map-controls, OGC button), not one at a
+   Task 9 moved search into .top-bar (.top-bar-search), so it no longer
+   floats over the map or factors into this collision set — see
+   task-9-report.md for the post-move rectangles at 768/1440px.
+   Narrow-viewport support would need to address the remaining floating
+   controls as a set (rail, flyout, map-controls, OGC button), not one at a
    time — see rail-width/flyout-width/topbar-height above, which drive the
    arithmetic. */

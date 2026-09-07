@@ -9,6 +9,8 @@ Files here (`MapModel.ts`, `styles.ts`, `wfsSource.ts`) are the only ones that i
 `ol/*` for map construction.
 
 **Transitional exception (removed in Plan 3c):** the provider still exposes the raw OL
-`map` via `useMapContext().map`, and three not-yet-migrated panels use it directly —
-`MapControls` (measure/zoom), `OGCClient` (WMS), `SearchBar` (`fromLonLat`/flyTo). Plan 3c
-moves those interactions onto `MapModel` methods and removes the raw-`map` surface.
+`map` via `useMapContext().map`, and two not-yet-migrated panels use it directly —
+`MapControls` (measure/zoom), `OGCClient` (WMS). Plan 3c moves those interactions onto
+`MapModel` methods and removes the raw-`map` surface. `features/search` no longer needs
+this exception: it drives the map only through `createCommandExecutor` (`mapCommands.ts`),
+same as every other command-issuing feature.

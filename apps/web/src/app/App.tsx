@@ -6,7 +6,6 @@ import AdminUsersRoute from '../pages/admin-users';
 import MapView from '../features/map/ui/MapView';
 import LayersPanel from '../features/layers-panel';
 import MapToolbar from '../features/map/ui/MapToolbar';
-import SearchBar from '../components/SearchBar';
 import DynamicPopup from '../components/DynamicPopup';
 import Legend from '../features/legend';
 import OGCClient from '../components/OGCClient';
@@ -32,8 +31,6 @@ function App() {
 
           {/* Left: doing. Burger drawer with the editing tools (editor/admin). */}
           <Shell />
-
-          <SearchBar />
 
           {/* Left: seeing. Icon rail + docked flyout replace the floating panels. */}
           <IconRail
