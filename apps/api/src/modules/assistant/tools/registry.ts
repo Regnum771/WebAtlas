@@ -1,3 +1,4 @@
+import { config } from '../../../config/env';
 import type { ToolContext, ToolFactory } from './types';
 import { zoomToRegionTool } from './command/zoomToRegion';
 import { zoomToFeatureTool } from './command/zoomToFeature';
@@ -10,6 +11,7 @@ import { distanceBetweenTool } from './data/distanceBetween';
 import { areaOfTool } from './data/areaOf';
 import { filterByAttributeTool } from './data/filterByAttribute';
 import { relatedFeaturesTool } from './data/relatedFeatures';
+import { runSqlTool } from './data/runSql';
 
 /**
  * The whole tool surface, in a fixed order.
@@ -57,5 +59,9 @@ export function guardToolErrors<T extends { run: (input: never) => unknown }>(to
 }
 
 export function buildTools(ctx: ToolContext) {
-  return FACTORIES.map((factory) => guardToolErrors(factory(ctx) as never));
+  // The escape hatch is only offered when a read-only role is configured.
+  // Advertising a tool that always answers "not configured" wastes cached
+  // prefix tokens on every turn and teaches the model to try it anyway.
+  const factories = config.ASSISTANT_DATABASE_URL ? [...FACTORIES, runSqlTool] : FACTORIES;
+  return factories.map((factory) => guardToolErrors(factory(ctx) as never));
 }
