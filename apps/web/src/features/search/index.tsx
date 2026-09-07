@@ -11,6 +11,7 @@ export default function Search() {
   const run = createCommandExecutor({
     map, setBasemap, toggleLayerVisibility, setLayerOpacity,
     getLayerVisible: (id) => layersState.find((l) => l.id === id)?.visible ?? false,
+    layerExists: (id) => layersState.some((l) => l.id === id),
   });
 
   const onSelect = (hit: SearchHit) => {

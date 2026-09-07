@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { isMapCommand, MAP_COMMAND_KINDS, type MapCommand } from './map-commands.js';
+import {
+  isMapCommand,
+  MAP_COMMAND_KINDS,
+  LAYER_STATE_IDS,
+  ADMIN_BOUNDARY_LAYER_STATE_IDS,
+  type MapCommand,
+} from './map-commands.js';
+import { LAYER_ATTRIBUTE_MAP } from './layer-attributes.js';
 
 describe('isMapCommand', () => {
   it('accepts a well-formed zoomToRegion command', () => {
@@ -80,5 +87,43 @@ describe('isMapCommand', () => {
       'zoomToFeature',
       'zoomToRegion',
     ]);
+  });
+
+  it('accepts setLayerVisible with a known layerStateId', () => {
+    expect(isMapCommand({ kind: 'setLayerVisible', layerStateId: 'layer_dams', visible: true })).toBe(true);
+  });
+
+  it('rejects setLayerVisible with an unknown layerStateId (assistant hallucination)', () => {
+    expect(isMapCommand({ kind: 'setLayerVisible', layerStateId: 'bogus', visible: true })).toBe(false);
+  });
+
+  it('accepts setLayerOpacity with a known layerStateId', () => {
+    expect(isMapCommand({ kind: 'setLayerOpacity', layerStateId: 'layer_rivers', opacity: 0.5 })).toBe(true);
+  });
+
+  it('rejects setLayerOpacity with an unknown layerStateId', () => {
+    expect(isMapCommand({ kind: 'setLayerOpacity', layerStateId: 'bogus', opacity: 0.5 })).toBe(false);
+  });
+
+  it('accepts every editable layer id and the client-only administrative boundary ids', () => {
+    for (const id of ['layer_dams', 'layer_rivers', 'layer_lakes', 'layer_stations', 'layer_flood',
+      'layer_drought_survey', 'layer_saltwater_intrusion', 'layer_flood_generation',
+      'layer_provinces_2026', 'layer_wards_2026']) {
+      expect(isMapCommand({ kind: 'setLayerVisible', layerStateId: id, visible: true })).toBe(true);
+    }
+  });
+});
+
+describe('LAYER_STATE_IDS', () => {
+  it('is derived from LAYER_ATTRIBUTE_MAP plus the two admin-boundary ids, not a hand-typed list', () => {
+    const expected = [
+      ...Object.values(LAYER_ATTRIBUTE_MAP).map((info) => info.layerStateId),
+      ...ADMIN_BOUNDARY_LAYER_STATE_IDS,
+    ];
+    expect([...LAYER_STATE_IDS].sort()).toEqual([...expected].sort());
+  });
+
+  it('contains no duplicates', () => {
+    expect(new Set(LAYER_STATE_IDS).size).toBe(LAYER_STATE_IDS.length);
   });
 });

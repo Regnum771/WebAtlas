@@ -21,6 +21,14 @@ export interface CommandDeps {
   toggleLayerVisibility: (layerStateId: string) => void;
   setLayerOpacity: (layerStateId: string, opacity: number) => void;
   getLayerVisible: (layerStateId: string) => boolean;
+  /**
+   * Does this layerStateId exist in the current layersState? `isMapCommand`
+   * checks against the fixed LAYER_STATE_IDS set, but that only guards
+   * assistant-produced commands routed through the API; a UI-issued MapCommand
+   * skips that check entirely. Without this, a bogus id would sail through
+   * setLayerVisible/setLayerOpacity and still be reported as `ok: true`.
+   */
+  layerExists: (layerStateId: string) => boolean;
 }
 
 export type CommandResult = { ok: true; text: string } | { ok: false; reason: string };
@@ -70,12 +78,18 @@ export function createCommandExecutor(deps: CommandDeps) {
         return { ok: true, text: 'Đã đổi mức thu phóng.' };
       }
       case 'setLayerVisible': {
+        if (!deps.layerExists(cmd.layerStateId)) {
+          return { ok: false, reason: 'Không tìm thấy lớp dữ liệu.' };
+        }
         if (deps.getLayerVisible(cmd.layerStateId) !== cmd.visible) {
           deps.toggleLayerVisibility(cmd.layerStateId);
         }
         return { ok: true, text: cmd.visible ? 'Đã bật lớp dữ liệu.' : 'Đã tắt lớp dữ liệu.' };
       }
       case 'setLayerOpacity': {
+        if (!deps.layerExists(cmd.layerStateId)) {
+          return { ok: false, reason: 'Không tìm thấy lớp dữ liệu.' };
+        }
         deps.setLayerOpacity(cmd.layerStateId, cmd.opacity);
         return { ok: true, text: `Đã đặt độ mờ ${Math.round(cmd.opacity * 100)}%.` };
       }

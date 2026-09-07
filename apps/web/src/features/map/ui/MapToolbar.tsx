@@ -147,6 +147,7 @@ export default function MapToolbar() {
         toggleLayerVisibility,
         setLayerOpacity,
         getLayerVisible: (id) => layersState.find((l) => l.id === id)?.visible ?? false,
+        layerExists: (id) => layersState.some((l) => l.id === id),
       }),
     [map, setBasemap, toggleLayerVisibility, setLayerOpacity, layersState],
   );

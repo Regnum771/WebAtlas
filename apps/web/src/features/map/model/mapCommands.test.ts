@@ -22,6 +22,7 @@ function makeDeps(
     toggleLayerVisibility: vi.fn(),
     setLayerOpacity: vi.fn(),
     getLayerVisible: vi.fn().mockReturnValue(false),
+    layerExists: vi.fn().mockReturnValue(true),
     ...overrides,
   };
 }
@@ -76,6 +77,20 @@ describe('createCommandExecutor', () => {
     const deps = makeDeps();
     createCommandExecutor(deps)({ kind: 'setLayerOpacity', layerStateId: 'layer_rivers', opacity: 0.4 });
     expect(deps.setLayerOpacity).toHaveBeenCalledWith('layer_rivers', 0.4);
+  });
+
+  it('setLayerVisible reports failure instead of success when the layerStateId is not in layersState', () => {
+    const deps = makeDeps({ layerExists: vi.fn().mockReturnValue(false) });
+    const result = createCommandExecutor(deps)({ kind: 'setLayerVisible', layerStateId: 'bogus', visible: true });
+    expect(result.ok).toBe(false);
+    expect(deps.toggleLayerVisibility).not.toHaveBeenCalled();
+  });
+
+  it('setLayerOpacity reports failure instead of success when the layerStateId is not in layersState', () => {
+    const deps = makeDeps({ layerExists: vi.fn().mockReturnValue(false) });
+    const result = createCommandExecutor(deps)({ kind: 'setLayerOpacity', layerStateId: 'bogus', opacity: 0.5 });
+    expect(result.ok).toBe(false);
+    expect(deps.setLayerOpacity).not.toHaveBeenCalled();
   });
 
   it('setBasemap forwards the basemap', () => {

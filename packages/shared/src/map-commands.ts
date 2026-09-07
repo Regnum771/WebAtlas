@@ -8,6 +8,10 @@
  */
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from './index.js';
 import { REGION_PROVINCE_CODES } from './region.js';
+// Imported directly from layer-attributes.js, not via index.js: index.js itself
+// re-exports this module, and routing through it would make LAYER_STATE_IDS'
+// top-level initialization depend on module-cycle load order.
+import { LAYER_ATTRIBUTE_MAP } from './layer-attributes.js';
 
 export const MAP_COMMAND_KINDS = [
   'zoomToRegion',
@@ -23,6 +27,29 @@ export type MapCommandKind = (typeof MAP_COMMAND_KINDS)[number];
 
 export const BASEMAP_TYPES = ['street', 'satellite', 'dem'] as const;
 export type BasemapName = (typeof BASEMAP_TYPES)[number];
+
+/**
+ * The two client-only administrative boundary layers: not editable data (no
+ * EditableLayerKey/LAYER_ATTRIBUTE_MAP entry), but real rows in the layers
+ * panel and real `layersState` ids in `MapModel`. Defined once here so
+ * `layerDisplay.ts` (web) and `LAYER_STATE_IDS` below both read the same two
+ * strings instead of each hand-typing them — see layer-attributes' terrain/dem
+ * and legend-colour drift for what happens when a list like this gets copied.
+ */
+export const ADMIN_BOUNDARY_LAYER_STATE_IDS = ['layer_provinces_2026', 'layer_wards_2026'] as const;
+
+/**
+ * Every valid `layerStateId`: the 8 editable layers' ids (derived from
+ * LAYER_ATTRIBUTE_MAP, not hand-copied) plus the 2 admin-boundary ids above.
+ */
+export const LAYER_STATE_IDS: readonly string[] = [
+  ...Object.values(LAYER_ATTRIBUTE_MAP).map((info) => info.layerStateId),
+  ...ADMIN_BOUNDARY_LAYER_STATE_IDS,
+];
+
+function isLayerStateId(value: unknown): value is string {
+  return typeof value === 'string' && LAYER_STATE_IDS.includes(value);
+}
 
 export type MapCommand =
   | { kind: 'zoomToRegion'; provinceCode: string }
@@ -55,8 +82,9 @@ function isLayerKey(value: unknown): value is EditableLayerKey {
 
 /**
  * Runtime guard. The API validates assistant-produced commands with this before
- * sending them to the browser, so an out-of-region province code or an unknown
- * layer key never reaches the map.
+ * sending them to the browser, so an out-of-region province code, an unknown
+ * layer key (zoomToFeature), or an unknown layerStateId (setLayerVisible,
+ * setLayerOpacity) never reaches the map.
  */
 export function isMapCommand(value: unknown): value is MapCommand {
   if (typeof value !== 'object' || value === null) return false;
@@ -75,10 +103,10 @@ export function isMapCommand(value: unknown): value is MapCommand {
     case 'resetView':
       return true;
     case 'setLayerVisible':
-      return typeof c.layerStateId === 'string' && typeof c.visible === 'boolean';
+      return isLayerStateId(c.layerStateId) && typeof c.visible === 'boolean';
     case 'setLayerOpacity':
       return (
-        typeof c.layerStateId === 'string' &&
+        isLayerStateId(c.layerStateId) &&
         typeof c.opacity === 'number' &&
         c.opacity >= 0 &&
         c.opacity <= 1

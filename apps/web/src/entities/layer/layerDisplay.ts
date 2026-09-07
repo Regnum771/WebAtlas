@@ -1,3 +1,5 @@
+import { ADMIN_BOUNDARY_LAYER_STATE_IDS } from '@webatlas/shared';
+
 export interface LayerDisplayMeta {
   name: string;
   group: string;
@@ -8,12 +10,18 @@ export interface LayerDisplayMeta {
   opacity: number;
 }
 
+// Read from the shared constant rather than typed as literals here a second
+// time — that duplication is exactly what let LAYER_STATE_IDS (shared) and
+// LAYER_DISPLAY (here) drift in the past (see the terrain/dem and legend
+// colour incidents referenced in map-commands.ts).
+const [PROVINCES_LAYER_STATE_ID, WARDS_LAYER_STATE_ID] = ADMIN_BOUNDARY_LAYER_STATE_IDS;
+
 /** Presentation metadata keyed by layerStateId. The API catalog is the authority
  *  on which layers exist and are editable; this supplies names and grouping,
  *  including for the client-only administrative boundaries. */
 export const LAYER_DISPLAY: Record<string, LayerDisplayMeta> = {
-  layer_provinces_2026: { name: 'Ranh giới Tỉnh', group: 'Ranh giới hành chính', defaultVisible: true, opacity: 1 },
-  layer_wards_2026: { name: 'Ranh giới Xã/Phường', group: 'Ranh giới hành chính', minZoom: 10, defaultVisible: true, opacity: 1 },
+  [PROVINCES_LAYER_STATE_ID]: { name: 'Ranh giới Tỉnh', group: 'Ranh giới hành chính', defaultVisible: true, opacity: 1 },
+  [WARDS_LAYER_STATE_ID]: { name: 'Ranh giới Xã/Phường', group: 'Ranh giới hành chính', minZoom: 10, defaultVisible: true, opacity: 1 },
   layer_dams: { name: 'Đập & Hồ chứa', group: 'Tài nguyên nước', defaultVisible: true, opacity: 1 },
   layer_rivers: { name: 'Mạng lưới sông ngòi', group: 'Tài nguyên nước', minZoom: 8.5, defaultVisible: true, opacity: 0.8 },
   layer_lakes: { name: 'Hồ & Hồ chứa', group: 'Tài nguyên nước', minZoom: 8.5, defaultVisible: true, opacity: 0.85 },
