@@ -23,5 +23,6 @@ export * from './dam-status.js';
 export * from './region.js';
 export * from './osm-water.js';
 export * from './map-commands.js';
+export * from './assistant.js';
 export * from './layer-palette.js';
 export * from './legend.js';
