@@ -1,0 +1,36 @@
+/* Design tokens. Dark chrome (top bar + rail) framing light content panels.
+   Chrome greens are chosen to sit away from the hazard-layer palette so the
+   frame never competes with data colours. */
+:root {
+  --chrome-bg: #14532d;
+  --chrome-bg-hover: #166534;
+  --chrome-fg: #dcfce7;
+  --chrome-fg-muted: #86efac;
+
+  --surface: #ffffff;
+  --surface-raised: #f8fafc;
+  --surface-sunken: #f1f5f9;
+  --border: #d4d4d8;
+  --border-strong: #a1a1aa;
+
+  --text-main: #18181b;
+  --text-muted: #52525b;
+  --accent: #0f766e;
+  --danger: #b91c1c;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  --radius-sm: 3px;
+  --radius-md: 6px;
+
+  --elev-1: 0 1px 3px rgba(15, 23, 42, 0.12);
+  --elev-2: 0 4px 12px rgba(15, 23, 42, 0.16);
+
+  --rail-width: 48px;
+  --flyout-width: 320px;
+  --topbar-height: 48px;
+}

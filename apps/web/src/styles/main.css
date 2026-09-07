@@ -1,3 +1,4 @@
+@import '../shared/ui/tokens.css';
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 
 :root {
@@ -5,8 +6,7 @@
   --primary-hover: #2563eb;
   --bg-panel: rgba(255, 255, 255, 0.75);
   --bg-panel-hover: rgba(255, 255, 255, 0.9);
-  --text-main: #1f2937;
-  --text-muted: #6b7280;
+  /* --text-main / --text-muted now come from tokens.css (single source of truth) */
   --border-color: rgba(255, 255, 255, 0.4);
   --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
 }
@@ -963,9 +963,10 @@ body {
 
 /* Shell layout restructure: left = doing, right = seeing */
 .top-bar {
-  position: absolute; top: 0; left: 0; right: 0; height: 52px;
+  position: absolute; top: 0; left: 0; right: 0; height: var(--topbar-height);
   z-index: 1200; display: flex; align-items: center; justify-content: space-between;
   padding: 0 12px; border-radius: 0;
+  background: var(--chrome-bg); color: var(--chrome-fg);
 }
 .top-bar-brand { font-weight: 700; letter-spacing: 0.02em; margin-left: 44px; }
 .top-bar-right, .top-bar-profile { display: flex; align-items: center; gap: 12px; }
