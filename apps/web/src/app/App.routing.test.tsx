@@ -5,7 +5,7 @@ vi.mock('../features/map/ui/MapView', () => ({ default: () => <div>MAP_VIEW</div
 vi.mock('../components/LayerTree', () => ({ default: () => <div>LAYER_TREE</div> }));
 vi.mock('../components/DynamicPopup', () => ({ default: () => <div>POPUP</div> }));
 vi.mock('../components/OGCClient', () => ({ default: () => <div>OGC</div> }));
-vi.mock('../components/MapControls', () => ({ default: () => <div>CONTROLS</div> }));
+vi.mock('../features/map/ui/MapToolbar', () => ({ default: () => <div>TOOLBAR</div> }));
 vi.mock('../components/SearchBar', () => ({ default: () => <div>SEARCH</div> }));
 vi.mock('../widgets/top-bar', () => ({ default: () => <div>TOP_BAR</div> }));
 vi.mock('../features/shell', () => ({ default: () => <div>SHELL</div> }));

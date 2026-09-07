@@ -1,11 +1,20 @@
 import React, { useState } from 'react';
-import { useMapContext } from '../app/providers/MapProvider';
+import { useMapContext, type BasemapType } from '../app/providers/MapProvider';
 import { layerGroups } from '../data/mockData';
-import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
-import BasemapSwitcher from './BasemapSwitcher';
+import { ChevronDown, ChevronRight, Layers, Map, Mountain } from 'lucide-react';
+
+// LayerTree is dead code (the rail mounts features/layers-panel instead) awaiting a
+// later cleanup task — see task-7-report.md. `components/BasemapSwitcher.tsx` was
+// deleted when the toolbar took over basemap selection (features/map/ui/MapToolbar),
+// so its three buttons are inlined here rather than reintroducing that file.
+const BASEMAP_OPTIONS: { id: BasemapType; label: string; icon: React.ReactNode }[] = [
+  { id: 'street', label: 'Đường phố', icon: <Map size={18} /> },
+  { id: 'satellite', label: 'Vệ tinh', icon: <Layers size={18} /> },
+  { id: 'dem', label: 'Địa hình', icon: <Mountain size={18} /> },
+];
 
 const LayerTree: React.FC = () => {
-  const { layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
+  const { basemap, setBasemap, layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     'group_water_resources': true
   });
@@ -27,7 +36,19 @@ const LayerTree: React.FC = () => {
       <div className="layer-tree-content">
         <div className="layer-tree-section">
           <h3 className="layer-tree-section-title">Bản đồ nền</h3>
-          <BasemapSwitcher />
+          <div className="basemap-switcher">
+            {BASEMAP_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setBasemap(opt.id)}
+                className={`basemap-btn ${basemap === opt.id ? 'active' : ''}`}
+                title={opt.label}
+              >
+                {opt.icon}
+                <span>{opt.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
         {layerGroups.map(group => (
           <div key={group.id} className="mb-2">

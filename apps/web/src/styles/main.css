@@ -228,19 +228,27 @@ body {
   cursor: pointer;
 }
 
-/* Map Controls — thanh ngang nằm cạnh nút "Hiện giao diện" (góc phải dưới).
-   Trước đây là cột dọc ở góc phải trên nên bị panel "Quản lý dữ liệu" che mất. */
-.map-controls {
+/* Map Toolbar (features/map/ui/MapToolbar) — vertical rail docked top-right.
+   Positioned BELOW .ogc-trigger-btn (top: topbar+space-3, 40px circle) with its
+   own space-3 gap, so the rail's top edge never overlaps that button regardless
+   of viewport width — both are anchored to the same `right` offset. */
+.map-toolbar {
   position: absolute;
-  bottom: 12px;
-  /* Flush against the right edge, matching the 12px inset used by other
-     floating controls (e.g. .close-popup-btn) in this stylesheet. */
-  right: 12px;
+  top: calc(var(--topbar-height) + var(--space-3) + 40px + var(--space-3));
+  right: var(--space-3);
   z-index: 20;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
+}
+
+.toolbar-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
 }
 
 .control-bar {
@@ -256,6 +264,18 @@ body {
   flex-direction: row;
   align-items: center;
   gap: 4px;
+}
+
+.toolbar-col {
+  flex-direction: column;
+}
+
+/* Inside the vertical rail, dividers run horizontally instead of vertically. */
+.toolbar-rail > .control-divider {
+  width: 100%;
+  height: 1px;
+  align-self: stretch;
+  margin: 2px 0;
 }
 
 .control-divider {
@@ -358,11 +378,20 @@ body {
 
 .measure-result {
   font-size: 14px;
-  white-space: nowrap;
   animation: fadeIn 0.3s ease-out;
   padding: 8px 12px;
   font-weight: 600;
   color: var(--primary);
+  /* Bounded + wrapping, not nowrap: a large drawn area can format to a long
+     string (e.g. "Diện tích: 244666.48 km²"). Left unbounded, that string's
+     width pushes this right-docked pill's LEFT edge past .search-bar-container
+     at the 768px minimum viewport — confirmed empirically (see task-7-report.md).
+     Wrapping to a second line keeps the value fully visible without growing
+     sideways into the search bar. */
+  max-width: 160px;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-align: right;
 }
 
 @keyframes fadeIn {

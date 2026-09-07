@@ -5,7 +5,7 @@ import Shell from '../features/shell';
 import AdminUsersRoute from '../pages/admin-users';
 import MapView from '../features/map/ui/MapView';
 import LayersPanel from '../features/layers-panel';
-import MapControls from '../components/MapControls';
+import MapToolbar from '../features/map/ui/MapToolbar';
 import SearchBar from '../components/SearchBar';
 import DynamicPopup from '../components/DynamicPopup';
 import Legend from '../features/legend';
@@ -26,7 +26,7 @@ function App() {
               /admin/users overlays a live map instead of unmounting it, so
               center/zoom/layer state survives navigation. */}
           <MapView />
-          <MapControls />
+          <MapToolbar />
 
           <TopBar />
 
