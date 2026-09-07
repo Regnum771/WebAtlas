@@ -68,28 +68,41 @@ export function layerTable(key: EditableLayerKey): string {
  * `NOT deleted`) when selecting from the `resolved` relation this exposes;
  * the candidate query only narrows the scan, it is not the authoritative
  * filter.
+ *
+ * `prefix` lets two independent CTE chains coexist in one `WITH` — the fixed
+ * names (`active_layer`, `chain_layer`, `candidates_layer`, `resolved`) would
+ * otherwise collide when a tool spans two layers (or the same layer twice,
+ * e.g. distance between two dams). Pass a distinct prefix per chain in that
+ * case (e.g. `'from_'` / `'to_'`); the resolved relation is then
+ * `${prefix}resolved`. Left at the default `''`, the emitted names are
+ * byte-identical to the unprefixed originals, so existing single-chain
+ * callers need no change.
  */
-export function candidateCtes(key: EditableLayerKey, candidateQuery: string): string {
+export function candidateCtes(key: EditableLayerKey, candidateQuery: string, prefix = ''): string {
   const table = layerTable(key);
+  const active = `${prefix}active_layer`;
+  const chain = `${prefix}chain_layer`;
+  const candidates = `${prefix}candidates_layer`;
+  const resolved = `${prefix}resolved`;
   return `
-    active_layer AS (
+    ${active} AS (
       SELECT id FROM app.dataset_versions WHERE layer_key = '${key}' AND is_active
     ),
-    chain_layer AS (
+    ${chain} AS (
       SELECT v.id, v.parent_version_id, 0 AS depth
-        FROM app.dataset_versions v JOIN active_layer a ON v.id = a.id
+        FROM app.dataset_versions v JOIN ${active} a ON v.id = a.id
       UNION ALL
       SELECT p.id, p.parent_version_id, c.depth + 1
-        FROM app.dataset_versions p JOIN chain_layer c ON p.id = c.parent_version_id
+        FROM app.dataset_versions p JOIN ${chain} c ON p.id = c.parent_version_id
     ),
-    candidates_layer AS (
+    ${candidates} AS (
       SELECT DISTINCT external_id FROM (${candidateQuery}) AS candidate
     ),
-    resolved AS (
+    ${resolved} AS (
       SELECT DISTINCT ON (t.external_id) t.*
         FROM ${table} t
-        JOIN chain_layer c ON t.dataset_version_id = c.id
-        JOIN candidates_layer ci ON ci.external_id = t.external_id
+        JOIN ${chain} c ON t.dataset_version_id = c.id
+        JOIN ${candidates} ci ON ci.external_id = t.external_id
         ORDER BY t.external_id, c.depth
     )`;
 }

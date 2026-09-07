@@ -6,6 +6,10 @@ import { setBasemapTool } from './command/setBasemap';
 import { highlightFeaturesTool } from './command/highlightFeatures';
 import { featuresInViewTool } from './data/featuresInView';
 import { nearestFeaturesTool } from './data/nearestFeatures';
+import { distanceBetweenTool } from './data/distanceBetween';
+import { areaOfTool } from './data/areaOf';
+import { filterByAttributeTool } from './data/filterByAttribute';
+import { relatedFeaturesTool } from './data/relatedFeatures';
 
 /**
  * The whole tool surface, in a fixed order.
@@ -15,7 +19,7 @@ import { nearestFeaturesTool } from './data/nearestFeatures';
  * requests would miss the cache every time. Adding a capability means adding a
  * file and one line here — never editing a dispatcher.
  *
- * Data tools (Tasks 5, 6) and the SQL escape hatch (Task 8) append below.
+ * The SQL escape hatch (Task 8) appends below.
  */
 const FACTORIES: ToolFactory[] = [
   zoomToRegionTool,
@@ -25,6 +29,10 @@ const FACTORIES: ToolFactory[] = [
   highlightFeaturesTool,
   featuresInViewTool,
   nearestFeaturesTool,
+  distanceBetweenTool,
+  areaOfTool,
+  filterByAttributeTool,
+  relatedFeaturesTool,
 ];
 
 export function buildTools(ctx: ToolContext) {
