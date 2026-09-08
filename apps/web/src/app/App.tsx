@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppProviders } from './providers/AppProviders';
 import TopBar from '../widgets/top-bar';
@@ -28,6 +29,16 @@ function RailAndFlyout() {
       ? [{ id: 'assistant' as const, label: 'Trợ lý', icon: <MessageSquare size={20} /> }]
       : []),
   ];
+
+  // Logging out removes the rail entry above, but does not by itself close an
+  // already-open panel. Close it here instead — only reacts to `status`
+  // leaving 'authenticated', so it never fires while the user is logged in
+  // and cannot fight their own rail.toggle clicks.
+  useEffect(() => {
+    if (status !== 'authenticated' && rail.active === 'assistant') {
+      rail.toggle('assistant');
+    }
+  }, [status, rail.active, rail.toggle]);
 
   return (
     <>

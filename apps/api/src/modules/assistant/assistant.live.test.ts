@@ -4,10 +4,16 @@
  * execution. Run deliberately with `npm run test:api:live`.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import type { FastifyBaseLogger } from 'fastify';
 import type { MapCommand, MapContext } from '@webatlas/shared';
 import { getPool, closePool } from '../../db/pool';
 import { runAssistant } from './service';
 import { config } from '../../config/env';
+
+// This suite never runs without ANTHROPIC_API_KEY (describe.skip below), so a
+// real Fastify request logger is not available here — a console-backed stub
+// satisfies runAssistant's AssistantDeps.logger without pulling in Fastify.
+const testLogger = console as unknown as FastifyBaseLogger;
 
 const MAP_CONTEXT: MapContext = {
   bbox: [106.5, 10.5, 110.0, 16.5],
@@ -24,7 +30,14 @@ beforeAll(() => { pool = getPool(); });
 afterAll(async () => { await closePool(); });
 
 function ask(message: string, sessionId = `live-${Math.random()}`) {
-  return runAssistant({ pool, userId: 'live-test-user', sessionId, message, mapContext: MAP_CONTEXT });
+  return runAssistant({
+    pool,
+    userId: 'live-test-user',
+    sessionId,
+    message,
+    mapContext: MAP_CONTEXT,
+    logger: testLogger,
+  });
 }
 
 maybe('intent routing (live model)', () => {

@@ -46,9 +46,12 @@ export function useAssistant({ getMapContext, run }: UseAssistantDeps) {
           ...prev,
           { role: 'assistant', segments: reply.segments, provenance: reply.provenance },
         ]);
-        // Commands run after the reply is rendered, in the order the model
-        // issued them. The server has already validated each one with
-        // isMapCommand; the executor validates the layer ids again.
+        // setTurns only SCHEDULES the transcript update; this loop runs
+        // synchronously in the same tick, before React re-renders. That is
+        // harmless here because commands act on the imperative OpenLayers map
+        // object, not on DOM read back from the rendered reply. The server has
+        // already validated each command with isMapCommand; the executor
+        // validates the layer ids again.
         for (const command of reply.commands) run(command);
       } catch (e) {
         setError(e instanceof Error && e.message ? e.message : 'Không gửi được câu hỏi.');
@@ -61,14 +64,20 @@ export function useAssistant({ getMapContext, run }: UseAssistantDeps) {
 
   const retry = useCallback(async () => {
     const message = lastMessage.current;
-    if (!message) return;
+    // Mirror send()'s own guard before mutating the transcript: if loading is
+    // already true, send(message) below would return early without re-adding
+    // the turn, and popping it here would make the question vanish for good.
+    // Currently unreachable (the retry button only renders once `error` is
+    // set, which happens in the same batch as loading -> false), but keep the
+    // ordering safe rather than relying on that being permanently true.
+    if (!message || loading) return;
     // Drop the failed question so retrying does not duplicate it.
     setTurns((prev) => {
       const last = prev[prev.length - 1];
       return last && last.role === 'user' ? prev.slice(0, -1) : prev;
     });
     await send(message);
-  }, [send]);
+  }, [send, loading]);
 
   return { turns, loading, error, send, retry };
 }

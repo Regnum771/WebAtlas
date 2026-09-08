@@ -12,7 +12,7 @@ export default fp(async (app) => {
     if (err instanceof AppError) {
       appErr = err;
     } else if ((err as { statusCode?: number }).statusCode === 429) {
-      appErr = new AppError(429, 'RATE_LIMITED', 'Too many requests');
+      appErr = new AppError(429, 'RATE_LIMITED', 'Quá nhiều yêu cầu, vui lòng thử lại sau.');
     } else {
       req.log.error(err);
       appErr = new InternalError();

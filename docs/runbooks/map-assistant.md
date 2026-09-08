@@ -17,7 +17,7 @@ mô hình và không giữ khoá API.
 | `ASSISTANT_DAILY_TOKEN_BUDGET` | `200000` | Trần token mỗi người dùng mỗi ngày UTC. `0` là không giới hạn. |
 | `ASSISTANT_SESSION_TTL_MS` | `1800000` | Thời gian sống của một phiên hội thoại (30 phút). |
 | `ASSISTANT_DATABASE_URL` | (rỗng) | Chuỗi kết nối của vai trò `webatlas_assistant`. Không đặt thì công cụ `run_sql` **không được đăng ký** — cố tình như vậy, vì quảng cáo một công cụ luôn báo "chưa cấu hình" chỉ tốn token tiền tố có cache mỗi lượt. |
-| `ASSISTANT_DB_PASSWORD` | `change_me_dev` | Mật khẩu vai trò, đọc lúc chạy migration `1000000000008`. |
+| `ASSISTANT_DB_PASSWORD` | `change_me_dev` | Mật khẩu vai trò. Khai báo ở `apps/api/.env` (không phải `infra/.env`) — `node-pg-migrate` đọc `.env` từ thư mục làm việc của nó, là `apps/api/`. Migration `1000000000008` áp mật khẩu bằng `ALTER ROLE ... PASSWORD` chạy mỗi lần migration đó thực thi, nên đổi giá trị rồi chạy lại migration là xoay được mật khẩu thật, không phải no-op. |
 
 Sau khi thêm khoá vào `apps/api/.env`, khởi động lại API. Không commit `.env`
 (đã nằm trong `.gitignore`); `.env.example` mới là bản mẫu được theo dõi.
@@ -86,6 +86,17 @@ Mỗi tin nhắn là một chuỗi lời gọi API có trả phí. Ba chốt ch�
    IP sẽ chặn lẫn nhau.
 3. **Trần token ngày** trong `budget.ts`. Chạm trần thì tuyến trả 429
    `ASSISTANT_BUDGET_EXCEEDED`.
+
+   Đây **không phải trần cứng**: `controller.ts` gọi `budget.check()` trước
+   vòng lặp mô hình, còn `service.ts` chỉ gọi `budget.record()` **sau khi**
+   vòng lặp đó xong. Nhiều yêu cầu đồng thời của cùng một người dùng vì thế có
+   thể cùng vượt qua `check()` trong lúc `used` còn cũ, nên tổng token tiêu
+   thực tế có thể vượt trần tới xấp xỉ một đợt dồn dập (tối đa
+   `MAX_ITERATIONS` × (một lượt prompt đầy đủ + 2048 token ra) mỗi yêu cầu)
+   trước khi `record()` đầu tiên kịp ghi sổ và `check()` kế tiếp mới chặn lại.
+   Bị chặn bởi giới hạn 20 tin nhắn/phút ở trên và tự sửa lại từ yêu cầu kế
+   tiếp — chấp nhận được cho một bộ đếm trong bộ nhớ một tiến trình, không
+   phải lỗi cần một cơ chế khoá/giữ chỗ để sửa.
 
 Bản đếm token cộng **cả bốn** trường: `input_tokens`, `output_tokens`,
 `cache_creation_input_tokens`, `cache_read_input_tokens`. Bỏ hai trường cache là đếm

@@ -40,6 +40,16 @@ export async function postMessage(req: FastifyRequest, reply: FastifyReply) {
     );
   }
 
+  // Known race: this check happens before the model loop, and budget.record()
+  // (service.ts) only lands after it finishes. A burst of concurrent requests
+  // from the same user can all pass check() while `used` is still stale, so
+  // the daily ceiling can be overshot within one burst — bounded by
+  // MAX_ITERATIONS per request and by the 20/min per-user rate limit on this
+  // route, and self-correcting on the next check(). Documented, not a bug;
+  // see the runbook's "Chi phí" section. Do not "fix" with a reservation
+  // scheme — this is a single-process in-memory counter, already known to be
+  // wrong across multiple processes, and a locking scheme is a real design
+  // change out of scope here.
   const status = budget.check(req.currentUser.id);
   if (!status.allowed) {
     throw new AppError(
@@ -56,6 +66,7 @@ export async function postMessage(req: FastifyRequest, reply: FastifyReply) {
     sessionId,
     message,
     mapContext,
+    logger: req.log,
   });
   reply.send(result);
 }

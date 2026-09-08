@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Pool } from 'pg';
+import type { FastifyBaseLogger } from 'fastify';
 import {
   parseReplySegments,
   type AssistantReply,
@@ -43,6 +44,9 @@ export interface AssistantDeps {
   sessionId: string;
   message: string;
   mapContext: MapContext;
+  /** The route's per-request logger, threaded through so the original
+   *  Anthropic error can be logged before toAppError() discards its detail. */
+  logger: FastifyBaseLogger;
 }
 
 /**
@@ -112,6 +116,12 @@ export async function runAssistant(deps: AssistantDeps): Promise<AssistantReply>
       last = message;
     }
   } catch (e) {
+    // Log the original error here, before toAppError() below replaces it with
+    // a generic AppError: the errorHandler plugin only logs the AppError it
+    // receives, so anything Anthropic actually said (rate limit detail, an
+    // APIError's status/message) would otherwise never reach the log — a
+    // production 502 ASSISTANT_UPSTREAM_ERROR would leave no trace of why.
+    deps.logger.error({ err: e }, 'Assistant model call failed');
     throw toAppError(e);
   } finally {
     // Charge whatever was actually spent even when a later iteration throws:

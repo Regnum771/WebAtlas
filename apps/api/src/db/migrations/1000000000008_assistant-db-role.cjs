@@ -22,6 +22,13 @@ exports.up = (pgm) => {
     $$;
   `);
 
+  // ALTER ROLE ... PASSWORD is idempotent and runs every time this migration
+  // applies (unlike the CREATE above, it is not inside the IF NOT EXISTS
+  // guard). Without this, rotating ASSISTANT_DB_PASSWORD and re-running
+  // migrations is a silent no-op: the role already exists, so the guarded
+  // CREATE never runs, and the old password keeps working.
+  pgm.sql(`ALTER ROLE ${ROLE} PASSWORD '${PASSWORD}';`);
+
   // The database name is not known at authoring time (POSTGRES_DB is
   // configurable), so build the GRANT with the current database's own name.
   pgm.sql(`

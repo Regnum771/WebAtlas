@@ -24,7 +24,18 @@ export const runSqlTool: ToolFactory = (ctx) =>
       const guarded = guardSql(input.sql);
       if (!guarded.ok) return `Truy vấn bị từ chối: ${guarded.reason}`;
 
-      const client = await pool.connect();
+      // pool.connect() lives inside the try, not before it: a bad
+      // ASSISTANT_DATABASE_URL (auth failure, ECONNREFUSED) throws here, and if
+      // that escaped this function it would reach guardToolErrors (registry.ts)
+      // uncaught, which hands the model — and potentially the end user — the
+      // raw pg error text (host, port, role name). Caught here instead, it gets
+      // the same neutral Vietnamese failure shape as a query error below.
+      let client;
+      try {
+        client = await pool.connect();
+      } catch {
+        return 'Không kết nối được tới cơ sở dữ liệu cho công cụ SQL. Hãy thử công cụ có sẵn thay vì SQL.';
+      }
       try {
         // READ ONLY on BEGIN, not `SET LOCAL default_transaction_read_only`:
         // that GUC only affects transactions started afterwards, so setting it

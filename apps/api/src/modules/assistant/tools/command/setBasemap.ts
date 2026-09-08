@@ -2,9 +2,10 @@
 import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { BASEMAP_TYPES, isMapCommand } from '@webatlas/shared';
+import type { BasemapName } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
 
-const LABELS: Record<string, string> = {
+const LABELS: Record<BasemapName, string> = {
   street: 'bản đồ đường phố',
   satellite: 'ảnh vệ tinh',
   dem: 'mô hình số độ cao',
