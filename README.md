@@ -249,8 +249,11 @@ The build-out is phased. Each plan produces working, testable software on its ow
 - [x] **Plan 4 — Fastify API control plane** (global middleware, typed errors, JWT auth, RBAC, user CRUD + audit).
 - [x] **Plan 5 — Layers feature CRUD API** (layer registry, generic GeoJSON CRUD, geometry validation, audit).
 - [x] **Plan 6 — Frontend admin auth foundation** (apiClient, session/login, RequireRole guard).
-- [ ] **Plan 7 (next)** — Admin map editing UI (draw/modify/delete + attribute forms → API → WFS refetch).
+- [ ] **Plan 7** — Admin map editing UI (draw/modify/delete + attribute forms → API → WFS refetch). Chưa triển khai; đây không còn là mốc kế tiếp.
 - [x] **Vùng công tác + OSM waterways + ranh giới 34 tỉnh** (dữ liệu chuyên đề giới hạn trong 6 tỉnh Nam Trung Bộ & Tây Nguyên; sông/hồ từ OpenStreetMap có tên riêng; ranh giới hành chính sau sáp nhập 01/7/2025).
+- [x] **Plan A — Cải tổ giao diện** (thanh biểu tượng thay bảy panel nổi, bảng lớp/chú giải chạy trên dữ liệu thật, lớp lệnh bản đồ dùng chung `MapCommand`).
+- [x] **Plan B — Trợ lý bản đồ** (LLM phía máy chủ hỏi đáp tiếng Việt, đo đạc bằng PostGIS, điều khiển bản đồ bằng ngôn ngữ tự nhiên). Xem [runbook](docs/runbooks/map-assistant.md).
+- [ ] **Tài liệu hoá lại kho** ([docs/superpowers/plans/2026-09-07-repo-redocumentation.md](docs/superpowers/plans/2026-09-07-repo-redocumentation.md)) — mốc kế tiếp.
 
 ## Documentation
 
