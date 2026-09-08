@@ -1,11 +1,25 @@
+/**
+ * Plumbing only: auth, validation, per-user rate limiting, the 503 gate. This
+ * suite must never call the model.
+ *
+ * It runs with ANTHROPIC_API_KEY forced off (see beforeAll), so every
+ * well-formed request short-circuits at the 503 gate — instantly and for free.
+ * Without that, a developer machine with a key configured turns `npm run
+ * test:api` into a paid run: the rate-limit test below fires up to 40
+ * authenticated requests, which became 40 real model calls and a 30s timeout
+ * the moment a key was present. The default suite is the free one by design;
+ * the model is exercised in assistant.live.test.ts, including over HTTP.
+ */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
 import { usersRepository } from '../users/repository';
 import { hashPassword } from '../../lib/password';
+import { config } from '../../config/env';
 import type { MapContext } from '@webatlas/shared';
 
 let app: ReturnType<typeof buildApp>;
+let savedApiKey: string | undefined;
 let token: string;
 let tokenB: string;
 
@@ -22,6 +36,10 @@ const MAP_CONTEXT: MapContext = {
 };
 
 beforeAll(async () => {
+  // Keep this suite free and deterministic regardless of the developer's .env.
+  savedApiKey = config.ANTHROPIC_API_KEY;
+  config.ANTHROPIC_API_KEY = undefined;
+
   app = buildApp();
   await app.ready();
   const repo = usersRepository(getPool());
@@ -52,6 +70,7 @@ afterAll(async () => {
   const userB = await repo.findByEmailWithHash(EMAIL_B);
   if (userB) await repo.remove(userB.id);
   await app.close();
+  config.ANTHROPIC_API_KEY = savedApiKey;
 });
 
 function post(payload: Record<string, unknown>, auth = true) {
@@ -102,20 +121,14 @@ describe('POST /api/assistant/messages', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('answers an authenticated, well-formed request', async () => {
+  it('carries an authenticated, well-formed request past auth and validation to the 503 gate', async () => {
+    // The key is forced off for this suite, so a valid request proves the whole
+    // preHandler chain accepted it and it reached the handler — what must never
+    // happen is a 4xx (rejected) or a 500 (broken). The 200 path costs tokens
+    // and is covered over HTTP in assistant.live.test.ts.
     const res = await post({ sessionId: 's1', message: 'xin chào', mapContext: MAP_CONTEXT });
-    // 503 is the correct answer on a machine with no ANTHROPIC_API_KEY set;
-    // 200 on one that has it. Both are pass conditions — what must never
-    // happen is a 4xx or a 500.
-    expect([200, 503]).toContain(res.statusCode);
-    if (res.statusCode === 503) {
-      expect((res.json() as { error: { code: string } }).error.code).toBe('ASSISTANT_UNAVAILABLE');
-    } else {
-      const body = res.json() as { segments: unknown[]; commands: unknown[]; provenance: unknown[] };
-      expect(Array.isArray(body.segments)).toBe(true);
-      expect(Array.isArray(body.commands)).toBe(true);
-      expect(Array.isArray(body.provenance)).toBe(true);
-    }
+    expect(res.statusCode).toBe(503);
+    expect((res.json() as { error: { code: string } }).error.code).toBe('ASSISTANT_UNAVAILABLE');
   });
 
   it('rate-limits per user, not per client IP', async () => {

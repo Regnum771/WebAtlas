@@ -78,6 +78,40 @@ export function usageTokens(usage: {
   );
 }
 
+/**
+ * Shown only when the model genuinely produced no text at all. Exported so the
+ * live suite can assert a reply is NOT this — the earlier version of that test
+ * checked only that provenance existed and that some segment was `grounded`,
+ * and this fallback satisfies both, so it passed while real answers were being
+ * discarded.
+ */
+export const NO_REPLY_FALLBACK = 'Xin lỗi, tôi chưa tạo được câu trả lời cho câu hỏi này.';
+
+/**
+ * Everything the assistant said this turn, in order.
+ *
+ * Reads EVERY message the runner yielded, not just the last one. The model
+ * routinely writes its answer in the same message as a final tool call, then
+ * ends the turn with an empty message once that tool returns. Observed live on
+ * "5 dap gan Buon Ma Thuot nhat?": the ranked list sat in message 2 of 3, and
+ * message 3 was end_turn with no content at all. Reading only the last message
+ * discarded the answer and showed the no-reply fallback, while commands and
+ * provenance (collected inside the tools) still came through — so the failure
+ * looked like the model refusing rather than a bug here.
+ *
+ * This is the common path, not an edge case: system prompt rule 7 tells the
+ * model to highlight the features it names, so any answer naming features ends
+ * on a tool call with nothing left to say.
+ */
+export function collectReplyText(messages: Anthropic.Beta.BetaMessage[]): string {
+  return messages
+    .flatMap((m) => m.content)
+    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
+    .map((b) => b.text.trim())
+    .filter((t) => t.length > 0)
+    .join('\n');
+}
+
 export async function runAssistant(deps: AssistantDeps): Promise<AssistantReply> {
   const commands: MapCommand[] = [];
   const provenance: Provenance[] = [];
@@ -104,7 +138,7 @@ export async function runAssistant(deps: AssistantDeps): Promise<AssistantReply>
     max_iterations: MAX_ITERATIONS,
   });
 
-  let last: Anthropic.Beta.BetaMessage | undefined;
+  const turnMessages: Anthropic.Beta.BetaMessage[] = [];
   // A tool runner iteration is a separate API call that resends the whole
   // prompt, so input tokens legitimately recur across iterations — summing
   // them is correct, not double-counting, because that is what was actually
@@ -113,7 +147,7 @@ export async function runAssistant(deps: AssistantDeps): Promise<AssistantReply>
   try {
     for await (const message of runner) {
       tokens += usageTokens(message.usage);
-      last = message;
+      turnMessages.push(message);
     }
   } catch (e) {
     // Log the original error here, before toAppError() below replaces it with
@@ -130,15 +164,9 @@ export async function runAssistant(deps: AssistantDeps): Promise<AssistantReply>
     budget.record(deps.userId, tokens);
   }
 
-  const text = (last?.content ?? [])
-    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n')
-    .trim();
+  const text = collectReplyText(turnMessages);
 
-  const segments = parseReplySegments(
-    text || 'Xin lỗi, tôi chưa tạo được câu trả lời cho câu hỏi này.'
-  );
+  const segments = parseReplySegments(text || NO_REPLY_FALLBACK);
 
   // History stores what was said, not how it was computed: the user's question
   // WITHOUT the map context (which is stale by the next turn and would be sent
