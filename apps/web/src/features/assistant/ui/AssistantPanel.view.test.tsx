@@ -69,6 +69,40 @@ describe('AssistantPanelView', () => {
     expect(input.value).toBe('');
   });
 
+  it('Enter sends', () => {
+    const props = renderPanel();
+    const input = screen.getByLabelText('Câu hỏi cho trợ lý');
+    fireEvent.change(input, { target: { value: 'Có bao nhiêu đập?' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(props.onSend).toHaveBeenCalledWith('Có bao nhiêu đập?');
+  });
+
+  it('Enter does NOT send while an IME is composing', () => {
+    // Vietnamese Telex/VNI input commits a character with Enter mid-word, so
+    // without the isComposing guard, typing "hồ" fires the message instead of
+    // the diacritic. If the guard were removed this test fails, because the
+    // handler would call onSend.
+    const props = renderPanel();
+    const input = screen.getByLabelText('Câu hỏi cho trợ lý');
+    fireEvent.change(input, { target: { value: 'ho' } });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
+
+  it('Shift+Enter does not send, so a question can span lines', () => {
+    const props = renderPanel();
+    const input = screen.getByLabelText('Câu hỏi cho trợ lý');
+    fireEvent.change(input, { target: { value: 'dòng một' } });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(props.onSend).not.toHaveBeenCalled();
+  });
+
+  it('announces new turns politely rather than interrupting the screen reader', () => {
+    renderPanel();
+    const transcript = screen.getByText('Có 151 đập trong vùng.').closest('.assistant-transcript');
+    expect(transcript).toHaveAttribute('aria-live', 'polite');
+  });
+
   it('disables the composer while a request is in flight', () => {
     renderPanel({ loading: true });
     expect(screen.getByLabelText('Câu hỏi cho trợ lý')).toBeDisabled();

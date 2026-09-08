@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { MapContext } from '@webatlas/shared';
 import { buildTools, guardToolErrors } from './registry';
+import { config } from '../../../config/env';
 import type { ToolContext } from './types';
 
 const ctx: ToolContext = {
@@ -27,6 +28,37 @@ describe('buildTools', () => {
     const a = buildTools(ctx).map((t) => (t as { name: string }).name);
     const b = buildTools(ctx).map((t) => (t as { name: string }).name);
     expect(a).toEqual(b);
+  });
+
+  // buildTools reads config.ASSISTANT_DATABASE_URL at call time, so both branches
+  // are exercised by setting the real value and restoring it — no module mock.
+  // Asserting a bare tool count would pass either way, which is what made the
+  // conditional untested before.
+  describe('the run_sql escape hatch is conditional', () => {
+    const original = config.ASSISTANT_DATABASE_URL;
+    afterEach(() => {
+      config.ASSISTANT_DATABASE_URL = original;
+    });
+
+    it('is offered when a read-only role is configured', () => {
+      config.ASSISTANT_DATABASE_URL = 'postgres://webatlas_assistant:pw@localhost:5432/webatlas';
+      const names = buildTools(ctx).map((t) => (t as { name: string }).name);
+      expect(names).toContain('run_sql');
+    });
+
+    it('is absent when it is not — an always-unavailable tool would waste cached-prefix tokens every turn', () => {
+      config.ASSISTANT_DATABASE_URL = undefined;
+      const names = buildTools(ctx).map((t) => (t as { name: string }).name);
+      expect(names).not.toContain('run_sql');
+    });
+
+    it('leaves the other tools untouched in either branch', () => {
+      config.ASSISTANT_DATABASE_URL = undefined;
+      const without = buildTools(ctx).map((t) => (t as { name: string }).name);
+      config.ASSISTANT_DATABASE_URL = 'postgres://webatlas_assistant:pw@localhost:5432/webatlas';
+      const with_ = buildTools(ctx).map((t) => (t as { name: string }).name);
+      expect(with_).toEqual([...without, 'run_sql']);
+    });
   });
 });
 

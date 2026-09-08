@@ -49,7 +49,10 @@ export function AssistantPanelView({ turns, loading, error, onSend, onRetry }: P
     <div className="assistant-panel">
       <h2 className="panel-title">Trợ lý</h2>
 
-      <div className="assistant-transcript">
+      {/* polite, not assertive: a reply should be announced without cutting off
+          whatever the screen reader is already saying. The error block below
+          keeps its own role="alert", which is the one thing worth interrupting for. */}
+      <div className="assistant-transcript" aria-live="polite" aria-busy={loading}>
         {turns.length === 0 && (
           <p className="assistant-hint">
             Hỏi về đập, sông, hồ và các lớp hiểm họa trong vùng công tác — hoặc bảo tôi di chuyển
@@ -101,7 +104,12 @@ export function AssistantPanelView({ turns, loading, error, onSend, onRetry }: P
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             // Enter sends, Shift+Enter is a newline — the chat convention.
-            if (e.key === 'Enter' && !e.shiftKey) {
+            //
+            // isComposing is load-bearing here, not a nicety: this UI is Vietnamese,
+            // and Telex/VNI input methods commit a character with Enter mid-word.
+            // Without the guard, typing "hồ" can fire the message instead of the
+            // diacritic. React exposes the flag on the native event.
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               submit(e);
             }

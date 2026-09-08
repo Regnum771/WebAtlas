@@ -27,7 +27,12 @@ const FORBIDDEN = [
 
 const FORBIDDEN_FUNCTIONS = [
   'pg_read_file', 'pg_read_binary_file', 'pg_ls_dir', 'pg_stat_file',
-  'lo_import', 'lo_export', 'dblink', 'pg_sleep', 'pg_terminate_backend',
+  // Both directions of the large-object interface. EXECUTE on the read-side
+  // functions is granted to PUBLIC by default, so the grant table does not stop
+  // them — and blocking only the write side while claiming defence in depth is
+  // worse than not claiming it.
+  'lo_import', 'lo_export', 'lo_get', 'lo_put', 'loread', 'lo_open',
+  'dblink', 'pg_sleep', 'pg_terminate_backend',
   'pg_reload_conf', 'set_config', 'current_setting',
 ];
 

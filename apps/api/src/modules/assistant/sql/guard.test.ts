@@ -46,6 +46,11 @@ describe('guardSql — rejects', () => {
   it('a line comment, which can hide the rest of a statement', () => reject('SELECT 1 -- DROP TABLE x'));
   it('a block comment', () => reject('SELECT /* sneaky */ 1'));
   it('a server-side file read', () => reject("SELECT pg_read_file('/etc/passwd')"));
+  // EXECUTE on the large-object functions is PUBLIC by default, so the grant
+  // table does not stop these — the guard is the only layer that does.
+  it('a large-object write', () => reject("SELECT lo_import('/etc/passwd')"));
+  it('a large-object read', () => reject('SELECT lo_get(16385)'));
+  it('a large-object open', () => reject('SELECT lo_open(16385, 262144)'));
   it('a sleep, which would hold a connection', () => reject('SELECT pg_sleep(10)'));
   it('an empty query', () => reject('   '));
   it('a query beyond the length cap', () => reject(`SELECT '${'a'.repeat(4000)}'`));
