@@ -1,6 +1,6 @@
 # Horizontal Toolbar, Zoom Slider, and Zoom-Based Level of Detail — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Move the map toolbar to a horizontal floating pill, add a notched zoom slider that snaps to the eight existing scale stops, make free zoom settle on a round scale, and make the river layer thin out as the map zooms out.
 
@@ -79,7 +79,7 @@ Pure functions only. Nothing renders yet. This task exists separately because bo
   - `SNAP_STEP: number` (= 1000)
   - `snapScaleToNearestThousand(scale: number): number`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `apps/web/src/features/map/model/zoomScale.test.ts`:
 
@@ -166,12 +166,12 @@ describe('snapScaleToNearestThousand', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npm run test -w @webatlas/web -- zoomScale`
 Expected: FAIL — `ZOOM_STOPS`, `nearestStopIndex`, `snapScaleToNearestThousand`, `SNAP_STEP` are not exported.
 
-- [ ] **Step 3: Implement the helpers**
+- [x] **Step 3: Implement the helpers**
 
 Append to `apps/web/src/features/map/model/zoomScale.ts`:
 
@@ -214,12 +214,12 @@ export function snapScaleToNearestThousand(scale: number): number {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npm run test -w @webatlas/web -- zoomScale`
 Expected: PASS, all describe blocks green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/features/map/model/zoomScale.ts apps/web/src/features/map/model/zoomScale.test.ts
@@ -244,7 +244,7 @@ Layout only — no slider yet, no behaviour change. Shipping this alone leaves a
 
 **Why `App.tsx` changes:** `.map-toolbar` is `position: absolute` and `MapToolbar` is a **sibling** of `MapView`, not a child of `.map-container` — so it is positioned against `.app-container` and must track the rail and flyout widths itself. `rail.active` lives inside `RailAndFlyout`, so the toolbar has to move inside that component to see it.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `apps/web/src/features/map/ui/MapToolbar.test.tsx`:
 
@@ -287,12 +287,12 @@ Append to `apps/web/src/features/map/ui/MapToolbar.test.tsx`:
 
 Add `flyoutOpen: false,` to the shared `base` object at the top of that file.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npm run test -w @webatlas/web -- MapToolbar`
 Expected: FAIL — `flyoutOpen` is not a known prop and `.map-toolbar` never gets the `flyout-open` class.
 
-- [ ] **Step 3: Make the view flyout-aware and horizontal**
+- [x] **Step 3: Make the view flyout-aware and horizontal**
 
 In `apps/web/src/features/map/ui/MapToolbar.tsx`, add to `MapToolbarViewProps`:
 
@@ -319,7 +319,7 @@ becomes:
         <div className="control-group">
 ```
 
-- [ ] **Step 4: Rewrite the toolbar CSS**
+- [x] **Step 4: Rewrite the toolbar CSS**
 
 In `apps/web/src/styles/main.css`, replace the `.map-toolbar`, `.toolbar-rail`, `.toolbar-col` and `.toolbar-rail > .control-divider` rules (lines 108–144) with:
 
@@ -373,7 +373,7 @@ In `apps/web/src/styles/main.css`, replace the `.map-toolbar`, `.toolbar-rail`, 
 }
 ```
 
-- [ ] **Step 5: Pass the flyout state in from App**
+- [x] **Step 5: Pass the flyout state in from App**
 
 In `apps/web/src/app/App.tsx`, remove the standalone `<MapToolbar />` from the `App` component's tree (line 67) and render it inside `RailAndFlyout`'s fragment instead, directly after `<MapView … />`:
 
@@ -396,17 +396,17 @@ and pass it through to the view:
       zoom={zoom}
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `npm run test -w @webatlas/web -- MapToolbar`
 Expected: PASS.
 
-- [ ] **Step 7: Type-check the whole web workspace**
+- [x] **Step 7: Type-check the whole web workspace**
 
 Run: `npm run build:web`
 Expected: exit 0. (`vitest` uses esbuild and skips type-checking, so this is the only gate that catches a missed `flyoutOpen` at a call site.)
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/web/src/features/map/ui/MapToolbar.tsx apps/web/src/features/map/ui/MapToolbar.test.tsx apps/web/src/app/App.tsx apps/web/src/styles/main.css
@@ -426,7 +426,7 @@ git commit -m "feat(web): thanh công cụ bản đồ nằm ngang, bám theo b�
 - Consumes: `ZOOM_STOPS`, `nearestStopIndex` from Task 1.
 - Produces: `MapToolbarViewProps` gains `stopIndex: number` and `onStopChange: (index: number) => void`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `apps/web/src/features/map/ui/MapToolbar.test.tsx`:
 
@@ -472,12 +472,12 @@ and add to the shared `base` object:
   onStopChange: vi.fn(),
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npm run test -w @webatlas/web -- MapToolbar`
 Expected: FAIL — no element with role `slider`.
 
-- [ ] **Step 3: Add the slider to the view**
+- [x] **Step 3: Add the slider to the view**
 
 In `MapToolbarViewProps` add:
 
@@ -523,7 +523,7 @@ Destructure `stopIndex` and `onStopChange`, import `ZOOM_STOPS` alongside the ex
         </div>
 ```
 
-- [ ] **Step 4: Wire the container to the shared helpers**
+- [x] **Step 4: Wire the container to the shared helpers**
 
 In the `MapToolbar` container, delete the local `zoomStops` and `nearestStopIndex` `useMemo` blocks and import the shared ones. Replace the import line:
 
@@ -570,7 +570,7 @@ Add the slider handler and pass both new props:
       onStopChange={onStopChange}
 ```
 
-- [ ] **Step 5: Style the slider**
+- [x] **Step 5: Style the slider**
 
 Append to `apps/web/src/styles/main.css`:
 
@@ -586,17 +586,17 @@ Append to `apps/web/src/styles/main.css`:
 }
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `npm run test -w @webatlas/web -- MapToolbar`
 Expected: PASS.
 
-- [ ] **Step 7: Run the full web suite and the type gate**
+- [x] **Step 7: Run the full web suite and the type gate**
 
 Run: `npm run test -w @webatlas/web && npm run build:web`
 Expected: all tests pass, build exits 0.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/web/src/features/map/ui/MapToolbar.tsx apps/web/src/features/map/ui/MapToolbar.test.tsx apps/web/src/styles/main.css
@@ -620,7 +620,7 @@ Separate from Task 3 deliberately: it touches the map view's event wiring rather
 
 **The whole decision lives in `settleZoomCorrection`** so the loop guard is testable without a map: "invoking the handler twice issues at most one correction" becomes "feeding the output back in returns `null`".
 
-- [ ] **Step 1: Write the failing pure-function tests**
+- [x] **Step 1: Write the failing pure-function tests**
 
 Append to `apps/web/src/features/map/model/zoomScale.test.ts`:
 
@@ -655,12 +655,12 @@ describe('settleZoomCorrection', () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `npm run test -w @webatlas/web -- zoomScale`
 Expected: FAIL — `settleZoomCorrection` is not exported.
 
-- [ ] **Step 3: Implement the correction**
+- [x] **Step 3: Implement the correction**
 
 Append to `apps/web/src/features/map/model/zoomScale.ts`:
 
@@ -693,12 +693,12 @@ export function settleZoomCorrection(zoom: number): number | null {
 }
 ```
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run: `npm run test -w @webatlas/web -- zoomScale`
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing MapModel test**
+- [x] **Step 5: Write the failing MapModel test**
 
 Append to `apps/web/src/features/map/model/MapModel.test.ts`:
 
@@ -738,12 +738,12 @@ describe('settle-snap wiring', () => {
 });
 ```
 
-- [ ] **Step 6: Run it to verify it fails**
+- [x] **Step 6: Run it to verify it fails**
 
 Run: `npm run test -w @webatlas/web -- MapModel`
 Expected: FAIL — `settleZoomCorrection` import resolves but the suite fails to compile until Step 3 is in place; if Step 3 is already done this test passes on its own and you must still complete Step 7 to wire the real map.
 
-- [ ] **Step 7: Register the handler on the real map**
+- [x] **Step 7: Register the handler on the real map**
 
 In `apps/web/src/features/map/model/MapModel.ts`, add the import:
 
@@ -793,16 +793,16 @@ In `dispose()`, beside the existing `moveendHandler` teardown:
     }
 ```
 
-- [ ] **Step 8: Run the full web suite and the type gate**
+- [x] **Step 8: Run the full web suite and the type gate**
 
 Run: `npm run test -w @webatlas/web && npm run build:web`
 Expected: all pass, build exits 0.
 
-- [ ] **Step 9: Verify by hand that the map does not jitter**
+- [x] **Step 9: Verify by hand that the map does not jitter**
 
 Run the app (`npm run dev:web`, with the API and Docker stack up per `docs/runbooks/`), then wheel-zoom and stop. The scale readout must land on a clean thousand (e.g. `1:1.247.000`) within a frame of stopping, and the map must be visually still afterwards. A map that twitches repeatedly after every wheel stop is the loop guard failing — that is the symptom to look for.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add apps/web/src/features/map/model/zoomScale.ts apps/web/src/features/map/model/zoomScale.test.ts apps/web/src/features/map/model/MapModel.ts apps/web/src/features/map/model/MapModel.test.ts
@@ -829,7 +829,7 @@ git commit -m "feat(web): thu phóng tự do bám bội số nghìn khi khung nh
 
 **Note on `resolution`:** OpenLayers passes the view resolution in EPSG:3857 metres, which are not ground metres; ground resolution is `resolution * cos(latitude)`. `scaleAtResolution` applies that correction so this threshold and the toolbar's scale readout agree.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `apps/web/src/features/map/model/zoomScale.test.ts`:
 
@@ -903,12 +903,12 @@ describe('riversStyle', () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `npm run test -w @webatlas/web -- styles zoomScale`
 Expected: FAIL — `scaleAtResolution` and `minRiverBucketAt` are not exported.
 
-- [ ] **Step 3: Add `scaleAtResolution`**
+- [x] **Step 3: Add `scaleAtResolution`**
 
 Append to `apps/web/src/features/map/model/zoomScale.ts`:
 
@@ -925,7 +925,7 @@ export function scaleAtResolution(resolution: number, latitude = REFERENCE_LATIT
 }
 ```
 
-- [ ] **Step 4: Make `riversStyle` resolution-aware**
+- [x] **Step 4: Make `riversStyle` resolution-aware**
 
 In `apps/web/src/features/map/model/styles.ts`, add the import:
 
@@ -968,17 +968,17 @@ export const riversStyle = (feature: any, resolution: number) => {
 };
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `npm run test -w @webatlas/web -- styles zoomScale`
 Expected: PASS.
 
-- [ ] **Step 6: Run the full web suite and the type gate**
+- [x] **Step 6: Run the full web suite and the type gate**
 
 Run: `npm run test -w @webatlas/web && npm run build:web`
 Expected: all pass, build exits 0.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/web/src/features/map/model/styles.ts apps/web/src/features/map/model/styles.test.ts apps/web/src/features/map/model/zoomScale.ts apps/web/src/features/map/model/zoomScale.test.ts
