@@ -2,6 +2,7 @@
 export const LAYER_GEOMETRY = {
     dams: 'Point',
     rivers: 'MultiLineString',
+    lakes: 'MultiPolygon',
     stations: 'Point',
     flood_zones: 'MultiPolygon',
     drought_points: 'Point',

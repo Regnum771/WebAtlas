@@ -54,4 +54,15 @@ describe('layer registry', () => {
     const rivers = LAYER_REGISTRY.rivers.attributeSchema;
     expect(rivers.parse({ stream_order: '3' }).stream_order).toBe(3);
   });
+
+  it('registers lakes with numeric external_id and its attribute columns', () => {
+    const def = getLayer('lakes');
+    expect(def.table).toBe('water.lakes');
+    expect(def.geomType).toBe('MultiPolygon');
+    expect(def.externalIdType).toBe('integer');
+    expect(def.geomNullable).toBe(false);
+    expect(def.attributeColumns).toEqual(
+      expect.arrayContaining(['name', 'lake_type', 'area_km2', 'volume_mcm', 'shore_len_km'])
+    );
+  });
 });

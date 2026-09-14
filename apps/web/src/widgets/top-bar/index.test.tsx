@@ -12,6 +12,7 @@ vi.mock('../../entities/session/model/session.store', () => ({
   }),
 }));
 vi.mock('../../features/auth', () => ({ default: () => <div>AUTH_WIDGET</div> }));
+vi.mock('../../features/search', () => ({ default: () => <div>SEARCH_WIDGET</div> }));
 
 import TopBar from './index';
 

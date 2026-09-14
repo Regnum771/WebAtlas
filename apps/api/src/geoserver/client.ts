@@ -21,6 +21,10 @@ export async function gsRequest(
     method,
     headers: {
       Authorization: authHeader(),
+      // GeoServer's REST API content-negotiates and defaults to an HTML page
+      // when no Accept is given, so every caller must ask for JSON explicitly
+      // or res.json() fails on a <!DOCTYPE ...> body.
+      Accept: 'application/json',
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,

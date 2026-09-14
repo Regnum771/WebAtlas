@@ -10,6 +10,11 @@ export interface LayerDef {
   geomNullable: boolean;
   attributeColumns: string[];  // editable, non-geometry, non-audit columns
   attributeSchema: z.ZodObject<z.ZodRawShape>;
+  // Storage type of `external_id`. Steward-created features need a synthetic
+  // external_id (the §4 resolver's DISTINCT ON collapses NULLs into one row), and
+  // the shape of that value depends on the column type: text layers get a uuid
+  // string, integer layers get an allocated number above the upstream range.
+  externalIdType: 'integer' | 'text';
 }
 
 // Editable attribute columns per table (from migration 1000000000002_water-schema.cjs).
@@ -26,6 +31,10 @@ const ATTRS: Record<EditableLayerKey, z.ZodObject<z.ZodRawShape>> = {
   }),
   rivers: z.object({
     name: nullableStr, code: nullableStr, stream_order: nullableNum, length_m: nullableNum,
+  }),
+  lakes: z.object({
+    name: nullableStr, lake_type: nullableStr, area_km2: nullableNum,
+    volume_mcm: nullableNum, shore_len_km: nullableNum,
   }),
   stations: z.object({
     name: nullableStr, station_type: nullableStr, status: nullableStr, value: nullableStr,
@@ -44,6 +53,19 @@ const ATTRS: Record<EditableLayerKey, z.ZodObject<z.ZodRawShape>> = {
   }),
 };
 
+// Mirrors the live column types in migration 1000000000002_water-schema.cjs:
+// dams/rivers/lakes carry a numeric upstream id, the rest a text one.
+const EXTERNAL_ID_TYPE: Record<EditableLayerKey, 'integer' | 'text'> = {
+  dams: 'integer',
+  rivers: 'integer',
+  lakes: 'integer',
+  stations: 'text',
+  flood_zones: 'text',
+  drought_points: 'text',
+  saltwater_intrusion: 'text',
+  flood_generation: 'text',
+};
+
 function build(key: EditableLayerKey): LayerDef {
   const schema = ATTRS[key];
   return {
@@ -54,6 +76,7 @@ function build(key: EditableLayerKey): LayerDef {
     geomNullable: key === 'dams',
     attributeColumns: Object.keys(schema.shape),
     attributeSchema: schema,
+    externalIdType: EXTERNAL_ID_TYPE[key],
   };
 }
 

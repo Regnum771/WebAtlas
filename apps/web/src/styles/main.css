@@ -1,3 +1,4 @@
+@import '../shared/ui/tokens.css';
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 
 :root {
@@ -5,8 +6,7 @@
   --primary-hover: #2563eb;
   --bg-panel: rgba(255, 255, 255, 0.75);
   --bg-panel-hover: rgba(255, 255, 255, 0.9);
-  --text-main: #1f2937;
-  --text-muted: #6b7280;
+  /* --text-main / --text-muted now come from tokens.css (single source of truth) */
   --border-color: rgba(255, 255, 255, 0.4);
   --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
 }
@@ -29,13 +29,24 @@ body {
   height: 100vh;
 }
 
+/* Docked, not overlaid: the rail (always) and the flyout (when open) push the
+   map's own box inward rather than sitting over it — see IconRail/.rail-flyout
+   below. transition matches JS: MapView listens for transitionend on this
+   element and calls MapModel#updateSize() once it fires (OL caches viewport
+   size and does not observe container resizes on its own). */
 .map-container {
   position: absolute;
   top: 0;
-  left: 0;
-  width: 100%;
+  left: var(--rail-width);
+  width: calc(100% - var(--rail-width));
   height: 100%;
   z-index: 0;
+  transition: left 200ms ease, width 200ms ease;
+}
+
+.map-container.flyout-open {
+  left: calc(var(--rail-width) + var(--flyout-width));
+  width: calc(100% - var(--rail-width) - var(--flyout-width));
 }
 
 /* Custom styling for high-resolution green terrain hillshade basemap */
@@ -52,114 +63,6 @@ body {
   box-shadow: var(--glass-shadow);
   border-radius: 12px;
   z-index: 10;
-}
-
-/* Basemap Switcher */
-.basemap-switcher {
-  display: flex;
-  gap: 6px;
-  padding: 8px;
-}
-
-.basemap-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: none;
-  background: transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  color: var(--text-main);
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.basemap-btn:hover {
-  background: rgba(255, 255, 255, 0.5);
-}
-
-.basemap-btn.active {
-  background: var(--primary);
-  color: white;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-}
-
-/* Layer Tree */
-.layer-tree {
-  width: 100%;
-  max-height: none;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.layer-tree-header {
-  padding: 16px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.layer-tree-header h2 {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--primary);
-}
-
-.layer-tree-content {
-  padding: 12px;
-}
-
-.group-btn {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 10px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  border-radius: 8px;
-  font-family: inherit;
-  font-weight: 500;
-  color: var(--text-main);
-  transition: background 0.2s;
-}
-
-.group-btn:hover {
-  background: rgba(255, 255, 255, 0.5);
-}
-
-.group-btn svg {
-  margin-right: 8px;
-  color: var(--text-muted);
-}
-
-.layers-list {
-  padding-left: 24px;
-  padding-right: 8px;
-  margin-top: 4px;
-  margin-bottom: 12px;
-  margin-left: 14px;
-  border-left: 2px solid rgba(59, 130, 246, 0.2);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.layer-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.layer-item-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .layer-label {
@@ -198,55 +101,54 @@ body {
   color: var(--primary);
 }
 
-.opacity-slider-container {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-left: 24px;
-}
-
-.opacity-slider-container span {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.opacity-slider-container input[type="range"] {
-  flex: 1;
-  height: 4px;
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 4px;
-  appearance: none;
-  outline: none;
-}
-
-.opacity-slider-container input[type="range"]::-webkit-slider-thumb {
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  background: var(--primary);
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-/* Map Controls */
-.map-controls {
+/* Map Toolbar (features/map/ui/MapToolbar) — vertical rail docked top-right.
+   Positioned BELOW .ogc-trigger-btn (top: topbar+space-3, 40px circle) with its
+   own space-3 gap, so the rail's top edge never overlaps that button regardless
+   of viewport width — both are anchored to the same `right` offset. */
+.map-toolbar {
   position: absolute;
-  top: 24px;
-  right: 24px;
-  z-index: 10;
+  top: calc(var(--topbar-height) + var(--space-3) + 40px + var(--space-3));
+  right: var(--space-3);
+  z-index: 20;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.toolbar-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
 }
 
 .control-group {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   gap: 4px;
-  padding: 4px;
 }
 
-.control-group-gap {
-  margin-top: 16px;
+.toolbar-col {
+  flex-direction: column;
+}
+
+/* Inside the vertical rail, dividers run horizontally instead of vertically. */
+.toolbar-rail > .control-divider {
+  width: 100%;
+  height: 1px;
+  align-self: stretch;
+  margin: 2px 0;
+}
+
+.control-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 4px;
+  background: var(--text-muted);
+  opacity: 0.25;
 }
 
 .control-btn {
@@ -280,14 +182,36 @@ body {
   transform: none !important;
 }
 
+.zoom-scale-label {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
+  /* Chiều rộng cố định để nhãn đổi số không làm thanh công cụ co giãn. */
+  min-width: 90px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .measure-result {
   font-size: 14px;
-  white-space: nowrap;
   animation: fadeIn 0.3s ease-out;
-  margin-top: 8px;
-  padding: 12px;
+  padding: 8px 12px;
   font-weight: 600;
   color: var(--primary);
+  /* Bounded + wrapping, not nowrap: a large drawn area can format to a long
+     string (e.g. "Diện tích: 244666.48 km²"). Left unbounded, that string's
+     width could push this right-docked pill's LEFT edge into neighbouring
+     chrome at the 768px minimum viewport (originally measured against the
+     floating .search-bar-container — see task-7-report.md; search now lives
+     inside .top-bar instead, but the same 768px width budget is still tight,
+     so the bound stays). Wrapping to a second line keeps the value fully
+     visible without growing sideways. */
+  max-width: 160px;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-align: right;
 }
 
 @keyframes fadeIn {
@@ -295,129 +219,94 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Toggle Panels Button */
-.toggle-panels-btn {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-main);
-  transition: all 0.3s;
+/* Search (features/search) — lives inside .top-bar now, not floating over the
+   map, so it needs no standalone top/left offset. .top-bar-search sizes the
+   flex slot between the brand and the profile/auth widget; .search-box just
+   fills it and anchors the results dropdown. */
+.top-bar-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 360px;
+  margin: 0 var(--space-3);
 }
 
-.toggle-panels-btn:hover {
-  transform: scale(1.03);
-  background: var(--bg-panel-hover);
-}
-
-.toggle-panels-btn svg {
-  color: var(--primary);
-}
-
-/* Hideable panels wrapper */
-.panels-wrapper {
-  position: absolute; top: 64px; right: 12px; bottom: 64px;
-  z-index: 900; width: 320px; max-width: 88vw;
-  display: flex; flex-direction: column; gap: 12px;
-  overflow-y: auto;
-  transition: opacity 0.35s ease, transform 0.35s ease;
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.panels-wrapper.hidden {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(10px);
-}
-
-/* Search Bar */
-.search-bar-container {
-  position: absolute;
-  top: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
+.search-box {
+  position: relative;
   width: 100%;
-  max-width: 400px;
-}
-
-.search-input-wrapper {
-  display: flex;
-  align-items: center;
-  padding: 10px 16px;
-  gap: 12px;
-}
-
-.search-icon {
-  color: var(--text-muted);
 }
 
 .search-input {
-  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
   border: none;
-  background: transparent;
-  outline: none;
+  border-radius: var(--radius-md);
+  padding: 7px var(--space-3);
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--chrome-fg);
   font-family: inherit;
-  font-size: 15px;
-  color: var(--text-main);
+  font-size: 13px;
+  outline: none;
+  transition: background 0.2s;
+}
+
+.search-input:focus {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .search-input::placeholder {
+  color: var(--chrome-fg-muted);
+}
+
+.search-loading {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
 .search-results {
-  margin-top: 8px;
-  max-height: 300px;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: var(--space-2);
+  max-height: 320px;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-2);
+  z-index: 10;
 }
 
-.search-result-item {
+.search-result {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
   border: none;
   background: transparent;
   cursor: pointer;
   text-align: left;
-  border-bottom: 1px solid var(--border-color);
-  transition: background 0.2s;
-}
-
-.search-result-item:last-child {
-  border-bottom: none;
-}
-
-.search-result-item:hover {
-  background: rgba(255, 255, 255, 0.5);
-}
-
-.result-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.result-name {
-  font-weight: 500;
   color: var(--text-main);
+  font: inherit;
+  font-size: 13px;
 }
 
-.result-desc {
-  font-size: 12px;
-  color: var(--text-muted);
+.search-result:hover {
+  background: var(--surface-sunken);
+}
+
+.search-badge {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 10px;
+  font-weight: 600;
 }
 
 /* Dynamic Popup */
@@ -516,50 +405,29 @@ body {
   background: var(--primary-hover);
 }
 
-/* Dynamic Legend */
-.dynamic-legend {
-  padding: 16px;
-  min-width: 160px;
-}
-
-.legend-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  color: var(--text-main);
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: 8px;
-}
-
-.legend-content {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.legend-color-box {
-  width: 16px;
-  height: 16px;
-  display: inline-block;
-}
-
-.legend-label {
-  font-size: 13px;
+.legend-attribution {
+  font-size: 10px;
   color: var(--text-muted);
+  margin-top: 6px;
+  line-height: 1.3;
 }
+
+/* Data-driven legend (features/legend) */
+.legend-swatch-dot { display: inline-block; border-radius: 50%; }
+.legend-swatch-box { display: inline-block; border-radius: var(--radius-sm); }
+.legend-swatch-line { display: inline-block; width: 16px; height: 3px; }
+.legend-entry { display: flex; align-items: center; gap: var(--space-2); font-size: 12px; }
+.legend-section-title { font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: var(--space-2); }
 
 /* OGC Client */
 .ogc-trigger-btn {
   position: absolute;
-  bottom: 80px;
-  right: 24px;
+  /* Docked top-right, below the top bar — kept out of the bottom-right
+     .map-controls stack, whose height grows with its content (e.g. an
+     active measurement pill) and cannot be bounded to guarantee clearance
+     from a fixed bottom offset. */
+  top: calc(var(--topbar-height) + var(--space-3));
+  right: var(--space-3);
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -882,9 +750,10 @@ body {
 
 /* Shell layout restructure: left = doing, right = seeing */
 .top-bar {
-  position: absolute; top: 0; left: 0; right: 0; height: 52px;
+  position: absolute; top: 0; left: 0; right: 0; height: var(--topbar-height);
   z-index: 1200; display: flex; align-items: center; justify-content: space-between;
   padding: 0 12px; border-radius: 0;
+  background: var(--chrome-bg); color: var(--chrome-fg);
 }
 .top-bar-brand { font-weight: 700; letter-spacing: 0.02em; margin-left: 44px; }
 .top-bar-right, .top-bar-profile { display: flex; align-items: center; gap: 12px; }
@@ -903,7 +772,12 @@ body {
   width: 40px; height: 40px; border: none; cursor: pointer; border-radius: 10px;
 }
 .edit-drawer {
-  position: absolute; top: 64px; bottom: 12px; left: 12px; width: 360px; max-width: 88vw;
+  /* left starts past the icon rail (var(--rail-width)) so the rail's opaque
+     strip does not clip the drawer's own header/content when both are open —
+     see the .icon-rail comment below for why the rail now outranks this
+     z-index. */
+  position: absolute; top: 64px; bottom: 12px; left: calc(var(--rail-width) + 12px);
+  width: 360px; max-width: 88vw;
   z-index: 1101; display: flex; flex-direction: column; overflow: hidden;
 }
 .edit-drawer-header {
@@ -914,14 +788,9 @@ body {
 .edit-drawer-close { border: none; background: transparent; cursor: pointer; display: flex; }
 .edit-drawer-body { overflow-y: auto; padding: 0 12px 12px; flex: 1; }
 
-/* Right: display controls, stacked */
-.layer-tree-section { margin-bottom: 12px; }
-.layer-tree-section-title { font-size: 12px; font-weight: 600; opacity: 0.7; margin-bottom: 6px; }
-/* .basemap-switcher is defined once above (near .basemap-btn). */
-
 /* Admin route: full-screen over a live map */
 .admin-users-route {
-  position: absolute; top: 52px; left: 0; right: 0; bottom: 0;
+  position: absolute; top: var(--topbar-height); left: 0; right: 0; bottom: 0;
   z-index: 1500; overflow: auto; padding: 24px;
   background: rgba(248, 250, 252, 0.97);
 }
@@ -929,3 +798,159 @@ body {
   margin-top: 16px; padding: 8px 14px; border: none; border-radius: 8px;
   cursor: pointer; font: inherit;
 }
+
+/* Icon rail + docked flyout: replaces the floating panels-wrapper.
+   z-index sits ABOVE .edit-drawer (1101): the drawer (left: 12px, width: 360px)
+   spans the same x-range as the rail (0-48px) and flyout (48-368px), so at the
+   old z-index (19/20) an open drawer made the rail completely unreachable —
+   an editor/admin could never get to Lớp dữ liệu / Chú giải. Raising the rail
+   above the drawer trades that for the flyout covering the drawer's content
+   while both are open; toggling the rail item again (or closing the drawer)
+   clears it. See features/shell/model/useRail.ts — unifying the drawer into
+   the rail (RailItemId already has 'edit') is a larger change, out of scope. */
+.icon-rail {
+  position: absolute; top: var(--topbar-height); left: 0; bottom: 0;
+  width: var(--rail-width);
+  background: var(--chrome-bg); color: var(--chrome-fg);
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding-top: var(--space-2); z-index: 1102;
+}
+.icon-rail-btn {
+  width: 100%; height: var(--rail-width);
+  background: transparent; border: none; color: var(--chrome-fg-muted);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.icon-rail-btn:hover { background: var(--chrome-bg-hover); color: var(--chrome-fg); }
+.icon-rail-btn.active { background: var(--surface); color: var(--chrome-bg); }
+
+.rail-flyout {
+  position: absolute; top: var(--topbar-height); left: var(--rail-width); bottom: 0;
+  width: var(--flyout-width);
+  background: var(--surface); border-right: 1px solid var(--border);
+  overflow-y: auto; z-index: 1102;
+}
+
+/* Layers panel: real-catalog replacement for the legacy LayerTree */
+.layers-panel { padding: var(--space-3) var(--space-4); }
+.layers-panel .panel-title {
+  font-size: 15px; font-weight: 600; color: var(--text-main);
+  margin: 0 0 var(--space-3);
+}
+.layers-warning {
+  background: var(--surface-sunken); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text-muted);
+  font-size: 12px; padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+.layers-group { margin-bottom: var(--space-4); }
+.layers-group-title {
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.02em;
+  margin: 0 0 var(--space-2);
+}
+.layer-row {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+.layer-row.gated { opacity: 0.7; }
+.layer-row .layer-label {
+  display: flex; align-items: center; gap: var(--space-2);
+  color: var(--text-main); font-size: 13px; flex: 1; cursor: pointer;
+}
+.layer-gate-hint {
+  font-size: 11px; color: var(--text-muted); white-space: nowrap;
+}
+.layer-row input[type='range'] { width: 72px; }
+
+/* Chú giải — các quy tắc còn thiếu từ slice legend (Task 6): view dùng
+   .legend-panel/.legend-layer/.legend-layer-title/.legend-note nhưng chưa có
+   CSS, nên h3 rơi về cỡ mặc định của trình duyệt và panel trông như vỡ. */
+.legend-panel {
+  padding: var(--space-3);
+  color: var(--text-main);
+}
+.legend-layer {
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.legend-layer:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.legend-layer-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+  color: var(--text-main);
+}
+.legend-note {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  margin-top: var(--space-2);
+}
+
+/* Trợ lý — khung chat trong flyout. Dùng chung token với các bảng khác. */
+.assistant-panel {
+  display: flex; flex-direction: column; height: 100%;
+  padding: var(--space-3); color: var(--text-main);
+}
+.assistant-transcript { flex: 1; overflow-y: auto; font-size: 13px; }
+.assistant-hint { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.assistant-turn { margin: 0 0 var(--space-3); line-height: 1.5; }
+.assistant-turn-user {
+  background: var(--surface-sunken); border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3); font-weight: 500;
+}
+.assistant-turn-bot p { margin: 0 0 var(--space-2); }
+
+/* Khối kiến thức chung: viền và nền riêng, có nhãn hiện rõ — theo thiết kế,
+   KHÔNG dùng chữ nghiêng, vì nhãn mờ là thứ người đọc lướt qua. */
+.assistant-knowledge {
+  border: 1px solid #d97706; border-left-width: 3px;
+  background: #fffbeb; border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3); margin: var(--space-2) 0;
+}
+.assistant-knowledge-label {
+  display: block; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.02em; color: #92400e;
+  margin-bottom: var(--space-1);
+}
+.assistant-knowledge p { margin: 0; }
+
+.assistant-provenance { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-2); }
+.assistant-chip {
+  font-size: 11px; color: var(--text-muted);
+  background: var(--surface-sunken); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 1px var(--space-2);
+}
+.assistant-sql {
+  width: 100%; margin: var(--space-1) 0 0; padding: var(--space-2);
+  background: var(--surface-sunken); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 11px;
+  overflow-x: auto; white-space: pre;
+}
+.assistant-status { color: var(--text-muted); font-size: 12px; }
+.assistant-error {
+  display: flex; align-items: center; gap: var(--space-2);
+  background: #fef2f2; border: 1px solid var(--danger);
+  border-radius: var(--radius-sm); color: var(--danger);
+  font-size: 12px; padding: var(--space-2);
+}
+.assistant-error button {
+  background: var(--danger); color: #fff; border: none;
+  border-radius: var(--radius-sm); padding: 2px var(--space-2); cursor: pointer;
+}
+.assistant-composer { display: flex; gap: var(--space-2); padding-top: var(--space-2); }
+.assistant-composer textarea {
+  flex: 1; resize: none; font: inherit; font-size: 13px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: var(--space-2);
+}
+.assistant-composer button {
+  background: var(--accent); color: #fff; border: none;
+  border-radius: var(--radius-sm); padding: 0 var(--space-3); cursor: pointer;
+}
+.assistant-composer button:disabled { background: var(--border-strong); cursor: default; }

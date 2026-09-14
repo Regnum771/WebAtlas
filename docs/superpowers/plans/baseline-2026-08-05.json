@@ -1,0 +1,59 @@
+{
+  "scenario": "cold load @MIN_ZOOM -> chờ idle -> pan x4 -> zoom 10.5 -> chờ idle",
+  "timestamp": "2026-08-05T04:19:21.780Z",
+  "firstRenderMs": 3009,
+  "settleMs": 35570,
+  "settleAfterZoomMs": 3031,
+  "longTaskTotalMs": 4045,
+  "featuresAfterLoad": {
+    "layer_provinces_2026": 34,
+    "layer_wards_2026": 0,
+    "layer_flood": 0,
+    "layer_lakes": 3868,
+    "layer_rivers": 9486,
+    "layer_dams": 132,
+    "layer_stations": 0,
+    "layer_drought_survey": 0,
+    "layer_saltwater_intrusion": 0,
+    "layer_flood_generation": 0
+  },
+  "featuresAfterZoom": {
+    "layer_provinces_2026": 34,
+    "layer_wards_2026": 616,
+    "layer_flood": 0,
+    "layer_lakes": 3868,
+    "layer_rivers": 9486,
+    "layer_dams": 132,
+    "layer_stations": 0,
+    "layer_drought_survey": 0,
+    "layer_saltwater_intrusion": 0,
+    "layer_flood_generation": 0
+  },
+  "transfer": {
+    "file:provinces-34": {
+      "requests": 1,
+      "bytes": 1222622
+    },
+    "wfs:dams": {
+      "requests": 3,
+      "bytes": 35616
+    },
+    "wfs:lakes": {
+      "requests": 1,
+      "bytes": 699012
+    },
+    "wfs:rivers": {
+      "requests": 1,
+      "bytes": 2816244
+    },
+    "file:wards-region": {
+      "requests": 1,
+      "bytes": 6937624
+    }
+  },
+  "panFrames": {
+    "count": 88,
+    "avgMs": 23.029545454477724,
+    "worstMs": 91.70000000298023
+  }
+}

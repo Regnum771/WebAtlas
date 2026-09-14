@@ -21,6 +21,7 @@
     "migrate": "npm run migrate:up -w @webatlas/api",
     "seed": "npm run seed -w @webatlas/api",
     "publish:geoserver": "npm run publish:geoserver -w @webatlas/api",
-    "test:api": "npm run test -w @webatlas/api"
+    "test:api": "npm run test -w @webatlas/api",
+    "test:api:live": "npm run test:live -w @webatlas/api"
   }
 }

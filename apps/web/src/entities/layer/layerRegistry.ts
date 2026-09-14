@@ -1,5 +1,4 @@
 import { EDITABLE_LAYER_KEYS, LAYER_ATTRIBUTE_MAP, type EditableLayerKey } from '@webatlas/shared';
-export { layerGroups } from '../../data/mockData';
 
 export interface LayerRegistryEntry {
   layerKey: EditableLayerKey;

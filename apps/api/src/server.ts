@@ -6,6 +6,9 @@ import authentication from './plugins/authentication';
 import authRoutes from './modules/auth/routes';
 import usersRoutes from './modules/users/routes';
 import layersRoutes from './modules/layers/routes';
+import searchRoutes from './modules/search/routes';
+import assistantRoutes from './modules/assistant/routes';
+import { closeAssistantPool } from './modules/assistant/sql/pool';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -28,6 +31,17 @@ export function buildApp(): FastifyInstance {
   app.register(authRoutes, { prefix: '/api/auth' });
   app.register(usersRoutes, { prefix: '/api/users' });
   app.register(layersRoutes, { prefix: '/api' });
+  app.register(searchRoutes, { prefix: '/api' });
+  app.register(assistantRoutes, { prefix: '/api' });
+
+  // The assistant's read-only pool is a SEPARATE pg.Pool from app.pg (deliberately
+  // — see modules/assistant/sql/pool.ts), so plugins/db.ts's onClose hook does not
+  // cover it. Without this, once a run_sql call has lazily created the pool, a
+  // graceful shutdown closes app.pg and leaves these connections open until the
+  // process exits.
+  app.addHook('onClose', async () => {
+    await closeAssistantPool();
+  });
 
   return app;
 }

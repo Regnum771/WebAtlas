@@ -57,6 +57,7 @@ describe('denormalizeFeatureProperties', () => {
     const samples: Record<string, Record<string, unknown>> = {
       dams: { name: 'A', wattage_mw: 10, status: 'active' },
       rivers: { name: 'R', code: 'LA08', stream_order: 3 },
+      lakes: { name: 'L', area_km2: 100 },
       stations: { name: 'S', station_type: 't', value: '1.2' },
       flood_zones: { name: 'F', hazard_type: 'h', risk_level: 'high' },
       drought_points: { name: 'D', risk_level: 'low', survey_date: '2024-01-01' },
