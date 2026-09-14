@@ -1005,7 +1005,7 @@ git commit -m "feat(web): mạng lưới sông ngòi giảm chi tiết theo mứ
 1. **Some existing rules can never fire.** `basemap_roads_region` gates minor roads at `scale(max_=100000)` and tracks/paths at `scale(max_=35000)`. `MaxScaleDenominator` means "draw only when the denominator is below this", and the app's most-zoomed-in scale is `MAX_SCALE` = 100.000 — the denominator never goes below it. So `residential`, `unclassified`, `living_street`, `service`, `track`, `path`, `footway` and `cycleway` are **never drawn at any reachable zoom**. Confirm with the user whether that is intended (it may be a deliberate "basemap stays clean" choice) before "fixing" it.
 2. **The spec's thresholds differ from what is deployed** and are marked provisional. They should be confirmed by someone with cartographic judgement before being applied, since the deployed values are not obviously worse.
 
-- [ ] **Step 1: Confirm the thresholds with the user**
+- [x] **Step 1: Confirm the thresholds with the user**
 
 Present the current deployed thresholds beside the spec's proposal and get a decision. Do not proceed on assumption — the spec itself says "these are proposals, not derived from cartographic standards" and asks for domain review.
 
@@ -1023,7 +1023,7 @@ Current deployed (`styles.py`), expressed as "drawn when denominator <":
 | railways | < 1.500.000 | always |
 | water | < 1.200.000 | always |
 
-- [ ] **Step 2: Write the failing artifact test**
+- [x] **Step 2: Write the failing artifact test**
 
 Create `apps/api/src/geoserver/basemapStyles.test.ts`. It asserts against the **committed SLD files**, so it needs no GeoServer and no Python:
 
@@ -1056,16 +1056,16 @@ describe('basemap SLD artifacts', () => {
 });
 ```
 
-- [ ] **Step 3: Run it to verify it fails**
+- [x] **Step 3: Run it to verify it fails**
 
 Run: `npm run test -w @webatlas/api -- basemapStyles`
 Expected: FAIL on the second test — the current artifacts contain `35000` and `100000` gates, which are at or below `MAX_SCALE`.
 
-- [ ] **Step 4: Apply the agreed thresholds**
+- [x] **Step 4: Apply the agreed thresholds**
 
 Edit the `scale(max_=…)` values in `apps/api/scripts/basemap/styles.py` lines 149–170 to the values agreed in Step 1. Change only the numbers inside `scale(...)`; leave the symbolizers, colours and `fclass_in(...)` lists alone unless Step 1 agreed otherwise.
 
-- [ ] **Step 5: Regenerate the SLD artifacts and upload them**
+- [x] **Step 5: Regenerate the SLD artifacts and upload them**
 
 `styles.py` is not a pure generator: its `upload()` writes `<name>.sld` into the **current working directory** as a side effect and then PUTs it to GeoServer, and it takes the admin password as `argv[1]`. So this step needs the Docker stack up, and it must run from the script's own directory or the `.sld` files land in the wrong place.
 
@@ -1079,12 +1079,12 @@ Expected: one `style <name> upload <code>` line per style and one `assign <layer
 
 (The committed `.sld` files do track `styles.py` — their `MaxScaleDenominator` values match the generator exactly today — which is what makes the artifact test in Step 2 meaningful rather than a test of a stale export.)
 
-- [ ] **Step 6: Run the test to verify it passes**
+- [x] **Step 6: Run the test to verify it passes**
 
 Run: `npm run test -w @webatlas/api -- basemapStyles`
 Expected: PASS.
 
-- [ ] **Step 7: Republish the layer group and truncate the tile cache**
+- [x] **Step 7: Republish the layer group and truncate the tile cache**
 
 Run: `bash apps/api/scripts/basemap/publish-basemap.sh`
 
@@ -1092,11 +1092,11 @@ Order matters and the script says so itself at its "== styles" step: `styles.py`
 
 It then reassigns the group and issues the GWC mass-truncate (its "== truncate stale tiles" step). **The truncate is not optional and is not automatic on a style change** — without it every tile already in the cache keeps serving the old rendering and the map looks unchanged no matter how correct the SLD is. Watch for `truncate: 200` in the output.
 
-- [ ] **Step 8: Verify in the browser**
+- [x] **Step 8: Verify in the browser**
 
 Load the app, zoom out to 1:7.500.000 and in to 1:100.000. Road density must visibly change between the tiers. If it does not, the truncate did not take — re-run Step 7 and confirm the status code before suspecting the SLD.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add apps/api/scripts/basemap/styles.py apps/api/scripts/basemap/*.sld apps/api/src/geoserver/basemapStyles.test.ts
