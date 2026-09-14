@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { describe, it, expect } from 'vitest';
 import { gsRequest } from './client';
+import { nativeNameFor } from './publish';
 
 const WS = process.env.GEOSERVER_WORKSPACE ?? 'webatlas';
 const STORE = `${WS}_water`;
@@ -48,5 +49,20 @@ describe.skipIf(!GS)('WFS publication', () => {
       expect(json.featureType.name, `${l} public layer name`).toBe(l);
       expect(json.featureType.nativeName, `${l} backing relation`).toBe(`${l}_active`);
     }
+  });
+});
+
+describe('nativeNameFor', () => {
+  it('publishes the river overview under its own name, not a _active twin', () => {
+    // ensureLayer maps table -> nativeName `${table}_active`, which is right for
+    // the versioned layers and wrong for this one: rivers_overview IS the
+    // relation. Getting it wrong makes GeoServer look for rivers_overview_active
+    // and fail with a confusing 500.
+    expect(nativeNameFor('rivers_overview')).toBe('rivers_overview');
+  });
+
+  it('keeps the _active mapping for versioned layers', () => {
+    expect(nativeNameFor('rivers')).toBe('rivers_active');
+    expect(nativeNameFor('dams')).toBe('dams_active');
   });
 });
