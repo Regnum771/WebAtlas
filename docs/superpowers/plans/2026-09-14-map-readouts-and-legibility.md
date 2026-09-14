@@ -17,7 +17,7 @@
 | Element | Their implementation | Ours today |
 |---|---|---|
 | Loading state | `olControlLoadingPanel` | **nothing** |
-| Scale bar, bottom-left | dual bar, km over mi, degrades to m/ft | **nothing** |
+| Scale bar, bottom-left | dual bar, km over mi, degrades to m/ft | **nothing** — we build metric only (see Global Constraints) |
 | Cursor coordinates, bottom-right | `107.311255°E 12.923165°N` | **nothing** |
 | Scale readout | `Scale = 1 : 136K` (abbreviated) | full `1:250.000` in the toolbar |
 | Capture a coordinate | "Lấy tọa độ" tool | **nothing** |
@@ -40,6 +40,7 @@ Their scale-bar progression, measured:
 ## Global Constraints
 
 - **`controls: []` stays explicit.** [MapModel.ts:283](../../../apps/web/src/features/map/model/MapModel.ts#L283) passes an empty array today; add controls deliberately, never `defaults()`, or a second zoom widget and attribution appear unbidden.
+- **Scale bar is METRIC ONLY**, resolved at pre-flight. The reference shows a dual km+mi bar only because OpenLayers 2's `ScaleLine` defaults to dual; miles carry no information for Vietnamese water management. One bar, degrading km → m.
 - **Bottom-centre is taken** by `.map-toolbar`. Scale bar goes **bottom-left**, coordinates **bottom-right** — the convention Google, Leaflet, Esri and QGIS all share.
 - **Do not add `ol/interaction/DragZoom`.** Verified already active via OL defaults: shift+drag moved zoom 7.001 → 9.424. Task 6 makes it discoverable, nothing more.
 - **Coordinates in EPSG:4326**, longitude first, hemisphere suffix, matching the reference and Vietnamese survey convention.
