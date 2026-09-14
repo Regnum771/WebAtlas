@@ -19,6 +19,13 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toContain('Không có dữ liệu');
   });
 
+  it('forbids coordinates from memory and names the tool to use instead', () => {
+    // The rule that stops the fabricated-distance failure: every coordinate the
+    // model passes to a data tool has to come from a tool or the map context.
+    expect(SYSTEM_PROMPT).toContain('locate_place');
+    expect(SYSTEM_PROMPT).toMatch(/không.{0,40}tự.{0,20}toạ độ|toạ độ.{0,60}trí nhớ/i);
+  });
+
   it('is stable across calls — a varying prefix would miss the cache every turn', () => {
     expect(SYSTEM_PROMPT).toBe(SYSTEM_PROMPT);
     expect(SYSTEM_PROMPT).not.toMatch(/\d{4}-\d{2}-\d{2}T/);

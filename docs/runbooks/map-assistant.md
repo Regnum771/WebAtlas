@@ -3,7 +3,7 @@
 Vận hành `POST /api/assistant/messages` và bảng **Trợ lý** trong thanh biểu tượng.
 
 Trợ lý chạy hoàn toàn phía máy chủ: mô hình `claude-haiku-4-5` được điều khiển bằng
-Tool Runner của SDK Anthropic, gọi 12 công cụ chia làm hai nhóm — nhóm **dữ liệu**
+Tool Runner của SDK Anthropic, gọi 13 công cụ chia làm hai nhóm — nhóm **dữ liệu**
 truy vấn PostGIS rồi trả về sự kiện kèm nguồn gốc, nhóm **lệnh** phát ra `MapCommand`
 đã được kiểm tra để trình duyệt thực thi. Trình duyệt chỉ nhận kết quả; nó không gọi
 mô hình và không giữ khoá API.
@@ -24,8 +24,9 @@ Sau khi thêm khoá vào `apps/api/.env`, khởi động lại API. Không commi
 
 ## Kiểm tra lần đầu (cần một người thật và một khoá API)
 
-Bốn bước này **chưa được chạy** khi tính năng được xây (máy phát triển không có
-khoá). Hãy làm đủ trước khi mở cho người dùng:
+Bốn bước này là danh mục kiểm tra cho mỗi lần triển khai mới. Lần chạy đầu tiên
+đã thực hiện ngày 14/09/2026 bằng khoá thật — kết quả và một lỗi phải sửa được ghi
+ở mục "Lần chạy kiểm tra đầu tiên" bên dưới.
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d
@@ -44,9 +45,34 @@ npm run dev:web
 4. Gỡ `ANTHROPIC_API_KEY` rồi thử lại → bảng hiện thông báo 503 bằng tiếng Việt,
    không phải bảng trắng hay vòng quay treo.
 
-Ngoài ra, bộ kiểm định tuyến ý định (`npm run test:api:live`) cũng chưa từng chạy vì
-lý do tương tự. Nó **tốn token thật**. Chạy nó lần đầu khi đã có khoá, và mỗi khi
-sửa lời nhắc hệ thống hoặc thêm/bớt công cụ.
+Bộ kiểm định tuyến ý định (`npm run test:api:live`) **tốn token thật**. Chạy nó mỗi
+khi sửa lời nhắc hệ thống hoặc thêm/bớt công cụ. Tính đến 14/09/2026: 8/8 đạt.
+
+## Lần chạy kiểm tra đầu tiên (14/09/2026)
+
+Lần chạy thật đầu tiên phát hiện một lỗi mà toàn bộ kiểm thử ngoại tuyến không thấy
+được, vì nó nằm ở chỗ mô hình tự điền dữ liệu chứ không ở mã:
+
+**Toạ độ địa danh bịa ra.** Hỏi "5 đập gần Buôn Ma Thuột nhất?" ba lần cho ba câu
+trả lời khác hẳn nhau trên cùng một bộ dữ liệu tĩnh. Nguyên nhân: không công cụ nào
+tra được tên địa danh, nên mô hình tự lấy toạ độ từ trí nhớ — 107,00/12,05 rồi
+107,98/12,07 rồi 107,30/12,67, trong khi Buôn Ma Thuột thật ở 108,0447/12,6797. Sai
+tới 117 km, mà câu trả lời vẫn kèm chip nguồn gốc `nearest_features` và khoảng cách
+hai chữ số thập phân, nên **trông y hệt một câu trả lời có căn cứ**.
+
+Luật 5 của lời nhắc hệ thống lúc đó đã cấm tự nghĩ toạ độ, nhưng chỉ giới hạn "khi
+phóng to hoặc đánh dấu bản đồ" — không phủ phần truyền toạ độ vào công cụ TRUY VẤN.
+Đó đúng là kẽ hở `nearest_features` lọt qua.
+
+Đã sửa: thêm công cụ `locate_place` tra bảng `basemap.places_region` (6.145 địa danh,
+đã có sẵn trong cơ sở dữ liệu — không phải nhập thêm), và viết lại luật 5 để phủ MỌI
+toạ độ truyền cho MỌI công cụ. Sau khi sửa, ba lần hỏi cùng câu cho kết quả trùng
+khít nhau.
+
+Bài học cho người kiểm tra sau: **một câu trả lời có chip nguồn gốc chưa chắc đã có
+căn cứ.** Chip chỉ chứng minh công cụ đã chạy, không chứng minh đầu vào của nó đúng.
+Cách kiểm nhanh là hỏi cùng một câu vài lần — dữ liệu tĩnh mà câu trả lời đổi thì có
+chỗ nào đó đang được mô hình tự điền.
 
 ## Giới hạn đã biết
 

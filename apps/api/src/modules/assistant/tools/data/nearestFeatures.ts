@@ -20,11 +20,11 @@ export const nearestFeaturesTool: ToolFactory = (ctx) =>
   betaZodTool({
     name: 'nearest_features',
     description:
-      'Find the features of one layer closest to a point, with distances in kilometres. Use for "nearest", "closest to", "around".',
+      'Find the features of one layer closest to a point, with distances in kilometres. Use for "nearest", "closest to", "around". The point must come from locate_place or another tool result, never from memory — a wrong point returns a confident, wrong ranking.',
     inputSchema: z.object({
       layerKey: z.enum(EDITABLE_LAYER_KEYS),
-      lon: z.number().describe('Longitude in WGS84 degrees'),
-      lat: z.number().describe('Latitude in WGS84 degrees'),
+      lon: z.number().describe('Longitude in WGS84 degrees, from locate_place or another tool result'),
+      lat: z.number().describe('Latitude in WGS84 degrees, from locate_place or another tool result'),
       limit: z.number().int().min(1).max(20).default(5),
     }),
     run: async (input) => {

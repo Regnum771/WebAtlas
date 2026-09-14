@@ -252,7 +252,7 @@ The build-out is phased. Each plan produces working, testable software on its ow
 - [ ] **Plan 7** — Admin map editing UI (draw/modify/delete + attribute forms → API → WFS refetch). Chưa triển khai; đây không còn là mốc kế tiếp.
 - [x] **Vùng công tác + OSM waterways + ranh giới 34 tỉnh** (dữ liệu chuyên đề giới hạn trong 6 tỉnh Nam Trung Bộ & Tây Nguyên; sông/hồ từ OpenStreetMap có tên riêng; ranh giới hành chính sau sáp nhập 01/7/2025).
 - [x] **Plan A — Cải tổ giao diện** (thanh biểu tượng thay bảy panel nổi, bảng lớp/chú giải chạy trên dữ liệu thật, lớp lệnh bản đồ dùng chung `MapCommand`).
-- [x] **Plan B — Trợ lý bản đồ** (LLM phía máy chủ hỏi đáp tiếng Việt, đo đạc bằng PostGIS, điều khiển bản đồ bằng ngôn ngữ tự nhiên). Xem [runbook](docs/runbooks/map-assistant.md) — **lưu ý**: bốn bước kiểm tra lần đầu với khoá API thật (mục "Kiểm tra lần đầu" trong runbook) chưa từng được chạy, vì máy phát triển không có khoá.
+- [x] **Plan B — Trợ lý bản đồ** (LLM phía máy chủ hỏi đáp tiếng Việt, đo đạc bằng PostGIS, điều khiển bản đồ bằng ngôn ngữ tự nhiên). Xem [runbook](docs/runbooks/map-assistant.md). Đã chạy kiểm tra với khoá API thật ngày 14/09/2026: lần đó phát hiện và sửa lỗi mô hình tự bịa toạ độ địa danh (thêm công cụ `locate_place`); chi tiết ở mục "Lần chạy kiểm tra đầu tiên" trong runbook.
 - [ ] **Tài liệu hoá lại kho** ([docs/superpowers/plans/2026-09-07-repo-redocumentation.md](docs/superpowers/plans/2026-09-07-repo-redocumentation.md)) — mốc kế tiếp.
 
 ## Documentation

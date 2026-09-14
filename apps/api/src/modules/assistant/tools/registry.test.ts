@@ -24,6 +24,14 @@ describe('buildTools', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it('offers the gazetteer lookup, without which place names are answered from memory', () => {
+    // Not a nice-to-have: with no locate_place in the set, the model fed
+    // nearest_features a remembered coordinate and got Buôn Ma Thuột wrong by
+    // up to 117 km, three different ways on three runs.
+    const names = buildTools(ctx).map((t) => (t as { name: string }).name);
+    expect(names).toContain('locate_place');
+  });
+
   it('returns tools in a stable order — the definitions sit in the cached prefix', () => {
     const a = buildTools(ctx).map((t) => (t as { name: string }).name);
     const b = buildTools(ctx).map((t) => (t as { name: string }).name);

@@ -5,6 +5,7 @@ import { zoomToFeatureTool } from './command/zoomToFeature';
 import { setLayerVisibleTool } from './command/setLayerVisible';
 import { setBasemapTool } from './command/setBasemap';
 import { highlightFeaturesTool } from './command/highlightFeatures';
+import { locatePlaceTool } from './data/locatePlace';
 import { featuresInViewTool } from './data/featuresInView';
 import { nearestFeaturesTool } from './data/nearestFeatures';
 import { distanceBetweenTool } from './data/distanceBetween';
@@ -29,6 +30,7 @@ const FACTORIES: ToolFactory[] = [
   setLayerVisibleTool,
   setBasemapTool,
   highlightFeaturesTool,
+  locatePlaceTool,
   featuresInViewTool,
   nearestFeaturesTool,
   distanceBetweenTool,
