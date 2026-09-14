@@ -15,8 +15,8 @@ import {
   formatScale,
   ZOOM_STOPS,
   nearestStopIndex,
-  snapScaleToNearestThousand,
-  SNAP_STEP,
+  snapScaleForReadout,
+  SIGNIFICANT_DIGITS,
   settleZoomCorrection,
   scaleAtResolution,
 } from './zoomScale';
@@ -145,45 +145,48 @@ describe('nearestStopIndex', () => {
   });
 });
 
-describe('snapScaleToNearestThousand', () => {
-  it('rounds down', () => {
-    expect(snapScaleToNearestThousand(1_247_331)).toBe(1_247_000);
-  });
-
-  it('rounds up', () => {
-    expect(snapScaleToNearestThousand(1_247_600)).toBe(1_248_000);
+describe('snapScaleForReadout', () => {
+  it('rounds to three significant figures, not to a fixed grid', () => {
+    // A fixed 1.000 grid was fine when the range stopped at 1:100.000 (a 1%
+    // step) but is a 4% step at 1:25.000 — visibly chunky at the close end.
+    // Three significant figures is proportional, so the step feels the same
+    // everywhere in the range.
+    expect(snapScaleForReadout(1_247_331)).toBe(1_250_000);
+    expect(snapScaleForReadout(26_431)).toBe(26_400);
+    expect(snapScaleForReadout(9_871_234)).toBe(9_870_000);
   });
 
   it('is idempotent — the property the settle-snap loop guard depends on', () => {
-    const once = snapScaleToNearestThousand(1_247_331);
-    expect(snapScaleToNearestThousand(once)).toBe(once);
+    const once = snapScaleForReadout(1_247_331);
+    expect(snapScaleForReadout(once)).toBe(once);
   });
 
   it('clamps rather than snapping past MAX_SCALE (most zoomed in)', () => {
-    expect(snapScaleToNearestThousand(40_000)).toBe(MAX_SCALE);
+    expect(snapScaleForReadout(20_000)).toBe(MAX_SCALE);
   });
 
   it('clamps rather than snapping past MIN_SCALE (most zoomed out)', () => {
-    expect(snapScaleToNearestThousand(9_000_000)).toBe(MIN_SCALE);
+    expect(snapScaleForReadout(15_000_000)).toBe(MIN_SCALE);
   });
 
   it('leaves every slider stop untouched — the two snappings must not fight', () => {
-    // Fails the day someone adds a stop like 1.250.500, which would otherwise
-    // show up only as a slider handle drifting off its own notch after settling.
+    // Fails the day someone adds a stop that is not a 3-significant-figure
+    // value, which would otherwise show up only as a slider handle drifting
+    // off its own notch after settling.
     ZOOM_SCALE_LEVELS.forEach((scale) => {
-      expect(snapScaleToNearestThousand(scale)).toBe(scale);
-      expect(scale % SNAP_STEP).toBe(0);
+      expect(snapScaleForReadout(scale)).toBe(scale);
     });
+    expect(SIGNIFICANT_DIGITS).toBe(3);
   });
 });
 
 describe('settleZoomCorrection', () => {
-  it('corrects a zoom whose scale is not a round thousand', () => {
+  it('corrects a zoom whose scale is not a round readout value', () => {
     // A zoom deliberately between stops, the state the wheel leaves the map in.
     const messy = zoomForScale(1_247_331);
     const corrected = settleZoomCorrection(messy);
     expect(corrected).not.toBeNull();
-    expect(scaleAtZoom(corrected as number)).toBeCloseTo(1_247_000, 0);
+    expect(scaleAtZoom(corrected as number)).toBeCloseTo(1_250_000, 0);
   });
 
   it('returns null the second time — the loop guard that stops the map oscillating', () => {
@@ -211,5 +214,29 @@ describe('scaleAtResolution', () => {
     const zoom = 10;
     const mercatorResolution = resolutionAtZoom(zoom) / Math.cos((16 * Math.PI) / 180);
     expect(scaleAtResolution(mercatorResolution)).toBeCloseTo(scaleAtZoom(zoom), 3);
+  });
+});
+
+describe('the widened scale range', () => {
+  it('spans a whole number of zoom levels, so OpenLayers honours both bounds', () => {
+    // The bug this fixes: ol/View computes
+    //   maxZoom = minZoom + floor(log2(maxResolution / minResolution))
+    // so a fractional span is silently truncated. 1:7.500.000 -> 1:100.000 was
+    // 6.23 levels, floored to 6, and the map stopped at 1:117.188 — 17% short
+    // of the MAX_SCALE the constants advertised.
+    const span = Math.log2(MIN_SCALE / MAX_SCALE);
+    expect(span).toBe(Math.round(span));
+    expect(MAX_ZOOM - MIN_ZOOM).toBeCloseTo(span, 9);
+  });
+
+  it('keeps a notch at 1:7.500.000, the previous far limit', () => {
+    expect(ZOOM_SCALE_LEVELS).toContain(7_500_000);
+  });
+
+  it('still fits the whole of Vietnam at the far limit', () => {
+    // MIN_SCALE moved out from 1:7.500.000 to 1:12.800.000, so this gets easier,
+    // but it is the constraint that ruled out anchoring MIN_SCALE on 1:6.400.000.
+    const heightPx = (1_725_000 / MIN_SCALE / 0.0254) * 96;
+    expect(heightPx).toBeLessThanOrEqual(900);
   });
 });

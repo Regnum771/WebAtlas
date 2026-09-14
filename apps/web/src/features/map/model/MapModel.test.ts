@@ -40,7 +40,7 @@ describe('settle-snap wiring', () => {
 
     onMoveEnd();
     expect(setZoom).toHaveBeenCalledTimes(1);
-    expect(scaleAtZoom(zoom)).toBeCloseTo(1_247_000, 0);
+    expect(scaleAtZoom(zoom)).toBeCloseTo(1_250_000, 0);
 
     // The correction fired another moveend. This pass must do nothing.
     onMoveEnd();
