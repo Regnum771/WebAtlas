@@ -1,4 +1,5 @@
 import Map from 'ol/Map';
+import { createRiverOverviewSource, riverOverviewVisibleAt } from './riverOverview';
 import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
@@ -106,6 +107,8 @@ export class MapModel {
   private reservoirFilter: ReservoirFilterType = 'all';
   private layerStates: LayerState[] = [];
   private moveendHandler: (() => void) | null = null;
+  /** Lớp sông tổng quan cho mức thu nhỏ — xem riverOverview.ts. */
+  private riversOverviewLayer: VectorLayer<VectorSource> | null = null;
   /** Bám nấc nghìn khi khung nhìn dừng — xem settleZoomCorrection. */
   private settleSnapHandler: (() => void) | null = null;
   /** Cổng tải sông/hồ theo zoom — chạy mỗi lần moveend (xem zoomLoadGate.ts). */
@@ -164,6 +167,17 @@ export class MapModel {
     this.layers['layer_dams'] = damsLayer;
     const riversLayer = new VectorLayer({ source: createWfsVectorSource('rivers'), style: riversStyle, properties: { id: 'layer_rivers' } });
     this.layers['layer_rivers'] = riversLayer;
+
+    // Sông tổng quan: chỉ sông chính, hình học đã đơn giản hoá sẵn, phục vụ đúng
+    // phần dải tỷ lệ mà lớp sông đầy đủ chưa được phép tải (dưới zoom 8,5).
+    // KHÔNG đưa vào this.layers: đó là sổ đăng ký các lớp người dùng bật/tắt
+    // được, còn lớp này đi kèm 'layer_rivers' chứ không có mục riêng trong bảng.
+    const riversOverviewLayer = new VectorLayer({
+      source: createRiverOverviewSource(),
+      style: riversStyle,
+      properties: { id: 'layer_rivers_overview' },
+    });
+    this.riversOverviewLayer = riversOverviewLayer;
     const mkWfs = (stateId: string, key: Parameters<typeof createWfsVectorSource>[0], style: any) => {
       const layer = new VectorLayer({ source: createWfsVectorSource(key), style, properties: { id: stateId } });
       this.layers[stateId] = layer;
@@ -241,6 +255,7 @@ export class MapModel {
         floodLayer,
         lakesLayer,
         riversLayer,
+        riversOverviewLayer,
         damsLayer,
         stationsLayer,
         droughtSurveyLayer,
@@ -284,6 +299,10 @@ export class MapModel {
       if (zoom !== undefined) {
         this.waterGate?.(zoom);
         this.wardsGate?.(zoom);
+        // Lớp tổng quan chỉ vẽ DƯỚI ngưỡng của lớp đầy đủ, và đi theo đúng công
+        // tắc 'Mạng lưới sông ngòi' của người dùng — không có mục bật/tắt riêng.
+        const riversOn = this.layerStates.find((l) => l.id === 'layer_rivers')?.visible ?? true;
+        this.riversOverviewLayer?.setVisible(riverOverviewVisibleAt(zoom) && riversOn);
       }
       this.recomputeVisibility();
     };

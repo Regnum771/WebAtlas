@@ -1,6 +1,6 @@
 # River Overview Layer — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make the main river trunks (sông chính) visible across the zoomed-out half of the scale range, where the river network is currently absent entirely.
 
@@ -95,7 +95,7 @@ Task 3 covers both, and Task 1 adds a test that fails if the overview disagrees 
 **Interfaces:**
 - Produces: `water.rivers_overview` with columns `id`, `name`, `stream_order`, `geom`; a GiST index `rivers_overview_geom_idx`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/api/src/db/riverOverview.test.ts`:
 
@@ -148,12 +148,12 @@ describe('water.rivers_overview', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm run test -w @webatlas/api -- riverOverview`
 Expected: FAIL — `relation "water.rivers_overview" does not exist`.
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 Create `apps/api/src/db/migrations/1000000000009_river-overview.cjs`:
 
@@ -202,7 +202,7 @@ exports.down = (pgm) => {
 };
 ```
 
-- [ ] **Step 4: Run the migration and the test**
+- [x] **Step 4: Run the migration and the test**
 
 ```bash
 npm run migrate:up -w @webatlas/api
@@ -210,7 +210,7 @@ npm run test -w @webatlas/api -- riverOverview
 ```
 Expected: migration applies; all four tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/db/migrations/1000000000009_river-overview.cjs apps/api/src/db/riverOverview.test.ts
@@ -230,7 +230,7 @@ git commit -m "feat(api): khung nhìn tổng quan cho sông chính, đơn giản
 
 **Note on the naming convention:** `ensureLayer(table)` publishes `nativeName` as `${table}_active`. The overview is already a concrete relation with no `_active` twin, so it needs a publish path that uses its own name. Read `ensureLayer` before editing — do not simply add `rivers_overview` to `TABLES` or GeoServer will look for `rivers_overview_active` and the publish will fail with a confusing 500.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/api/src/geoserver/publish.test.ts`:
 
@@ -243,12 +243,12 @@ it('publishes the river overview under its own name, not a _active twin', () => 
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm run test -w @webatlas/api -- publish`
 Expected: FAIL — `nativeNameFor` is not exported.
 
-- [ ] **Step 3: Extract and use the mapping**
+- [x] **Step 3: Extract and use the mapping**
 
 In `apps/api/src/geoserver/publish.ts`, add and export:
 
@@ -265,7 +265,7 @@ export function nativeNameFor(table: string): string {
 
 Replace both uses of `` `${table}_active` `` inside `ensureLayer` with `nativeNameFor(table)`, and add `'rivers_overview'` to `TABLES`.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```bash
 npm run test -w @webatlas/api -- publish
@@ -274,7 +274,7 @@ curl -s "http://localhost:8080/geoserver/ows?service=WFS&version=2.0.0&request=G
 ```
 Expected: tests pass; the curl returns a GeoJSON FeatureCollection, not an exception.
 
-- [ ] **Step 5: Measure the payload, which is the whole point**
+- [x] **Step 5: Measure the payload, which is the whole point**
 
 Run:
 ```bash
@@ -283,7 +283,7 @@ curl -s -o /dev/null -w "overview: %{time_total}s %{size_download} bytes\n" \
 ```
 Expected: well under 500 kB and under 1s, against 5,1 MB / 3,6s for the unsimplified bucket 3. **If it is not, stop** — the simplification is not reaching the wire and the rest of the plan is pointless.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/api/src/geoserver/publish.ts apps/api/src/geoserver/publish.test.ts
@@ -302,7 +302,7 @@ git commit -m "feat(api): xuất bản lớp sông tổng quan qua WFS"
 **Interfaces:**
 - Produces: `refreshRiverOverview(pool: Pool): Promise<void>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `apps/api/src/db/riverOverview.test.ts`:
 
@@ -316,12 +316,12 @@ it('refreshes without locking readers', async () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm run test -w @webatlas/api -- riverOverview`
 Expected: FAIL — cannot resolve `./riverOverview`.
 
-- [ ] **Step 3: Write it**
+- [x] **Step 3: Write it**
 
 Create `apps/api/src/db/riverOverview.ts`:
 
@@ -344,7 +344,7 @@ export async function refreshRiverOverview(pool: Pool): Promise<void> {
 }
 ```
 
-- [ ] **Step 4: Call it from both places**
+- [x] **Step 4: Call it from both places**
 
 In `apps/api/src/db/seeds/ingestRivers.ts`, after the ingest transaction commits:
 
@@ -360,7 +360,7 @@ Then find the activation path and add the same call after the `is_active` flip:
 grep -rn "is_active" apps/api/src/modules/versions/
 ```
 
-- [ ] **Step 5: Verify the staleness test still passes end to end**
+- [x] **Step 5: Verify the staleness test still passes end to end**
 
 ```bash
 npm run ingest:rivers -w @webatlas/api
@@ -368,7 +368,7 @@ npm run test -w @webatlas/api -- riverOverview
 ```
 Expected: the "same features as the active version" test passes after a real ingest.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/api/src/db/riverOverview.ts apps/api/src/db/riverOverview.test.ts apps/api/src/db/seeds/ingestRivers.ts apps/api/src/modules/versions
@@ -388,7 +388,7 @@ git commit -m "feat(api): làm mới ảnh chụp sông tổng quan sau ingest v
 - Consumes: WFS layer `rivers_overview` from Task 2.
 - Produces: `RIVER_OVERVIEW_MAX_ZOOM`, `riverOverviewVisibleAt(zoom): boolean`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/web/src/features/map/model/riverOverview.test.ts`:
 
@@ -418,12 +418,12 @@ describe('riverOverviewVisibleAt', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npm run test -w @webatlas/web -- riverOverview`
 Expected: FAIL — cannot resolve `./riverOverview`.
 
-- [ ] **Step 3: Write it**
+- [x] **Step 3: Write it**
 
 Create `apps/web/src/features/map/model/riverOverview.ts`:
 
@@ -444,7 +444,7 @@ export function riverOverviewVisibleAt(zoom: number): boolean {
 }
 ```
 
-- [ ] **Step 4: Add the layer in MapModel**
+- [x] **Step 4: Add the layer in MapModel**
 
 In `MapModel.ts`, beside `riversLayer`:
 
@@ -468,7 +468,7 @@ Add it to the layer array directly beneath `riversLayer`, and in the existing `m
 
 so the overview follows the user's own **Mạng lưới sông ngòi** toggle rather than appearing as a second entry in the panel.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 ```bash
 npm run test -w @webatlas/web -- riverOverview
@@ -477,11 +477,11 @@ npm run build:web
 ```
 Expected: all pass, build exits 0.
 
-- [ ] **Step 6: Check it in the browser**
+- [x] **Step 6: Check it in the browser**
 
 Run the app; at 1:12.800.000 and 1:3.000.000 the main rivers must be visible. Then zoom past 1:1.570.934 and watch the handover: the network should gain detail, **not** visibly double up or flicker. A doubled shoreline at the boundary means the two layers overlap — check Step 3's constant.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/web/src/features/map/model/riverOverview.ts apps/web/src/features/map/model/riverOverview.test.ts apps/web/src/features/map/model/MapModel.ts
@@ -513,3 +513,18 @@ Plan complete and saved to `docs/superpowers/plans/2026-09-14-river-overview-lay
 **1. Subagent-Driven (recommended)** — a fresh subagent per task, review between tasks.
 
 **2. Inline Execution** — execute in this session with checkpoints.
+
+---
+
+## Execution notes (2026-09-14)
+
+Four things differed from the plan as written:
+
+1. **`rivers_active` has no `deleted` column** — the view already excludes deleted rows. The `AND NOT deleted` in the original draft would have failed.
+2. **Simplification alone missed the payload bar.** 5,1 MB → 580 kB, against a target of under 500 kB. The remaining weight was not geometry: bucket 3 averages **2,6 vertices per feature** because OSM splits rivers into short segments, so per-feature JSON overhead (~336 B) dominated. Merging by name took 1.723 features → 279 and the payload to **146 kB / 0,35s**. The trade is losing per-segment ids, which is acceptable for a display-only layer and is recorded in the migration.
+3. **There is no production activation path to hook.** `versionsRepository` only reads `is_active`; versions are activated by hand in SQL. So `refreshRiverOverview` is called from ingest only, and the requirement for manual activation is documented in the function itself. The name-based staleness test is the backstop.
+4. **GeoServer caches a published relation's schema.** After the columns changed, WFS failed with `column "id" does not exist` — `ensureLayer` returns early when the layer exists and never re-reads columns. The featuretype must be deleted and re-published. Worth knowing for any future change to a published relation's shape.
+
+Also fixed, because the change caused it: the layers panel claimed **"hiện từ mức 8,5"** for rivers while the overview was plainly drawing them. `layer_rivers` is now exempt from the gate hint, and the pre-existing gating test was repointed to `layer_lakes`, which really does disappear.
+
+**Still gated and still blank when zoomed out: `layer_lakes`.** It shares the same `minZoom: 8.5` and the same technique would fix it. Out of scope here, noted for a follow-up.

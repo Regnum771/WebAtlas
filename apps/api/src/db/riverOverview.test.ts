@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { Pool } from 'pg';
 import { getPool, closePool } from './pool';
+import { refreshRiverOverview } from './riverOverview';
 
 let pool: Pool;
 beforeAll(() => { pool = getPool(); });
@@ -58,5 +59,11 @@ describe('water.rivers_overview', () => {
       `SELECT indexname FROM pg_indexes WHERE schemaname = 'water' AND tablename = 'rivers_overview'`,
     );
     expect(rows.length).toBeGreaterThan(0);
+  });
+
+  it('refreshes without locking readers', async () => {
+    // CONCURRENTLY needs the UNIQUE index from the migration. If someone drops
+    // it this throws, rather than silently blocking every map request mid-refresh.
+    await expect(refreshRiverOverview(pool)).resolves.toBeUndefined();
   });
 });

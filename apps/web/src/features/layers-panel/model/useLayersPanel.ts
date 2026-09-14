@@ -37,7 +37,12 @@ export function buildPanelGroups(input: {
     const meta = input.display[state.id];
     if (!meta) continue; // no display metadata: not renderable, skip rather than crash
 
-    const gated = meta.minZoom !== undefined && input.currentZoom < meta.minZoom;
+    // layer_rivers giữ minZoom 8,5 vì mạng lưới ĐẦY ĐỦ vẫn bị chặn tải, nhưng từ
+    // khi có lớp sông tổng quan thì các sông chính vẫn hiện ở mọi mức thu phóng.
+    // Báo "hiện từ mức 8,5" lúc đó là nói ngược với thứ người dùng đang nhìn thấy.
+    const alwaysDrawnBySubstitute = state.id === 'layer_rivers';
+    const gated =
+      !alwaysDrawnBySubstitute && meta.minZoom !== undefined && input.currentZoom < meta.minZoom;
     let group = groups.find((g) => g.name === meta.group);
     if (!group) {
       group = { name: meta.group, layers: [] };
