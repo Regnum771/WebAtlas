@@ -69,6 +69,14 @@ phóng to hoặc đánh dấu bản đồ" — không phủ phần truyền to�
 toạ độ truyền cho MỌI công cụ. Sau khi sửa, ba lần hỏi cùng câu cho kết quả trùng
 khít nhau.
 
+Bốn bước kiểm tra thủ công ở trên đã chạy hết bằng trình duyệt thật trên bản sửa,
+đều đạt: câu hỏi đếm trả về số kèm hai chip nguồn gốc (`locate_place`,
+`nearest_features`) và các điểm đánh dấu hiện đúng chỗ trên bản đồ; "Chuyển bản đồ
+tới Đắk Lắk" đưa tỷ lệ từ 1:4.443.272 về 1:1.110.818 đúng vùng; câu hỏi về Bắc Kạn
+được trả lời trung thực là không tra được, kèm giải thích vùng công tác chỉ có 6
+tỉnh; và khi gỡ khoá, bảng hiện "Trợ lý chưa được cấu hình trên máy chủ này." kèm
+nút Thử lại, không phải bảng trắng hay vòng quay treo.
+
 Bài học cho người kiểm tra sau: **một câu trả lời có chip nguồn gốc chưa chắc đã có
 căn cứ.** Chip chỉ chứng minh công cụ đã chạy, không chứng minh đầu vào của nó đúng.
 Cách kiểm nhanh là hỏi cùng một câu vài lần — dữ liệu tĩnh mà câu trả lời đổi thì có
@@ -83,6 +91,10 @@ Ghi ra đây để người sau không phải tự phát hiện:
   với triển khai một tiến trình; chạy **nhiều tiến trình thì cả hai đều sai** — mỗi
   tiến trình giữ một bản đếm riêng, nên trần thực tế nhân lên theo số tiến trình.
   Muốn chạy nhiều tiến trình thì phải chuyển hai thứ này sang bộ nhớ dùng chung trước.
+- **Bảng trợ lý hiển thị văn bản thô, không dựng Markdown.** Mô hình trả lời bằng
+  Markdown (`**tên đập**`, danh sách đánh số, đôi khi cả bảng), nhưng bảng chat in
+  nguyên ký tự, nên người dùng đọc thấy `**Đray H'linh 1**` kèm dấu sao. Chỉ là vấn
+  đề trình bày, không sai dữ liệu — nhưng thấy rõ ngay ở câu trả lời đầu tiên.
 - **Không có bộ nhớ xuyên phiên.** Đúng theo thiết kế, theo chỉ đạo của người dùng.
 - **Không phát trực tiếp (streaming).** Bảng hiển thị "Đang xử lý…" chứ không chảy
   chữ, và **không** hiển thị công cụ nào đang chạy. Bản thiết kế có nhắc tới tiến độ
