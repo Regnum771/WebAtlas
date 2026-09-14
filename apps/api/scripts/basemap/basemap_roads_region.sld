@@ -11,5 +11,35 @@
 <Rule><Name>minor_casing</Name><MaxScaleDenominator>250000</MaxScaleDenominator><ogc:Filter><ogc:Or><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>residential</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>living_street</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>service</ogc:Literal></ogc:PropertyIsEqualTo></ogc:Or></ogc:Filter><LineSymbolizer><Stroke><CssParameter name="stroke">#e2e2e2</CssParameter><CssParameter name="stroke-width">2.0</CssParameter><CssParameter name="stroke-linecap">round</CssParameter></Stroke></LineSymbolizer></Rule>
 <Rule><Name>minor</Name><MaxScaleDenominator>250000</MaxScaleDenominator><ogc:Filter><ogc:Or><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>residential</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>living_street</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>service</ogc:Literal></ogc:PropertyIsEqualTo></ogc:Or></ogc:Filter><LineSymbolizer><Stroke><CssParameter name="stroke">#ffffff</CssParameter><CssParameter name="stroke-width">1.2</CssParameter><CssParameter name="stroke-linecap">round</CssParameter></Stroke></LineSymbolizer></Rule>
 <Rule><Name>track_path</Name><MaxScaleDenominator>100000</MaxScaleDenominator><ogc:Filter><ogc:Or><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>track</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>track_grade1</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>track_grade2</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>track_grade3</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>track_grade4</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>track_grade5</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>path</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>footway</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>cycleway</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>steps</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>pedestrian</ogc:Literal></ogc:PropertyIsEqualTo></ogc:Or></ogc:Filter><LineSymbolizer><Stroke><CssParameter name="stroke">#e8e4dd</CssParameter><CssParameter name="stroke-width">0.8</CssParameter><CssParameter name="stroke-linecap">round</CssParameter><CssParameter name="stroke-dasharray">3 3</CssParameter></Stroke></LineSymbolizer></Rule>
+<Rule><Name>secondary_label</Name><MaxScaleDenominator>250000</MaxScaleDenominator><ogc:Filter><ogc:Or><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>secondary</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>tertiary</ogc:Literal></ogc:PropertyIsEqualTo></ogc:Or></ogc:Filter><TextSymbolizer>
+      <Label><ogc:PropertyName>name</ogc:PropertyName></Label>
+      <Font><CssParameter name="font-family">Arial</CssParameter>
+        <CssParameter name="font-size">10</CssParameter>
+        <CssParameter name="font-weight">normal</CssParameter></Font>
+      <LabelPlacement><LinePlacement><PerpendicularOffset>0</PerpendicularOffset></LinePlacement></LabelPlacement>
+      <Halo><Radius>1.8</Radius><Fill><CssParameter name="fill">#ffffff</CssParameter></Fill></Halo>
+      <Fill><CssParameter name="fill">#5b5145</CssParameter></Fill>
+      <VendorOption name="followLine">true</VendorOption>
+      <VendorOption name="group">yes</VendorOption>
+      <VendorOption name="repeat">400</VendorOption>
+      <VendorOption name="maxDisplacement">40</VendorOption>
+      <VendorOption name="spaceAround">4</VendorOption>
+      <VendorOption name="maxAngleDelta">30</VendorOption>
+    </TextSymbolizer></Rule>
+<Rule><Name>minor_label</Name><MaxScaleDenominator>50000</MaxScaleDenominator><ogc:Filter><ogc:Or><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>residential</ogc:Literal></ogc:PropertyIsEqualTo><ogc:PropertyIsEqualTo><ogc:PropertyName>fclass</ogc:PropertyName><ogc:Literal>living_street</ogc:Literal></ogc:PropertyIsEqualTo></ogc:Or></ogc:Filter><TextSymbolizer>
+      <Label><ogc:PropertyName>name</ogc:PropertyName></Label>
+      <Font><CssParameter name="font-family">Arial</CssParameter>
+        <CssParameter name="font-size">9</CssParameter>
+        <CssParameter name="font-weight">normal</CssParameter></Font>
+      <LabelPlacement><LinePlacement><PerpendicularOffset>0</PerpendicularOffset></LinePlacement></LabelPlacement>
+      <Halo><Radius>1.8</Radius><Fill><CssParameter name="fill">#ffffff</CssParameter></Fill></Halo>
+      <Fill><CssParameter name="fill">#5b5145</CssParameter></Fill>
+      <VendorOption name="followLine">true</VendorOption>
+      <VendorOption name="group">yes</VendorOption>
+      <VendorOption name="repeat">400</VendorOption>
+      <VendorOption name="maxDisplacement">40</VendorOption>
+      <VendorOption name="spaceAround">4</VendorOption>
+      <VendorOption name="maxAngleDelta">30</VendorOption>
+    </TextSymbolizer></Rule>
   </FeatureTypeStyle></UserStyle></NamedLayer>
 </StyledLayerDescriptor>

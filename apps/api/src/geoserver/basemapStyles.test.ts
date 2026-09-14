@@ -68,12 +68,12 @@ describe('basemap SLD artifacts', () => {
     // segments is a hairball. motorway alone (9.946) is the readable overview;
     // trunk and primary join as you come in.
     const gates = new Set(scaleGates(read('basemap_roads_vn')));
-    expect(gates).toEqual(new Set([5_000_000, 3_000_000]));
+    expect(gates).toEqual(new Set([5_000_000, 3_000_000, 1_000_000]));
   });
 
   it('tiers the region roads by the agreed thresholds', () => {
     const gates = new Set(scaleGates(read('basemap_roads_region')));
-    expect(gates).toEqual(new Set([1_000_000, 500_000, 250_000, 100_000]));
+    expect(gates).toEqual(new Set([1_000_000, 500_000, 250_000, 100_000, 50_000]));
   });
 
   it('uses the widened close end — tracks and paths appear below 1:100.000', () => {
@@ -112,5 +112,26 @@ describe('basemap SLD artifacts', () => {
         .filter((f) => !named.has(f) && !DELIBERATELY_UNDRAWN.has(f));
       expect(missing, `${table} has classes no rule names: ${missing.join(', ')}`).toEqual([]);
     }
+  });
+
+  it('labels roads, tiered so names do not swamp the map', () => {
+    // The basemap drew every road as an unnamed line: 32.864 named roads in
+    // roads_region and 45.542 in roads_vn, none of them rendered.
+    const vn = read('basemap_roads_vn');
+    const region = read('basemap_roads_region');
+    expect(vn).toContain('<TextSymbolizer>');
+    expect(region).toContain('<TextSymbolizer>');
+    // Line placement, not point placement — a road label has to run along the way.
+    expect(vn).toContain('<LinePlacement>');
+    expect(vn).toContain('name="followLine"');
+    // Segments of one road share a name; grouping them avoids repeating the
+    // label on every OSM segment, which is both ugly and expensive to render.
+    expect(vn).toContain('name="group"');
+  });
+
+  it('labels by name, the field that is actually populated', () => {
+    // ref (QL1A) is only on the majors; name covers 99,5% of motorway, 94% of
+    // trunk and 91% of primary, so name is the one field worth labelling.
+    expect(read('basemap_roads_vn')).toContain('<ogc:PropertyName>name</ogc:PropertyName>');
   });
 });

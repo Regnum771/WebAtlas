@@ -61,6 +61,8 @@ LANDUSE_GREY = _P["layer_bm_landuse"]["secondary"]
 ROAD_FILL = _P["layer_bm_roads"]["color"]
 ROAD_CASING = _P["layer_bm_roads"]["stroke"]
 RAIL = _P["layer_bm_railways"]["color"]
+# Nhan duong: xam dam hon net duong de doc duoc tren nen sang.
+ROAD_LABEL = "#5b5145"
 
 # Local shade variants, not identity colours — the same reason styles.ts builds
 # its own opacity variants from the shared hex instead of storing them shared.
@@ -121,6 +123,35 @@ def label(size, colour=LABEL, weight="normal", field="name"):
     </TextSymbolizer>"""
 
 
+def road_label(size, colour=None, repeat=400):
+    """Nhan ten duong, dat DOC theo tuyen.
+
+    Khac label() cua dia danh o ba cho:
+      - LinePlacement + followLine: chu uon theo hinh dang duong, khong phai mot
+        diem giua tuyen.
+      - group=yes: OSM cat mot con duong thanh rat nhieu doan roi nhau; khong gom
+        lai thi moi doan tu ve mot nhan, vua xau vua ton cong dung hinh.
+      - repeat: voi tuyen dai, lap lai nhan moi ngan nay pixel de keo toi dau cung
+        doc duoc ten.
+    """
+    colour = colour or ROAD_LABEL
+    return f"""<TextSymbolizer>
+      <Label><ogc:PropertyName>name</ogc:PropertyName></Label>
+      <Font><CssParameter name="font-family">Arial</CssParameter>
+        <CssParameter name="font-size">{size}</CssParameter>
+        <CssParameter name="font-weight">normal</CssParameter></Font>
+      <LabelPlacement><LinePlacement><PerpendicularOffset>0</PerpendicularOffset></LinePlacement></LabelPlacement>
+      <Halo><Radius>1.8</Radius><Fill><CssParameter name="fill">{LABEL_HALO}</CssParameter></Fill></Halo>
+      <Fill><CssParameter name="fill">{colour}</CssParameter></Fill>
+      <VendorOption name="followLine">true</VendorOption>
+      <VendorOption name="group">yes</VendorOption>
+      <VendorOption name="repeat">{repeat}</VendorOption>
+      <VendorOption name="maxDisplacement">40</VendorOption>
+      <VendorOption name="spaceAround">4</VendorOption>
+      <VendorOption name="maxAngleDelta">30</VendorOption>
+    </TextSymbolizer>"""
+
+
 def rule(name, symbolizers, filt="", sc=""):
     return f"<Rule><Name>{name}</Name>{sc}{filt}{symbolizers}</Rule>"
 
@@ -165,6 +196,7 @@ STYLES["basemap_roads_vn"] = HEAD.format(name="basemap_roads_vn", rules="\n".joi
     rule("trunk", line(ROAD_MAJOR, 1.8), fclass_in("trunk", "trunk_link"), scale(max_=5000000)),
     rule("primary_casing", line(ROAD_MAJOR_CASING, 2.8), fclass_in("primary", "primary_link"), scale(max_=3000000)),
     rule("primary", line(ROAD_MAJOR, 1.7), fclass_in("primary", "primary_link"), scale(max_=3000000)),
+    rule("major_label", road_label(11), fclass_in("motorway", "trunk", "primary"), scale(max_=1000000)),
 ]))
 
 # region roads: three tiers by scale, per the 2026-09-08 design.
@@ -191,6 +223,15 @@ STYLES["basemap_roads_region"] = HEAD.format(name="basemap_roads_region", rules=
          fclass_in("track", "track_grade1", "track_grade2", "track_grade3", "track_grade4", "track_grade5",
                    "path", "footway", "cycleway", "steps", "pedestrian"),
          scale(max_=100000)),
+    rule("secondary_label", road_label(10), fclass_in("secondary", "tertiary"), scale(max_=250000)),
+    # Nguong 50.000 nghia la nhan chi hien o nac 1:25.000: MaxScaleDenominator la
+    # so sanh NGHIEM NGAT, nen o dung nac 1:50.000 luat khong chay. Dat thang
+    # 25.000 thi luat CHET han vi ung dung kep o 1:25.000 — ca kiem thu
+    # "moi nguong phai lon hon MAX_SCALE" bat dung loi do khi thu.
+    # group=yes gom cac doan cung ten lam mot nhan — dung ve mat ban do, nhung do
+    # tren tile z15: 0,07-0,13s khong gom so voi 0,21-0,51s co gom, tuc dat gap ~3
+    # lan. Gioi han o nac gan nhat de chi tra gia cho do o dung mot muc ty le.
+    rule("minor_label", road_label(9), fclass_in("residential", "living_street"), scale(max_=50000)),
 ]))
 
 # railways: every scale. Cả nước chỉ vài nghìn đoạn nên không có lý do hiệu năng
