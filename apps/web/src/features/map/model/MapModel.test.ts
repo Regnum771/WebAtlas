@@ -3,6 +3,9 @@ import { MapModel } from './MapModel';
 import { settleZoomCorrection, zoomForScale, scaleAtZoom } from './zoomScale';
 import type TileLayer from 'ol/layer/Tile';
 import type XYZ from 'ol/source/XYZ';
+import ScaleLine from 'ol/control/ScaleLine';
+import MousePosition from 'ol/control/MousePosition';
+import type Map from 'ol/Map';
 
 // jsdom không có ResizeObserver nhưng constructor của ol/Map cần nó (init() dựng
 // Map thật bên dưới) — cùng cách khắc phục như DrawController.test.ts.
@@ -111,5 +114,24 @@ describe('context-layer load-tracking teardown', () => {
     // giữ tham chiếu tới setBusy cũ của React và có thể ghi đè state của instance mới.
     expect((model as unknown as { onLoadingChange: unknown }).onLoadingChange).toBeNull();
     expect(onBusyChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('map controls wiring', () => {
+  it('includes ScaleLine and MousePosition controls after init()', () => {
+    const model = new MapModel();
+    const el = document.createElement('div');
+    model.init(el);
+
+    const map = (model as unknown as { map: Map }).map;
+    const controls = map.getControls().getArray();
+
+    // Check that ScaleLine control is present — prevents revert to empty controls
+    const hasScaleLine = controls.some((control) => control instanceof ScaleLine);
+    expect(hasScaleLine).toBe(true);
+
+    // Check that MousePosition control is present
+    const hasMousePosition = controls.some((control) => control instanceof MousePosition);
+    expect(hasMousePosition).toBe(true);
   });
 });
