@@ -56,7 +56,7 @@ Their scale-bar progression, measured:
 - `apps/web/src/features/map/model/mapReadouts.test.ts`
 - `apps/web/src/features/map/model/loadingState.ts` — `createLoadTracker`, pure counting
 - `apps/web/src/features/map/model/loadingState.test.ts`
-- `apps/web/src/features/map/ui/MapLoading.tsx` + `.test.tsx`
+- `apps/web/src/features/map/ui/MapLoadingBar.tsx` + `.test.tsx`
 
 **Modified:**
 - `apps/web/src/features/map/model/MapModel.ts` — register controls, graticule, load tracking
@@ -67,59 +67,97 @@ Their scale-bar progression, measured:
 
 ---
 
-### Task 1: Loading indicator
+### Task 1: Loading indicator — thin top-edge bar
 
-Highest value of the six: the "map renders very slowly" report is GWC rendering tiles on demand (0,012s cached vs 0,07–0,92s cold). The behaviour is normal; the *silence* is what makes it read as a fault.
+Highest value of the six: the "map renders very slowly" report is GWC rendering tiles on demand (0,012s cached vs 0,07-0,92s cold). The behaviour is normal; the *silence* is what makes it read as a fault.
+
+**Two decisions settled before writing code:**
+
+1. **A delay threshold is mandatory, not a refinement.** Every pan and zoom starts tile loads. Cached tiles return in 0,012s, so an indicator that appears instantly flickers during ordinary use - worse than nothing. It must appear only if loads are *still* outstanding after `LOADING_DELAY_MS` (400ms), so cached movement stays silent and only genuinely cold areas surface.
+2. **Indeterminate, never a percentage.** The denominator keeps changing as the user pans - one viewport pulled 388 tile requests - so a determinate bar would lurch backwards. A sliding segment is honest; a percentage would be a lie.
+
+**Visual:** a 3px indeterminate bar along the top edge of the map area, under the top bar. No text, so nothing to translate; takes no layout space; never covers data.
+
+```
++-----------------------------------------+
+| WebATLAS      [search]        Đăng nhập | top bar
++-----------------------------------------+
+|########%%%...                           | <- 3px, slides
+|                                         |
+|              (map)                      |
+|                                         |
+| == 20 km          [toolbar]  108.04°E   |
++-----------------------------------------+
+```
 
 **Files:**
 - Create: `apps/web/src/features/map/model/loadingState.ts`, `loadingState.test.ts`
-- Create: `apps/web/src/features/map/ui/MapLoading.tsx`, `MapLoading.test.tsx`
+- Create: `apps/web/src/features/map/ui/MapLoadingBar.tsx`, `MapLoadingBar.test.tsx`
 - Modify: `MapModel.ts`, `main.css`
 
 **Interfaces:**
-- Produces: `createLoadTracker(onChange: (pending: number) => void)` with `.start()`, `.done()`, `.reset()`
+- Produces: `LOADING_DELAY_MS`, `createLoadTracker(onBusyChange: (busy: boolean) => void, delayMs?)` with `.start()`, `.done()`, `.reset()`
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
-import { describe, it, expect, vi } from 'vitest';
-import { createLoadTracker } from './loadingState';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createLoadTracker, LOADING_DELAY_MS } from './loadingState';
+
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
 
 describe('createLoadTracker', () => {
-  it('reports busy while loads are outstanding and idle when they finish', () => {
-    const onChange = vi.fn();
-    const t = createLoadTracker(onChange);
-    t.start(); t.start();
-    expect(onChange).toHaveBeenLastCalledWith(2);
+  it('stays silent for loads that finish quickly - the common case', () => {
+    // A cached tile comes back in ~12ms. Flashing a bar on every pan would be
+    // worse than showing nothing at all.
+    const onBusy = vi.fn();
+    const t = createLoadTracker(onBusy);
+    t.start();
+    vi.advanceTimersByTime(LOADING_DELAY_MS - 50);
     t.done();
-    expect(onChange).toHaveBeenLastCalledWith(1);
-    t.done();
-    expect(onChange).toHaveBeenLastCalledWith(0);
+    vi.advanceTimersByTime(1000);
+    expect(onBusy).not.toHaveBeenCalled();
   });
 
-  it('never goes negative — a tile can error after its layer was removed', () => {
+  it('shows once loads are still outstanding past the delay', () => {
+    const onBusy = vi.fn();
+    const t = createLoadTracker(onBusy);
+    t.start();
+    vi.advanceTimersByTime(LOADING_DELAY_MS + 1);
+    expect(onBusy).toHaveBeenLastCalledWith(true);
+  });
+
+  it('hides as soon as the last load finishes', () => {
+    const onBusy = vi.fn();
+    const t = createLoadTracker(onBusy);
+    t.start(); t.start();
+    vi.advanceTimersByTime(LOADING_DELAY_MS + 1);
+    t.done();
+    expect(onBusy).toHaveBeenLastCalledWith(true); // one still outstanding
+    t.done();
+    expect(onBusy).toHaveBeenLastCalledWith(false);
+  });
+
+  it('never goes negative - a tile can error after its layer was removed', () => {
     // OL fires tileloadend/tileloaderror for requests already in flight when a
     // layer is torn down, so done() can outnumber start(). Going negative would
-    // wedge the spinner permanently off.
-    const onChange = vi.fn();
-    const t = createLoadTracker(onChange);
+    // wedge the bar permanently off.
+    const onBusy = vi.fn();
+    const t = createLoadTracker(onBusy);
     t.done(); t.done();
-    expect(onChange).toHaveBeenLastCalledWith(0);
+    t.start();
+    vi.advanceTimersByTime(LOADING_DELAY_MS + 1);
+    expect(onBusy).toHaveBeenLastCalledWith(true);
   });
 
-  it('reset clears a stuck count', () => {
-    const onChange = vi.fn();
-    const t = createLoadTracker(onChange);
-    t.start(); t.start(); t.reset();
-    expect(onChange).toHaveBeenLastCalledWith(0);
-  });
-
-  it('does not re-notify when the count is unchanged', () => {
-    const onChange = vi.fn();
-    const t = createLoadTracker(onChange);
-    t.done();
-    t.done();
-    expect(onChange).toHaveBeenCalledTimes(1);
+  it('reset clears a stuck count and cancels a pending show', () => {
+    const onBusy = vi.fn();
+    const t = createLoadTracker(onBusy);
+    t.start();
+    t.reset();
+    vi.advanceTimersByTime(LOADING_DELAY_MS + 1);
+    expect(onBusy).not.toHaveBeenCalledWith(true);
   });
 });
 ```
@@ -127,32 +165,57 @@ describe('createLoadTracker', () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `npm run test -w @webatlas/web -- loadingState`
-Expected: FAIL — cannot resolve `./loadingState`.
+Expected: FAIL - cannot resolve `./loadingState`.
 
 - [ ] **Step 3: Write it**
 
 ```ts
 /**
- * Đếm số yêu cầu tải đang treo (tile của GWC và feature của WFS).
+ * Đếm số yêu cầu tải đang treo (tile của GWC và feature của WFS), và chỉ báo bận
+ * khi việc tải kéo dài quá LOADING_DELAY_MS.
  *
- * Vì sao cần: tile được GWC dựng THEO YÊU CẦU — đã có cache thì 0,012s, chưa có
- * thì 0,07–0,92s. Hành vi đó bình thường, nhưng vì không có dấu hiệu nào nên
- * người dùng thấy bản đồ mờ rồi nét và tưởng là hỏng.
+ * Vì sao cần: tile được GWC dựng THEO YÊU CẦU — có cache thì 0,012s, chưa có thì
+ * 0,07–0,92s. Hành vi đó bình thường, nhưng vì không có dấu hiệu nào nên người
+ * dùng thấy bản đồ mờ rồi nét và tưởng là hỏng.
+ *
+ * Vì sao PHẢI có độ trễ: mỗi lần kéo hay thu phóng đều sinh yêu cầu tải. Hiện
+ * ngay thì thanh báo nhấp nháy suốt trong lúc dùng bình thường — tệ hơn là không
+ * có gì. Chỉ hiện khi sau LOADING_DELAY_MS vẫn còn yêu cầu treo, tức là vùng này
+ * thật sự chưa có cache.
  */
-export function createLoadTracker(onChange: (pending: number) => void) {
+export const LOADING_DELAY_MS = 400;
+
+export function createLoadTracker(
+  onBusyChange: (busy: boolean) => void,
+  delayMs = LOADING_DELAY_MS,
+) {
   let pending = 0;
-  const notify = (next: number) => {
-    if (next === pending) return;
-    pending = next;
-    onChange(pending);
+  let busy = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const clear = () => {
+    if (timer !== null) { clearTimeout(timer); timer = null; }
   };
+  const setBusy = (next: boolean) => {
+    if (next === busy) return;
+    busy = next;
+    onBusyChange(busy);
+  };
+
   return {
-    start: () => notify(pending + 1),
-    // Không bao giờ xuống âm: OL vẫn bắn tileloadend/tileloaderror cho những yêu
-    // cầu đang bay khi lớp bị gỡ, nên done() có thể nhiều hơn start(). Để âm thì
-    // bộ đếm kẹt dưới 0 và vòng quay không bao giờ hiện lại.
-    done: () => notify(Math.max(0, pending - 1)),
-    reset: () => notify(0),
+    start: () => {
+      pending += 1;
+      if (timer === null && !busy) {
+        timer = setTimeout(() => { timer = null; if (pending > 0) setBusy(true); }, delayMs);
+      }
+    },
+    done: () => {
+      // Không bao giờ xuống âm: OL vẫn bắn tileloadend/tileloaderror cho những
+      // yêu cầu đang bay khi lớp bị gỡ, nên done() có thể nhiều hơn start().
+      pending = Math.max(0, pending - 1);
+      if (pending === 0) { clear(); setBusy(false); }
+    },
+    reset: () => { pending = 0; clear(); setBusy(false); },
     get pending() { return pending; },
   };
 }
@@ -160,10 +223,8 @@ export function createLoadTracker(onChange: (pending: number) => void) {
 
 - [ ] **Step 4: Wire the sources in MapModel**
 
-For each context tile layer and each WFS vector source:
-
 ```ts
-    const loadTracker = createLoadTracker((n) => this.onLoadingChange?.(n));
+    const loadTracker = createLoadTracker((busy) => this.onLoadingChange?.(busy));
     this.loadTracker = loadTracker;
 
     for (const { stateId } of CONTEXT_LAYERS) {
@@ -174,53 +235,85 @@ For each context tile layer and each WFS vector source:
     }
 ```
 
-Expose `setLoadingListener(fn: (pending: number) => void)` on `MapModel`, and call `loadTracker.reset()` in `dispose()`.
+Expose `setLoadingListener(fn: (busy: boolean) => void)` on `MapModel`, and call `loadTracker.reset()` in `dispose()`.
 
 - [ ] **Step 5: The view**
 
-`MapLoading.tsx` — a passive view, visible only when `pending > 0`:
+`MapLoadingBar.tsx` - passive, renders nothing when idle:
 
 ```tsx
-export function MapLoadingView({ pending }: { pending: number }) {
-  if (pending <= 0) return null;
+export function MapLoadingBarView({ busy, flyoutOpen }: { busy: boolean; flyoutOpen: boolean }) {
+  if (!busy) return null;
   return (
-    <div className="map-loading glass-panel" role="status" aria-live="polite">
-      <span className="map-loading-spinner" aria-hidden="true" />
-      <span>Đang tải bản đồ…</span>
+    <div
+      className={`map-loading-bar${flyoutOpen ? ' flyout-open' : ''}`}
+      // Indeterminate: role="progressbar" with no aria-valuenow is the correct
+      // ARIA for "working, duration unknown".
+      role="progressbar"
+      aria-label="Đang tải bản đồ"
+    >
+      <span className="map-loading-bar-fill" />
     </div>
   );
 }
 ```
 
-Render tests: hidden at 0, visible at 1, carries `role="status"`.
+Render tests: nothing in the DOM when `busy` is false; a `progressbar` role when true; the `flyout-open` class tracks the prop.
 
-CSS — top-centre of the map area, clear of both bottom corners and the toolbar:
+- [ ] **Step 6: The CSS**
 
 ```css
-.map-loading {
+/* Thanh báo tải: bám cạnh trên vùng bản đồ, lặp lại phép tính left/width của
+   .map-container giống .map-toolbar để dịch cùng nhịp khi bảng trượt đóng mở. */
+.map-loading-bar {
   position: absolute;
-  top: calc(var(--topbar-height) + var(--space-3));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 25;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 6px 12px;
+  top: var(--topbar-height);
+  left: var(--rail-width);
+  width: calc(100% - var(--rail-width));
+  height: 3px;
+  z-index: 30;
+  overflow: hidden;
   pointer-events: none;
-  font-size: 13px;
+  background: transparent;
+  transition: left 200ms ease, width 200ms ease;
+}
+
+.map-loading-bar.flyout-open {
+  left: calc(var(--rail-width) + var(--flyout-width));
+  width: calc(100% - var(--rail-width) - var(--flyout-width));
+}
+
+.map-loading-bar-fill {
+  display: block;
+  height: 100%;
+  width: 35%;
+  background: var(--color-primary, #15803d);
+  animation: map-loading-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes map-loading-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* Không chạy hoạt cảnh với người đã tắt hiệu ứng chuyển động; thanh vẫn hiện,
+   chỉ đứng yên, nên thông tin "đang tải" không mất. */
+@media (prefers-reduced-motion: reduce) {
+  .map-loading-bar-fill { animation: none; width: 100%; opacity: 0.5; }
 }
 ```
 
-- [ ] **Step 6: Verify in the browser**
+- [ ] **Step 7: Verify in the browser**
 
-Truncate the cache (`bash apps/api/scripts/basemap/publish-basemap.sh`), reload, pan to a fresh area. The indicator must appear while tiles render and disappear when they settle. **If it never disappears**, the counter is leaking — check `tileloaderror` is wired.
+Truncate the cache (`bash apps/api/scripts/basemap/publish-basemap.sh`), reload, pan to a fresh area. The bar must appear while tiles render and vanish when they settle. Then pan back over an area already visited: **the bar must not appear at all** - if it flashes on cached panning, the delay is not working.
 
-- [ ] **Step 7: Commit**
+**If it never disappears**, the counter is leaking - check `tileloaderror` is wired.
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add apps/web/src/features/map/model/loadingState.ts apps/web/src/features/map/model/loadingState.test.ts apps/web/src/features/map/ui/MapLoading.tsx apps/web/src/features/map/ui/MapLoading.test.tsx apps/web/src/features/map/model/MapModel.ts apps/web/src/styles/main.css
-git commit -m "feat(web): báo hiệu bản đồ đang tải"
+git add apps/web/src/features/map/model/loadingState.ts apps/web/src/features/map/model/loadingState.test.ts apps/web/src/features/map/ui/MapLoadingBar.tsx apps/web/src/features/map/ui/MapLoadingBar.test.tsx apps/web/src/features/map/model/MapModel.ts apps/web/src/styles/main.css
+git commit -m "feat(web): thanh báo bản đồ đang tải ở cạnh trên"
 ```
 
 ---
