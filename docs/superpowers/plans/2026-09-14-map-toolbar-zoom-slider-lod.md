@@ -30,7 +30,7 @@ The spec says the settle-snap handler should return without touching the view "w
 
 ## Global Constraints
 
-- **Zoom bounds unchanged:** `MIN_SCALE` = 7.500.000, `MAX_SCALE` = 100.000, and the derived `MIN_ZOOM`/`MAX_ZOOM` are not to be modified.
+- ~~**Zoom bounds unchanged:** `MIN_SCALE` = 7.500.000, `MAX_SCALE` = 100.000.~~ **Superseded after execution — see "Follow-up" at the end.** The bounds are now 1:12.800.000 and 1:25.000.
 - **No change to what the WFS downloads.** River LOD is display-only. Do not add `CQL_FILTER`.
 - **No new `MapCommand` kinds.** The slider reuses the existing `zoomTo`.
 - **Minimum viewport ~768px.** No responsive redesign; the toolbar must simply not overflow.
@@ -1133,3 +1133,47 @@ Plan complete and saved to `docs/superpowers/plans/2026-09-14-map-toolbar-zoom-s
 **1. Subagent-Driven (recommended)** — a fresh subagent per task, review between tasks, fast iteration.
 
 **2. Inline Execution** — execute tasks in this session using executing-plans, batch execution with checkpoints.
+
+---
+
+## Follow-up (after Tasks 1–6): the zoom bounds were wrong all along
+
+Executing the plan surfaced a pre-existing defect the spec had not noticed, and fixing it changed two of this plan's own constraints.
+
+**The defect.** `ol/View` computes
+
+```js
+maxZoom = minZoom + Math.floor(Math.log(maxResolution / minResolution) / Math.log(zoomFactor));
+```
+
+so a zoom range that is not a whole number of levels is silently truncated. 1:7.500.000 → 1:100.000 spans log2(75) = 6,2289 levels, floored to 6 — the map stopped at **1:117.188** and never reached the `MAX_SCALE` the constants advertised. The slider's last notch said 1:100.000 and did not work.
+
+**What does not fix it.** DPI: the span is `log2(MIN_SCALE / MAX_SCALE)`, a ratio, so DPI and reference latitude cancel — measured identical (6,228819) at 72/90/96/110/150/254/300 DPI. And `constrainResolution: true` snaps to integer zoom levels, which would make every one of the slider's scale stops unreachable and override settle-snap.
+
+**The fix.** The ratio `MIN_SCALE / MAX_SCALE` must be a power of two. Anchoring on a 1:25.000 close limit forces `MIN_SCALE` to 25.000 × 2ⁿ; n=8 (1:6.400.000) puts Vietnam at 1019px, failing the existing "fits in a 900px viewport" test, so n=9 is the nearest workable choice:
+
+- `MIN_SCALE` = **1:12.800.000** (Vietnam 509px — fits with room)
+- `MAX_SCALE` = **1:25.000**
+- span = **exactly 9 zoom levels**, verified in the browser
+
+A test now asserts the ratio is a power of two, because nothing else makes the truncation visible.
+
+**Consequential changes.**
+
+- `snapScaleToNearestThousand` → `snapScaleForReadout`, rounding to 3 significant figures. A fixed 1.000 grid was a 1% step at 1:100.000 but a 4% step at 1:25.000 — visibly chunky. All eleven stops are 3-significant-figure values, so the "two snappings do not fight" invariant holds, with the test's criterion updated.
+- Stops extended to eleven, keeping a notch at 1:7.500.000 (the previous far limit) and adding 1:12.800.000, 1:50.000 and 1:25.000.
+- **Raster LOD re-tiered for the widened range.** The old table bunched everything at 1:250.000 and left the new close end revealing nothing new below 1:200.000; the far end drew all 62.598 national road segments at 1:12.800.000.
+
+| Scale band | New classes appearing |
+|---|---|
+| ≥ 1:5.000.000 | motorway only |
+| < 1:5.000.000 | + trunk |
+| < 1:3.000.000 | + primary |
+| < 1:1.000.000 | + secondary |
+| < 1:500.000 | + tertiary, unclassified, wetlands |
+| < 1:250.000 | + residential, living_street, service |
+| < 1:100.000 | + tracks, paths, footways |
+
+Railways and open water stay at every scale (a few thousand rows each). River LOD is unchanged: the layer does not load until 1:1.570.934 (the `minZoom: 8.5` gate), so the new far bands never apply to it.
+
+**Operational note.** After a GWC truncate the first visit to a new scale renders tiles on demand, so the map looks blurry (upscaled lower-zoom tiles) for a few seconds before sharpening. Not a defect — but it is what a "blank/blurry tiles" report will look like right after a style change.

@@ -153,21 +153,25 @@ STYLES["basemap_landuse"] = HEAD.format(name="basemap_landuse", rules="\n".join(
     rule("built", polygon(LANDUSE_GREY), fclass_in("residential", "industrial", "commercial", "retail", "military"), scale(max_=200000)),
 ]))
 
-# national major roads: casing + fill, drawn at EVERY reachable scale.
-# Không đặt ngưỡng: đây là bộ khung nhìn thấy khi thu nhỏ hết cỡ, mà MIN_SCALE của
-# ứng dụng là 1:7.500.000 — ngưỡng 4.000.000 cũ xoá sạch mạng quốc lộ đúng ở những
-# mức tỷ lệ nó có ích nhất.
+# national major roads. Chỉ motorway vẽ ở MỌI tỷ lệ; trunk và primary lần lượt
+# hiện ra khi phóng gần hơn.
+# Vì sao chia tầng: dải nay lùi ra tới 1:12.800.000, mà vẽ trọn 62.598 đoạn quốc
+# lộ ở đó thì thành một mớ rối. Riêng motorway (9.946 đoạn) mới là bộ khung đọc
+# được khi nhìn toàn quốc.
 STYLES["basemap_roads_vn"] = HEAD.format(name="basemap_roads_vn", rules="\n".join([
     rule("motorway_casing", line(ROAD_MAJOR_CASING, 4.0), fclass_in("motorway", "motorway_link")),
     rule("motorway", line(ROAD_MAJOR, 2.4), fclass_in("motorway", "motorway_link")),
-    rule("trunk_primary_casing", line(ROAD_MAJOR_CASING, 3.0), fclass_in("trunk", "primary", "trunk_link", "primary_link")),
-    rule("trunk_primary", line(ROAD_MAJOR, 1.8), fclass_in("trunk", "primary", "trunk_link", "primary_link")),
+    rule("trunk_casing", line(ROAD_MAJOR_CASING, 3.0), fclass_in("trunk", "trunk_link"), scale(max_=5000000)),
+    rule("trunk", line(ROAD_MAJOR, 1.8), fclass_in("trunk", "trunk_link"), scale(max_=5000000)),
+    rule("primary_casing", line(ROAD_MAJOR_CASING, 2.8), fclass_in("primary", "primary_link"), scale(max_=3000000)),
+    rule("primary", line(ROAD_MAJOR, 1.7), fclass_in("primary", "primary_link"), scale(max_=3000000)),
 ]))
 
 # region roads: three tiers by scale, per the 2026-09-08 design.
 #   < 1.000.000  + secondary
 #   <   500.000  + tertiary, unclassified
-#   <   250.000  + residential, service, tracks and paths
+#   <   250.000  + residential, living_street, service
+#   <   100.000  + tracks, paths, footways
 # Ngưỡng cũ (400.000 / 100.000 / 35.000) có hai nấc KHÔNG BAO GIỜ chạy: ứng dụng
 # kẹp ở MAX_SCALE = 1:100.000 nên mẫu số không bao giờ xuống dưới 100.000, khiến
 # đường nhỏ và đường mòn vô hình ở mọi mức thu phóng bấm tới được.
@@ -180,10 +184,13 @@ STYLES["basemap_roads_region"] = HEAD.format(name="basemap_roads_region", rules=
     rule("minor", line(ROAD_FILL, 1.2), fclass_in("residential", "living_street", "service"), scale(max_=250000)),
     # track_grade1..5 là biến thể của track trong dữ liệu thật; không kể tên thì
     # 4.193 đoạn sẽ bị bỏ vẽ mà không báo gì.
+    # Đẩy xuống 1:100.000 (trước là 250.000) cho hai mục đích: bớt rối ở dải giữa,
+    # và để hai nấc mới ở đầu gần (100.000 / 50.000 / 25.000) thật sự lộ thêm thứ
+    # gì đó — trước khi dải nới ra thì dưới 1:200.000 không còn gì mới để hiện.
     rule("track_path", line("#e8e4dd", 0.8, dash="3 3"),
          fclass_in("track", "track_grade1", "track_grade2", "track_grade3", "track_grade4", "track_grade5",
                    "path", "footway", "cycleway", "steps", "pedestrian"),
-         scale(max_=250000)),
+         scale(max_=100000)),
 ]))
 
 # railways: every scale. Cả nước chỉ vài nghìn đoạn nên không có lý do hiệu năng

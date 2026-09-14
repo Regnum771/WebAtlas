@@ -15,8 +15,8 @@ import { getPool, closePool } from '../db/pool';
 const SLD_DIR = join(process.cwd(), 'scripts', 'basemap');
 const read = (name: string) => readFileSync(join(SLD_DIR, `${name}.sld`), 'utf8');
 
-/** The app clamps zoom at 1:100.000 (MAX_SCALE in the frontend's zoomScale.ts). */
-const MAX_SCALE = 100_000;
+/** The app clamps zoom at 1:25.000 (MAX_SCALE in the frontend's zoomScale.ts). */
+const MAX_SCALE = 25_000;
 
 /**
  * Classes we have decided NOT to draw. Listing them here is the point: an
@@ -63,15 +63,25 @@ describe('basemap SLD artifacts', () => {
     }
   });
 
-  it('draws the major road tiers at every reachable scale', () => {
-    // motorway/trunk/primary carry the map when zoomed out; an upper gate on them
-    // would blank the national network at exactly the scales it matters most.
-    expect(scaleGates(read('basemap_roads_vn'))).toHaveLength(0);
+  it('keeps motorway at every scale but tiers the rest of the national network', () => {
+    // The range now reaches 1:12.800.000, where drawing all 62.598 national road
+    // segments is a hairball. motorway alone (9.946) is the readable overview;
+    // trunk and primary join as you come in.
+    const gates = new Set(scaleGates(read('basemap_roads_vn')));
+    expect(gates).toEqual(new Set([5_000_000, 3_000_000]));
   });
 
   it('tiers the region roads by the agreed thresholds', () => {
     const gates = new Set(scaleGates(read('basemap_roads_region')));
-    expect(gates).toEqual(new Set([1_000_000, 500_000, 250_000]));
+    expect(gates).toEqual(new Set([1_000_000, 500_000, 250_000, 100_000]));
+  });
+
+  it('uses the widened close end — tracks and paths appear below 1:100.000', () => {
+    // Before the range reached 1:25.000 there was nothing left to reveal below
+    // 1:200.000, so the last two notches showed the same map, only bigger.
+    const sld = read('basemap_roads_region');
+    const trackRule = sld.slice(sld.indexOf('<Name>track_path</Name>'));
+    expect(trackRule).toContain('<MaxScaleDenominator>100000</MaxScaleDenominator>');
   });
 
   it('names every fclass present in the data, so no class is silently dropped', async () => {
