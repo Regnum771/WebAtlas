@@ -146,18 +146,18 @@ body {
   max-width: calc(100% - var(--space-4));
 }
 
+.control-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
 .toolbar-rail > .control-divider {
   width: 1px;
   height: auto;
   align-self: stretch;
   margin: 2px 4px;
-}
-
-.control-divider {
-  width: 100%;
-  height: 1px;
-  align-self: stretch;
-  margin: 2px 0;
 }
 
 .control-divider {
