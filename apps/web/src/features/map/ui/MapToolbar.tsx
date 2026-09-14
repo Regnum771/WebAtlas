@@ -14,6 +14,8 @@ const BASEMAP_OPTIONS: { id: BasemapName; label: string; icon: React.ReactNode }
 ];
 
 export interface MapToolbarViewProps {
+  /** The rail flyout is open, so the pill must re-centre over the narrower map area. */
+  flyoutOpen: boolean;
   zoom: number;
   scaleText: string;
   measureMode: MeasureMode;
@@ -32,6 +34,7 @@ export interface MapToolbarViewProps {
  * callbacks into typed `MapCommand`s.
  */
 export function MapToolbarView({
+  flyoutOpen,
   zoom,
   scaleText,
   measureMode,
@@ -47,11 +50,11 @@ export function MapToolbarView({
   const isMaxZoom = zoom >= MAX_ZOOM - 0.05;
 
   return (
-    <div className="map-toolbar">
+    <div className={`map-toolbar${flyoutOpen ? ' flyout-open' : ''}`}>
       {measureValue && <div className="measure-result glass-panel">{measureValue}</div>}
 
       <div className="glass-panel toolbar-rail">
-        <div className="control-group toolbar-col">
+        <div className="control-group">
           <button
             className={`control-btn ${measureMode === 'none' ? 'active' : ''}`}
             aria-pressed={measureMode === 'none'}
@@ -80,7 +83,7 @@ export function MapToolbarView({
 
         <div className="control-divider" />
 
-        <div className="control-group toolbar-col">
+        <div className="control-group">
           <button
             className={`control-btn ${isMaxZoom ? 'disabled' : ''}`}
             onClick={onZoomIn}
@@ -108,7 +111,7 @@ export function MapToolbarView({
 
         <div className="control-divider" />
 
-        <div className="control-group toolbar-col">
+        <div className="control-group">
           {BASEMAP_OPTIONS.map((opt) => (
             <button
               key={opt.id}
@@ -134,7 +137,7 @@ export function MapToolbarView({
  * `map` arrives already typed via `useMapContext`, and is only ever handed to
  * `createCommandExecutor`, never called directly.
  */
-export default function MapToolbar() {
+export default function MapToolbar({ flyoutOpen }: { flyoutOpen: boolean }) {
   const { map, basemap, setBasemap, layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
   const zoom = useMapZoom();
   const measure = useMeasure();
@@ -189,6 +192,7 @@ export default function MapToolbar() {
 
   return (
     <MapToolbarView
+      flyoutOpen={flyoutOpen}
       zoom={zoom}
       scaleText={formatScale(scaleAtZoom(zoom))}
       measureMode={measure.mode}

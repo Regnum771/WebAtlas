@@ -13,6 +13,7 @@ const base = {
   onReset: vi.fn(),
   onMeasure: vi.fn(),
   onBasemap: vi.fn(),
+  flyoutOpen: false,
 };
 
 describe('MapToolbarView', () => {
@@ -36,5 +37,39 @@ describe('MapToolbarView', () => {
   it('marks the active measure tool as pressed', () => {
     render(<MapToolbarView {...base} measureMode="area" />);
     expect(screen.getByRole('button', { name: /Đo diện tích/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('lays out as a bottom pill that clears the flyout when one is open', () => {
+    const { container, rerender } = render(<MapToolbarView {...base} flyoutOpen={false} />);
+    const bar = container.querySelector('.map-toolbar');
+    expect(bar).not.toBeNull();
+    expect(bar).not.toHaveClass('flyout-open');
+
+    rerender(<MapToolbarView {...base} flyoutOpen />);
+    expect(container.querySelector('.map-toolbar')).toHaveClass('flyout-open');
+  });
+
+  it('still reports every existing action after the layout change', async () => {
+    const onZoomIn = vi.fn();
+    const onZoomOut = vi.fn();
+    const onMeasure = vi.fn();
+    const onBasemap = vi.fn();
+    render(
+      <MapToolbarView
+        {...base}
+        onZoomIn={onZoomIn}
+        onZoomOut={onZoomOut}
+        onMeasure={onMeasure}
+        onBasemap={onBasemap}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Phóng to' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Thu nhỏ' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Đo chiều dài (sông)' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Vệ tinh' }));
+    expect(onZoomIn).toHaveBeenCalledTimes(1);
+    expect(onZoomOut).toHaveBeenCalledTimes(1);
+    expect(onMeasure).toHaveBeenCalledWith('length');
+    expect(onBasemap).toHaveBeenCalledWith('satellite');
   });
 });

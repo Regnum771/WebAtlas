@@ -105,38 +105,55 @@ body {
    Positioned BELOW .ogc-trigger-btn (top: topbar+space-3, 40px circle) with its
    own space-3 gap, so the rail's top edge never overlaps that button regardless
    of viewport width — both are anchored to the same `right` offset. */
+/* Bottom-centred floating pill over the map area. MapToolbar is a sibling of
+   .map-container, not a child, so it repeats that element's left/width maths
+   (including the flyout offset and its transition) rather than inheriting it. */
 .map-toolbar {
   position: absolute;
-  top: calc(var(--topbar-height) + var(--space-3) + 40px + var(--space-3));
-  right: var(--space-3);
+  bottom: var(--space-3);
+  left: var(--rail-width);
+  width: calc(100% - var(--rail-width));
   z-index: 20;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--space-2);
+  /* The strip spans the map so its contents can centre; only the panels inside
+     may take pointer events, or it would swallow clicks on the map. */
+  pointer-events: none;
+  transition: left 200ms ease, width 200ms ease;
+}
+
+.map-toolbar.flyout-open {
+  left: calc(var(--rail-width) + var(--flyout-width));
+  width: calc(100% - var(--rail-width) - var(--flyout-width));
+}
+
+.map-toolbar > * {
+  pointer-events: auto;
 }
 
 .toolbar-rail {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 6px;
-}
-
-.control-group {
-  display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  /* Wrapping is what guarantees the pill cannot overflow: at 768px with the
+     flyout open the map area is ~400px, too narrow for a single row. */
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  max-width: calc(100% - var(--space-4));
 }
 
-.toolbar-col {
-  flex-direction: column;
-}
-
-/* Inside the vertical rail, dividers run horizontally instead of vertically. */
 .toolbar-rail > .control-divider {
+  width: 1px;
+  height: auto;
+  align-self: stretch;
+  margin: 2px 4px;
+}
+
+.control-divider {
   width: 100%;
   height: 1px;
   align-self: stretch;
