@@ -130,6 +130,24 @@ export class MapModel {
    *  khiến thanh báo hiện cả lúc tải dữ liệu chuyên đề thông thường. */
   private loadTracker = createLoadTracker((busy) => this.onLoadingChange?.(busy));
   private onLoadingChange: ((busy: boolean) => void) | null = null;
+  /**
+   * Tay cầm tileloadstart/end/error gắn trên từng nguồn ngữ cảnh, lưu lại để
+   * gỡ đúng trong dispose(). Đăng ký bằng arrow vô danh (như trước đây) thì
+   * KHÔNG THỂ un() được — phải đặt tên và giữ tham chiếu, giống hệt quy ước
+   * moveendHandler/settleSnapHandler ở trên.
+   *
+   * Vì sao bắt buộc phải gỡ: setTarget(undefined) không huỷ các request tile
+   * đang bay. Nếu MapView unmount rồi mount lại (StrictMode dev double-invoke,
+   * hay remount thật sau này), instance MapModel cũ vẫn còn nguyên các tay cầm
+   * này gắn trên source cũ và vẫn còn onLoadingChange trỏ tới setBusy của React
+   * đã bị thay. Một tileloadstart trễ trên instance đã dispose() sẽ ghi đè
+   * cùng state `busy` mà instance mới đang sở hữu, gây tranh chấp (race).
+   */
+  private contextLoadHandlers: Array<{
+    source: XYZ;
+    type: 'tileloadstart' | 'tileloadend' | 'tileloaderror';
+    handler: () => void;
+  }> = [];
 
   /** Đăng ký nơi nhận trạng thái bận/rảnh (MapView/MapProvider phía React). */
   setLoadingListener(fn: ((busy: boolean) => void) | null): void {
@@ -160,9 +178,18 @@ export class MapModel {
     // tại khai báo loadTracker phía trên.
     for (const { stateId } of CONTEXT_LAYERS) {
       const src = this.contextLayers[stateId].getSource();
-      src?.on('tileloadstart', () => this.loadTracker.start());
-      src?.on('tileloadend', () => this.loadTracker.done());
-      src?.on('tileloaderror', () => this.loadTracker.done());
+      if (!src) continue;
+      const onTileLoadStart = () => this.loadTracker.start();
+      const onTileLoadEnd = () => this.loadTracker.done();
+      const onTileLoadError = () => this.loadTracker.done();
+      src.on('tileloadstart', onTileLoadStart);
+      src.on('tileloadend', onTileLoadEnd);
+      src.on('tileloaderror', onTileLoadError);
+      this.contextLoadHandlers.push(
+        { source: src, type: 'tileloadstart', handler: onTileLoadStart },
+        { source: src, type: 'tileloadend', handler: onTileLoadEnd },
+        { source: src, type: 'tileloaderror', handler: onTileLoadError },
+      );
     }
 
     // Helper tạo vector layer từ URL GeoJSON
@@ -504,7 +531,14 @@ export class MapModel {
     this.waterGate = null;
     this.wardsGate = null;
     this.pendingRefresh.clear();
+    // Gỡ từng tay cầm tileload* khỏi đúng source đã đăng ký — xem ghi chú tại
+    // khai báo contextLoadHandlers phía trên.
+    for (const { source, type, handler } of this.contextLoadHandlers) {
+      source.un(type, handler);
+    }
+    this.contextLoadHandlers = [];
     this.loadTracker.reset();
+    this.onLoadingChange = null;
     this.map.setTarget(undefined);
     this.map = null;
     this.basemapLayer = null;
