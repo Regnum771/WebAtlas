@@ -11,7 +11,7 @@ import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
 import { GEOSERVER_URL } from '../../../shared/config';
 import { BASEMAP_CONTEXT_LAYER_STATE_IDS } from '@webatlas/shared';
-import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
+import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM, settleZoomCorrection } from './zoomScale';
 import {
   createBboxLoadGate,
   createOneShotLoadGate,
@@ -106,6 +106,8 @@ export class MapModel {
   private reservoirFilter: ReservoirFilterType = 'all';
   private layerStates: LayerState[] = [];
   private moveendHandler: (() => void) | null = null;
+  /** Bám nấc nghìn khi khung nhìn dừng — xem settleZoomCorrection. */
+  private settleSnapHandler: (() => void) | null = null;
   /** Cổng tải sông/hồ theo zoom — chạy mỗi lần moveend (xem zoomLoadGate.ts). */
   private waterGate: ((zoom: number) => void) | null = null;
   /** Cổng tải ranh giới xã — chỉ nạp một lần khi vượt zoom 10. */
@@ -289,6 +291,28 @@ export class MapModel {
     this.moveendHandler = updateLayersVisibility;
     map.on('moveend', updateLayersVisibility);
 
+    // Free zoom (wheel, pinch, double-click, keyboard) stays continuous while
+    // the user is acting; when the view settles we round the scale denominator
+    // to a clean thousand. moveend is the one hook that covers every zoom path,
+    // including programmatic animations, rather than special-casing the wheel.
+    //
+    // No animate(): the correction is at most 500 in the denominator, invisible
+    // on screen, and animating it would both read as a twitch and stretch the
+    // window in which the loop guard has to hold.
+    const settleSnap = () => {
+      const view = map.getView();
+      const zoom = view.getZoom();
+      if (zoom === undefined) return;
+      const corrected = settleZoomCorrection(zoom);
+      // null means already settled. That is the loop guard: setting the zoom
+      // below fires another moveend, and this branch makes that second pass a
+      // no-op instead of an endless correction cycle.
+      if (corrected === null) return;
+      view.setZoom(corrected);
+    };
+    this.settleSnapHandler = settleSnap;
+    map.on('moveend', settleSnap);
+
     // Chạy cổng ngay lúc khởi tạo cho chắc. ('moveend' CÓ bắn ở lần render đầu tiên
     // — ol/Map.js nhánh idle — nên đây là lớp bảo hiểm, không phải bắt buộc: lần
     // moveend sau đó cùng mức zoom sẽ tự early-return vì trạng thái không đổi.)
@@ -433,6 +457,10 @@ export class MapModel {
     if (this.moveendHandler) {
       this.map.un('moveend', this.moveendHandler);
       this.moveendHandler = null;
+    }
+    if (this.settleSnapHandler) {
+      this.map.un('moveend', this.settleSnapHandler);
+      this.settleSnapHandler = null;
     }
     this.waterGate = null;
     this.wardsGate = null;

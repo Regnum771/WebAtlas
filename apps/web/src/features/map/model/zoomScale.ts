@@ -122,3 +122,30 @@ export function snapScaleToNearestThousand(scale: number): number {
   const snapped = Math.round(scale / SNAP_STEP) * SNAP_STEP;
   return Math.min(MIN_SCALE, Math.max(MAX_SCALE, snapped));
 }
+
+/**
+ * How close a scale must already be to its snapped value to count as settled.
+ *
+ * NOT SNAP_STEP / 2. Because snapScaleToNearestThousand rounds, every possible
+ * input is within SNAP_STEP / 2 of its own snapped value — a guard that wide
+ * would return null for everything and the map would never snap at all. What
+ * distinguishes a settled view is that its scale IS its snapped value, which is
+ * only true after a correction has been applied. One unit of denominator is far
+ * below anything visible and far above the float round-trip error through
+ * zoomForScale/scaleAtZoom.
+ */
+const SETTLED_EPSILON = 1;
+
+/**
+ * The zoom the view should be corrected to once it settles, or null if it is
+ * already on a round scale and must be left alone.
+ *
+ * Returning null is what terminates the moveend cycle in MapModel — see the
+ * loop-guard test in zoomScale.test.ts.
+ */
+export function settleZoomCorrection(zoom: number): number | null {
+  const scale = scaleAtZoom(zoom);
+  const snapped = snapScaleToNearestThousand(scale);
+  if (Math.abs(scale - snapped) < SETTLED_EPSILON) return null;
+  return zoomForScale(snapped);
+}

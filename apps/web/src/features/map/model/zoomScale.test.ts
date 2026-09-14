@@ -17,6 +17,7 @@ import {
   nearestStopIndex,
   snapScaleToNearestThousand,
   SNAP_STEP,
+  settleZoomCorrection,
 } from './zoomScale';
 
 describe('zoomScale', () => {
@@ -172,5 +173,32 @@ describe('snapScaleToNearestThousand', () => {
       expect(snapScaleToNearestThousand(scale)).toBe(scale);
       expect(scale % SNAP_STEP).toBe(0);
     });
+  });
+});
+
+describe('settleZoomCorrection', () => {
+  it('corrects a zoom whose scale is not a round thousand', () => {
+    // A zoom deliberately between stops, the state the wheel leaves the map in.
+    const messy = zoomForScale(1_247_331);
+    const corrected = settleZoomCorrection(messy);
+    expect(corrected).not.toBeNull();
+    expect(scaleAtZoom(corrected as number)).toBeCloseTo(1_247_000, 0);
+  });
+
+  it('returns null the second time — the loop guard that stops the map oscillating', () => {
+    // MapModel applies the correction inside a moveend handler, which fires
+    // another moveend. If this second call returned a correction too, the map
+    // would jitter forever after every wheel stop.
+    const corrected = settleZoomCorrection(zoomForScale(1_247_331)) as number;
+    expect(settleZoomCorrection(corrected)).toBeNull();
+  });
+
+  it('returns null on every slider stop, so the two snappings never fight', () => {
+    ZOOM_STOPS.forEach((z) => expect(settleZoomCorrection(z)).toBeNull());
+  });
+
+  it('returns null at the zoom bounds rather than pushing past them', () => {
+    expect(settleZoomCorrection(MIN_ZOOM)).toBeNull();
+    expect(settleZoomCorrection(MAX_ZOOM)).toBeNull();
   });
 });
