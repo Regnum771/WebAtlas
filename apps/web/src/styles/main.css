@@ -172,6 +172,51 @@ body {
   .map-loading-bar-fill { animation: none; width: 100%; opacity: 0.5; }
 }
 
+/* Thanh công cụ chiếm giữa cạnh dưới, nên hai góc còn trống — đúng chỗ quy ước
+   đặt thanh tỷ lệ (trái) và toạ độ con trỏ (phải). Cả hai control OL này nhận
+   className riêng nên mất hết CSS mặc định của ol/ol.css dành cho .ol-scale-line
+   và .ol-mouse-position (phần tử gốc + phần tử -inner) — ta tự cấp nền/khung để
+   đọc được trên cả nền phố sáng lẫn ảnh vệ tinh tối màu. Các phần tử con bên
+   trong thanh tỷ lệ (vạch chia .ol-scale-singlebar, chữ .ol-scale-step-text/
+   .ol-scale-text) vẫn giữ nguyên class ol-scale-* cứng (ScaleLine.js không suy
+   className cho chúng từ option className) nên vẫn ăn theo biến --ol-* mặc định. */
+.map-scaleline {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 20;
+  pointer-events: none;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  box-shadow: var(--glass-shadow);
+}
+
+/* .ol-scale-bar-inner mặc định là `display: flex` (xếp các đoạn vạch theo
+   hàng ngang) — mất đi cùng lúc với .ol-scale-bar vì className đã đổi tên
+   phần tử -inner thành map-scaleline-inner. Thiếu dòng này các đoạn vạch xếp
+   dọc thay vì tạo thành một thanh liền mạch. */
+.map-scaleline-inner {
+  display: flex;
+}
+
+.map-mouseposition {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 20;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums; /* số không nhảy ngang khi con trỏ di chuyển */
+  pointer-events: none;
+  background: var(--bg-panel);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  box-shadow: var(--glass-shadow);
+}
+
 .toolbar-rail {
   display: flex;
   flex-direction: row;

@@ -1,6 +1,7 @@
 import Map from 'ol/Map';
 import { createRiverOverviewSource, riverOverviewVisibleAt } from './riverOverview';
 import { createLoadTracker } from './loadingState';
+import { createScaleBar, createMousePosition } from './mapReadouts';
 import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
@@ -327,7 +328,9 @@ export class MapModel {
         // Chỉ ràng buộc TÂM: rìa bản đồ được phép tràn ra ngoài extent.
         constrainOnlyCenter: true,
       }),
-      controls: []
+      // Giữ danh sách TƯỜNG MINH, không dùng defaults(): defaults() kèm nút zoom
+      // và ô ghi công, chồng lên thanh công cụ và góc dưới phải của chính ta.
+      controls: [createScaleBar(), createMousePosition()],
     });
 
     // Thêm interaction để highlight sông khi click
