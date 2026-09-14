@@ -18,6 +18,7 @@ import {
   snapScaleToNearestThousand,
   SNAP_STEP,
   settleZoomCorrection,
+  scaleAtResolution,
 } from './zoomScale';
 
 describe('zoomScale', () => {
@@ -200,5 +201,15 @@ describe('settleZoomCorrection', () => {
   it('returns null at the zoom bounds rather than pushing past them', () => {
     expect(settleZoomCorrection(MIN_ZOOM)).toBeNull();
     expect(settleZoomCorrection(MAX_ZOOM)).toBeNull();
+  });
+});
+
+describe('scaleAtResolution', () => {
+  it('agrees with scaleAtZoom for the same view — one scale vocabulary, not two', () => {
+    // resolutionAtZoom returns GROUND resolution (already cos-corrected), so the
+    // equivalent OL/3857 resolution is that divided by cos(latitude).
+    const zoom = 10;
+    const mercatorResolution = resolutionAtZoom(zoom) / Math.cos((16 * Math.PI) / 180);
+    expect(scaleAtResolution(mercatorResolution)).toBeCloseTo(scaleAtZoom(zoom), 3);
   });
 });

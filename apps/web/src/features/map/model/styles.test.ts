@@ -19,18 +19,23 @@ function fakeFeature(props: Record<string, unknown>) {
   return { get: (k: string) => props[k], set: () => {} } as any;
 }
 
+
+/** Resolution ở mức phóng to nhất — LOD không ẩn bucket nào, nên các ca kiểm thử
+ *  về màu/độ rộng bên dưới kiểm đúng thứ chúng định kiểm. */
+const FULL_DETAIL_RESOLUTION = 1;
+
 describe('style caching', () => {
   it('riversStyle returns the SAME array reference for the same stream order (cached)', () => {
     const f = fakeFeature({ streamOrder: 1 });
-    const a = riversStyle(f);
-    const b = riversStyle(fakeFeature({ streamOrder: 1 }));
+    const a = riversStyle(f, FULL_DETAIL_RESOLUTION);
+    const b = riversStyle(fakeFeature({ streamOrder: 1 }), FULL_DETAIL_RESOLUTION);
     expect(a).toBe(b);
   });
 
   it('riversStyle returns styles (array of ol/style Style)', () => {
-    const styles = riversStyle(fakeFeature({ streamOrder: 2 }));
+    const styles = riversStyle(fakeFeature({ streamOrder: 2 }), FULL_DETAIL_RESOLUTION);
     expect(Array.isArray(styles)).toBe(true);
-    expect(styles[0]).toBeInstanceOf(Style);
+    expect(styles![0]).toBeInstanceOf(Style);
   });
 
   it('makeDamsStyle colors by statusSlug from the shared map', () => {
@@ -80,8 +85,8 @@ describe('map styles stay on the shared LAYER_PALETTE (legend/map colour parity)
   });
 
   it('riversStyle core stroke matches LAYER_PALETTE.layer_rivers', () => {
-    const styles = riversStyle(fakeFeature({ streamOrder: 5 }));
-    const core = styles[styles.length - 1].getStroke();
+    const styles = riversStyle(fakeFeature({ streamOrder: 5 }), FULL_DETAIL_RESOLUTION);
+    const core = styles![styles!.length - 1].getStroke();
     expect(core?.getColor()).toBe(LAYER_PALETTE.layer_rivers.color);
   });
 
@@ -117,9 +122,9 @@ describe('map styles stay on the shared LAYER_PALETTE (legend/map colour parity)
 
   it('rivers get wider as Strahler order increases', () => {
     const widthFor = (order: number) => {
-      const styles = riversStyle(fakeFeature({ streamOrder: order }));
+      const styles = riversStyle(fakeFeature({ streamOrder: order }), FULL_DETAIL_RESOLUTION);
       // main (core) stroke is the last style in the paired array
-      const stroke = styles[styles.length - 1].getStroke();
+      const stroke = styles![styles!.length - 1].getStroke();
       expect(stroke).toBeInstanceOf(Stroke);
       const width = stroke!.getWidth();
       expect(width).toBeDefined();
@@ -133,8 +138,10 @@ import { STREAM_ORDER_LABELS } from '@webatlas/shared';
 
 describe('độ rộng nét sông theo hạng OSM', () => {
   const widthOf = (order: number): number => {
-    const styles = riversStyle({ get: (k: string) => (k === 'streamOrder' ? order : undefined) } as any);
-    const stroke = (Array.isArray(styles) ? styles[1] : styles).getStroke();
+    const styles = riversStyle({ get: (k: string) => (k === 'streamOrder' ? order : undefined) } as any, FULL_DETAIL_RESOLUTION);
+    // riversStyle luôn trả mảng cặp [viền, lõi] khi có vẽ; ở FULL_DETAIL_RESOLUTION
+    // thì không bucket nào bị ẩn nên chắc chắn có giá trị.
+    const stroke = styles![1].getStroke();
     return stroke?.getWidth() ?? 0;
   };
 
@@ -195,5 +202,57 @@ describe('provincesStyle / wardsStyle dùng đúng thuộc tính ranh giới m�
     const style = wardsStyle(feature) as Style;
     const text = style.getText() as Text;
     expect(text.getText()).toBe('Xã Ea Tul');
+  });
+});
+
+import { minRiverBucketAt } from './styles';
+import { resolutionAtZoom, zoomForScale, REFERENCE_LATITUDE } from './zoomScale';
+
+/** The OL/3857 resolution that renders at a given scale denominator. */
+function resolutionForScale(scale: number): number {
+  return resolutionAtZoom(zoomForScale(scale)) / Math.cos((REFERENCE_LATITUDE * Math.PI) / 180);
+}
+
+describe('minRiverBucketAt', () => {
+  it('draws only sông chính when most zoomed out', () => {
+    expect(minRiverBucketAt(resolutionForScale(7_500_000))).toBe(3);
+    expect(minRiverBucketAt(resolutionForScale(1_000_000))).toBe(3);
+  });
+
+  it('adds kênh đào from 1:500.000', () => {
+    expect(minRiverBucketAt(resolutionForScale(999_999))).toBe(2);
+    expect(minRiverBucketAt(resolutionForScale(500_000))).toBe(2);
+  });
+
+  it('adds suối from 1:250.000', () => {
+    expect(minRiverBucketAt(resolutionForScale(499_999))).toBe(1);
+    expect(minRiverBucketAt(resolutionForScale(250_000))).toBe(1);
+  });
+
+  it('hides nothing when most zoomed in', () => {
+    expect(minRiverBucketAt(resolutionForScale(249_999))).toBe(0);
+    expect(minRiverBucketAt(resolutionForScale(100_000))).toBe(0);
+  });
+
+  it('never hides sông chính at any scale — the coarsest tier is always drawn', () => {
+    [7_500_000, 1_000_000, 500_000, 250_000, 100_000].forEach((scale) => {
+      expect(minRiverBucketAt(resolutionForScale(scale))).toBeLessThanOrEqual(3);
+    });
+  });
+});
+
+describe('riversStyle level of detail', () => {
+  const feature = (streamOrder: number) => ({ get: () => streamOrder }) as never;
+
+  it('draws a main river when zoomed out', () => {
+    expect(riversStyle(feature(5), resolutionForScale(7_500_000))).toBeDefined();
+  });
+
+  it('hides a ditch when zoomed out', () => {
+    expect(riversStyle(feature(1), resolutionForScale(7_500_000))).toBeUndefined();
+  });
+
+  it('draws a ditch when fully zoomed in', () => {
+    expect(riversStyle(feature(1), resolutionForScale(100_000))).toBeDefined();
   });
 });

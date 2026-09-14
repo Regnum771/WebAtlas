@@ -149,3 +149,14 @@ export function settleZoomCorrection(zoom: number): number | null {
   if (Math.abs(scale - snapped) < SETTLED_EPSILON) return null;
   return zoomForScale(snapped);
 }
+
+/**
+ * Mẫu số tỷ lệ ứng với một resolution của OpenLayers (mét Mercator, EPSG:3857).
+ *
+ * OL trả resolution chưa hiệu chỉnh vĩ độ, trong khi resolutionAtZoom ở trên trả
+ * resolution MẶT ĐẤT (đã nhân cos). Nhân cos ở đây để hai đường tính ra cùng một
+ * tỷ lệ — nếu không, ngưỡng LOD và số tỷ lệ trên thanh công cụ sẽ lệch nhau.
+ */
+export function scaleAtResolution(resolution: number, latitude = REFERENCE_LATITUDE): number {
+  return resolution * Math.cos((latitude * Math.PI) / 180) * (SCREEN_DPI / INCH_M);
+}

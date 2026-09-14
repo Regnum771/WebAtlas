@@ -1,4 +1,5 @@
 import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
+import { scaleAtResolution } from './zoomScale';
 import type { ReservoirFilterType } from './MapModel';
 import { DAM_STATUS_DISPLAY, toDamStatusSlug, type DamStatusSlug, LAYER_PALETTE } from '@webatlas/shared';
 
@@ -44,10 +45,46 @@ const RIVER_STYLES: Record<number, Style[]> = Object.fromEntries(
   })
 );
 
+/**
+ * So sánh ">= ngưỡng" có dung sai, vì ba ngưỡng dưới đây (1.000.000, 500.000,
+ * 250.000) đều NẰM ĐÚNG trên ba nấc của thanh trượt. Đi vòng qua
+ * zoomForScale -> resolution -> scaleAtResolution, mẫu số 1.000.000 quay về
+ * thành 999.999,9999..., nên phép so sánh chặt sẽ cho ra mức chi tiết khác nhau
+ * ở đúng một nấc người dùng bấm tới được — hành vi phụ thuộc nhiễu dấu phẩy động.
+ * Một phần nghìn đơn vị mẫu số thấp hơn nhiều so với mức có nghĩa, và cao hơn
+ * nhiều so với sai số làm tròn (~1e-4 ở thang 1e6).
+ */
+function atLeast(scale: number, threshold: number): boolean {
+  return scale >= threshold - 0.001;
+}
+
+/**
+ * Bucket nhỏ nhất còn được vẽ ở một resolution. Bucket càng cao càng là sông lớn,
+ * và các bucket hiển thị luôn là một dải liên tục từ trên xuống, nên một con số
+ * đủ diễn đạt cả bảng ngưỡng — không phải cấp phát Set nào trong hàm style chạy
+ * mỗi đối tượng mỗi khung hình.
+ *
+ * Mẫu số CÀNG LỚN nghĩa là CÀNG THU NHỎ.
+ */
+export function minRiverBucketAt(resolution: number): 0 | 1 | 2 | 3 {
+  const scale = scaleAtResolution(resolution);
+  if (atLeast(scale, 1_000_000)) return 3; // chỉ sông chính
+  if (atLeast(scale, 500_000)) return 2; // + kênh đào
+  if (atLeast(scale, 250_000)) return 1; // + suối
+  return 0; // + mương, chưa xác định
+}
+
 // Style cho mạng lưới sông ngòi động dựa trên cấp độ sông (Cap) — cached, no per-frame allocation.
-export const riversStyle = (feature: any) => {
+// Trả undefined cho các bucket dưới ngưỡng của mức thu phóng hiện tại: OpenLayers
+// hiểu "không có style" là không vẽ đối tượng. Phải là undefined chứ không phải
+// null — kiểu StyleFunction của ol khai báo trả về Style | Style[] | void, nên
+// null làm hỏng type-check ở chỗ gán style cho lớp (MapModel.ts).
+// Đây là LOD HIỂN THỊ — WFS vẫn tải đủ dữ liệu, chỉ phần dựng hình nhẹ đi.
+export const riversStyle = (feature: any, resolution: number) => {
   const cap = feature.get('streamOrder') || 6;
-  return RIVER_STYLES[riverBucket(cap)];
+  const bucket = riverBucket(cap);
+  if (bucket < minRiverBucketAt(resolution)) return undefined;
+  return RIVER_STYLES[bucket];
 };
 
 export const stationsStyle = new Style({
