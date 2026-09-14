@@ -971,3 +971,13 @@ body {
   border-radius: var(--radius-sm); padding: 0 var(--space-3); cursor: pointer;
 }
 .assistant-composer button:disabled { background: var(--border-strong); cursor: default; }
+
+.zoom-slider {
+  width: 120px;
+  accent-color: var(--color-primary, #15803d);
+  cursor: pointer;
+}
+
+.zoom-group {
+  gap: 6px;
+}
