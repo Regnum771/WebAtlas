@@ -8,6 +8,11 @@ export type { BasemapType, ReservoirFilterType, LayerState };
 interface MapContextType {
   map: Map | null;
   setMap: (map: Map | null) => void;
+  /** Có yêu cầu tải tile nền còn treo quá LOADING_DELAY_MS hay không — xem
+   *  features/map/model/loadingState.ts. MapView đăng ký setBusy làm listener
+   *  của MapModel; MapLoadingBar đọc lại giá trị này để vẽ thanh báo. */
+  busy: boolean;
+  setBusy: (busy: boolean) => void;
   basemap: BasemapType;
   setBasemap: (basemap: BasemapType) => void;
   layersState: LayerState[];
@@ -21,6 +26,7 @@ const MapContext = createContext<MapContextType | undefined>(undefined);
 
 export const MapProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [map, setMap] = useState<Map | null>(null);
+  const [busy, setBusy] = useState(false);
   const [basemap, setBasemap] = useState<BasemapType>('street');
   const [reservoirFilter, setReservoirFilter] = useState<ReservoirFilterType>('all');
   
@@ -48,6 +54,7 @@ export const MapProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   return (
     <MapContext.Provider value={{
       map, setMap,
+      busy, setBusy,
       basemap, setBasemap,
       layersState, toggleLayerVisibility, setLayerOpacity,
       reservoirFilter, setReservoirFilter

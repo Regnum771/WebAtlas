@@ -133,6 +133,45 @@ body {
   pointer-events: auto;
 }
 
+/* Thanh báo tải: bám cạnh trên vùng bản đồ, lặp lại phép tính left/width của
+   .map-container giống .map-toolbar để dịch cùng nhịp khi bảng trượt đóng mở. */
+.map-loading-bar {
+  position: absolute;
+  top: var(--topbar-height);
+  left: var(--rail-width);
+  width: calc(100% - var(--rail-width));
+  height: 3px;
+  z-index: 30;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+  transition: left 200ms ease, width 200ms ease;
+}
+
+.map-loading-bar.flyout-open {
+  left: calc(var(--rail-width) + var(--flyout-width));
+  width: calc(100% - var(--rail-width) - var(--flyout-width));
+}
+
+.map-loading-bar-fill {
+  display: block;
+  height: 100%;
+  width: 35%;
+  background: var(--color-primary, #15803d);
+  animation: map-loading-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes map-loading-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* Không chạy hoạt cảnh với người đã tắt hiệu ứng chuyển động; thanh vẫn hiện,
+   chỉ đứng yên, nên thông tin "đang tải" không mất. */
+@media (prefers-reduced-motion: reduce) {
+  .map-loading-bar-fill { animation: none; width: 100%; opacity: 0.5; }
+}
+
 .toolbar-rail {
   display: flex;
   flex-direction: row;

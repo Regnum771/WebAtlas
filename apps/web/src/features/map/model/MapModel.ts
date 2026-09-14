@@ -1,5 +1,6 @@
 import Map from 'ol/Map';
 import { createRiverOverviewSource, riverOverviewVisibleAt } from './riverOverview';
+import { createLoadTracker } from './loadingState';
 import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
@@ -124,6 +125,16 @@ export class MapModel {
    * lưu thất bại. Ghi nhận lại ở đây để nạp bù đúng lúc gắn source trở lại.
    */
   private pendingRefresh = createPendingRefreshQueue();
+  /** Bận/rảnh của việc tải tile nền — xem loadingState.ts. Chỉ theo dõi nguồn
+   *  raster (GWC); nguồn WFS bắn featuresloadstart/end theo nhịp khác và sẽ
+   *  khiến thanh báo hiện cả lúc tải dữ liệu chuyên đề thông thường. */
+  private loadTracker = createLoadTracker((busy) => this.onLoadingChange?.(busy));
+  private onLoadingChange: ((busy: boolean) => void) | null = null;
+
+  /** Đăng ký nơi nhận trạng thái bận/rảnh (MapView/MapProvider phía React). */
+  setLoadingListener(fn: ((busy: boolean) => void) | null): void {
+    this.onLoadingChange = fn;
+  }
 
   init(target: HTMLElement): void {
     // Idempotency guard for React 19 StrictMode double-invoked effects.
@@ -144,6 +155,15 @@ export class MapModel {
       });
     }
     this.basemapLayer = initialBasemap;
+
+    // Chỉ theo dõi tải cho các nguồn tile raster (nền + ngữ cảnh) — xem ghi chú
+    // tại khai báo loadTracker phía trên.
+    for (const { stateId } of CONTEXT_LAYERS) {
+      const src = this.contextLayers[stateId].getSource();
+      src?.on('tileloadstart', () => this.loadTracker.start());
+      src?.on('tileloadend', () => this.loadTracker.done());
+      src?.on('tileloaderror', () => this.loadTracker.done());
+    }
 
     // Helper tạo vector layer từ URL GeoJSON
     const createVectorLayerFromUrl = (id: string, url: string, style: any, options: any = {}) => {
@@ -484,6 +504,7 @@ export class MapModel {
     this.waterGate = null;
     this.wardsGate = null;
     this.pendingRefresh.clear();
+    this.loadTracker.reset();
     this.map.setTarget(undefined);
     this.map = null;
     this.basemapLayer = null;

@@ -4,6 +4,7 @@ import { render, act } from '@testing-library/react';
 vi.mock('../../../app/providers/MapProvider', () => ({
   useMapContext: () => ({
     setMap: vi.fn(),
+    setBusy: vi.fn(),
     basemap: 'street',
     layersState: [],
     reservoirFilter: 'all',
@@ -21,6 +22,7 @@ vi.mock('../model/MapModel', () => ({
     init,
     getMap: () => null,
     updateSize,
+    setLoadingListener: vi.fn(),
     dispose: vi.fn(),
     applyLayerStates: vi.fn(),
     setBasemap: vi.fn(),

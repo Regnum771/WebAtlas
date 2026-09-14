@@ -14,7 +14,7 @@ export interface MapViewProps {
 const MapView: React.FC<MapViewProps> = ({ flyoutOpen }) => {
   const el = useRef<HTMLDivElement>(null);
   const modelRef = useRef<MapModel | null>(null);
-  const { setMap, basemap, layersState, reservoirFilter } = useMapContext();
+  const { setMap, setBusy, basemap, layersState, reservoirFilter } = useMapContext();
   const { registerRefresh, registerSetSelectActive } = useMapEditing();
 
   useEffect(() => {
@@ -23,6 +23,7 @@ const MapView: React.FC<MapViewProps> = ({ flyoutOpen }) => {
     model.init(el.current);
     modelRef.current = model;
     setMap(model.getMap());
+    model.setLoadingListener(setBusy);
     registerRefresh((id: string) => model.refreshLayer(id));
     registerSetSelectActive((active: boolean) => model.setSelectActive(active));
     return () => model.dispose();
