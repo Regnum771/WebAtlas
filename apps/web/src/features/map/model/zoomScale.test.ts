@@ -13,6 +13,10 @@ import {
   zoomForScale,
   resolutionAtZoom,
   formatScale,
+  ZOOM_STOPS,
+  nearestStopIndex,
+  snapScaleToNearestThousand,
+  SNAP_STEP,
 } from './zoomScale';
 
 describe('zoomScale', () => {
@@ -100,5 +104,73 @@ describe('khung nhìn khi mở ứng dụng', () => {
     const heightKm = (resolutionAtZoom(INITIAL_ZOOM, INITIAL_CENTER_4326[1]) * 900) / 1000;
     const regionHeightKm = (LAND.maxLat - LAND.minLat) * 111;
     expect(heightKm).toBeGreaterThan(regionHeightKm);
+  });
+});
+
+describe('ZOOM_STOPS', () => {
+  it('has one zoom per scale stop, ascending (index 0 is the most zoomed out)', () => {
+    expect(ZOOM_STOPS).toHaveLength(ZOOM_SCALE_LEVELS.length);
+    for (let i = 1; i < ZOOM_STOPS.length; i++) {
+      expect(ZOOM_STOPS[i]).toBeGreaterThan(ZOOM_STOPS[i - 1]);
+    }
+  });
+
+  it('index i is the zoom for scale stop i — the slider relies on this alignment', () => {
+    ZOOM_SCALE_LEVELS.forEach((scale, i) => {
+      expect(ZOOM_STOPS[i]).toBeCloseTo(zoomForScale(scale), 10);
+    });
+  });
+});
+
+describe('nearestStopIndex', () => {
+  it('returns the first stop below MIN_ZOOM', () => {
+    expect(nearestStopIndex(MIN_ZOOM - 5)).toBe(0);
+  });
+
+  it('returns the last stop above MAX_ZOOM', () => {
+    expect(nearestStopIndex(MAX_ZOOM + 5)).toBe(ZOOM_STOPS.length - 1);
+  });
+
+  it('returns that stop exactly on a stop', () => {
+    ZOOM_STOPS.forEach((z, i) => expect(nearestStopIndex(z)).toBe(i));
+  });
+
+  it('picks the closer of two neighbours', () => {
+    const justAboveFirst = ZOOM_STOPS[0] + (ZOOM_STOPS[1] - ZOOM_STOPS[0]) * 0.1;
+    expect(nearestStopIndex(justAboveFirst)).toBe(0);
+    const justBelowSecond = ZOOM_STOPS[0] + (ZOOM_STOPS[1] - ZOOM_STOPS[0]) * 0.9;
+    expect(nearestStopIndex(justBelowSecond)).toBe(1);
+  });
+});
+
+describe('snapScaleToNearestThousand', () => {
+  it('rounds down', () => {
+    expect(snapScaleToNearestThousand(1_247_331)).toBe(1_247_000);
+  });
+
+  it('rounds up', () => {
+    expect(snapScaleToNearestThousand(1_247_600)).toBe(1_248_000);
+  });
+
+  it('is idempotent — the property the settle-snap loop guard depends on', () => {
+    const once = snapScaleToNearestThousand(1_247_331);
+    expect(snapScaleToNearestThousand(once)).toBe(once);
+  });
+
+  it('clamps rather than snapping past MAX_SCALE (most zoomed in)', () => {
+    expect(snapScaleToNearestThousand(40_000)).toBe(MAX_SCALE);
+  });
+
+  it('clamps rather than snapping past MIN_SCALE (most zoomed out)', () => {
+    expect(snapScaleToNearestThousand(9_000_000)).toBe(MIN_SCALE);
+  });
+
+  it('leaves every slider stop untouched — the two snappings must not fight', () => {
+    // Fails the day someone adds a stop like 1.250.500, which would otherwise
+    // show up only as a slider handle drifting off its own notch after settling.
+    ZOOM_SCALE_LEVELS.forEach((scale) => {
+      expect(snapScaleToNearestThousand(scale)).toBe(scale);
+      expect(scale % SNAP_STEP).toBe(0);
+    });
   });
 });

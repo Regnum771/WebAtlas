@@ -85,3 +85,40 @@ export function formatScale(scale: number): string {
 export const ZOOM_SCALE_LEVELS: number[] = [
   7_500_000, 5_000_000, 3_000_000, 1_750_000, 1_000_000, 500_000, 250_000, 100_000,
 ];
+
+/**
+ * The eight scale stops as zoom levels, ascending — index 0 is the most zoomed
+ * out (1:7.500.000), the last index the most zoomed in (1:100.000). Sorted
+ * rather than mapped positionally so the slider keeps working left-to-right if
+ * someone reorders ZOOM_SCALE_LEVELS.
+ */
+export const ZOOM_STOPS: readonly number[] = ZOOM_SCALE_LEVELS.map((scale) => zoomForScale(scale)).sort(
+  (a, b) => a - b,
+);
+
+/** Index of the stop closest to a zoom. Ties go to the lower index. */
+export function nearestStopIndex(zoom: number): number {
+  let best = 0;
+  for (let i = 1; i < ZOOM_STOPS.length; i++) {
+    if (Math.abs(ZOOM_STOPS[i] - zoom) < Math.abs(ZOOM_STOPS[best] - zoom)) {
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** The grid free zoom settles onto: a round thousand of the scale denominator. */
+export const SNAP_STEP = 1000;
+
+/**
+ * Round a scale denominator to the nearest SNAP_STEP, clamped to the app's zoom
+ * bounds so a snap can never push the view past MIN_SCALE or MAX_SCALE.
+ *
+ * Every entry in ZOOM_SCALE_LEVELS is already a multiple of SNAP_STEP, so a
+ * slider- or button-driven zoom lands on a value this function leaves alone —
+ * the two snappings cannot fight. There is a test that keeps it that way.
+ */
+export function snapScaleToNearestThousand(scale: number): number {
+  const snapped = Math.round(scale / SNAP_STEP) * SNAP_STEP;
+  return Math.min(MIN_SCALE, Math.max(MAX_SCALE, snapped));
+}
