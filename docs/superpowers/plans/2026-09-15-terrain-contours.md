@@ -35,13 +35,15 @@ Contour density at 100 m, six 750 km² blocks — the spread is why one sample w
 | highland Lâm Đồng | 544 | 91,934 | 122 |
 | mountain Quảng Nam | 825 | 157,759 | 213 |
 
-Region estimates, simplified at 0.0002° (~22 m, sub-pixel, visually lossless):
+Region totals, simplified at 0.0002° (~22 m, sub-pixel) — **measured from the Task 2 run**, not estimated:
 
-| Interval | Features | Vertices | GeoJSON |
+| Interval | Features | Distinct levels | Vertices |
 |---|---|---|---|
-| 50 m | ~160,000 | ~4M | ~90 MB |
-| 100 m | ~73,000 | ~1.8M | ~45 MB |
-| 250 m | ~41,000 | ~1.1M | ~28 MB |
+| 50 m | 103,672 | 52 (0–2,550 m) | 3,376,103 |
+| 100 m | 50,760 | 26 (0–2,500 m) | 1,664,414 |
+| 250 m | 19,275 | 11 (0–2,500 m) | 632,337 |
+
+The pre-build estimates read ~160k / ~73k / ~41k and were wrong by design error: extrapolated from the Copernicus surface model and never rescaled for bare earth, which removes 27% of features. 250 m is lower still because at a coarse interval the count follows how many levels the terrain crosses — only 11 here. Two checks confirm the data: zero off-grid elevations, and the 50 m bucket's index contours (every 250 m) number exactly 19,275, matching the 250 m bucket from an independent pass.
 
 **Why not WFS.** Per viewport, vector delivery is fine close in (~24 kB at 1:150.000), heavy at 1:1.000.000 (~1.1 MB), and impossible zoomed out, where the viewport exceeds the region and the answer is the whole bucket. The full river network was 17.6 MB and was judged too heavy below zoom 8.5; the *coarsest* contour bucket is larger than that. Tiles are the only thing that behaves across the range, and contours have no attributes worth clicking.
 
