@@ -17,8 +17,20 @@ WS=webatlas
 STORE="${CONTOUR_STORE:-basemap_pg}"
 USER="${GEOSERVER_ADMIN_USER:-admin}"
 AUTH="$USER:${GEOSERVER_ADMIN_PASSWORD:?set GEOSERVER_ADMIN_PASSWORD}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-for INTERVAL in 250 100 50; do
+# Never hand-copy the interval list: styles.py parses it from
+# packages/shared/src/contours.ts (same source the data generator and the browser use),
+# and we shell out to it here because bash cannot import TS itself. Fails loudly (set -e)
+# if styles.py's own parse dies, and again below if it somehow prints nothing.
+INTERVALS="$(python3 "$SCRIPT_DIR/styles.py" --print-intervals)"
+if [ -z "$INTERVALS" ]; then
+  echo "ERROR: packages/shared/src/contours.ts yielded no CONTOUR_INTERVALS — refusing to publish" >&2
+  exit 1
+fi
+echo "== intervals from packages/shared/src/contours.ts: $INTERVALS"
+
+for INTERVAL in $INTERVALS; do
   NAME="contours_${INTERVAL}"
   echo "== ${NAME}"
   # A SQL view, not the whole table: each published layer serves one bucket, so the
@@ -53,11 +65,13 @@ XML
   fi
   echo "   featuretype: $code"
 
-  # Default style plain; labelled offered as an alternate so GWC caches both.
+  # Default style plain; labelled offered as an alternate so GWC caches both. Style names
+  # are workspace-qualified (webatlas:...) so this resolves even if a same-named style
+  # ever exists in another workspace.
   curl -s -o /dev/null -w "   style: %{http_code}\n" -u "$AUTH" -XPUT -H "Content-Type: text/xml" \
     "$GS/layers/$WS:$NAME" -d \
-    "<layer><defaultStyle><name>contours_plain</name></defaultStyle>
-       <styles><style><name>contours_labelled</name></style></styles></layer>"
+    "<layer><defaultStyle><name>$WS:contours_plain</name></defaultStyle>
+       <styles><style><name>$WS:contours_labelled</name></style></styles></layer>"
 
   curl -s -o /dev/null -w "   truncate: %{http_code}\n" -u "$AUTH" -XPOST -H "Content-Type: text/xml" \
     --data "<truncateLayer><layerName>$WS:$NAME</layerName></truncateLayer>" \
