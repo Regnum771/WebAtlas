@@ -58,7 +58,15 @@ Region estimates, simplified at 0.0002° (~22 m, sub-pixel, visually lossless):
 - Create: `apps/api/src/db/contours.test.ts`
 
 **Interfaces:**
-- Produces: `basemap.contours` with columns `id`, `interval_m`, `elevation_m`, `is_index`, `geom`; GiST index `contours_geom_idx`; btree `contours_interval_idx`.
+- Produces: `basemap.contours` with columns `id`, `interval_m`, `elevation_m`, `is_index`, `geom`; GiST index `contours_geom_idx`; btree `contours_interval_idx`. Also `basemap.dataset_sources`.
+
+**Why `dataset_sources` rides along here.** `basemap` now holds 664 MB from three sources
+under three different licences — OSM/ODbL (roads, water, landuse, places), FABDEM/CC BY-NC-SA
+(`dem_region`), and derived contours — and **nothing in the database records which is which**.
+The DEM was swapped from Copernicus to FABDEM on 2026-09-15 and the database carries no trace
+of it. That is a licence-compliance gap, not untidiness: a non-commercial dataset sits beside
+ODbL ones and only a runbook says so. One table plus a few inserts is cheap now and
+unbackfillable once nobody remembers which load produced what.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -84,6 +92,16 @@ describe('basemap.contours', () => {
     expect(Object.keys(cols).sort()).toEqual(['elevation_m', 'geom', 'id', 'interval_m', 'is_index']);
     expect(cols.interval_m).toBe('integer');
     expect(cols.is_index).toBe('boolean');
+  });
+
+  it('records where each reference dataset came from, and under what licence', async () => {
+    // basemap mixes ODbL (OSM) with CC BY-NC-SA (FABDEM). Without this the only record of
+    // which is which is a runbook, and the DEM has already been swapped once with no trace.
+    const { rows } = await pool.query<{ name: string; licence: string }>(
+      `SELECT name, licence FROM basemap.dataset_sources ORDER BY name`
+    );
+    const byName = Object.fromEntries(rows.map((r) => [r.name, r.licence]));
+    expect(byName['dem_region']).toMatch(/CC BY-NC-SA/);
   });
 
   it('is indexed on geometry AND on interval', async () => {
@@ -138,6 +156,31 @@ exports.up = (pgm) => {
       geom        geometry(MultiLineString, 4326) NOT NULL
     )
   `);
+  // Xuất xứ dữ liệu tham chiếu. water.* có app.dataset_versions; basemap.* trước nay
+  // không có gì — không nguồn, không giấy phép, không ngày nạp. Với FABDEM (phi thương
+  // mại) nằm cạnh dữ liệu OSM (ODbL) trong cùng một schema, đây là vấn đề tuân thủ giấy
+  // phép chứ không phải chuyện gọn gàng.
+  pgm.sql(`
+    CREATE TABLE IF NOT EXISTS basemap.dataset_sources (
+      name       text PRIMARY KEY,
+      source     text NOT NULL,
+      licence    text NOT NULL,
+      url        text,
+      script     text,
+      loaded_at  timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  pgm.sql(`
+    INSERT INTO basemap.dataset_sources (name, source, licence, url, script) VALUES
+      ('dem_region', 'FABDEM V1-2 (Copernicus GLO-30, bare earth)', 'CC BY-NC-SA 4.0 (phi thương mại)',
+       'https://data.bris.ac.uk/data/dataset/s5hqmjcdj8yo2ibzi9b4ew3sn', 'scripts/prep_dem.py + scripts/load-dem.sh'),
+      ('contours', 'Dẫn xuất từ basemap.dem_region', 'CC BY-NC-SA 4.0 (kế thừa từ FABDEM)',
+       NULL, 'src/scripts/generateContours.ts')
+    ON CONFLICT (name) DO UPDATE
+       SET source = EXCLUDED.source, licence = EXCLUDED.licence,
+           url = EXCLUDED.url, script = EXCLUDED.script, loaded_at = now()
+  `);
+
   pgm.sql('CREATE INDEX IF NOT EXISTS contours_geom_idx ON basemap.contours USING GIST (geom)');
   // Mỗi yêu cầu tile đều lọc theo interval_m trước rồi mới tới bbox.
   pgm.sql('CREATE INDEX IF NOT EXISTS contours_interval_idx ON basemap.contours (interval_m)');
@@ -145,6 +188,8 @@ exports.up = (pgm) => {
 
 exports.down = (pgm) => {
   pgm.sql('DROP TABLE IF EXISTS basemap.contours');
+  // dataset_sources được giữ lại: nó mô tả cả dem_region, vốn không thuộc migration này.
+  pgm.sql("DELETE FROM basemap.dataset_sources WHERE name = 'contours'");
 };
 ```
 
@@ -1111,7 +1156,13 @@ git commit -m "feat(web): tuỳ chọn khoảng cao đều và nhãn cho lớp �
 
 **Files:**
 - Create: `docs/runbooks/terrain-contours.md`
+- Create: `docs/runbooks/README.md`
 - Modify: `docs/superpowers/specs/2026-09-14-spatial-analysis-tools-handover.md` (§6.5 status)
+
+**Why a runbooks README now.** As of the DEM load, a fresh clone no longer produces a working
+app: ~1 GB of DEM and contours live outside git behind four runbooks that must run in a
+particular order, and nothing states that order. Contours add the fourth. Ten minutes here
+saves the next person an afternoon.
 
 - [ ] **Step 1: Write the runbook**
 
@@ -1119,15 +1170,23 @@ Create `docs/runbooks/terrain-contours.md` covering, in this order: when to run 
 
 Copy the licence block from [the elevation runbook](../../runbooks/elevation-dem.md): contours inherit FABDEM's CC BY-NC-SA terms and its attribution.
 
-- [ ] **Step 2: Update the handover**
+- [ ] **Step 2: Write the setup-order README**
+
+Create `docs/runbooks/README.md`: a single ordered list from a fresh clone to a working app —
+`docker compose up` → `npm run migrate:up` → `npm run seed` → `npm run ingest:rivers` →
+self-hosted basemap → elevation DEM → terrain contours → `npm run publish:geoserver`, each
+line linking its runbook and saying whether it is required or optional. Mark the DEM and
+contour steps as **not in git** — the two datasets each machine must generate locally.
+
+- [ ] **Step 3: Update the handover**
 
 In §6.5, replace the planning language with what was built: the three published layers, the measured counts from Task 2 Step 6, and a pointer to the new runbook.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add docs/
-git commit -m "docs: sổ tay vận hành lớp đường đồng mức"
+git commit -m "docs: sổ tay vận hành lớp đường đồng mức và thứ tự dựng môi trường"
 ```
 
 ---
