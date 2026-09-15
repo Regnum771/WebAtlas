@@ -555,6 +555,7 @@ LABELLED = PLAIN.replace("<Name>contours_plain</Name>", "<Name>contours_labelled
     <LabelPlacement><LinePlacement/></LabelPlacement>
     <Fill><CssParameter name="fill">#6B4E26</CssParameter></Fill>
     <Halo><Radius>1.5</Radius><Fill><CssParameter name="fill">#FFFFFF</CssParameter></Fill></Halo>
+    <VendorOption name="group">yes</VendorOption>
     <VendorOption name="followLine">true</VendorOption>
     <VendorOption name="repeat">300</VendorOption>
     <VendorOption name="maxDisplacement">50</VendorOption>
@@ -846,8 +847,16 @@ describe('contourGwcLayer', () => {
 
 describe('contourStyle', () => {
   it('picks the labelled style only when labels are on', () => {
-    expect(contourStyle(true)).toBe('contours_labelled');
-    expect(contourStyle(false)).toBe('contours_plain');
+    expect(contourStyle(true)).toBe('webatlas:contours_labelled');
+    expect(contourStyle(false)).toBe('webatlas:contours_plain');
+  });
+
+  it('qualifies the style with the workspace, which GWC WMTS requires', () => {
+    // Measured against the live GeoServer: STYLE=contours_plain returns
+    // 400 InvalidParameterValue; only STYLE=webatlas:contours_plain renders.
+    // A bare name fails silently at the map — GeoServer answers with an exception
+    // tile, not an error the browser surfaces.
+    expect(contourStyle(false)).toMatch(/^webatlas:/);
   });
 });
 ```
@@ -900,8 +909,13 @@ export function contourGwcLayer(intervalM: ContourInterval | number): string {
   return `webatlas:contours_${intervalM}`;
 }
 
+/**
+ * Tên kiểu PHẢI kèm workspace. GWC WMTS từ chối tên trần: `STYLE=contours_plain` trả về
+ * 400 InvalidParameterValue, chỉ `STYLE=webatlas:contours_plain` mới vẽ được — đo trên
+ * GeoServer thật. Sai ở đây thì bản đồ nhận ảnh báo lỗi chứ không có lỗi nào hiện ra.
+ */
 export function contourStyle(labels: boolean): string {
-  return labels ? 'contours_labelled' : 'contours_plain';
+  return labels ? 'webatlas:contours_labelled' : 'webatlas:contours_plain';
 }
 ```
 
