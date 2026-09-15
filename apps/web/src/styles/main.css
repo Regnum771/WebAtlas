@@ -962,6 +962,11 @@ body {
 .layer-row {
   display: flex; align-items: center; gap: var(--space-2);
   padding: var(--space-1) 0;
+  /* Cho phép .layer-suboptions (flex-basis 100%, bên dưới) rơi xuống dòng
+     riêng. Các hàng bình thường (nhãn + thanh trượt, hoặc nhãn + gợi ý
+     ngưỡng zoom) vẫn vừa một dòng như cũ vì không phần tử nào trong số đó
+     có flex-basis 100% — wrap chỉ kích hoạt khi có phần tử không đủ chỗ. */
+  flex-wrap: wrap;
 }
 .layer-row.gated { opacity: 0.7; }
 .layer-row .layer-label {
@@ -973,13 +978,30 @@ body {
 }
 .layer-row input[type='range'] { width: 72px; }
 
-/* Tuỳ chọn con: thụt vào để thấy rõ là thuộc về hàng bên trên, và chỉ hiện khi lớp bật. */
+/* Tuỳ chọn con: thụt vào để thấy rõ là thuộc về hàng bên trên, và chỉ hiện khi lớp bật.
+ * flex-basis: 100% buộc nó không bao giờ vừa chung dòng với nhãn/thanh trượt phía
+ * trên (xem flex-wrap ở .layer-row) nên luôn rơi xuống dòng riêng, đủ rộng bằng
+ * cả hàng — tránh tràn ra ngoài bảng như trước khi có hai quy tắc này.
+ */
 .layer-suboptions {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   padding-left: var(--space-4);
   font-size: 12px;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+/* select co giãn theo đúng bề rộng bảng: min-width:0 để không bị neo theo bề rộng
+ * chữ dài nhất ("Tự động theo mức thu phóng"), max-width/overflow để phần đóng
+ * (control) cắt gọn bằng dấu ba chấm thay vì tràn — danh sách mở (dropdown) vẫn do
+ * trình duyệt vẽ riêng nên chữ trong đó luôn hiện đầy đủ, không bị quy tắc này ảnh hưởng. */
+.layer-suboptions select {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Chú giải — các quy tắc còn thiếu từ slice legend (Task 6): view dùng
