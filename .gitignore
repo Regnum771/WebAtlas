@@ -36,5 +36,10 @@ apps/api/.env
 
 # Dữ liệu OSM thô — chỉ commit bản đã cắt theo vùng
 apps/api/scripts/.osm-cache/
+# Bytecode Python từ các script chuẩn bị dữ liệu
+__pycache__/
+# DEM Copernicus GLO-30: hàng trăm MB, mỗi máy tự tải bằng scripts/prep_dem.py.
+# Đây là bộ dữ liệu ĐẦU TIÊN không đi kèm bản checkout — xem docs/runbooks/elevation-dem.md.
+apps/api/src/db/seeds/data/dem/
 # Visual brainstorming companion scratch (not source)
 .superpowers/
