@@ -52,8 +52,10 @@ Needed for both scripts below: `GEOSERVER_ADMIN_USER`, `GEOSERVER_ADMIN_PASSWORD
 ### 3b. Styles first
 
 ```bash
-python3 apps/api/scripts/contours/styles.py
+python3 apps/api/scripts/contours/styles.py "$GEOSERVER_ADMIN_PASSWORD"
 ```
+
+**The password is a positional argument, not an environment variable.** `styles.py` reads it from `sys.argv[1]`; only the admin *user* comes from the environment (`GEOSERVER_ADMIN_USER`). Sourcing `infra/.env` in step 3a exports `GEOSERVER_ADMIN_PASSWORD` into your shell, which makes it look as though this command is already armed — it is not. Without the argument it fails immediately with `IndexError: list index out of range`.
 
 Uploads two SLDs — `webatlas:contours_plain` and `webatlas:contours_labelled` — both a neutral brown pair that reads on street and satellite alike (per-basemap colour was deliberately deferred; see Known limitations below). **Must run before `publish-contours.sh`**, or the layers it creates reference a style that does not exist yet and GeoServer refuses the default-style assignment.
 
@@ -88,7 +90,7 @@ Expect `200 image/png`, ~23 kB. Check both `webatlas:contours_plain` and `webatl
 - **GeoServer returns `403`, not `409`, on a style-name conflict** when re-uploading a style that already exists. `styles.py` handles this — it PUTs on any non-`201` response — but if you write a similar script, do not assume `409`.
 - **`python3` and `python` are different interpreters on this machine** (mingw64 vs. Python 3.13 on Windows). `publish-contours.sh` shells out to `python3` specifically (to read `CONTOUR_INTERVALS`), and `styles.py` needs the `requests` package installed in whichever interpreter actually runs — check both if you get an import error that seems to contradict a working `pip install`.
 - **Contours stop at the region boundary**, and there are none over Hoàng Sa or Trường Sa, because the DEM was loaded `--mainland` ([elevation runbook](elevation-dem.md)). This is expected, not a gap in the generation pipeline.
-- **The published layers carry the DEM's data extent** (107.20–109.46 E, 10.69–16.22 N), not the national bounds every basemap layer group uses. The web app sets a matching `extent` on the contour layer (`CONTOUR_EXTENT_4326` in [`apps/web/src/features/map/model/contours.ts`](../../apps/web/src/features/map/model/contours.ts)) so OpenLayers never requests a tile outside it. If the region or DEM coverage ever changes, that constant has to change with it, or panning will produce `400 TileOutOfRange` per tile.
+- **The published layers carry the DEM's data extent** (107.20–109.46 E, 10.69–16.22 N), not the national bounds every basemap layer group uses. The web app sets a matching `extent` on the contour layer (`CONTOUR_EXTENT_4326` in [`apps/web/src/features/map/model/contours.ts`](../../apps/web/src/features/map/model/contours.ts)) so OpenLayers never requests a tile outside it. That constant reads `[107.2, 10.68, 109.46, 16.22]` — padded a fraction *outside* the published bounds on purpose, so rounding never clips the data edge. The two numbers differing slightly is intentional, not a mismatch. If the region or DEM coverage ever changes, that constant has to change with it, or panning will produce `400 TileOutOfRange` per tile.
 - **The interval list has one source of truth:** [`CONTOUR_INTERVALS`](../../packages/shared/src/contours.ts) in `packages/shared`. `generateContours.ts` imports it directly; both `styles.py` and `publish-contours.sh` parse it out of the same file rather than duplicating it. The 20 m bucket is deliberately not in that list yet (see below) — adding it means changing it there, then regenerating and republishing, not just editing GeoServer.
 
 ## Known limitation

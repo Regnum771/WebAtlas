@@ -528,6 +528,14 @@ One full 1° cell (3728×3728 px) contours in **28 s**. Contours must be generat
 
 Extrapolated from six blocks; treat as ±2× and re-measure per cell during the build.
 
+*As built:* these estimates overshot by roughly 1.6–2×. The measured totals are 19,275 /
+50,760 / 103,672 — see the Status table below and
+[the runbook](../../runbooks/terrain-contours.md). Two reasons, kept here because the gap is
+instructive: they were extrapolated from the **Copernicus surface model** and never rescaled
+when the source became bare-earth FABDEM, which removes 27% of features; and at a coarse
+interval the count follows how many levels the terrain crosses — only **11** at 250 m — so it
+does not scale linearly with interval the way a single sample block suggests.
+
 #### What the numbers decide: raster tiles, not WFS
 
 WFS loads by bbox, so the fair test is per viewport, and that is where it breaks:
@@ -564,6 +572,10 @@ Two routes to those tiles:
    contours (`value % (5 × interval) = 0`).
 3. Publish four layer groups; the interval selector chooses which one loads, so each keeps its
    own GWC cache. Zoom-gate 250 → 100 → 50 → 20 m, defaulting to auto.
+
+   *As built:* **three** published layers, not four — 20 m stays deferred. Zoom-gate is
+   250 → 100 → 50, defaulting to auto, and each interval is a SQL-view feature type rather
+   than a layer group.
 4. Runtime ~28 s × 19 cells × 4 intervals ≈ **35 minutes**, developer-run, same class as the DEM
    load. Like the DEM, the output is too large to commit.
 
