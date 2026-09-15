@@ -9,6 +9,7 @@ vi.mock('../../../app/providers/MapProvider', () => ({
     basemap: 'street',
     layersState: [],
     reservoirFilter: 'all',
+    contourSettings: { interval: 'auto', labels: true },
   }),
 }));
 
@@ -29,6 +30,7 @@ vi.mock('../model/MapModel', () => ({
     applyLayerStates: vi.fn(),
     setBasemap: vi.fn(),
     setReservoirFilter: vi.fn(),
+    setContourSettings: vi.fn(),
   })),
 }));
 

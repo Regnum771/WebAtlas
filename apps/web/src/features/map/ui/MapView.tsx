@@ -15,7 +15,7 @@ export interface MapViewProps {
 const MapView: React.FC<MapViewProps> = ({ flyoutOpen }) => {
   const el = useRef<HTMLDivElement>(null);
   const modelRef = useRef<MapModel | null>(null);
-  const { setMap, setBusy, basemap, layersState, reservoirFilter } = useMapContext();
+  const { setMap, setBusy, basemap, layersState, reservoirFilter, contourSettings } = useMapContext();
   const { registerRefresh, registerSetSelectActive } = useMapEditing();
 
   useEffect(() => {
@@ -33,6 +33,7 @@ const MapView: React.FC<MapViewProps> = ({ flyoutOpen }) => {
   useEffect(() => { modelRef.current?.setBasemap(basemap); }, [basemap]);
   useEffect(() => { modelRef.current?.applyLayerStates(layersState); }, [layersState]);
   useEffect(() => { modelRef.current?.setReservoirFilter(reservoirFilter); }, [reservoirFilter]);
+  useEffect(() => { modelRef.current?.setContourSettings(contourSettings); }, [contourSettings]);
 
   // The CSS transition on .map-container's left/width (main.css) means the
   // container's box only reaches its final size once the transition ends —

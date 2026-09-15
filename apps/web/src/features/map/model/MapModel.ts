@@ -20,6 +20,7 @@ import {
   contourStyle,
   CONTOUR_EXTENT_4326,
   CONTOUR_ATTRIBUTION,
+  type ContourSettings,
 } from './contours';
 import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM, settleZoomCorrection } from './zoomScale';
 import {
@@ -394,9 +395,10 @@ export class MapModel {
 
         // Chỉ đổi source khi khoảng cao đều thật sự đổi: đặt lại source đồng nghĩa vứt bỏ
         // toàn bộ tile đã tải, nên gọi mỗi lần di chuyển bản đồ sẽ nháy liên tục.
-        // contourFixedInterval do người dùng chọn cứng (Nhiệm vụ 6) được ưu tiên hơn
-        // mức tự động theo zoom; hiện chưa có nơi nào đặt khác null nên hành vi vẫn
-        // như cũ cho tới khi bảng điều khiển thêm lựa chọn đó.
+        // contourFixedInterval do người dùng chọn cứng (setContourSettings, Nhiệm vụ 6)
+        // được ưu tiên hơn mức tự động theo zoom: khi khác null, `wanted` luôn bằng
+        // đúng giá trị cố định đó bất kể zoom, nên nó khớp contourInterval ngay từ lần
+        // gọi đầu và nhánh dưới đây không bao giờ đặt lại source vì đổi zoom nữa.
         const wanted = this.contourFixedInterval ?? contourIntervalFor(zoom);
         if (this.contourLayer && wanted !== this.contourInterval) {
           this.contourInterval = wanted;
@@ -542,6 +544,24 @@ export class MapModel {
     if (damsLayer) {
       damsLayer.changed();
     }
+  }
+
+  /**
+   * Bảng điều khiển (Nhiệm vụ 6) gọi khi người dùng đổi khoảng cao đều hoặc bật/tắt
+   * nhãn. Một khoảng cố định (khác 'auto') ưu tiên hơn mức tự động theo zoom: đặt
+   * contourFixedInterval khác null khiến nhánh trong updateLayersVisibility() (moveend)
+   * luôn tính lại `wanted` bằng đúng giá trị này, nên nó không bao giờ lệch khỏi
+   * contourInterval và source không bị đặt lại khi zoom đổi.
+   */
+  setContourSettings(settings: ContourSettings): void {
+    this.contourLabels = settings.labels;
+    this.contourFixedInterval = settings.interval === 'auto' ? null : settings.interval;
+    const zoom = this.map?.getView().getZoom() ?? 0;
+    const wanted = this.contourFixedInterval ?? contourIntervalFor(zoom);
+    this.contourInterval = wanted;
+    this.contourLayer?.setSource(
+      gwcSource(contourGwcLayer(wanted), contourStyle(settings.labels), CONTOUR_ATTRIBUTION),
+    );
   }
 
   /**

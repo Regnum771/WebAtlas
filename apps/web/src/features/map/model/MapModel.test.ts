@@ -117,6 +117,34 @@ describe('context-layer load-tracking teardown', () => {
   });
 });
 
+describe('MapModel.setContourSettings', () => {
+  it('một khoảng cố định phải giữ nguyên qua đổi mức thu phóng, và source vẫn ghi công FABDEM', () => {
+    const model = new MapModel();
+    const el = document.createElement('div');
+    model.init(el);
+
+    model.setContourSettings({ interval: 100, labels: false });
+
+    const contourLayer = (model as unknown as { contourLayer: TileLayer<XYZ> }).contourLayer;
+    const source = contourLayer.getSource()!;
+    const url = source.getUrls()?.[0] ?? '';
+    expect(url).toContain('LAYER=webatlas%3Acontours_100');
+    expect(url).toContain('STYLE=webatlas:contours_plain');
+    expect(source.getAttributions()?.(undefined as never)).toEqual([
+      'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018',
+    ]);
+
+    // Đổi mức thu phóng và bắn moveend thủ công (như OpenLayers sẽ làm khi người
+    // dùng cuộn chuột) — khoảng cố định không được bị mức tự động ghi đè.
+    const map = (model as unknown as { map: Map }).map;
+    map.getView().setZoom(20);
+    const moveendHandler = (model as unknown as { moveendHandler: (() => void) | null }).moveendHandler;
+    moveendHandler?.();
+
+    expect(contourLayer.getSource()).toBe(source);
+  });
+});
+
 describe('map controls wiring', () => {
   it('includes ScaleLine and MousePosition controls after init()', () => {
     const model = new MapModel();
