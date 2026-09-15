@@ -201,7 +201,12 @@ body {
   display: flex;
 }
 
-.map-mouseposition {
+/* Ô độ cao xếp NGAY TRÊN ô toạ độ, dùng chung toàn bộ kiểu dáng để hai ô đọc như một
+   khối. Không gộp vào cùng một ô: toạ độ do OpenLayers vẽ lại tức thì theo con trỏ, còn
+   độ cao về sau một nhịp mạng — nhét chung một dòng thì hoặc phải giữ con số cũ bên cạnh
+   toạ độ mới (sai), hoặc phải vẽ lại cả dòng mỗi lần (nháy). */
+.map-mouseposition,
+.map-cursor-elevation {
   position: absolute;
   right: var(--space-3);
   bottom: var(--space-3);
@@ -215,6 +220,11 @@ body {
   border-radius: var(--radius-sm);
   padding: var(--space-1) var(--space-2);
   box-shadow: var(--glass-shadow);
+}
+
+/* Chiều cao một ô đọc số (12px * 1.4 + padding + viền) ~ 26px, cộng khoảng cách. */
+.map-cursor-elevation {
+  bottom: calc(var(--space-3) + 30px);
 }
 
 .toolbar-rail {

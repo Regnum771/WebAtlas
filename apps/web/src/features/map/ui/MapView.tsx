@@ -3,6 +3,7 @@ import 'ol/ol.css';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { useMapEditing } from '../model/mapEditing';
 import { MapModel } from '../model/MapModel';
+import CursorElevation from './CursorElevation';
 
 export interface MapViewProps {
   /** Is the rail flyout (layers/legend) currently open? Docked, not overlaid —
@@ -56,7 +57,12 @@ const MapView: React.FC<MapViewProps> = ({ flyoutOpen }) => {
   }, [flyoutOpen]);
 
   return (
-    <div ref={el} className={`map-container basemap-${basemap}${flyoutOpen ? ' flyout-open' : ''}`} />
+    // CursorElevation nằm BÊN TRONG hộp bản đồ vì nó định vị tuyệt đối theo hộp đó, cạnh
+    // ô toạ độ mà OpenLayers vẽ. OL chèn .ol-viewport của nó vào cùng phần tử này và
+    // không xoá các con sẵn có, nên hai bên sống chung được.
+    <div ref={el} className={`map-container basemap-${basemap}${flyoutOpen ? ' flyout-open' : ''}`}>
+      <CursorElevation />
+    </div>
   );
 };
 
