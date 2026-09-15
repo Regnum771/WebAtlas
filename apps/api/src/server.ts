@@ -7,6 +7,7 @@ import authRoutes from './modules/auth/routes';
 import usersRoutes from './modules/users/routes';
 import layersRoutes from './modules/layers/routes';
 import searchRoutes from './modules/search/routes';
+import elevationRoutes from './modules/elevation/routes';
 import assistantRoutes from './modules/assistant/routes';
 import { closeAssistantPool } from './modules/assistant/sql/pool';
 
@@ -32,6 +33,7 @@ export function buildApp(): FastifyInstance {
   app.register(usersRoutes, { prefix: '/api/users' });
   app.register(layersRoutes, { prefix: '/api' });
   app.register(searchRoutes, { prefix: '/api' });
+  app.register(elevationRoutes, { prefix: '/api' });
   app.register(assistantRoutes, { prefix: '/api' });
 
   // The assistant's read-only pool is a SEPARATE pg.Pool from app.pg (deliberately
