@@ -3,7 +3,7 @@
 Vận hành `POST /api/assistant/messages` và bảng **Trợ lý** trong thanh biểu tượng.
 
 Trợ lý chạy hoàn toàn phía máy chủ: mô hình `claude-haiku-4-5` được điều khiển bằng
-Tool Runner của SDK Anthropic, gọi 13 công cụ chia làm hai nhóm — nhóm **dữ liệu**
+Tool Runner của SDK Anthropic, gọi 14 công cụ chia làm hai nhóm — nhóm **dữ liệu**
 truy vấn PostGIS rồi trả về sự kiện kèm nguồn gốc, nhóm **lệnh** phát ra `MapCommand`
 đã được kiểm tra để trình duyệt thực thi. Trình duyệt chỉ nhận kết quả; nó không gọi
 mô hình và không giữ khoá API.

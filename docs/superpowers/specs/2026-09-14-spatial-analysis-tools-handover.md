@@ -1,7 +1,9 @@
 # Spatial Analysis Tools — Handover
 
 **Date:** 2026-09-14
-**Status:** Handover / assessment. No code changed to produce this document.
+**Status:** Handover / assessment, written 2026-09-14 with no code changes. Amended 2026-09-15: elevation accepted,
+built and **loaded** (§6.4), cursor elevation readout shipped, and terrain contours **scoped against measurements**
+(§6.5, not built). Everything else is still assessment.
 **Audience:** The engineer who will add the next spatial analysis tools to the map assistant.
 **Scope:** What exists today, how it is wired to the data and the browser, whether the tool layer should be restructured first, and which tools to add next.
 
@@ -13,7 +15,7 @@
 ## 1. Summary for the impatient
 
 - All spatial analysis lives in **one place**: the assistant tool registry at
-  [apps/api/src/modules/assistant/tools/](../../../apps/api/src/modules/assistant/tools/). 13 tools, one file each,
+  [apps/api/src/modules/assistant/tools/](../../../apps/api/src/modules/assistant/tools/). 14 tools, one file each,
   registered in a fixed list. Adding a capability = one file + one line. There is no dispatcher to edit.
 - The only spatial code **outside** that registry is client-side measuring
   ([useMeasure.ts](../../../apps/web/src/features/map/model/useMeasure.ts)), which never touches the database.
@@ -24,14 +26,15 @@
   approximation. Loading them is the single highest-value unlock, and the data is already in the repo.
 - **Restructure verdict: yes, but narrowly.** Four targeted extractions (§5.3), roughly a day, worth doing *before*
   the next three tools land — not a framework, and not a rewrite of the existing six.
-- **A 30 m DEM is accepted for loading** (decided 2026-09-14, §6.4) — a capability bet rather than a backlog item, and
-  the first dataset a developer must generate locally instead of pulling from git.
+- **A 30 m bare-earth DEM is loaded** (FABDEM V1-2; decided 2026-09-14, loaded and re-sourced 2026-09-15, §6.4) — a capability bet rather than a
+  backlog item, and the first dataset each developer must generate locally instead of pulling from git. One tool reads
+  it so far; every box needs [the runbook](../../runbooks/elevation-dem.md) run once or elevation answers "không có dữ liệu".
 
 ---
 
 ## 2. Current tools
 
-13 tools are registered ([registry.ts:27](../../../apps/api/src/modules/assistant/tools/registry.ts#L27)); `run_sql`
+14 tools are registered ([registry.ts:27](../../../apps/api/src/modules/assistant/tools/registry.ts#L27)); `run_sql`
 is conditional on `ASSISTANT_DATABASE_URL` being set, so a default dev box advertises 12.
 
 ### 2.1 Data tools — query PostGIS, return facts + provenance
@@ -45,6 +48,7 @@ is conditional on `ASSISTANT_DATABASE_URL` being set, so a default dev box adver
 | `area_of` | [areaOf.ts](../../../apps/api/src/modules/assistant/tools/data/areaOf.ts) | "area of this polygon" | `ST_Area`, `ST_Perimeter` | **Polygon layers only** — refuses points and lines |
 | `filter_by_attribute` | [filterByAttribute.ts](../../../apps/api/src/modules/assistant/tools/data/filterByAttribute.ts) | "dams with status Operating" | none (attribute `ILIKE`) | Column allowlist per layer. Contains/equality only, no ranges |
 | `locate_place` | [locatePlace.ts](../../../apps/api/src/modules/assistant/tools/data/locatePlace.ts) | "where is Buôn Ma Thuột" | `ST_X` / `ST_Y` | Gazetteer over `basemap.places_region` (~6,100 rows). Exists because the model invented coordinates otherwise |
+| `elevation_at_point` | [elevationAtPoint.ts](../../../apps/api/src/modules/assistant/tools/data/elevationAtPoint.ts) | "how high is this place" | `ST_Value` over `basemap.dem_region` | Added 2026-09-15. Answers "không có dữ liệu" until a developer loads the DEM ([runbook](../../runbooks/elevation-dem.md)). Bare earth (FABDEM), so ground level, not canopy |
 | `run_sql` | [runSql.ts](../../../apps/api/src/modules/assistant/tools/data/runSql.ts) | aggregates, groupings, numeric ranges | anything the guard allows | Conditional. Separate read-only role, `BEGIN READ ONLY`, 3s timeout, [guard.ts](../../../apps/api/src/modules/assistant/sql/guard.ts) |
 
 ### 2.2 Command tools — emit a validated `MapCommand` for the browser
@@ -196,7 +200,7 @@ analysis and currently unexploited**.
   `waterway` tag, and `stream_order` is a rank by waterway type — *not* a Strahler order, despite the column name. OSM
   carries no downstream link, and the HydroSHEDS path does not supply one either: `RIVER_FIELDS` in
   [prep_hydrosheds.py:28](../../../apps/api/scripts/prep_hydrosheds.py#L28) keeps only `HYRIV_ID`, `ORD_STRA`,
-  `LENGTH_KM` — `NEXT_DOWN` is dropped at prep time. Tracing is therefore not a column away; see §6.5.
+  `LENGTH_KM` — `NEXT_DOWN` is dropped at prep time. Tracing is therefore not a column away; see §6.6.
 - **Time series.** `stations.value` is a single `text` column.
 
 **Should these be folded into PostGIS?** The test is not "is it geodata" — it is **does a tool need to run a predicate
@@ -207,7 +211,7 @@ measure against has to be in the database.
 |---|---|---|
 | Province / ward polygons | **Yes, now** | Point-in-polygon and per-unit counts are predicates, and they are the most common question this atlas gets. One migration plus a loader; the source script already exists. Load from the **unsimplified** source, not the browser copies — those are Douglas-Peucker'd at 0.0001° (~11 m) and rounded to 5 decimals by [fetch-boundaries.mjs:33](../../../apps/api/scripts/fetch-boundaries.mjs#L33), which puts border features on the wrong side near the line. Keep the simplified files for rendering (raw ward data is 157 MB); one script writes both, the way the dams seed already reads `apps/web/public/thuydienvietnam.geojson` |
 | Elevation | **Yes** (decided 2026-09-14) | A 30 m DEM clipped to the working region, as in-database PostGIS raster. Nothing queries elevation *today*, so this one is a capability bet rather than a backlog item — but it is the only missing dataset that unlocks a whole class of questions (height, drop, slope, profile) instead of one tool. The `postgis_raster` extension is available in the running image (verified); the `raster2pgsql` client binary is not, so the loader needs a decision. Design in §6.4 |
-| River topology | **Yes in value, no in cost** | See §6.5 — the current source has no downstream link at all, so this is a re-ingest decision, not a migration. Wait for a concrete hydrology requirement |
+| River topology | **Yes in value, no in cost** | See §6.6 — the current source has no downstream link at all, so this is a re-ingest decision, not a migration. Wait for a concrete hydrology requirement |
 | Station time series | **No** | Two fake rows today. Designing a readings table before the real feed exists means designing it twice. When it arrives it is a new `water.station_readings` table, not a change to `stations` |
 
 ### 4.5 Privilege boundary (matters when choosing a pool)
@@ -330,16 +334,15 @@ Decided 2026-09-14, overriding this document's first recommendation to defer. Tr
 in the backlog needs elevation today, but it is the only missing dataset that opens a *class* of questions rather than
 one tool, and the stack already carries the pieces.
 
-**Source: Copernicus DEM GLO-30** (30 m, global, ESA/Airbus), distributed as 1°×1° float32 GeoTIFF tiles on AWS Open
-Data — no account, no Earthdata login. The working region's mainland is roughly lon 107–110, lat 11–17, so ~18 tiles,
-a few hundred MB before clipping.
+**Source: FABDEM V1-2** — Copernicus GLO-30 with forest and building height removed by ML, i.e. **bare earth**.
+Swapped in on 2026-09-15 (it was raw Copernicus for the first load) once the project was confirmed public-sector:
+the licence is CC BY-NC-SA, non-commercial. See the runbook for attribution, citation and the mirror it downloads from.
 
 Two source caveats to record now rather than rediscover:
 
-- **It is a surface model (DSM), not bare earth.** Canopy and buildings are included, so elevations over forest run
-  high and derived slopes are noisy. The bare-earth alternative (FABDEM) is **CC BY-NC-SA** — non-commercial, so it is
-  not usable here on the same footing as the ODbL basemap. State the DSM limitation in any tool description, the way
-  `locate_place` states where its coordinates come from.
+- **It is bare earth, and that is measurable.** Against the Copernicus tiles over the same ground: mean −4.1 m in
+  Lâm Đồng highland forest, median −8.4 m in Quảng Nam mountain forest, p95 −18 m, max −88 m. At a 20 m contour
+  interval an 8 m canopy bias is nearly half a contour, which is why the switch was worth redoing the load for.
 - **Attribution is required**, as with the OSM basemap. Copernicus DEM carries a © DLR / © Airbus Defence and Space
   notice; put it wherever elevation numbers surface, and in the runbook.
 
@@ -359,39 +362,46 @@ Two source caveats to record now rather than rediscover:
   binary (`find / -name 'raster2pgsql*'` returns nothing). The usual one-liner from every PostGIS raster tutorial will
   fail here.
 
-Two ways through, neither free:
+Three ways through. **Implemented: (3)** — this section originally recommended (1), and building the pipeline showed
+(3) strictly dominates it.
 
-1. **Add the client binary** — a three-line `infra/postgis/Dockerfile` (`FROM postgis/postgis:16-3.4`, install the
-   Debian `postgis` package) and `build:` instead of `image:` in compose. Cost: the db service is built rather than
-   pulled, once. Benefit: the canonical, best-documented load path (`raster2pgsql -s 4326 -t 128x128 -I -C -M | psql`),
-   which anyone who has done this before will recognise.
-2. **Skip it entirely** — Python `rasterio` reads the clipped GeoTIFF, sends the bytes as `bytea`, and PostGIS parses
-   them server-side with `ST_FromGDALRaster()` + `ST_Tile()`. No infra change, but it needs
-   `postgis.gdal_enabled_drivers` set for the database (a superuser `ALTER DATABASE`, which the migration role can do
-   here) and it is a path with far fewer worked examples online when it goes wrong.
+1. **Rebuild the `db` service** with the Debian `postgis` package added. Canonical loader, but every developer builds
+   an image on their next `docker compose up` — including everyone who will never touch elevation — to gain a binary
+   used once. Rejected.
+2. **Skip the binary** — `rasterio` reads the clipped GeoTIFF, sends bytes as `bytea`, PostGIS parses them with
+   `ST_FromGDALRaster()` + `ST_Tile()`. No infra change, but needs `postgis.gdal_enabled_drivers` set on the database
+   and is a path with far fewer worked examples when it misbehaves. Rejected.
+3. **A one-off tools image** ([raster-tools.Dockerfile](../../../apps/api/scripts/raster-tools.Dockerfile)): same
+   canonical `raster2pgsql`, built only when someone runs the loader, joined to the compose network, `docker-compose.yml`
+   untouched. Based on `postgis/postgis:16-3.4` so the loader's PostGIS version matches the server's — the base already
+   has the PGDG apt repo configured, so `postgis` resolves to the matching 3.4 build rather than Debian's older one.
 
-**Recommended: (1).** The infra change is small, explicit and one-time; (2) trades it for a less-trodden code path in
-a pipeline a developer will run rarely and debug cold.
-
-Either way the **host still needs no system GDAL** — `prep-hydrosheds.sh`'s promise holds. Clipping is Python
+The **host still needs no system GDAL** either way — `prep-hydrosheds.sh`'s promise holds. Clipping is Python
 `rasterio` on the host, the same geo stack `prep_hydrosheds.py` and `load_basemap.py` already require.
 
 **Clip to the province polygons, not the bbox.** The region's bounding box reaches lon 117.8° because Hoàng Sa and
-Trường Sa belong to Đà Nẵng and Khánh Hoà — the basemap runbook hit this exact trap. That makes the boundary load
-(§6.3 #8) a soft prerequisite: do it first and the clip mask comes from the database.
+Trường Sa belong to Đà Nẵng and Khánh Hoà — the basemap runbook hit this exact trap. The boundary load (§6.3 #8) turned
+out **not** to be a prerequisite after all: the prep script reads `apps/web/public/provinces-34.geojson` directly, whose
+`.code` property matches `REGION_PROVINCE_CODES` exactly. Those polygons are the simplified browser ones, which is fine
+for deciding which 30 m pixels to keep (and the mask is padded ~110 m on top) — but that reasoning does **not**
+transfer to anything that measures against a boundary.
 
-**Work items, in order:**
+**Status — built 2026-09-15:**
 
-1. `CREATE EXTENSION postgis_raster` — in a **migration**, not only `infra/postgis/init.sql`. `init.sql` runs once on a
-   fresh volume, so an init-only change silently skips every existing dev database.
-2. A developer-run prep script beside `prep-hydrosheds.sh`: download the tiles, merge, clip to the region mask, write
-   one GeoTIFF. Not run in CI; the output is **too large to commit**, which makes this the first dataset in the repo
-   that a developer must generate rather than pull from git — say so loudly in the runbook.
-3. Loader: whichever route above, into `basemap.dem_region` tiled 128×128 with a GiST index and raster constraints
-   (reference data, so `basemap`, not `water` — it is not versioned and has no `dataset_versions` chain).
-4. Grant `SELECT` on it to `webatlas_assistant` if `run_sql` should reach it; otherwise leave it typed-tool-only.
-5. Tools (§6.4.1).
-6. Runbook section: source URL, exact tile list, licence notice, disk cost, and how to verify a known summit.
+| # | Item | State |
+|---|---|---|
+| 1 | `postgis_raster` + `basemap.dem_region` (`rast` + `filename`) + GiST index — [migration 1000000000010](../../../apps/api/src/db/migrations/1000000000010_dem-raster.cjs) | **Applied** |
+| 2 | [prep_dem.py](../../../apps/api/scripts/prep_dem.py) — tile list from the region geometry, download, clip, per-tile GeoTIFFs | **Run** (FABDEM): 18 mainland tiles, 254 MB of clips. Fetches per-tile from a mirror at ~7.6 MB/s because the authoritative Bristol distribution is ZIP-only and measured 23 KB/s — a 20-hour download for 1.7 GB |
+| 3 | [load-dem.sh](../../../apps/api/scripts/load-dem.sh) + [raster-tools.Dockerfile](../../../apps/api/scripts/raster-tools.Dockerfile) | **Run**: 7,242 raster rows, 406 MB, extent 107.20–109.46 E / 10.57–16.22 N |
+| 4 | `.gitignore` for `seeds/data/dem/` | Done |
+| 5 | `elevation_at_point` + 5 unit tests | Done. Verified end-to-end on the loaded DEM: Buôn Ma Thuột 472.2 m, Chu Yang Sin 2,414.5 m, offshore → no-data, out-of-region → refused |
+| 6 | [Runbook](../../runbooks/elevation-dem.md) | Done |
+| 7 | `SELECT` grant to `webatlas_assistant` so `run_sql` can reach the DEM | **Not done** — deliberately typed-tool-only until someone wants it |
+| 8 | `elevation_of_feature`, `elevation_profile` | Not started (§6.4.1) |
+| 9 | `GET /api/elevation` + cursor readout in the map corner | Done 2026-09-15. Own rate-limit ceiling (600/min) so cursor traffic cannot exhaust the global 100/min and lock the user out of the rest of the API |
+
+Per-tile GeoTIFFs rather than one mosaic, incidentally: a mosaic over the region bounds would be mostly empty sea and
+would need ~1 GB of RAM to assemble, `raster2pgsql` takes a glob anyway, and per-tile makes the download resumable.
 
 #### 6.4.1 Tools this unlocks
 
@@ -407,7 +417,173 @@ rasters (HydroSHEDS CON/DIR products), not a bare DEM. A separate decision, late
 **Honest effort estimate:** 2–3 days including the runbook and tests, most of it in the prep/load pipeline rather than
 the tools. The tools themselves are an afternoon each once the raster is in place.
 
-### 6.5 Tier 3 — blocked, recorded so nobody re-derives it
+### 6.5 Terrain contours — measured scoping (2026-09-15)
+
+Requested shape: a **toggle in Quản lý dữ liệu** that overlays contour lines on *all three*
+basemaps, with sub-options. Architecturally that is already free — the basemap is one layer
+whose source swaps ([MapModel.ts:454](../../../apps/web/src/features/map/model/MapModel.ts#L454)),
+while `CONTEXT_LAYERS` render above it regardless of which basemap is showing. A contour layer
+added the same way overlays street, satellite and dem with no special casing.
+
+**Source: our own DEM** (`ST_Contour` over `basemap.dem_region`), not a third-party contour
+service. The deciding argument is consistency, not convenience: any other source would let the
+cursor readout say 472 m while a contour labelled 480 m runs past it, and the iso-band
+highlight would stop lining up with the contours it should hug. One origin for elevation is
+the same INV-1 rule the rest of the data follows. Secondary: a third-party contour service is
+the dependency class that already broke this project once (CARTO, grey tiles at HTTP 200).
+
+**That DEM is now FABDEM V1-2, not raw Copernicus** — swapped 2026-09-15 once the project was
+confirmed public-sector, which is what the CC BY-NC-SA licence requires. See §6.4.
+
+#### Alternatives actually checked (web, 2026-09-15)
+
+| Source | What it is | Verdict |
+|---|---|---|
+| [MapTiler contours](https://www.maptiler.com/on-prem-datasets/dataset/contours/asia/vietnam/) | Ready-made contour vector tiles (MBTiles, z9–14), self-hostable | **No.** Derived from the same class of open DEMs, so no accuracy gain, and it reintroduces the disagreement problem. Commercial: on-prem Standard is one internal app ≤500 MAU, B2G needs a custom quote, and [serving from a public cloud is prohibited](https://www.maptiler.com/data/license/) |
+| [OD Mekong "Vietnam DEM"](https://data.opendevelopmentmekong.net/en/dataset/digital-elevation-model-dem) | The dataset that *looks* like the official national one | **No.** Source is USGS (SRTM, 2000–2011) at 30 m, CC-BY-SA-4.0 with a non-commercial note. Older and weaker than the Copernicus data already loaded |
+| [East View Geospatial](https://shop.geospatial.com/publication/RN86EBG5BBXF4C69AECM4N1PY5/Vietnam-1-to-50000-Scale-Topographic-Maps-VN2000) | Vietnam 1:50.000 topographic series (VN2000 datum), digital vector available | **Procurement question.** Genuinely surveyed contours, the cartographic gold standard here. Price on request, 1–7 days for vector delivery |
+| [FABDEM V1-2](https://data.bris.ac.uk/data/dataset/s5hqmjcdj8yo2ibzi9b4ew3sn) | Copernicus GLO-30 with forests and buildings removed by ML — **bare earth** | **Adopted 2026-09-15.** Non-commercial licence, and the project is public-sector |
+| [OpenDEM](https://www.opendem.info/download_contours.html) | SRTM-derived contour shapefiles | No — Europe-focused, and SRTM again |
+
+**The find worth acting on: FABDEM.** It is the same 30 m grid, the same 1°×1° GeoTIFF tiling and
+the same parent dataset as what `prep_dem.py` already downloads — so switching source is close to
+a drop-in change of URL and licence notice. What it removes is exactly the problem that forces the
+3×3 smoothing: canopy and buildings. Contours off bare earth in Tây Nguyên forest would be
+properly cartographic rather than merely de-noised.
+
+The catch is the licence: **CC BY-NC-SA 4.0 — non-commercial, share-alike**. So the question that
+decides it is one nobody has asked yet: *is this atlas a non-commercial public-sector deliverable?*
+If yes, FABDEM is free and strictly better for both contours and the elevation readout. If it is
+commercial, Fathom sells a commercial equivalent (FABDEM+ / FathomDEM), and the fallback is what is
+already loaded. **Answer that before building the contour pipeline** — it changes the input, and
+re-running the DEM load is an hour.
+
+Note also that the openly published "official" Vietnamese elevation data is just repackaged SRTM.
+A genuinely authoritative national contour set exists but is a purchase or a government
+arrangement, not a download — worth asking whether the client already holds rights.
+
+#### Measurements
+
+All against the loaded DEM. Coverage: **98,646 km²**, 106.7M valid pixels.
+
+Contour density at 100 m interval, six 750 km² blocks, **measured on FABDEM** (the first pass
+used raw Copernicus; both are shown because the difference is the argument for the switch):
+
+| Block | Features | Vertices | Vertices/km² | vs Copernicus (features) |
+|---|---|---|---|---|
+| coast Quy Nhơn | 215 | 33,719 | 45 | −17% |
+| mountain Chu Yang Sin | 295 | 30,093 | 40 | −38% |
+| plateau Gia Lai | 229 | 43,360 | 58 | −52% |
+| coast Khánh Hoà | 311 | 66,401 | 88 | −18% |
+| highland Lâm Đồng | 544 | 91,934 | 122 | −29% |
+| mountain Quảng Nam | 825 | 157,759 | 213 | −14% |
+
+The spread is the point — a single mountainous sample would have overestimated by 2×. Across
+all six, bare earth cuts **features by 27%** (3,316 → 2,419) and vertices by 6%: the removed
+lines are the little closed rings that canopy noise produces, which is also what wrecks label
+placement.
+
+Simplifying at 0.0002° (~22 m, **sub-pixel** against a 30 m grid, so visually lossless) cuts
+vertices a further **5.9×**, to ~15/km² on average. Interval scaling, measured on the Chu Yang
+Sin block: 20 m = 5.7×, 50 m = 2.2×, 250 m = 0.65× of the 100 m vertex count.
+
+A **3×3 focal mean before contouring** still helps but is no longer load-bearing: on FABDEM it
+removes 32% of features and 11% of vertices (on the surface model it was 43% and 14%). Bare
+earth has already done most of that work, so treat smoothing as a cartographic nicety to tune
+during the build, not a prerequisite.
+
+One full 1° cell (3728×3728 px) contours in **28 s**. Contours must be generated from a
+**unioned block**, never per 128×128 storage tile — per-tile contouring chops every line into
+128-pixel fragments at the seams.
+
+#### Region estimates (simplified, per bucket)
+
+| Interval | Features | Vertices | GeoJSON |
+|---|---|---|---|
+| 20 m | ~445,000 | ~10M | ~230 MB |
+| 50 m | ~160,000 | ~4M | ~90 MB |
+| 100 m | ~73,000 | ~1.8M | ~45 MB |
+| 250 m | ~41,000 | ~1.1M | ~28 MB |
+
+Extrapolated from six blocks; treat as ±2× and re-measure per cell during the build.
+
+#### What the numbers decide: raster tiles, not WFS
+
+WFS loads by bbox, so the fair test is per viewport, and that is where it breaks:
+
+| Zoom | Viewport | 100 m bucket |
+|---|---|---|
+| 1:150.000 | ~60 km² | ~1,100 vertices (~24 kB) — fine |
+| 1:1.000.000 | ~2,800 km² | ~50,000 vertices (~1.1 MB) — heavy |
+| 1:12.800.000 | larger than the region | the entire bucket, 28–45 MB — impossible |
+
+The same shape as the river layer, but worse: rivers follow a network, contours cover every
+square kilometre. For scale, the full river network was 17.6 MB and was judged too heavy to
+load below zoom 8.5; the coarsest useful contour bucket is larger than that.
+
+So: **GWC-cached WMS tiles**, exactly like the basemap context layers, which have the same
+"linework everywhere" property. Contours carry no attributes worth clicking, and labels place
+better server-side anyway, so vector delivery buys nothing here.
+
+Two routes to those tiles:
+
+- **A — precompute a `basemap.contours` table** per interval bucket (smoothed, simplified),
+  publish as a vector layer, let GWC cache the tiles. ~17M vertices across four buckets,
+  roughly 400–600 MB, comparable to the DEM itself. Full control over index contours, labels
+  and per-basemap styling. **Recommended for shipping.**
+- **B — GeoServer `ras:Contour` rendering transformation** straight over the DEM raster: no
+  storage, interval as an SLD `env` parameter. Needs a render buffer or the seams artifact,
+  and every style change re-renders. Good for seeing it on screen in a day.
+
+#### Pipeline (mirrors the DEM load)
+
+1. Smooth 3×3, then contour **per 1° cell with an overlap**, clipping lines back to the cell so
+   seams meet instead of gapping.
+2. Simplify per bucket at 0.0002°; store with `interval_m` and a GiST index; mark index
+   contours (`value % (5 × interval) = 0`).
+3. Publish four layer groups; the interval selector chooses which one loads, so each keeps its
+   own GWC cache. Zoom-gate 250 → 100 → 50 → 20 m, defaulting to auto.
+4. Runtime ~28 s × 19 cells × 4 intervals ≈ **35 minutes**, developer-run, same class as the DEM
+   load. Like the DEM, the output is too large to commit.
+
+**Ship 250 / 100 / 50 first.** The 20 m bucket is the questionable one at ~230 MB and ~445,000
+features; decide it after seeing 50 m on screen.
+
+#### Sub-options
+
+Expose three, automate the rest — every knob is one a user has to understand.
+
+| Option | Why |
+|---|---|
+| **Khoảng cao đều** — auto by zoom (default), or 20/50/100/250 m | Auto fits the existing zoom-gating; the selector just picks which published group loads, so caching survives |
+| **Nhãn độ cao** on/off | Labels clutter over satellite and are the whole point over street. Default on, rendered only above a zoom threshold |
+| **Độ mờ** | Already free: the panel renders an opacity slider for any visible ungated layer, and `setLayerOpacity` is already a valid `MapCommand`, so the assistant can drive it too |
+
+Automatic, not offered: **line colour by basemap** (brown over street, white over satellite,
+grey over hillshade — one right answer each, so a colour picker is a knob with no good use);
+**index contours** (styling, not preference); the **zoom gate** (same treatment as
+`layer_rivers`).
+
+Put it in a new `Địa hình` group in `LAYER_DISPLAY`, not under `Nền bản đồ` — the natural
+sibling is a **Đổ bóng địa hình** row from `ST_HillShade` on the same DEM, and that pair is what
+would eventually let the Esri hillshade basemap be dropped.
+
+**One UI note:** the panel row is a checkbox plus a conditional opacity slider, with no
+affordance for sub-options
+([LayersPanel.view.tsx](../../../apps/web/src/features/layers-panel/ui/LayersPanel.view.tsx)).
+Interval and labels want a small disclosure under the row when the layer is on, mirroring how
+the opacity slider already appears conditionally. Keep those two settings in their own state
+rather than widening the shared `LayerState` (`{id, visible, opacity}`) — that shape is part of
+the `MapCommand` contract, and one special layer should not bend it.
+
+#### Caveats to carry into the build
+
+- Coverage stops at the region edge: contours will visibly end at the province boundary, and
+  there are none over the archipelagos (the DEM was loaded `--mainland`).
+- Smoothing removes 43% of the canopy fragments, not all of them. Dense forest stays noisy.
+- The estimates come from six blocks with a 4.7× spread. Measure per cell as the pipeline runs.
+
+### 6.6 Tier 3 — blocked, recorded so nobody re-derives it
 
 - **Upstream/downstream river tracing.** The highest analytical value for a water-resources atlas, and the first thing
   a hydrology user asks for — but it is **not** a column away (§4.4). The displayed layer is OSM waterways, which has
@@ -441,7 +617,7 @@ the tools. The tools themselves are an afternoon each once the raster is in plac
 7. `npm run test:api:live` — the intent-routing suite. It **costs real tokens**, and the runbook requires a run
    whenever tools or the system prompt change. Add a case proving the model actually routes to the new tool; a tool the
    model never picks is pure prefix cost.
-8. Update [docs/runbooks/map-assistant.md](../../runbooks/map-assistant.md) — it states "13 công cụ" in its opening
+8. Update [docs/runbooks/map-assistant.md](../../runbooks/map-assistant.md) — it states the tool count in its opening
    paragraph and carries the known-limits list.
 9. Verify in a browser with a real key. The runbook's first-run section is the standing reminder that a provenance chip
    proves a tool *ran*, not that its input was right.
