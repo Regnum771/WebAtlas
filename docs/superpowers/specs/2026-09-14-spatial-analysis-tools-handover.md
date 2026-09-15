@@ -2,8 +2,8 @@
 
 **Date:** 2026-09-14
 **Status:** Handover / assessment, written 2026-09-14 with no code changes. Amended 2026-09-15: elevation accepted,
-built and **loaded** (§6.4), cursor elevation readout shipped, and terrain contours **scoped against measurements**
-(§6.5, not built). Everything else is still assessment.
+built and **loaded** (§6.4), cursor elevation readout shipped, and terrain contours **built and published**
+(§6.5). Everything else is still assessment.
 **Audience:** The engineer who will add the next spatial analysis tools to the map assistant.
 **Scope:** What exists today, how it is wired to the data and the browser, whether the tool layer should be restructured first, and which tools to add next.
 
@@ -29,6 +29,10 @@ built and **loaded** (§6.4), cursor elevation readout shipped, and terrain cont
 - **A 30 m bare-earth DEM is loaded** (FABDEM V1-2; decided 2026-09-14, loaded and re-sourced 2026-09-15, §6.4) — a capability bet rather than a
   backlog item, and the first dataset each developer must generate locally instead of pulling from git. One tool reads
   it so far; every box needs [the runbook](../../runbooks/elevation-dem.md) run once or elevation answers "không có dữ liệu".
+- **Terrain contours are built and published** (§6.5): three GWC-cached layers
+  (`webatlas:contours_250/100/50`) over `basemap.contours`, a panel toggle with interval
+  and label sub-options, on the second dataset each developer generates locally — see
+  [the runbook](../../runbooks/terrain-contours.md).
 
 ---
 
@@ -417,7 +421,24 @@ rasters (HydroSHEDS CON/DIR products), not a bare DEM. A separate decision, late
 **Honest effort estimate:** 2–3 days including the runbook and tests, most of it in the prep/load pipeline rather than
 the tools. The tools themselves are an afternoon each once the raster is in place.
 
-### 6.5 Terrain contours — measured scoping (2026-09-15)
+### 6.5 Terrain contours — built and published (2026-09-15)
+
+**Status — built:**
+
+| # | Item | State |
+|---|---|---|
+| 1 | `basemap.contours` + `basemap.dataset_sources` — [migration 1000000000011](../../../apps/api/src/db/migrations/1000000000011_contours.cjs) | **Applied** |
+| 2 | [generateContours.ts](../../../apps/api/src/scripts/generateContours.ts) — per-1° contouring with overlap/clip, simplify, index-contour tagging | **Run**: 19,275 features / 11 levels / 632,337 vertices at 250 m; 50,760 / 26 / 1,664,414 at 100 m; 103,672 / 52 / 3,376,103 at 50 m. **~17 min** measured (plan estimated ~30) |
+| 3 | Three GWC-cached layers, `webatlas:contours_250/100/50`, each a SQL view on the `basemap_pg` datastore, published by [styles.py](../../../apps/api/scripts/contours/styles.py) + [publish-contours.sh](../../../apps/api/scripts/contours/publish-contours.sh) | **Published**, verified via WMTS in both `contours_plain` and `contours_labelled` styles |
+| 4 | Panel toggle, **Địa hình → Đường đồng mức**, with **Khoảng cao đều** (auto/250/100/50) and **Nhãn độ cao** sub-options | Done — [contours.ts](../../../apps/web/src/features/map/model/contours.ts), [layerDisplay.ts](../../../apps/web/src/entities/layer/layerDisplay.ts) |
+| 5 | Two independent integrity checks: every elevation an exact multiple of its interval; 50 m bucket's index contours (every 250 m) count exactly matches the 250 m bucket's total | **Passed** |
+| 6 | 20 m bucket, per-basemap line colour, pre-contour smoothing | **Deferred** — see below |
+| 7 | [Runbook](../../runbooks/terrain-contours.md) | Done |
+
+Shipped at three of the four originally planned buckets (§6.4-era estimate below kept 20 m
+open pending screen time), all three sub-options from the design, and both integrity checks
+the plan called for as verification. The rest of this section is the scoping work that led
+there, kept for the reasoning.
 
 Requested shape: a **toggle in Quản lý dữ liệu** that overlays contour lines on *all three*
 basemaps, with sub-options. Architecturally that is already free — the basemap is one layer
@@ -546,8 +567,12 @@ Two routes to those tiles:
 4. Runtime ~28 s × 19 cells × 4 intervals ≈ **35 minutes**, developer-run, same class as the DEM
    load. Like the DEM, the output is too large to commit.
 
-**Ship 250 / 100 / 50 first.** The 20 m bucket is the questionable one at ~230 MB and ~445,000
-features; decide it after seeing 50 m on screen.
+   *As built:* smoothing was dropped (no longer load-bearing on bare earth, see above), three
+   intervals shipped rather than four, and the measured run came to **~17 minutes** — see the
+   Status table above and [the runbook](../../runbooks/terrain-contours.md) for the per-bucket counts.
+
+**Shipped: 250 / 100 / 50.** The 20 m bucket remains the questionable one at ~230 MB and
+~445,000 features; still deferred pending screen time on 50 m.
 
 #### Sub-options
 
@@ -582,6 +607,12 @@ the `MapCommand` contract, and one special layer should not bend it.
   there are none over the archipelagos (the DEM was loaded `--mainland`).
 - Smoothing removes 43% of the canopy fragments, not all of them. Dense forest stays noisy.
 - The estimates come from six blocks with a 4.7× spread. Measure per cell as the pipeline runs.
+
+**Caveat confirmed on screen after shipping:** on the satellite basemap the brown contour
+lines are hard to see against the imagery — only the haloed labels stay clearly legible. This
+is the cost the deferred per-basemap line colour (above) was always going to have; now there
+is a concrete instance of it rather than a hypothetical. Recorded as a known limitation in
+[the runbook](../../runbooks/terrain-contours.md), not a bug.
 
 ### 6.6 Tier 3 — blocked, recorded so nobody re-derives it
 
