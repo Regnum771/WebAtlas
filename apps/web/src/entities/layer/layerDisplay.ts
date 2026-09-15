@@ -1,4 +1,4 @@
-import { ADMIN_BOUNDARY_LAYER_STATE_IDS, BASEMAP_CONTEXT_LAYER_STATE_IDS } from '@webatlas/shared';
+import { ADMIN_BOUNDARY_LAYER_STATE_IDS, BASEMAP_CONTEXT_LAYER_STATE_IDS, TERRAIN_LAYER_STATE_IDS } from '@webatlas/shared';
 
 export interface LayerDisplayMeta {
   name: string;
@@ -16,6 +16,7 @@ export interface LayerDisplayMeta {
 // colour incidents referenced in map-commands.ts).
 const [PROVINCES_LAYER_STATE_ID, WARDS_LAYER_STATE_ID] = ADMIN_BOUNDARY_LAYER_STATE_IDS;
 const [BM_ROADS, BM_RAILWAYS, BM_WATER, BM_LANDUSE] = BASEMAP_CONTEXT_LAYER_STATE_IDS;
+const [CONTOURS] = TERRAIN_LAYER_STATE_IDS;
 
 /** Presentation metadata keyed by layerStateId. The API catalog is the authority
  *  on which layers exist and are editable; this supplies names and grouping,
@@ -30,6 +31,11 @@ export const LAYER_DISPLAY: Record<string, LayerDisplayMeta> = {
   [BM_RAILWAYS]: { name: 'Đường sắt', group: 'Nền bản đồ', defaultVisible: true, opacity: 1 },
   [BM_WATER]: { name: 'Mặt nước nền', group: 'Nền bản đồ', defaultVisible: true, opacity: 1 },
   [BM_LANDUSE]: { name: 'Sử dụng đất', group: 'Nền bản đồ', defaultVisible: false, opacity: 1 },
+
+  // Đường đồng mức dựng từ DEM (FABDEM, bare earth). Vẽ chồng lên CẢ BA nền — nền là một
+  // lớp duy nhất đổi source, còn lớp này nằm trên nó như các lớp ngữ cảnh khác.
+  // Mặc định TẮT: hữu ích khi cần, nhưng bật sẵn thì làm rối nền đường phố.
+  [CONTOURS]: { name: 'Đường đồng mức', group: 'Địa hình', defaultVisible: false, opacity: 0.8 },
 
   [PROVINCES_LAYER_STATE_ID]: { name: 'Ranh giới Tỉnh', group: 'Ranh giới hành chính', defaultVisible: true, opacity: 1 },
   [WARDS_LAYER_STATE_ID]: { name: 'Ranh giới Xã/Phường', group: 'Ranh giới hành chính', minZoom: 10, defaultVisible: true, opacity: 1 },

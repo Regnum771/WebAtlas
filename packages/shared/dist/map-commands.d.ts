@@ -29,9 +29,17 @@ export declare const ADMIN_BOUNDARY_LAYER_STATE_IDS: readonly ["layer_provinces_
  */
 export declare const BASEMAP_CONTEXT_LAYER_STATE_IDS: readonly ["layer_bm_roads", "layer_bm_railways", "layer_bm_water", "layer_bm_landuse"];
 /**
+ * Lớp địa hình dẫn xuất từ DEM. Tách khỏi BASEMAP_CONTEXT_* vì đây không phải ngữ cảnh
+ * nền OSM: nó sinh ra từ basemap.dem_region, và hàng xóm tương lai của nó là lớp đổ bóng
+ * địa hình, không phải đường sá.
+ *
+ * Là mục tiêu lệnh hợp lệ, nên trợ lý bật/tắt được khi người dùng yêu cầu.
+ */
+export declare const TERRAIN_LAYER_STATE_IDS: readonly ["layer_contours"];
+/**
  * Every valid `layerStateId`: the 8 editable layers' ids (derived from
- * LAYER_ATTRIBUTE_MAP, not hand-copied), the 2 admin-boundary ids, and the 4
- * basemap context ids above.
+ * LAYER_ATTRIBUTE_MAP, not hand-copied), the 2 admin-boundary ids, the 4
+ * basemap context ids, and the terrain layer ids above.
  */
 export declare const LAYER_STATE_IDS: readonly string[];
 /**

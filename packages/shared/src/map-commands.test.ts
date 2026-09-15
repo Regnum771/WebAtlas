@@ -5,6 +5,7 @@ import {
   LAYER_STATE_IDS,
   ADMIN_BOUNDARY_LAYER_STATE_IDS,
   BASEMAP_CONTEXT_LAYER_STATE_IDS,
+  TERRAIN_LAYER_STATE_IDS,
   MAX_HIGHLIGHT_POINTS,
   type MapCommand,
 } from './map-commands.js';
@@ -119,11 +120,12 @@ describe('isMapCommand', () => {
 });
 
 describe('LAYER_STATE_IDS', () => {
-  it('is derived from LAYER_ATTRIBUTE_MAP plus the admin-boundary and basemap-context ids, not a hand-typed list', () => {
+  it('is derived from LAYER_ATTRIBUTE_MAP plus the admin-boundary, basemap-context, and terrain ids, not a hand-typed list', () => {
     const expected = [
       ...Object.values(LAYER_ATTRIBUTE_MAP).map((info) => info.layerStateId),
       ...ADMIN_BOUNDARY_LAYER_STATE_IDS,
       ...BASEMAP_CONTEXT_LAYER_STATE_IDS,
+      ...TERRAIN_LAYER_STATE_IDS,
     ];
     expect([...LAYER_STATE_IDS].sort()).toEqual([...expected].sort());
   });
@@ -169,5 +171,12 @@ describe('isMapCommand — highlight variants', () => {
 
   it('rejects a non-string label', () => {
     expect(isMapCommand({ kind: 'highlightFeatures', points: [{ lonLat: [108, 12], label: 7 }] })).toBe(false);
+  });
+});
+
+describe('TERRAIN_LAYER_STATE_IDS', () => {
+  it('accepts the contour layer as a command target, so the assistant can toggle it', () => {
+    expect(isMapCommand({ kind: 'setLayerVisible', layerStateId: 'layer_contours', visible: true })).toBe(true);
+    expect(isMapCommand({ kind: 'setLayerOpacity', layerStateId: 'layer_contours', opacity: 0.4 })).toBe(true);
   });
 });
