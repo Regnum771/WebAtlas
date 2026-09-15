@@ -388,7 +388,10 @@ async function main(): Promise<void> {
         `WITH padded AS (
            SELECT ST_Union(rast) AS rast
              FROM basemap.dem_region
-            WHERE ST_Intersects(rast, ST_MakeEnvelope($1 - $5, $2 - $5, $1 + 1 + $5, $2 + 1 + $5, 4326))
+            -- Ép kiểu ::float8 là BẮT BUỘC: hai tham số không kiểu đứng cạnh nhau khiến
+            -- Postgres từ chối với "operator is not unique: unknown - unknown".
+            WHERE ST_Intersects(rast, ST_MakeEnvelope($1::float8 - $5::float8, $2::float8 - $5::float8,
+                                                      $1::float8 + 1 + $5::float8, $2::float8 + 1 + $5::float8, 4326))
          ),
          lines AS (
            SELECT (ST_Contour(rast, 1, $3::float8)).*
