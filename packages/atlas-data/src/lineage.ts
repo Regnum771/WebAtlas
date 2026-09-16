@@ -1,27 +1,47 @@
 import type { Pool } from 'pg';
 import type { Dataset } from './types';
 
-/** Write the descriptor's declared lineage. Idempotent — re-registering replaces. */
+/**
+ * Write the descriptor's declared lineage. Idempotent — re-registering replaces.
+ *
+ * Runs as a single transaction: the lineage upsert, the wholesale delete of old sources,
+ * and every source insert either all commit or all roll back. Without this, a failure
+ * partway through the source inserts (e.g. a NOT NULL violation) would leave the old
+ * sources already deleted and only some new ones written — a lineage row with a
+ * truncated, under-reporting source list. See spec §5 (database stages are transactional).
+ */
 export async function upsertLineage(pool: Pool, d: Dataset): Promise<void> {
-  await pool.query(
-    `INSERT INTO app.dataset_lineage (dataset_id, statement, licence, updated_at)
-     VALUES ($1, $2, $3, now())
-     ON CONFLICT (dataset_id)
-       DO UPDATE SET statement = EXCLUDED.statement,
-                     licence   = EXCLUDED.licence,
-                     updated_at = now()`,
-    [d.id, d.lineage.statement, d.lineage.licence]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  // Declared sources are replaced wholesale: they describe the descriptor as it is now,
-  // not a history. Process-step history lives in dataset_lineage_step instead.
-  await pool.query(`DELETE FROM app.dataset_lineage_source WHERE dataset_id = $1`, [d.id]);
-  for (const s of d.lineage.sources) {
-    await pool.query(
-      `INSERT INTO app.dataset_lineage_source (dataset_id, citation, licence, uri, resolution)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [d.id, s.citation, s.licence, s.uri ?? null, s.resolution ?? null]
+    await client.query(
+      `INSERT INTO app.dataset_lineage (dataset_id, statement, licence, updated_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (dataset_id)
+         DO UPDATE SET statement = EXCLUDED.statement,
+                       licence   = EXCLUDED.licence,
+                       updated_at = now()`,
+      [d.id, d.lineage.statement, d.lineage.licence]
     );
+
+    // Declared sources are replaced wholesale: they describe the descriptor as it is now,
+    // not a history. Process-step history lives in dataset_lineage_step instead.
+    await client.query(`DELETE FROM app.dataset_lineage_source WHERE dataset_id = $1`, [d.id]);
+    for (const s of d.lineage.sources) {
+      await client.query(
+        `INSERT INTO app.dataset_lineage_source (dataset_id, citation, licence, uri, resolution)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [d.id, s.citation, s.licence, s.uri ?? null, s.resolution ?? null]
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
