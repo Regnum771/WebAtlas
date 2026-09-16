@@ -61,6 +61,8 @@ LANDUSE_GREY = _P["layer_bm_landuse"]["secondary"]
 ROAD_FILL = _P["layer_bm_roads"]["color"]
 ROAD_CASING = _P["layer_bm_roads"]["stroke"]
 RAIL = _P["layer_bm_railways"]["color"]
+# Nhan duong: xam dam hon net duong de doc duoc tren nen sang.
+ROAD_LABEL = "#5b5145"
 
 # Local shade variants, not identity colours — the same reason styles.ts builds
 # its own opacity variants from the shared hex instead of storing them shared.
@@ -121,6 +123,35 @@ def label(size, colour=LABEL, weight="normal", field="name"):
     </TextSymbolizer>"""
 
 
+def road_label(size, colour=None, repeat=400):
+    """Nhan ten duong, dat DOC theo tuyen.
+
+    Khac label() cua dia danh o ba cho:
+      - LinePlacement + followLine: chu uon theo hinh dang duong, khong phai mot
+        diem giua tuyen.
+      - group=yes: OSM cat mot con duong thanh rat nhieu doan roi nhau; khong gom
+        lai thi moi doan tu ve mot nhan, vua xau vua ton cong dung hinh.
+      - repeat: voi tuyen dai, lap lai nhan moi ngan nay pixel de keo toi dau cung
+        doc duoc ten.
+    """
+    colour = colour or ROAD_LABEL
+    return f"""<TextSymbolizer>
+      <Label><ogc:PropertyName>name</ogc:PropertyName></Label>
+      <Font><CssParameter name="font-family">Arial</CssParameter>
+        <CssParameter name="font-size">{size}</CssParameter>
+        <CssParameter name="font-weight">normal</CssParameter></Font>
+      <LabelPlacement><LinePlacement><PerpendicularOffset>0</PerpendicularOffset></LinePlacement></LabelPlacement>
+      <Halo><Radius>1.8</Radius><Fill><CssParameter name="fill">{LABEL_HALO}</CssParameter></Fill></Halo>
+      <Fill><CssParameter name="fill">{colour}</CssParameter></Fill>
+      <VendorOption name="followLine">true</VendorOption>
+      <VendorOption name="group">yes</VendorOption>
+      <VendorOption name="repeat">{repeat}</VendorOption>
+      <VendorOption name="maxDisplacement">40</VendorOption>
+      <VendorOption name="spaceAround">4</VendorOption>
+      <VendorOption name="maxAngleDelta">30</VendorOption>
+    </TextSymbolizer>"""
+
+
 def rule(name, symbolizers, filt="", sc=""):
     return f"<Rule><Name>{name}</Name>{sc}{filt}{symbolizers}</Rule>"
 
@@ -135,9 +166,16 @@ def fclass_in(*values):
 # --- styles --------------------------------------------------------------
 STYLES = {}
 
-# water: visible from mid zoom outward
+# water: open water at every scale, wetlands only from 1:500.000 in.
+# Ngưỡng theo bản thiết kế 2026-09-08. Mẫu số CÀNG LỚN nghĩa là CÀNG THU NHỎ, nên
+# MaxScaleDenominator = "chỉ vẽ khi đã phóng gần hơn mức này".
 STYLES["basemap_water"] = HEAD.format(name="basemap_water", rules="\n".join([
-    rule("water", polygon(WATER, WATER_LINE, 0.3), sc=scale(max_=1200000)),
+    rule("water", polygon(WATER, WATER_LINE, 0.3),
+         fclass_in("water", "reservoir", "riverbank", "dock")),
+    rule("wetland", polygon(WATER, WATER_LINE, 0.3),
+         fclass_in("wetland", "wetland_marsh", "wetland_mangrove", "wetland_tidalflat",
+                   "wetland_reedbed", "wetland_swamp", "wetland_wet_meadow"),
+         scale(max_=500000)),
 ]))
 
 # landuse: only close in, very subtle
@@ -146,25 +184,61 @@ STYLES["basemap_landuse"] = HEAD.format(name="basemap_landuse", rules="\n".join(
     rule("built", polygon(LANDUSE_GREY), fclass_in("residential", "industrial", "commercial", "retail", "military"), scale(max_=200000)),
 ]))
 
-# national major roads: casing + fill, always on
+# national major roads. Chỉ motorway vẽ ở MỌI tỷ lệ; trunk và primary lần lượt
+# hiện ra khi phóng gần hơn.
+# Vì sao chia tầng: dải nay lùi ra tới 1:12.800.000, mà vẽ trọn 62.598 đoạn quốc
+# lộ ở đó thì thành một mớ rối. Riêng motorway (9.946 đoạn) mới là bộ khung đọc
+# được khi nhìn toàn quốc.
 STYLES["basemap_roads_vn"] = HEAD.format(name="basemap_roads_vn", rules="\n".join([
-    rule("motorway_casing", line(ROAD_MAJOR_CASING, 4.0), fclass_in("motorway", "motorway_link"), scale(max_=9000000)),
-    rule("motorway", line(ROAD_MAJOR, 2.4), fclass_in("motorway", "motorway_link"), scale(max_=9000000)),
-    rule("trunk_primary_casing", line(ROAD_MAJOR_CASING, 3.0), fclass_in("trunk", "primary", "trunk_link", "primary_link"), scale(max_=4000000)),
-    rule("trunk_primary", line(ROAD_MAJOR, 1.8), fclass_in("trunk", "primary", "trunk_link", "primary_link"), scale(max_=4000000)),
+    rule("motorway_casing", line(ROAD_MAJOR_CASING, 4.0), fclass_in("motorway", "motorway_link")),
+    rule("motorway", line(ROAD_MAJOR, 2.4), fclass_in("motorway", "motorway_link")),
+    rule("trunk_casing", line(ROAD_MAJOR_CASING, 3.0), fclass_in("trunk", "trunk_link"), scale(max_=5000000)),
+    rule("trunk", line(ROAD_MAJOR, 1.8), fclass_in("trunk", "trunk_link"), scale(max_=5000000)),
+    rule("primary_casing", line(ROAD_MAJOR_CASING, 2.8), fclass_in("primary", "primary_link"), scale(max_=3000000)),
+    rule("primary", line(ROAD_MAJOR, 1.7), fclass_in("primary", "primary_link"), scale(max_=3000000)),
+    rule("major_label", road_label(11), fclass_in("motorway", "trunk", "primary"), scale(max_=1000000)),
 ]))
 
-# region roads: the detailed tier, switches on around z10
+# region roads: three tiers by scale, per the 2026-09-08 design.
+#   < 1.000.000  + secondary
+#   <   500.000  + tertiary, unclassified
+#   <   250.000  + residential, living_street, service
+#   <   100.000  + tracks, paths, footways
+# Ngưỡng cũ (400.000 / 100.000 / 35.000) có hai nấc KHÔNG BAO GIỜ chạy: ứng dụng
+# kẹp ở MAX_SCALE = 1:100.000 nên mẫu số không bao giờ xuống dưới 100.000, khiến
+# đường nhỏ và đường mòn vô hình ở mọi mức thu phóng bấm tới được.
 STYLES["basemap_roads_region"] = HEAD.format(name="basemap_roads_region", rules="\n".join([
-    rule("secondary_casing", line(ROAD_CASING, 2.6), fclass_in("secondary", "secondary_link", "tertiary", "tertiary_link"), scale(max_=400000)),
-    rule("secondary", line(ROAD_FILL, 1.6), fclass_in("secondary", "secondary_link", "tertiary", "tertiary_link"), scale(max_=400000)),
-    rule("minor_casing", line(ROAD_CASING, 2.0), fclass_in("residential", "unclassified", "living_street", "service"), scale(max_=100000)),
-    rule("minor", line(ROAD_FILL, 1.2), fclass_in("residential", "unclassified", "living_street", "service"), scale(max_=100000)),
-    rule("track_path", line("#e8e4dd", 0.8, dash="3 3"), fclass_in("track", "path", "footway", "cycleway"), scale(max_=35000)),
+    rule("secondary_casing", line(ROAD_CASING, 2.6), fclass_in("secondary", "secondary_link"), scale(max_=1000000)),
+    rule("secondary", line(ROAD_FILL, 1.6), fclass_in("secondary", "secondary_link"), scale(max_=1000000)),
+    rule("tertiary_casing", line(ROAD_CASING, 2.2), fclass_in("tertiary", "tertiary_link", "unclassified"), scale(max_=500000)),
+    rule("tertiary", line(ROAD_FILL, 1.4), fclass_in("tertiary", "tertiary_link", "unclassified"), scale(max_=500000)),
+    rule("minor_casing", line(ROAD_CASING, 2.0), fclass_in("residential", "living_street", "service"), scale(max_=250000)),
+    rule("minor", line(ROAD_FILL, 1.2), fclass_in("residential", "living_street", "service"), scale(max_=250000)),
+    # track_grade1..5 là biến thể của track trong dữ liệu thật; không kể tên thì
+    # 4.193 đoạn sẽ bị bỏ vẽ mà không báo gì.
+    # Đẩy xuống 1:100.000 (trước là 250.000) cho hai mục đích: bớt rối ở dải giữa,
+    # và để hai nấc mới ở đầu gần (100.000 / 50.000 / 25.000) thật sự lộ thêm thứ
+    # gì đó — trước khi dải nới ra thì dưới 1:200.000 không còn gì mới để hiện.
+    rule("track_path", line("#e8e4dd", 0.8, dash="3 3"),
+         fclass_in("track", "track_grade1", "track_grade2", "track_grade3", "track_grade4", "track_grade5",
+                   "path", "footway", "cycleway", "steps", "pedestrian"),
+         scale(max_=100000)),
+    rule("secondary_label", road_label(10), fclass_in("secondary", "tertiary"), scale(max_=250000)),
+    # Nguong 50.000 nghia la nhan chi hien o nac 1:25.000: MaxScaleDenominator la
+    # so sanh NGHIEM NGAT, nen o dung nac 1:50.000 luat khong chay. Dat thang
+    # 25.000 thi luat CHET han vi ung dung kep o 1:25.000 — ca kiem thu
+    # "moi nguong phai lon hon MAX_SCALE" bat dung loi do khi thu.
+    # group=yes gom cac doan cung ten lam mot nhan — dung ve mat ban do, nhung do
+    # tren tile z15: 0,07-0,13s khong gom so voi 0,21-0,51s co gom, tuc dat gap ~3
+    # lan. Gioi han o nac gan nhat de chi tra gia cho do o dung mot muc ty le.
+    rule("minor_label", road_label(9), fclass_in("residential", "living_street"), scale(max_=50000)),
 ]))
 
+# railways: every scale. Cả nước chỉ vài nghìn đoạn nên không có lý do hiệu năng
+# để ẩn bớt, và bản thiết kế yêu cầu vẽ ở mọi tỷ lệ.
 STYLES["basemap_railways"] = HEAD.format(name="basemap_railways", rules="\n".join([
-    rule("rail", line(RAIL, 1.0, dash="6 4"), fclass_in("rail", "narrow_gauge", "light_rail"), scale(max_=1500000)),
+    rule("rail", line(RAIL, 1.0, dash="6 4"),
+         fclass_in("rail", "narrow_gauge", "light_rail", "subway", "funicular", "monorail", "miniature_railway")),
 ]))
 
 # national places: cities early, towns a bit closer

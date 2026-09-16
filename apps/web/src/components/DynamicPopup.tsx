@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useMapContext } from '../app/providers/MapProvider';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
+import { fetchBasemapInfo } from '../features/map/model/basemapInfo';
 import { damStatusDisplay, STREAM_ORDER_LABELS } from '@webatlas/shared';
 import { useMapEditing } from '../features/map/model/mapEditing';
 
@@ -113,7 +114,14 @@ const DynamicPopup: React.FC = () => {
       if (editing) return; // edit mode owns clicks (feature selection); no popup
       const feature = map.forEachFeatureAtPixel(e.pixel, (f) => f);
 
-      if (feature) {
+      // Ranh giới tỉnh/xã là polygon phủ KÍN bản đồ, nên forEachFeatureAtPixel
+      // luôn trúng một cái — nếu coi đó là "đã trúng đối tượng" thì nhánh tra cứu
+      // lớp nền bên dưới không bao giờ chạy, và nhấp vào một con đường chỉ ra tên
+      // phường. Đối tượng chuyên đề có layerKey; ranh giới thì không, nên dùng
+      // đúng dấu hiệu đó để phân biệt trúng THẬT với trúng nền hành chính.
+      const isThematic = Boolean(feature?.getProperties()?.layerKey);
+
+      if (feature && isThematic) {
         setPopupData({
           coordinate: e.coordinate,
           feature: feature.getProperties()
@@ -121,7 +129,30 @@ const DynamicPopup: React.FC = () => {
         // Pan the map to the clicked feature so the popup stays in viewport
         map.getView().animate({ center: e.coordinate, duration: 400 });
       } else {
-        setPopupData(null);
+        // Chưa trúng đối tượng chuyên đề nào. Các lớp NỀN (đường, đường sắt, mặt
+        // nước) tới trình duyệt dưới dạng ảnh tile nên forEachFeatureAtPixel
+        // không bao giờ thấy chúng — phải hỏi ngược GeoServer mới biết con đường
+        // vừa nhấp tên gì. Đây là yêu cầu riêng, không ảnh hưởng tốc độ dựng tile.
+        const fallback = feature
+          ? { coordinate: e.coordinate, feature: feature.getProperties() }
+          : null;
+        const size = map.getSize();
+        if (!size) { setPopupData(fallback); return; }
+        // ol khai báo Extent là number[]; basemapInfo cần bộ 4 cố định để không
+        // ai truyền nhầm mảng thiếu phần tử.
+        const [minX, minY, maxX, maxY] = map.getView().calculateExtent(size);
+        const extent: [number, number, number, number] = [minX, minY, maxX, maxY];
+        setPopupData(fallback);
+        fetchBasemapInfo(extent, [size[0], size[1]], [e.pixel[0], e.pixel[1]])
+          .then((found) => {
+            // Chỉ thay khi tìm được thứ CÓ TÊN: một đoạn đường không tên thì kém
+            // hữu ích hơn tên phường đang hiện sẵn.
+            if (!found?.name) return;
+            setPopupData({ coordinate: e.coordinate, feature: { ...found, layerKey: 'basemap' } });
+          })
+          .catch(() => {
+            /* Tra cứu nền là tiện ích thêm: hỏng thì im lặng, không chặn bản đồ. */
+          });
       }
     };
 
@@ -190,6 +221,43 @@ const DynamicPopup: React.FC = () => {
               })}
             </div>
           </div>
+        </>
+      );
+    }
+    if (props.layerKey === 'basemap') {
+      const FCLASS_LABELS: Record<string, string> = {
+        motorway: 'Đường cao tốc', motorway_link: 'Nhánh cao tốc',
+        trunk: 'Quốc lộ', trunk_link: 'Nhánh quốc lộ',
+        primary: 'Đường chính', primary_link: 'Nhánh đường chính',
+        secondary: 'Đường liên tỉnh', secondary_link: 'Nhánh liên tỉnh',
+        tertiary: 'Đường liên huyện', tertiary_link: 'Nhánh liên huyện',
+        residential: 'Đường khu dân cư', living_street: 'Đường nội bộ',
+        service: 'Đường nội bộ/kỹ thuật', unclassified: 'Đường chưa phân loại',
+        track: 'Đường mòn', path: 'Lối mòn', footway: 'Lối đi bộ',
+        cycleway: 'Đường xe đạp', steps: 'Bậc thang', pedestrian: 'Phố đi bộ',
+        rail: 'Đường sắt', narrow_gauge: 'Đường sắt khổ hẹp',
+        water: 'Mặt nước', reservoir: 'Hồ chứa', riverbank: 'Lòng sông',
+      };
+      return (
+        <>
+          {props.fclass && (
+            <div className="info-row"><Info size={14} className="text-blue-500" />
+              <span>Loại: <strong>{FCLASS_LABELS[props.fclass] ?? props.fclass}</strong></span></div>)}
+          {props.ref && (
+            <div className="info-row"><Database size={14} className="text-blue-500" />
+              <span>Số hiệu: <strong>{props.ref}</strong></span></div>)}
+          {props.maxspeed != null && (
+            <div className="info-row"><Activity size={14} className="text-blue-500" />
+              <span>Tốc độ tối đa: <strong>{props.maxspeed} km/h</strong></span></div>)}
+          {props.oneway === 'yes' && (
+            <div className="info-row"><Info size={14} className="text-blue-500" />
+              <span>Chiều: <strong>Một chiều</strong></span></div>)}
+          {props.bridge === 'T' && (
+            <div className="info-row"><Info size={14} className="text-blue-500" />
+              <span><strong>Cầu</strong></span></div>)}
+          {props.tunnel === 'T' && (
+            <div className="info-row"><Info size={14} className="text-blue-500" />
+              <span><strong>Hầm</strong></span></div>)}
         </>
       );
     }

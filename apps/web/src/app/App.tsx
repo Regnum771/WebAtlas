@@ -43,6 +43,7 @@ function RailAndFlyout() {
   return (
     <>
       <MapView flyoutOpen={rail.active !== null} />
+      <MapToolbar flyoutOpen={rail.active !== null} />
       <IconRail items={items} active={rail.active} onToggle={rail.toggle} />
       {rail.active !== null && (
         <aside className="rail-flyout">
@@ -64,7 +65,6 @@ function App() {
               /admin/users overlays a live map instead of unmounting it, so
               center/zoom/layer state survives navigation. */}
           <RailAndFlyout />
-          <MapToolbar />
 
           <TopBar />
 

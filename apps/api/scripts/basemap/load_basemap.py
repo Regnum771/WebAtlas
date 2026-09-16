@@ -64,7 +64,17 @@ def write(gdf: gpd.GeoDataFrame, table: str, engine) -> None:
     gdf = gdf.set_crs("EPSG:4326", allow_override=True)
     gdf.to_postgis(table, engine, schema="basemap", if_exists="replace", index=False)
     with engine.connect() as c:
-        c.execute(text(f'CREATE INDEX IF NOT EXISTS {table}_geom_idx ON basemap."{table}" USING GIST (geometry)'))
+        # KHONG tu tao index hinh hoc o day: to_postgis cua GeoPandas da tao san
+        # idx_<table>_geometry. Truoc day dong nay tao them mot GiST thu hai y het
+        # tren moi bang, chi ton thoi gian ghi va dung luong, khong giup doc.
+        #
+        # Index fclass moi la thu thuc su thieu. Moi luat trong SLD loc theo fclass;
+        # voi bbox rong (tile o muc thu nho) PostgreSQL bo qua index hinh hoc va
+        # quet ca bang 527k dong. Do tren roads_region: 998ms -> 199ms cho luat
+        # 'secondary' khi co index nay.
+        if "fclass" in gdf.columns:
+            c.execute(text(f'CREATE INDEX IF NOT EXISTS {table}_fclass_idx ON basemap."{table}" (fclass)'))
+        c.execute(text(f'ANALYZE basemap."{table}"'))
         c.commit()
     print(f"   -> basemap.{table}: {len(gdf):,} features")
 

@@ -13,6 +13,12 @@ import {
   zoomForScale,
   resolutionAtZoom,
   formatScale,
+  ZOOM_STOPS,
+  nearestStopIndex,
+  snapScaleForReadout,
+  SIGNIFICANT_DIGITS,
+  settleZoomCorrection,
+  scaleAtResolution,
 } from './zoomScale';
 
 describe('zoomScale', () => {
@@ -100,5 +106,137 @@ describe('khung nhìn khi mở ứng dụng', () => {
     const heightKm = (resolutionAtZoom(INITIAL_ZOOM, INITIAL_CENTER_4326[1]) * 900) / 1000;
     const regionHeightKm = (LAND.maxLat - LAND.minLat) * 111;
     expect(heightKm).toBeGreaterThan(regionHeightKm);
+  });
+});
+
+describe('ZOOM_STOPS', () => {
+  it('has one zoom per scale stop, ascending (index 0 is the most zoomed out)', () => {
+    expect(ZOOM_STOPS).toHaveLength(ZOOM_SCALE_LEVELS.length);
+    for (let i = 1; i < ZOOM_STOPS.length; i++) {
+      expect(ZOOM_STOPS[i]).toBeGreaterThan(ZOOM_STOPS[i - 1]);
+    }
+  });
+
+  it('index i is the zoom for scale stop i — the slider relies on this alignment', () => {
+    ZOOM_SCALE_LEVELS.forEach((scale, i) => {
+      expect(ZOOM_STOPS[i]).toBeCloseTo(zoomForScale(scale), 10);
+    });
+  });
+});
+
+describe('nearestStopIndex', () => {
+  it('returns the first stop below MIN_ZOOM', () => {
+    expect(nearestStopIndex(MIN_ZOOM - 5)).toBe(0);
+  });
+
+  it('returns the last stop above MAX_ZOOM', () => {
+    expect(nearestStopIndex(MAX_ZOOM + 5)).toBe(ZOOM_STOPS.length - 1);
+  });
+
+  it('returns that stop exactly on a stop', () => {
+    ZOOM_STOPS.forEach((z, i) => expect(nearestStopIndex(z)).toBe(i));
+  });
+
+  it('picks the closer of two neighbours', () => {
+    const justAboveFirst = ZOOM_STOPS[0] + (ZOOM_STOPS[1] - ZOOM_STOPS[0]) * 0.1;
+    expect(nearestStopIndex(justAboveFirst)).toBe(0);
+    const justBelowSecond = ZOOM_STOPS[0] + (ZOOM_STOPS[1] - ZOOM_STOPS[0]) * 0.9;
+    expect(nearestStopIndex(justBelowSecond)).toBe(1);
+  });
+});
+
+describe('snapScaleForReadout', () => {
+  it('rounds to three significant figures, not to a fixed grid', () => {
+    // A fixed 1.000 grid was fine when the range stopped at 1:100.000 (a 1%
+    // step) but is a 4% step at 1:25.000 — visibly chunky at the close end.
+    // Three significant figures is proportional, so the step feels the same
+    // everywhere in the range.
+    expect(snapScaleForReadout(1_247_331)).toBe(1_250_000);
+    expect(snapScaleForReadout(26_431)).toBe(26_400);
+    expect(snapScaleForReadout(9_871_234)).toBe(9_870_000);
+  });
+
+  it('is idempotent — the property the settle-snap loop guard depends on', () => {
+    const once = snapScaleForReadout(1_247_331);
+    expect(snapScaleForReadout(once)).toBe(once);
+  });
+
+  it('clamps rather than snapping past MAX_SCALE (most zoomed in)', () => {
+    expect(snapScaleForReadout(20_000)).toBe(MAX_SCALE);
+  });
+
+  it('clamps rather than snapping past MIN_SCALE (most zoomed out)', () => {
+    expect(snapScaleForReadout(15_000_000)).toBe(MIN_SCALE);
+  });
+
+  it('leaves every slider stop untouched — the two snappings must not fight', () => {
+    // Fails the day someone adds a stop that is not a 3-significant-figure
+    // value, which would otherwise show up only as a slider handle drifting
+    // off its own notch after settling.
+    ZOOM_SCALE_LEVELS.forEach((scale) => {
+      expect(snapScaleForReadout(scale)).toBe(scale);
+    });
+    expect(SIGNIFICANT_DIGITS).toBe(3);
+  });
+});
+
+describe('settleZoomCorrection', () => {
+  it('corrects a zoom whose scale is not a round readout value', () => {
+    // A zoom deliberately between stops, the state the wheel leaves the map in.
+    const messy = zoomForScale(1_247_331);
+    const corrected = settleZoomCorrection(messy);
+    expect(corrected).not.toBeNull();
+    expect(scaleAtZoom(corrected as number)).toBeCloseTo(1_250_000, 0);
+  });
+
+  it('returns null the second time — the loop guard that stops the map oscillating', () => {
+    // MapModel applies the correction inside a moveend handler, which fires
+    // another moveend. If this second call returned a correction too, the map
+    // would jitter forever after every wheel stop.
+    const corrected = settleZoomCorrection(zoomForScale(1_247_331)) as number;
+    expect(settleZoomCorrection(corrected)).toBeNull();
+  });
+
+  it('returns null on every slider stop, so the two snappings never fight', () => {
+    ZOOM_STOPS.forEach((z) => expect(settleZoomCorrection(z)).toBeNull());
+  });
+
+  it('returns null at the zoom bounds rather than pushing past them', () => {
+    expect(settleZoomCorrection(MIN_ZOOM)).toBeNull();
+    expect(settleZoomCorrection(MAX_ZOOM)).toBeNull();
+  });
+});
+
+describe('scaleAtResolution', () => {
+  it('agrees with scaleAtZoom for the same view — one scale vocabulary, not two', () => {
+    // resolutionAtZoom returns GROUND resolution (already cos-corrected), so the
+    // equivalent OL/3857 resolution is that divided by cos(latitude).
+    const zoom = 10;
+    const mercatorResolution = resolutionAtZoom(zoom) / Math.cos((16 * Math.PI) / 180);
+    expect(scaleAtResolution(mercatorResolution)).toBeCloseTo(scaleAtZoom(zoom), 3);
+  });
+});
+
+describe('the widened scale range', () => {
+  it('spans a whole number of zoom levels, so OpenLayers honours both bounds', () => {
+    // The bug this fixes: ol/View computes
+    //   maxZoom = minZoom + floor(log2(maxResolution / minResolution))
+    // so a fractional span is silently truncated. 1:7.500.000 -> 1:100.000 was
+    // 6.23 levels, floored to 6, and the map stopped at 1:117.188 — 17% short
+    // of the MAX_SCALE the constants advertised.
+    const span = Math.log2(MIN_SCALE / MAX_SCALE);
+    expect(span).toBe(Math.round(span));
+    expect(MAX_ZOOM - MIN_ZOOM).toBeCloseTo(span, 9);
+  });
+
+  it('keeps a notch at 1:7.500.000, the previous far limit', () => {
+    expect(ZOOM_SCALE_LEVELS).toContain(7_500_000);
+  });
+
+  it('still fits the whole of Vietnam at the far limit', () => {
+    // MIN_SCALE moved out from 1:7.500.000 to 1:12.800.000, so this gets easier,
+    // but it is the constraint that ruled out anchoring MIN_SCALE on 1:6.400.000.
+    const heightPx = (1_725_000 / MIN_SCALE / 0.0254) * 96;
+    expect(heightPx).toBeLessThanOrEqual(900);
   });
 });

@@ -1,4 +1,5 @@
 import Map from 'ol/Map';
+import { createRiverOverviewSource, riverOverviewVisibleAt } from './riverOverview';
 import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
@@ -11,7 +12,7 @@ import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
 import { GEOSERVER_URL } from '../../../shared/config';
 import { BASEMAP_CONTEXT_LAYER_STATE_IDS } from '@webatlas/shared';
-import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
+import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM, settleZoomCorrection } from './zoomScale';
 import {
   createBboxLoadGate,
   createOneShotLoadGate,
@@ -106,6 +107,10 @@ export class MapModel {
   private reservoirFilter: ReservoirFilterType = 'all';
   private layerStates: LayerState[] = [];
   private moveendHandler: (() => void) | null = null;
+  /** Lớp sông tổng quan cho mức thu nhỏ — xem riverOverview.ts. */
+  private riversOverviewLayer: VectorLayer<VectorSource> | null = null;
+  /** Bám nấc nghìn khi khung nhìn dừng — xem settleZoomCorrection. */
+  private settleSnapHandler: (() => void) | null = null;
   /** Cổng tải sông/hồ theo zoom — chạy mỗi lần moveend (xem zoomLoadGate.ts). */
   private waterGate: ((zoom: number) => void) | null = null;
   /** Cổng tải ranh giới xã — chỉ nạp một lần khi vượt zoom 10. */
@@ -162,6 +167,17 @@ export class MapModel {
     this.layers['layer_dams'] = damsLayer;
     const riversLayer = new VectorLayer({ source: createWfsVectorSource('rivers'), style: riversStyle, properties: { id: 'layer_rivers' } });
     this.layers['layer_rivers'] = riversLayer;
+
+    // Sông tổng quan: chỉ sông chính, hình học đã đơn giản hoá sẵn, phục vụ đúng
+    // phần dải tỷ lệ mà lớp sông đầy đủ chưa được phép tải (dưới zoom 8,5).
+    // KHÔNG đưa vào this.layers: đó là sổ đăng ký các lớp người dùng bật/tắt
+    // được, còn lớp này đi kèm 'layer_rivers' chứ không có mục riêng trong bảng.
+    const riversOverviewLayer = new VectorLayer({
+      source: createRiverOverviewSource(),
+      style: riversStyle,
+      properties: { id: 'layer_rivers_overview' },
+    });
+    this.riversOverviewLayer = riversOverviewLayer;
     const mkWfs = (stateId: string, key: Parameters<typeof createWfsVectorSource>[0], style: any) => {
       const layer = new VectorLayer({ source: createWfsVectorSource(key), style, properties: { id: stateId } });
       this.layers[stateId] = layer;
@@ -239,6 +255,7 @@ export class MapModel {
         floodLayer,
         lakesLayer,
         riversLayer,
+        riversOverviewLayer,
         damsLayer,
         stationsLayer,
         droughtSurveyLayer,
@@ -282,12 +299,38 @@ export class MapModel {
       if (zoom !== undefined) {
         this.waterGate?.(zoom);
         this.wardsGate?.(zoom);
+        // Lớp tổng quan chỉ vẽ DƯỚI ngưỡng của lớp đầy đủ, và đi theo đúng công
+        // tắc 'Mạng lưới sông ngòi' của người dùng — không có mục bật/tắt riêng.
+        const riversOn = this.layerStates.find((l) => l.id === 'layer_rivers')?.visible ?? true;
+        this.riversOverviewLayer?.setVisible(riverOverviewVisibleAt(zoom) && riversOn);
       }
       this.recomputeVisibility();
     };
 
     this.moveendHandler = updateLayersVisibility;
     map.on('moveend', updateLayersVisibility);
+
+    // Free zoom (wheel, pinch, double-click, keyboard) stays continuous while
+    // the user is acting; when the view settles we round the scale denominator
+    // to a clean thousand. moveend is the one hook that covers every zoom path,
+    // including programmatic animations, rather than special-casing the wheel.
+    //
+    // No animate(): the correction is at most 500 in the denominator, invisible
+    // on screen, and animating it would both read as a twitch and stretch the
+    // window in which the loop guard has to hold.
+    const settleSnap = () => {
+      const view = map.getView();
+      const zoom = view.getZoom();
+      if (zoom === undefined) return;
+      const corrected = settleZoomCorrection(zoom);
+      // null means already settled. That is the loop guard: setting the zoom
+      // below fires another moveend, and this branch makes that second pass a
+      // no-op instead of an endless correction cycle.
+      if (corrected === null) return;
+      view.setZoom(corrected);
+    };
+    this.settleSnapHandler = settleSnap;
+    map.on('moveend', settleSnap);
 
     // Chạy cổng ngay lúc khởi tạo cho chắc. ('moveend' CÓ bắn ở lần render đầu tiên
     // — ol/Map.js nhánh idle — nên đây là lớp bảo hiểm, không phải bắt buộc: lần
@@ -433,6 +476,10 @@ export class MapModel {
     if (this.moveendHandler) {
       this.map.un('moveend', this.moveendHandler);
       this.moveendHandler = null;
+    }
+    if (this.settleSnapHandler) {
+      this.map.un('moveend', this.settleSnapHandler);
+      this.settleSnapHandler = null;
     }
     this.waterGate = null;
     this.wardsGate = null;

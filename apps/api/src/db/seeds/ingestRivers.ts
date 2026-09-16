@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { refreshRiverOverview } from '../riverOverview';
 import { resolve as resolvePath } from 'node:path';
 import { getPool, closePool } from '../pool';
 import { versionsService } from '../../modules/versions/service';
@@ -87,6 +88,13 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
 const isMainModule = process.argv[1] != null && fileURLToPath(import.meta.url) === resolvePath(process.argv[1]);
 if (isMainModule) {
   ingestHydroRivers()
-    .then((r) => { console.log(`rivers HydroRIVERS version ${r.versionId}: ${r.count} features`); return closePool(); })
+    .then(async (r) => {
+      console.log(`rivers HydroRIVERS version ${r.versionId}: ${r.count} features`);
+      // Ảnh chụp sông tổng quan dựng từ rivers_active, nên dữ liệu mới nạp xong
+      // là nó lạc hậu ngay. Không làm mới thì mức thu nhỏ vẫn vẽ mạng lưới cũ.
+      await refreshRiverOverview(getPool());
+      console.log('refreshed water.rivers_overview');
+      return closePool();
+    })
     .catch((err) => { console.error(err); process.exitCode = 1; return closePool(); });
 }

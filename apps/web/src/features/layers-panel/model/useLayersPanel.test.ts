@@ -22,10 +22,18 @@ describe('buildPanelGroups', () => {
   });
 
   it('marks a layer gated when the current zoom is below its minZoom', () => {
-    const groups = buildPanelGroups({ display, layersState: state, currentZoom: 7 });
-    const rivers = groups[0].layers.find((l) => l.id === 'layer_rivers')!;
-    expect(rivers.gated).toBe(true);
-    expect(rivers.gateHint).toBe('hiện từ mức 8,5');
+    // Dùng layer_lakes chứ không phải layer_rivers: sông đã có lớp tổng quan vẽ
+    // thay ở mức thu nhỏ nên cố tình được miễn cổng — xem 'the rivers gate hint'
+    // ở cuối tệp. Hồ thì vẫn biến mất thật, nên nó mới là ví dụ đúng cho luật này.
+    const lakes = { name: 'Hồ & Hồ chứa', group: 'Tài nguyên nước', minZoom: 8.5 };
+    const groups = buildPanelGroups({
+      display: { ...display, layer_lakes: lakes },
+      layersState: [{ id: 'layer_lakes', visible: true, opacity: 0.85 }],
+      currentZoom: 7,
+    });
+    const found = groups[0].layers.find((l) => l.id === 'layer_lakes')!;
+    expect(found.gated).toBe(true);
+    expect(found.gateHint).toBe('hiện từ mức 8,5');
   });
 
   it('does not mark a layer gated at or above its minZoom', () => {
@@ -109,5 +117,32 @@ describe('useLayersPanel dispatch', () => {
     const { result } = renderHook(() => useLayersPanel(10));
     act(() => result.current.setLayerOpacity('layer_dams', 0.4));
     expect(contextSetLayerOpacity).not.toHaveBeenCalled();
+  });
+});
+
+describe('the rivers gate hint', () => {
+  it('does not claim rivers are hidden when the overview layer is drawing them', () => {
+    // layer_rivers keeps minZoom 8,5 because the FULL network is still gated —
+    // but since the overview layer was added, the main trunks are on screen at
+    // every zoom. Telling the user "hiện từ mức 8,5" would contradict what they
+    // can plainly see.
+    const groups = buildPanelGroups({
+      display,
+      layersState: [{ id: 'layer_rivers', visible: true, opacity: 0.8 }],
+      currentZoom: 6,
+    });
+    const rivers = groups.flatMap((g) => g.layers).find((l) => l.id === 'layer_rivers');
+    expect(rivers?.gated).toBe(false);
+    expect(rivers?.gateHint).toBeUndefined();
+  });
+
+  it('still gates the layers that really do disappear', () => {
+    const groups = buildPanelGroups({
+      display: { ...display, layer_lakes: { name: 'Hồ & Hồ chứa', group: 'Tài nguyên nước', minZoom: 8.5 } },
+      layersState: [{ id: 'layer_lakes', visible: true, opacity: 0.85 }],
+      currentZoom: 6,
+    });
+    const lakes = groups.flatMap((g) => g.layers).find((l) => l.id === 'layer_lakes');
+    expect(lakes?.gated).toBe(true);
   });
 });

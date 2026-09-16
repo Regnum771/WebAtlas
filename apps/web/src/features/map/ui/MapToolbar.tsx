@@ -5,7 +5,7 @@ import { useMapContext } from '../../../app/providers/MapProvider';
 import { useMapZoom } from '../model/useMapZoom';
 import { useMeasure, type MeasureMode } from '../model/useMeasure';
 import { createCommandExecutor } from '../model/mapCommands';
-import { MIN_ZOOM, MAX_ZOOM, ZOOM_SCALE_LEVELS, zoomForScale, scaleAtZoom, formatScale } from '../model/zoomScale';
+import { MIN_ZOOM, MAX_ZOOM, ZOOM_STOPS, nearestStopIndex, scaleAtZoom, formatScale } from '../model/zoomScale';
 
 const BASEMAP_OPTIONS: { id: BasemapName; label: string; icon: React.ReactNode }[] = [
   { id: 'street', label: 'Đường phố', icon: <MapIcon size={18} /> },
@@ -14,6 +14,11 @@ const BASEMAP_OPTIONS: { id: BasemapName; label: string; icon: React.ReactNode }
 ];
 
 export interface MapToolbarViewProps {
+  /** The rail flyout is open, so the pill must re-centre over the narrower map area. */
+  flyoutOpen: boolean;
+  /** Index into ZOOM_STOPS — where the handle sits. */
+  stopIndex: number;
+  onStopChange: (index: number) => void;
   zoom: number;
   scaleText: string;
   measureMode: MeasureMode;
@@ -32,6 +37,9 @@ export interface MapToolbarViewProps {
  * callbacks into typed `MapCommand`s.
  */
 export function MapToolbarView({
+  flyoutOpen,
+  stopIndex,
+  onStopChange,
   zoom,
   scaleText,
   measureMode,
@@ -47,11 +55,11 @@ export function MapToolbarView({
   const isMaxZoom = zoom >= MAX_ZOOM - 0.05;
 
   return (
-    <div className="map-toolbar">
+    <div className={`map-toolbar${flyoutOpen ? ' flyout-open' : ''}`}>
       {measureValue && <div className="measure-result glass-panel">{measureValue}</div>}
 
       <div className="glass-panel toolbar-rail">
-        <div className="control-group toolbar-col">
+        <div className="control-group">
           <button
             className={`control-btn ${measureMode === 'none' ? 'active' : ''}`}
             aria-pressed={measureMode === 'none'}
@@ -80,7 +88,27 @@ export function MapToolbarView({
 
         <div className="control-divider" />
 
-        <div className="control-group toolbar-col">
+        <div className="control-group zoom-group">
+          <button
+            className={`control-btn ${isMinZoom ? 'disabled' : ''}`}
+            onClick={onZoomOut}
+            disabled={isMinZoom}
+            title="Thu nhỏ"
+          >
+            <ZoomOut size={18} />
+          </button>
+          {/* Left is zoomed out (index 0 = 1:7.500.000), right is zoomed in. */}
+          <input
+            type="range"
+            className="zoom-slider"
+            min={0}
+            max={ZOOM_STOPS.length - 1}
+            step={1}
+            value={stopIndex}
+            onChange={(e) => onStopChange(Number(e.currentTarget.value))}
+            aria-label="Mức thu phóng"
+            title="Mức thu phóng"
+          />
           <button
             className={`control-btn ${isMaxZoom ? 'disabled' : ''}`}
             onClick={onZoomIn}
@@ -90,14 +118,6 @@ export function MapToolbarView({
             <ZoomIn size={18} />
           </button>
           <span className="zoom-scale-label">{scaleText}</span>
-          <button
-            className={`control-btn ${isMinZoom ? 'disabled' : ''}`}
-            onClick={onZoomOut}
-            disabled={isMinZoom}
-            title="Thu nhỏ"
-          >
-            <ZoomOut size={18} />
-          </button>
         </div>
 
         <div className="control-divider" />
@@ -108,7 +128,7 @@ export function MapToolbarView({
 
         <div className="control-divider" />
 
-        <div className="control-group toolbar-col">
+        <div className="control-group">
           {BASEMAP_OPTIONS.map((opt) => (
             <button
               key={opt.id}
@@ -134,7 +154,7 @@ export function MapToolbarView({
  * `map` arrives already typed via `useMapContext`, and is only ever handed to
  * `createCommandExecutor`, never called directly.
  */
-export default function MapToolbar() {
+export default function MapToolbar({ flyoutOpen }: { flyoutOpen: boolean }) {
   const { map, basemap, setBasemap, layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
   const zoom = useMapZoom();
   const measure = useMeasure();
@@ -152,29 +172,21 @@ export default function MapToolbar() {
     [map, setBasemap, toggleLayerVisibility, setLayerOpacity, layersState],
   );
 
-  // Nấc tỷ lệ tròn số cho zoom in/out — chuyển nguyên từ MapControls cũ (không có slider,
-  // chỉ còn hai nút, nhưng cùng logic "bám nấc gần nhất rồi bước sang nấc kế").
-  const zoomStops = useMemo(() => ZOOM_SCALE_LEVELS.map((scale) => zoomForScale(scale)).sort((a, b) => a - b), []);
-
-  const nearestStopIndex = useMemo(() => {
-    let best = 0;
-    for (let i = 1; i < zoomStops.length; i++) {
-      if (Math.abs(zoomStops[i] - zoom) < Math.abs(zoomStops[best] - zoom)) {
-        best = i;
-      }
-    }
-    return best;
-  }, [zoomStops, zoom]);
+  // Nấc gần nhất với mức zoom hiện tại — dùng chung cho cả hai nút và thanh trượt,
+  // định nghĩa ở zoomScale.ts để kiểm thử được mà không cần bản đồ.
+  const stopIndex = nearestStopIndex(zoom);
 
   const stepZoom = (direction: 1 | -1) => {
-    const currentStop = zoomStops[nearestStopIndex];
+    const currentStop = ZOOM_STOPS[stopIndex];
     const alreadyMoving = direction === 1 ? currentStop > zoom + 0.05 : currentStop < zoom - 0.05;
-    const targetIndex = alreadyMoving ? nearestStopIndex : nearestStopIndex + direction;
-    const clamped = Math.min(zoomStops.length - 1, Math.max(0, targetIndex));
+    const targetIndex = alreadyMoving ? stopIndex : stopIndex + direction;
+    const clamped = Math.min(ZOOM_STOPS.length - 1, Math.max(0, targetIndex));
     // Clamping to the view's actual min/max happens inside the executor
     // (features/map/model/mapCommands.ts) — this only picks the target scale stop.
-    run({ kind: 'zoomTo', zoom: zoomStops[clamped] });
+    run({ kind: 'zoomTo', zoom: ZOOM_STOPS[clamped] });
   };
+
+  const onStopChange = (index: number) => run({ kind: 'zoomTo', zoom: ZOOM_STOPS[index] });
 
   const onMeasure = (mode: MeasureMode) => {
     if (mode === 'none') {
@@ -189,6 +201,9 @@ export default function MapToolbar() {
 
   return (
     <MapToolbarView
+      flyoutOpen={flyoutOpen}
+      stopIndex={stopIndex}
+      onStopChange={onStopChange}
       zoom={zoom}
       scaleText={formatScale(scaleAtZoom(zoom))}
       measureMode={measure.mode}

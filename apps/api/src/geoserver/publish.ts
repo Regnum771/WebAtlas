@@ -8,7 +8,19 @@ const STORE = `${WS}_water`;
 const TABLES = [
   'dams', 'rivers', 'lakes', 'stations', 'flood_zones',
   'drought_points', 'saltwater_intrusion', 'flood_generation',
+  'rivers_overview',
 ];
+
+/**
+ * Các lớp DẪN XUẤT không có view `_active` đi kèm — bản thân chúng đã là quan hệ
+ * cuối cùng. Tách ra thành hàm riêng có kiểm thử vì gọi nhầm sẽ khiến GeoServer
+ * đi tìm `rivers_overview_active` rồi trả 500 rất khó lần ra nguyên nhân.
+ */
+const DERIVED_TABLES = new Set(['rivers_overview']);
+
+export function nativeNameFor(table: string): string {
+  return DERIVED_TABLES.has(table) ? table : `${table}_active`;
+}
 
 async function ensureWorkspace(): Promise<void> {
   if (await gsExists(`/workspaces/${WS}`)) return;
@@ -52,7 +64,7 @@ async function ensureDatastore(): Promise<void> {
  */
 async function ensureLayer(table: string): Promise<void> {
   const ftPath = `/workspaces/${WS}/datastores/${STORE}/featuretypes`;
-  const view = `${table}_active`;
+  const view = nativeNameFor(table);
 
   const existing = await gsRequest('GET', `${ftPath}/${table}`);
   if (existing.status === 200) {
