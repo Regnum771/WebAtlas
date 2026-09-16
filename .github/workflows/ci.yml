@@ -62,4 +62,11 @@ jobs:
       - run: npm run build:shared
       - run: npm run migrate
       - run: npm run seed
+      # Bước 4 của docs/runbooks/README.md — đánh dấu BẮT BUỘC, và dữ liệu nguồn nằm
+      # trong git, nhưng CI trước nay bỏ qua. Thiếu nó thì riverOverview.test.ts và
+      # data.test.ts chạy trên bảng rỗng; tệ hơn, kết quả còn đổi theo việc suite nào
+      # tình cờ chạy trước, vì integration.test.ts cũng nạp sông trong lúc kiểm thử.
+      #
+      # Gọi qua -w: package.json ở gốc không có script này (khác migrate/seed).
+      - run: npm run ingest:rivers -w @webatlas/api
       - run: npm run test:api
