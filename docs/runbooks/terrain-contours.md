@@ -55,9 +55,17 @@ Needed for both scripts below: `GEOSERVER_ADMIN_USER`, `GEOSERVER_ADMIN_PASSWORD
 python3 apps/api/scripts/contours/styles.py "$GEOSERVER_ADMIN_PASSWORD"
 ```
 
-**The password is a positional argument, not an environment variable.** `styles.py` reads it from `sys.argv[1]`; only the admin *user* comes from the environment (`GEOSERVER_ADMIN_USER`). Sourcing `infra/.env` in step 3a exports `GEOSERVER_ADMIN_PASSWORD` into your shell, which makes it look as though this command is already armed — it is not. Without the argument it fails immediately with `IndexError: list index out of range`.
+**The password is a positional argument, not an environment variable.** `styles.py` reads it from `sys.argv[1]`; only the admin *user* comes from the environment (`GEOSERVER_ADMIN_USER`). Sourcing `infra/.env` in step 3a exports `GEOSERVER_ADMIN_PASSWORD` into your shell, which makes it look as though this command is already armed — it is not. Omitting the argument now prints a usage message naming the three forms.
 
-Uploads two SLDs — `webatlas:contours_plain` and `webatlas:contours_labelled` — both a neutral brown pair that reads on street and satellite alike (per-basemap colour was deliberately deferred; see Known limitations below). **Must run before `publish-contours.sh`**, or the layers it creates reference a style that does not exist yet and GeoServer refuses the default-style assignment.
+Uploads two SLDs — `webatlas:contours_plain` and `webatlas:contours_labelled` — one neutral brown pair serving all three basemaps, with a white casing under each line so they stay legible over satellite imagery. **Must run before `publish-contours.sh`**, or the layers it creates reference a style that does not exist yet and GeoServer refuses the default-style assignment.
+
+It also writes `contours_plain.sld` and `contours_labelled.sld` next to itself, and **those artifacts are committed**. [`contourStyles.test.ts`](../../apps/api/src/geoserver/contourStyles.test.ts) asserts against them, so a style edit that is not regenerated will show up as a failing test rather than as a surprise on the map. To refresh them without touching GeoServer:
+
+```bash
+python3 apps/api/scripts/contours/styles.py --write-only
+```
+
+**Commit the regenerated `.sld` alongside any change to `styles.py`.**
 
 `styles.py` parses `CONTOUR_INTERVALS` from [`packages/shared/src/contours.ts`](../../packages/shared/src/contours.ts) itself rather than hand-copying the list, so it always uploads styles for whatever buckets actually exist.
 
@@ -93,14 +101,20 @@ Expect `200 image/png`, ~23 kB. Check both `webatlas:contours_plain` and `webatl
 - **The published layers carry the DEM's data extent** (107.20–109.46 E, 10.69–16.22 N), not the national bounds every basemap layer group uses. The web app sets a matching `extent` on the contour layer (`CONTOUR_EXTENT_4326` in [`apps/web/src/features/map/model/contours.ts`](../../apps/web/src/features/map/model/contours.ts)) so OpenLayers never requests a tile outside it. That constant reads `[107.2, 10.68, 109.46, 16.22]` — padded a fraction *outside* the published bounds on purpose, so rounding never clips the data edge. The two numbers differing slightly is intentional, not a mismatch. If the region or DEM coverage ever changes, that constant has to change with it, or panning will produce `400 TileOutOfRange` per tile.
 - **The interval list has one source of truth:** [`CONTOUR_INTERVALS`](../../packages/shared/src/contours.ts) in `packages/shared`. `generateContours.ts` imports it directly; both `styles.py` and `publish-contours.sh` parse it out of the same file rather than duplicating it. The 20 m bucket is deliberately not in that list yet (see below) — adding it means changing it there, then regenerating and republishing, not just editing GeoServer.
 
-## Known limitation
+## Legibility over satellite — how it is solved
 
-On the **satellite** basemap, the brown contour lines are hard to see against the imagery — only the haloed labels stay clearly legible. This is a known limitation, not a bug: per-basemap line colour (brown over street, white over satellite, grey over hillshade) was deliberately deferred, because it means three style pairs instead of one and triples the tile cache before anyone has looked at the layer on screen. Revisit once usage shows it is worth the cache cost — the client already selects a style per request (`contourStyle()` in `contours.ts`), so it is an SLD addition plus one more style name, not a redesign.
+The brown lines were originally near-invisible over satellite imagery; only the haloed labels stayed legible. That was the clue: the labels survive because they carry a white halo, and the lines had nothing.
+
+Each line now gets a **white casing** — a wider, translucent white stroke laid underneath it (line width + 1.5, so 0.75 px of white each side, matching the label halo's 1.5 radius). One style still serves all three basemaps: the casing is what carries satellite, and it is near-invisible against the light street basemap. This was chosen over per-basemap styles, which would have doubled the style count to 12 GWC tile sets and required the client to re-request tiles on every basemap change.
+
+**The two-`FeatureTypeStyle` split in `styles.py` is load-bearing — do not collapse it.** Casings live in the first FTS and lines in the second. Putting a casing and its line in the same `<Rule>` instead renders them per feature — casing, line, casing, line — so a neighbouring contour's white casing overdraws the previous contour's brown, biting chunks out of lines exactly where terrain is steep and contours crowd together. GeoServer completes each FTS across every feature before starting the next, which is what makes the split work. `contourStyles.test.ts` asserts the two blocks and their order precisely because this failure is invisible in the SLD source and only appears on a rendered tile.
+
+If satellite ever wants its own hue after all, the door is open: the client already selects a style per request (`contourStyle()` in `contours.ts`), so it is an SLD addition plus one more style name, not a redesign.
 
 ## Deferred, deliberately
 
 - **The 20 m bucket.** ~445,000 features, ~230 MB. Decide once 50 m has been on screen for a while.
-- **Per-basemap line colour.** See Known limitation above.
+- **Per-basemap line colour.** Not needed now that the casing carries satellite; see above.
 - **Smoothing before contouring.** Worth 32% fewer features on bare earth; no longer a prerequisite now that the DEM is bare earth, but worth tuning if the 50 m bucket looks noisy in forest.
 
 ## Licence — read before you publish anything
