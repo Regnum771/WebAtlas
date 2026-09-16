@@ -51,7 +51,8 @@ pipeline step whose obligations are encoded in a call site rather than in a cont
 
 - A declarative dataset registry and a runner that executes it.
 - An ISO 19115-shaped lineage record, mandatory for every dataset.
-- A one-command environment build and a status command.
+- A one-command environment build covering the compose stack, the data pipeline, and a
+  post-build verification probe; plus a status command.
 - Migration of existing ingest paths onto the registry, incrementally.
 
 **Out of scope** (separate sub-projects, see [Decomposition](#decomposition))
@@ -205,11 +206,17 @@ The registry makes that answer queryable for any node.
 ## §4 The one-command build
 
 ```bash
+npm run atlas:up                         # stack → build → verify. The onboarding command.
+
 npm run atlas:build                      # materialise everything missing, in order
 npm run atlas:build -- --only contours   # one dataset and its dependencies
 npm run atlas:build -- --except dem      # everything but these and their dependents
 npm run atlas:status                     # what is materialised, stale, or missing
+npm run atlas:verify                     # probe a built atlas end to end
 ```
+
+`atlas:up` is what a new teammate runs, and the only command onboarding documentation
+needs to name. The rest are for people already working in the repo.
 
 `--except` excludes a dataset **and everything downstream of it**, since a dependent
 cannot be materialised without its parent. Excluding `dem` therefore also excludes
@@ -219,6 +226,43 @@ cannot be materialised without its parent. Excluding `dem` therefore also exclud
 and runs it is told exactly what state they are in, rather than discovering it through a
 grey tile served at HTTP 200.
 
+### Stack lifecycle
+
+Nothing can load into PostGIS or publish to GeoServer unless both are running — runbook
+step 1. `atlas:up` owns that: bring the compose stack up, wait for readiness, then build,
+then verify.
+
+- **Readiness is polled, not assumed.** `db` has a compose healthcheck; GeoServer does
+  not, so readiness means its REST endpoint answering, not the container existing.
+  Proceeding on container start alone produces failures that look like data problems.
+- **Idempotent and non-destructive.** Re-running against an already-running stack is a
+  no-op. `atlas:up` never runs `down`, and never `down -v` — a command people run while
+  disoriented must not be able to delete a volume holding hours of DEM load.
+- **The compose file is a parameter, not a constant.** A deployment compose file already
+  exists alongside the development one; `atlas:up` takes which to use rather than
+  hard-coding `infra/docker-compose.yml`.
+
+### Verify, and why it is not the test suite
+
+`atlas:verify` probes a built atlas the way a browser would:
+
+1. Every registered dataset's stages report materialised.
+2. Every `publish-geoserver` layer answers a real WMS/WFS request — not merely existing
+   in the GeoServer catalog.
+3. Every loaded dataset's active version holds more than zero features.
+4. Every dataset has a lineage row with a resolvable licence.
+
+Check 3 is the generalisation of the `rivers_overview` defect: a derived artifact that
+was *present, queryable, and empty*, which every structural check passed and only a
+content check would have caught. Check 2 is the generalisation of the grey
+"API KEY REQUIRED" tile returned at HTTP 200 — a layer that resolves but does not serve.
+
+This is deliberately **not** `npm run test:api`. A build failing and the code being wrong
+are different conditions that should fail separately and be read differently; folding
+vitest into the build conflates them. `atlas:status` reports *declared state* (what the
+registry believes); `atlas:verify` reports *observed behaviour* (what the stack actually
+returns). Disagreement between them is itself the diagnosis.
+
 ### This dissolves the CI data problem
 
 CI cannot build the basemap — it is a 684 MB OSM extract. Today that manifests as seven
@@ -227,7 +271,10 @@ failing tests, and the pre-existing workaround is ad hoc environment-variable ga
 `process.env.ASSISTANT_DATABASE_URL ? describe : describe.skip` in `privileges.test.ts`).
 
 With a registry, CI runs `atlas:build --except basemap,dem` and tests gate on the same
-source of truth as the build:
+source of truth as the build. Note CI calls `atlas:build`, **not** `atlas:up`: GitHub
+Actions supplies its own Postgres as a job service container, so the compose lifecycle
+that `atlas:up` owns is neither available nor wanted there. Separating the two commands
+is what lets the same build logic serve both a laptop and CI.
 
 ```ts
 describe.skipIf(!materialised('basemap'))('locate_place', () => { … });
@@ -288,6 +335,16 @@ suite stays fast and fully CI-runnable even though the real data is not availabl
 - Licence propagation is transitive: contours resolve to CC BY-NC-SA via the DEM.
 - Every registered dataset has a lineage row — no dataset can be registered without one.
 
+**Stack lifecycle and verify**
+- `atlas:up` against an already-running stack is a no-op and restarts nothing.
+- `atlas:up` waits for GeoServer's REST endpoint, not merely for its container.
+- `atlas:verify` fails when a dataset is materialised but its table is empty — the
+  `rivers_overview` case, asserted directly.
+- `atlas:verify` fails when a layer exists in the GeoServer catalog but does not serve a
+  real request — the grey-tile-at-HTTP-200 case.
+- No command in this spec issues `docker compose down`, with or without `-v`. Asserted
+  in a test, because the cost of getting it wrong is someone's hours-long DEM load.
+
 ## §7 Migration path
 
 Six independently shippable steps. The repository works after each one, and the existing
@@ -299,7 +356,7 @@ runbook steps remain valid in parallel until step 5, so nobody is blocked mid-mi
 | 2 | Migrate the seven `SEED_LAYERS` datasets | They already fit `load-geojson` almost exactly — best effort-to-value ratio |
 | 3 | Migrate rivers | Proves `dependsOn` and the `sql` derive stage against `rivers_overview` |
 | 4 | Wrap basemap, DEM, contours as `run` stages with promotion deadlines | No behaviour change; brings them into the graph and under governance |
-| 5 | `atlas:build` becomes the documented onboarding path | The eight-step runbook collapses to one command plus pointers |
+| 5 | `atlas:up` becomes the documented onboarding path | All eight runbook steps, step 1 included, collapse into one command |
 | 6 | Promote `run` stages to built-ins as deadlines fall due | The raster ones are sub-project C |
 
 ## YAGNI — not doing
