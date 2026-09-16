@@ -2,12 +2,20 @@ import type { Pool } from 'pg';
 import type { Stage } from '../types';
 
 /**
- * Run a statement against the pool.
+ * Run `stage.statement` against the pool as a single simple-protocol query.
+ * The stage itself never adds BEGIN/COMMIT.
  *
- * Deliberately NOT wrapped in a transaction. REFRESH MATERIALIZED VIEW CONCURRENTLY —
- * how water.rivers_overview is rebuilt — cannot execute inside a transaction block, and
- * that is the first real use of this stage. Statements needing atomicity say so
- * themselves with their own BEGIN/COMMIT.
+ * Contract:
+ * - A statement string containing multiple `;`-separated statements runs as
+ *   ONE implicit PostgreSQL transaction: all of it applies, or none of it does.
+ *   Use that for multi-statement data loads — it's already atomic without any
+ *   explicit BEGIN/COMMIT.
+ * - Some statements cannot run inside a transaction block at all —
+ *   REFRESH MATERIALIZED VIEW CONCURRENTLY (how water.rivers_overview is
+ *   rebuilt), VACUUM, CREATE INDEX CONCURRENTLY. Because a multi-statement
+ *   string is an implicit transaction, combining one of these with any other
+ *   statement fails. Such a statement must be the ONLY statement in its stage;
+ *   alone, it works, since the stage adds no transaction of its own.
  */
 export async function executeSql(
   pool: Pool,
