@@ -1,8 +1,8 @@
 import type { Pool } from 'pg';
-import type { Dataset } from './types';
+import type { Dataset, Stage } from './types';
 import { topologicalOrder } from './graph';
 import { upsertLineage, appendProcessStep } from './lineage';
-import { stageKey, stageInputHash, readStageState, writeStageState } from './state';
+import { stageKey, stageHashPlan, readStageState, writeStageState } from './state';
 import { executeSql } from './stages/sql';
 
 export interface BuildReport {
@@ -10,62 +10,99 @@ export interface BuildReport {
   skipped: string[];
   failed: string[];
   blocked: string[];
+  /** label -> error message, for every entry in `failed`. */
+  errors: Record<string, string>;
 }
 
-export async function runBuild(pool: Pool, datasets: Dataset[]): Promise<BuildReport> {
-  const report: BuildReport = { executed: [], skipped: [], failed: [], blocked: [] };
-  const hashes = new Map<string, string>();   // dataset id -> last stage hash
-  const broken = new Set<string>();           // datasets that failed or are downstream of one
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
-  for (const d of topologicalOrder(datasets)) {
+/**
+ * Materialise every dataset, stage by stage, skipping stages whose input hash is
+ * unchanged from the last successful run.
+ *
+ * Per-dataset isolation: an error anywhere in one dataset's processing (lineage upsert,
+ * state read/write, a stage's own execution, the process-step append) is caught and
+ * recorded against that dataset — it never rejects the overall build, so independent
+ * datasets still run. Only a malformed registry (topologicalOrder / stageHashPlan
+ * throwing) rejects, since that is not a per-dataset failure.
+ */
+export async function runBuild(pool: Pool, datasets: Dataset[]): Promise<BuildReport> {
+  const report: BuildReport = { executed: [], skipped: [], failed: [], blocked: [], errors: {} };
+  const ordered = topologicalOrder(datasets);
+  const plan = stageHashPlan(ordered);
+  const broken = new Set<string>();
+
+  for (const d of ordered) {
+    const labels = d.stages.map((s, i) => `${d.id}/${stageKey(i, s)}`);
+
     // A dependent cannot be built on a parent that failed. Skip it, but keep going —
     // halting the whole run over one failure wastes an hours-long build.
     if ((d.dependsOn ?? []).some((dep) => broken.has(dep))) {
       broken.add(d.id);
-      report.blocked.push(d.id);
+      report.blocked.push(...labels);
       continue;
     }
 
-    await upsertLineage(pool, d);
-    const upstream = (d.dependsOn ?? []).map((dep) => hashes.get(dep) ?? '');
-    let datasetFailed = false;
+    const hashes = plan.get(d.id)!;
+    let current = `${d.id}/lineage`;
+    let failedAt = -1;
 
-    for (const [i, stage] of d.stages.entries()) {
-      const key = stageKey(i, stage);
-      const label = `${d.id}/${key}`;
-      const hash = stageInputHash(stage, upstream);
+    try {
+      await upsertLineage(pool, d);
 
-      const prior = await readStageState(pool, d.id, key);
-      if (prior?.status === 'ok' && prior.input_hash === hash) {
-        report.skipped.push(label);
-        hashes.set(d.id, hash);
-        continue;
+      for (const [i, stage] of d.stages.entries()) {
+        current = labels[i];
+        const hash = hashes[i];
+        const key = stageKey(i, stage);
+
+        const prior = await readStageState(pool, d.id, key);
+        if (prior?.status === 'ok' && prior.input_hash === hash) {
+          report.skipped.push(current);
+          continue;
+        }
+
+        try {
+          await executeStage(pool, stage);
+        } catch (err) {
+          report.failed.push(current);
+          report.errors[current] = errorMessage(err);
+          broken.add(d.id);
+          failedAt = i;
+          try {
+            await writeStageState(pool, d.id, key, hash, 'failed');
+          } catch {
+            // Best-effort: a failure here must not hide the execution error above.
+          }
+          break;
+        }
+
+        await writeStageState(pool, d.id, key, hash, 'ok');
+        // Lineage is written from what actually ran, so it cannot drift (spec §3).
+        await appendProcessStep(pool, d.id, `stage ${key} completed`, stage.type);
+        report.executed.push(current);
       }
 
-      try {
-        await executeStage(pool, stage);
-      } catch {
-        await writeStageState(pool, d.id, key, hash, 'failed');
-        report.failed.push(label);
-        broken.add(d.id);
-        datasetFailed = true;
-        break;
+      if (failedAt >= 0) {
+        report.blocked.push(...labels.slice(failedAt + 1));
       }
-
-      await writeStageState(pool, d.id, key, hash, 'ok');
-      // Lineage is written from what actually ran, so it cannot drift (spec §3).
-      await appendProcessStep(pool, d.id, `stage ${key} completed`, stage.type);
-      report.executed.push(label);
-      hashes.set(d.id, hash);
+    } catch (err) {
+      // Infrastructure error: lineage upsert, a state read/write, or a step append threw
+      // outside the stage-execution try above. The dataset is broken; every label from
+      // the one being processed onward is unattempted.
+      report.failed.push(current);
+      report.errors[current] = errorMessage(err);
+      broken.add(d.id);
+      const idx = labels.indexOf(current);
+      report.blocked.push(...labels.slice(idx + 1));
     }
-
-    if (datasetFailed) continue;
   }
 
   return report;
 }
 
-async function executeStage(pool: Pool, stage: Dataset['stages'][number]): Promise<void> {
+async function executeStage(pool: Pool, stage: Stage): Promise<void> {
   switch (stage.type) {
     case 'sql':
       return executeSql(pool, stage);

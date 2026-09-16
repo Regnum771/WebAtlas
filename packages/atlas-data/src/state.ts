@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Pool } from 'pg';
-import type { Stage } from './types';
+import type { Dataset, Stage } from './types';
 
 /**
  * Stable identifier for a stage within its dataset. Position is included because a
@@ -52,6 +52,44 @@ export function stageInputHash(stage: Stage, upstreamHashes: string[]): string {
     upstream: [...upstreamHashes].sort(),
   });
   return createHash('sha256').update(payload).digest('hex');
+}
+
+/**
+ * Input hash of every stage of every dataset, keyed by dataset id, in stage order.
+ *
+ * Chained: stage 0 of a dataset hashes with the FINAL stage hash of each dependency;
+ * stage i > 0 hashes with stage i-1's hash alone. So a change anywhere upstream — an
+ * earlier stage of the same dataset, or any stage of any dependency, transitively —
+ * changes every hash after it, and only those.
+ *
+ * `datasets` must already be in topological order (use topologicalOrder from graph.ts).
+ * Pure: the runner and atlas:status both call this, so they cannot disagree about what
+ * is stale.
+ */
+export function stageHashPlan(orderedDatasets: Dataset[]): Map<string, string[]> {
+  const plan = new Map<string, string[]>();
+
+  for (const d of orderedDatasets) {
+    let inputs = (d.dependsOn ?? []).map((dep) => {
+      const upstream = plan.get(dep);
+      if (!upstream) {
+        throw new Error(
+          `stageHashPlan: dependency "${dep}" of "${d.id}" has no computed hash; pass datasets in topological order`
+        );
+      }
+      return upstream[upstream.length - 1];
+    });
+
+    const stageHashes: string[] = [];
+    for (const stage of d.stages) {
+      const hash = stageInputHash(stage, inputs);
+      stageHashes.push(hash);
+      inputs = [hash];
+    }
+    plan.set(d.id, stageHashes);
+  }
+
+  return plan;
 }
 
 export async function readStageState(
