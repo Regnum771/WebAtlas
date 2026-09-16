@@ -9,8 +9,8 @@ import { useCursorElevation } from '../model/useCursorElevation';
  * ngoài vùng có DEM (ví dụ ngoài biển), và máy chủ chưa nạp DEM. Một ô trống nằm đó mãi
  * trông như hỏng; không có ô thì đúng là "chỗ này không có số liệu độ cao".
  *
- * Làm tròn tới mét: DEM là lưới 30 m và là mô hình BỀ MẶT (có tán cây, nhà cửa), nên
- * phần thập phân chỉ tạo cảm giác chính xác giả.
+ * Làm tròn tới mét: DEM là lưới 30 m (FABDEM — mô hình BỀ MẶT ĐẤT TRẦN, đã loại tán cây
+ * và nhà cửa bằng học máy), nên phần thập phân chỉ tạo cảm giác chính xác giả.
  */
 const CursorElevation: React.FC = () => {
   const { map } = useMapContext();
