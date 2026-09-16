@@ -964,8 +964,13 @@ body {
   padding: var(--space-1) 0;
   /* Cho phép .layer-suboptions (flex-basis 100%, bên dưới) rơi xuống dòng
      riêng. Các hàng bình thường (nhãn + thanh trượt, hoặc nhãn + gợi ý
-     ngưỡng zoom) vẫn vừa một dòng như cũ vì không phần tử nào trong số đó
-     có flex-basis 100% — wrap chỉ kích hoạt khi có phần tử không đủ chỗ. */
+     ngưỡng zoom) hiện vẫn vừa một dòng, nhưng KHÔNG PHẢI vì có quy tắc nào
+     chặn wrap cho chúng — flex-wrap: wrap áp dụng cho mọi phần tử con như
+     nhau, bất kể flex-basis. Chúng vừa một dòng chỉ vì độ dài chuỗi hiện tại
+     (nhãn lớp + số liệu) đủ ngắn so với bề rộng bảng. Một tên lớp dài hơn
+     trong tương lai vẫn có thể khiến hàng đó wrap âm thầm, giống hệt
+     .layer-suboptions — flex-basis 100% ở dưới chỉ đảm bảo NÓ luôn rơi
+     xuống dòng riêng, không đảm bảo các phần tử khác không rơi theo. */
   flex-wrap: wrap;
 }
 .layer-row.gated { opacity: 0.7; }
