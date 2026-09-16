@@ -112,7 +112,7 @@ Then ask the assistant: *"Buôn Ma Thuột cao bao nhiêu mét so với mực n�
 
 ## Cost
 
-Measured for the mainland-only set: 512 MB of raw downloads (deletable), 285 MB of clipped GeoTIFFs, and **426 MB in the database** across 7,301 raster rows. `pg_total_relation_size` is printed at the end of the load.
+Measured for the mainland-only set: 512 MB of raw downloads (deletable), 285 MB of clipped GeoTIFFs, and **406 MB in the database** across 7,242 raster rows (matching the live load counted in §4 above — the 426 MB / 7,301-row figure once here was a stale Copernicus-load number). `pg_total_relation_size` is printed at the end of the load.
 
 ## What is not built yet
 

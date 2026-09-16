@@ -88,7 +88,7 @@ curl -s -o out.png -w "%{http_code} %{content_type} %{size_download}\n" \
 &FORMAT=image/png&TILEMATRIX=EPSG:900913:11&TILEROW=951&TILECOL=1638"
 ```
 
-Expect `200 image/png`, ~23 kB. Check both `webatlas:contours_plain` and `webatlas:contours_labelled` — they are separate GWC cache entries (see Gotchas), so one succeeding does not prove the other works.
+Expect `200 image/png`, ~33 kB (measured live: `contours_plain` 32,734 bytes, `contours_labelled` 33,116 bytes — the white-casing treatment below grew the render ~42% over the original ~23 kB). Check both `webatlas:contours_plain` and `webatlas:contours_labelled` — they are separate GWC cache entries (see Gotchas), so one succeeding does not prove the other works.
 
 ## Gotchas
 
@@ -126,4 +126,4 @@ If satellite ever wants its own hue after all, the door is open: the client alre
 
 > **Citation:** Hawker, L., Uhe, P., Paulo, L., Sosa, J., Savage, J., Sampson, C., & Neal, J. (2022). *A 30 m global map of elevation with forests and buildings removed.* Environmental Research Letters, 17(2), 024016.
 
-The web app surfaces this attribution on the contour layer's own OpenLayers source (`CONTOUR_ATTRIBUTION` in `contours.ts`) — separate from the OSM attribution the basemap carries, since the contour layer contains no OSM data and omitting the FABDEM notice would be a licence violation, not a courtesy lapse.
+`CONTOUR_ATTRIBUTION` in `contours.ts` is attached to the contour layer's OpenLayers source, but the map has no `ol/control/Attribution` (deliberately — see `MapModel.ts:368-370`), so a source's `attributions` string is never rendered on the map itself. The web app actually surfaces this attribution in the layers-panel legend: `LEGEND_ATTRIBUTION.layer_contours` in `packages/shared/src/legend.ts` carries the same sentence, and `Legend` renders it under the contour layer whenever that layer is visible.
