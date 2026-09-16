@@ -1,0 +1,119 @@
+# Triển khai trên một máy x86_64 (Google Compute Engine, e2-medium: 2 vCPU / 4 GB).
+#
+# Đây là file ĐỘC LẬP, không phải override của docker-compose.yml. Lý do: bản dev phơi
+# cổng db và geoserver ra mọi giao diện mạng, mà danh sách `ports` trong compose là cộng
+# dồn khi ghép file — một override không thể gỡ bỏ chúng, chỉ có thể thêm vào. Trên máy
+# có IP công khai thì đó là Postgres mở ra Internet.
+#
+# Dùng:  docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d
+name: webatlas
+
+services:
+  db:
+    # Đúng ảnh của bản dev. Máy GCP là x86_64 nên ảnh amd64 dùng thẳng được — một biến
+    # số ít đi giữa máy dev và máy chủ.
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    # Chỉ loopback. Các bước 2–8 trong docs/runbooks/README.md chạy bằng npm trên chính
+    # máy chủ và nối tới localhost:5432, nên cổng vẫn cần mở — nhưng không mở ra ngoài.
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./postgis/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  geoserver:
+    # Cũng đúng ảnh của bản dev, không build lại. Ảnh này chỉ có amd64 — trên GCP thì
+    # không sao, nhưng xem phần "Nếu chuyển sang máy ARM" trong runbook trước khi đổi
+    # nhà cung cấp.
+    image: docker.osgeo.org/geoserver:2.26.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GEOSERVER_ADMIN_USER: ${GEOSERVER_ADMIN_USER}
+      GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD}
+      SKIP_DEMO_DATA: "true"
+      # Bản dev phải bật CORS vì trình duyệt ở :5173 gọi sang :8080 — hai origin khác
+      # nhau. Sau Caddy thì WMS/WFS nằm ở /geoserver trên CHÍNH origin của trang, nên
+      # không còn yêu cầu cross-origin nào để mà cho phép.
+      CORS_ENABLED: "false"
+    # Chỉ loopback: bước 8 (`npm run publish:geoserver`) chạy trên máy chủ và nối tới
+    # localhost:8080. Người dùng cuối đi qua Caddy, không chạm thẳng vào cổng này —
+    # nhờ vậy trang quản trị /geoserver/web không nằm trần trên Internet.
+    ports:
+      - "127.0.0.1:${GEOSERVER_PORT:-8080}:8080"
+    volumes:
+      - geoserver_data:/opt/geoserver_data
+
+  api:
+    build:
+      # Gốc repo, không phải apps/api: đây là npm workspaces, `npm ci` cần lockfile ở gốc
+      # và cả nguồn của packages/shared.
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # `db`, không phải `localhost` — trong mạng compose thì localhost là chính container
+      # này. Cùng một cái bẫy đã ghi ở docs/runbooks/self-hosted-basemap.md.
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      ASSISTANT_DATABASE_URL: postgres://webatlas_assistant:${ASSISTANT_DB_PASSWORD}@db:5432/${POSTGRES_DB}
+      GEOSERVER_URL: http://geoserver:8080/geoserver
+      GEOSERVER_ADMIN_USER: ${GEOSERVER_ADMIN_USER}
+      GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      API_PORT: "3001"
+      API_HOST: "0.0.0.0"
+      # Trang và API dùng chung origin sau Caddy, nên thực tế không có preflight nào.
+      # Vẫn đặt đúng giá trị để một client khác origin bị từ chối chứ không lọt qua.
+      CORS_ORIGIN: ${SITE_URL}
+      NODE_ENV: production
+      # Rỗng là hợp lệ: env.ts để ANTHROPIC_API_KEY optional và route trợ lý trả 503 khi
+      # thiếu. Demo miễn phí chạy được mà không cần key trả phí nào.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-claude-haiku-4-5}
+    # Không mở cổng ra máy chủ: chỉ Caddy gọi tới, qua mạng nội bộ của compose.
+    expose:
+      - "3001"
+
+  caddy:
+    # Chấm dứt TLS, và là thứ DUY NHẤT chạm tới Internet. Caddy tự xin và tự gia hạn
+    # chứng chỉ Let's Encrypt, nên HTTPS không tốn đồng nào và không phải nhớ gia hạn.
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - geoserver
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Bản build tĩnh của web. Sinh ra bằng `npm run build:web` trên chính máy chủ —
+      # xem docs/runbooks/deploy-gcp.md.
+      - ../apps/web/dist:/srv/www:ro
+      # Chứng chỉ đã cấp nằm ở đây. Mất volume này là mỗi lần dựng lại phải xin chứng
+      # chỉ mới, mà Let's Encrypt có hạn mức số lần cấp.
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  db_data:
+  geoserver_data:
+  caddy_data:
+  caddy_config:

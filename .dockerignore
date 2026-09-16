@@ -1,0 +1,21 @@
+# Build context là gốc repo (vì đây là monorepo npm workspaces), nên nếu không loại trừ
+# thì Docker gửi kèm cả DEM: 680 MB dữ liệu không bao giờ đi vào ảnh API.
+apps/api/src/db/seeds/data/dem/
+apps/api/scripts/.osm-cache/
+
+# Cài lại bằng `npm ci` trong ảnh; copy vào chỉ tổ hỏng (binary native sai kiến trúc —
+# máy dev là Windows x64, đích đến là Linux arm64).
+node_modules
+**/node_modules
+
+# Bí mật: không được nằm trong lớp ảnh. Compose nạp chúng lúc chạy.
+infra/.env
+infra/.env.prod
+apps/api/.env
+apps/web/.env
+
+dist
+**/dist
+.git
+__pycache__/
+.superpowers/

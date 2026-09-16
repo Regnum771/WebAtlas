@@ -1,0 +1,44 @@
+# Cổng vào duy nhất của bản triển khai. Ba thứ vốn nằm ở ba cổng khác nhau lúc dev
+# (web :5173, API :3001, GeoServer :8080) được gộp về CÙNG MỘT origin ở đây.
+#
+# Đó không phải chuyện cho gọn. Nó xoá luôn hai vấn đề mà bản tách-host gặp phải:
+# không còn preflight CORS, và không còn mixed content (trang https gọi tài nguyên
+# http thì trình duyệt chặn thẳng, bản đồ trắng trơn).
+#
+# SITE_ADDRESS do compose truyền vào. Đặt là tên miền để Caddy tự xin chứng chỉ
+# Let's Encrypt; đặt là `:80` để chạy thuần HTTP khi chưa có tên miền.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# handle_path CẮT tiền tố: /api/layers -> /layers. Bắt buộc phải cắt, vì Fastify
+	# đăng ký route ở gốc (`/layers`, `/auth/...`) chứ không dưới /api.
+	handle_path /api/* {
+		reverse_proxy api:3001
+	}
+
+	# Chặn trang quản trị GeoServer khỏi Internet. Bản đồ chỉ cần WMS/WFS/WMTS đọc;
+	# /geoserver/web và /geoserver/rest là đường ghi, và chúng đã với tới được qua
+	# 127.0.0.1:8080 trên chính máy chủ cho bước publish.
+	#
+	# Phải là `handle` bọc `respond`, không được viết `respond @matcher` trần: các khối
+	# handle loại trừ lẫn nhau và xét theo thứ tự trong file, còn respond trần lại nằm ở
+	# nhóm directive khác và bị Caddy xếp SAU handle — lúc đó /geoserver/* đã proxy đi rồi.
+	@geoserver_admin path /geoserver/web* /geoserver/rest*
+	handle @geoserver_admin {
+		respond 404
+	}
+
+	# handle, KHÔNG phải handle_path: GeoServer tự nó phục vụ dưới /geoserver và sinh
+	# ra URL nội bộ theo tiền tố đó. Cắt tiền tố ở đây là gãy WMTS GetCapabilities.
+	handle /geoserver/* {
+		reverse_proxy geoserver:8080
+	}
+
+	handle {
+		root * /srv/www
+		# react-router điều hướng phía client, nên URL sâu (/routes/..., /map/...) không
+		# ứng với file nào trên đĩa. Thiếu dòng này thì F5 ở trang sâu ra 404.
+		try_files {path} /index.html
+		file_server
+	}
+}
