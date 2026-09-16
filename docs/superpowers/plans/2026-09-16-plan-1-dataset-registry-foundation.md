@@ -464,11 +464,14 @@ import type { Dataset } from './types';
  */
 export function assertNoOverdueEscapeHatches(datasets: Dataset[], today: Date = new Date()): void {
   const overdue: string[] = [];
+  // Compare UTC calendar dates as YYYY-MM-DD strings: the stage stays valid for the whole
+  // of its promoteBy day and is overdue from 00:00 UTC the next day, on every machine.
+  const todayUtc = today.toISOString().slice(0, 10);
 
   for (const d of datasets) {
     for (const stage of d.stages) {
       if (stage.type !== 'run') continue;
-      if (new Date(`${stage.promoteBy}T00:00:00Z`) < today) {
+      if (stage.promoteBy < todayUtc) {
         overdue.push(
           `  ${d.id}: run "${stage.command}" had promoteBy ${stage.promoteBy}, ` +
             `should have been promoted to "${stage.promoteTo}"`
