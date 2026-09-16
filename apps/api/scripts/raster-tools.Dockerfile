@@ -27,4 +27,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Sanity: fail the build rather than the load if the package ever stops shipping it.
-RUN raster2pgsql 2>&1 | head -1
+# NOT `raster2pgsql 2>&1 | head -1`: `RUN` is `/bin/sh -c`, and a pipeline's exit status
+# is the LAST command's — head always exits 0, so a missing binary would still pass the
+# build. `command -v` fails (and fails the build) exactly when the binary is absent.
+RUN command -v raster2pgsql
