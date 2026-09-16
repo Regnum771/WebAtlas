@@ -69,6 +69,8 @@ describe.skipIf(!DB)('stage state database writes', () => {
 
   it('rejects writing state for a dataset id with no lineage row', async () => {
     const id = '__atlasdata_test__no-lineage';
-    await expect(writeStageState(pool, id, '0:sql', 'a'.repeat(64), 'ok')).rejects.toThrow();
+    await expect(writeStageState(pool, id, '0:sql', 'a'.repeat(64), 'ok')).rejects.toMatchObject({
+      code: '23503',
+    });
   });
 });

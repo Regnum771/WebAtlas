@@ -35,4 +35,14 @@ describe('stageInputHash', () => {
     const b: Stage = { type: 'load-geojson', file: 'f', table: 't', columns: (p) => ({ x: p.b }) };
     expect(stageInputHash(a, [])).not.toBe(stageInputHash(b, []));
   });
+
+  it('ignores the order of keys in the stage object, so a cosmetic reorder does not rebuild', () => {
+    const a = { type: 'sql', statement: 'SELECT 1' } as Stage;
+    const b = { statement: 'SELECT 1', type: 'sql' } as Stage;
+    expect(stageInputHash(a, [])).toBe(stageInputHash(b, []));
+  });
+
+  it('distinguishes no upstreams from one upstream with no recorded hash', () => {
+    expect(stageInputHash(sql('SELECT 1'), [])).not.toBe(stageInputHash(sql('SELECT 1'), ['']));
+  });
 });
