@@ -28,6 +28,20 @@ exports.shorthands = undefined;
  * AddRasterConstraints() reads the loaded tiles to derive them, so it can only
  * run after the data is in; the loader applies it as its last step. An empty
  * table with constraints would also reject the very first tile.
+ *
+ * This table crosses INV-5 (docs/superpowers/specs/2026-07-10-webgis-water-resources-
+ * backend-design.md §"Invariants"): "Raster EO data lives as COGs + GeoServer coverages,
+ * never in PostGIS." basemap.dem_region is exactly that — raw raster pixels in PostGIS —
+ * and this migration departs from INV-5 knowingly. The reason: both consumers of this
+ * DEM need the pixels reachable from server-side SQL, which a GeoServer coverage store
+ * does not offer. `elevation_at_point` is `ST_Value(rast, ST_Point(...))` against a
+ * single row; a coverage store only serves rendered tiles or WCS clips over HTTP, with
+ * no per-point SQL lookup. `ST_Contour` (migration 1000000000011) needs the same pixels
+ * as SQL input to produce vector lines — there is no way to hand a coverage store's
+ * imagery to a SQL contouring function without loading it into PostGIS first anyway.
+ * INV-5's EO pipeline (§14) is solving a different problem (serving big, frequently
+ * updated satellite mosaics as map tiles) and that reasoning does not transfer to a
+ * single, mostly-static bare-earth DEM queried point-by-point and contoured in SQL.
  */
 exports.up = (pgm) => {
   pgm.sql('CREATE SCHEMA IF NOT EXISTS basemap');
