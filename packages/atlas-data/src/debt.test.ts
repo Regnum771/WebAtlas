@@ -39,4 +39,26 @@ describe('assertNoOverdueEscapeHatches', () => {
     };
     expect(() => assertNoOverdueEscapeHatches([clean], TODAY)).not.toThrow();
   });
+
+  describe('deadline boundary (UTC calendar date, strictly after promoteBy)', () => {
+    const due = [withRunStage('2026-09-16')];
+
+    it('is not overdue at 00:00 UTC on the promoteBy date', () => {
+      expect(() => assertNoOverdueEscapeHatches(due, new Date('2026-09-16T00:00:00Z'))).not.toThrow();
+    });
+
+    it('is not overdue mid-day on the promoteBy date', () => {
+      expect(() => assertNoOverdueEscapeHatches(due, new Date('2026-09-16T10:00:00Z'))).not.toThrow();
+    });
+
+    it('is not overdue at the last millisecond of the promoteBy date', () => {
+      expect(() => assertNoOverdueEscapeHatches(due, new Date('2026-09-16T23:59:59.999Z'))).not.toThrow();
+    });
+
+    it('is overdue from 00:00 UTC the day after promoteBy', () => {
+      expect(() => assertNoOverdueEscapeHatches(due, new Date('2026-09-17T00:00:00Z'))).toThrow(
+        /promoteBy 2026-09-16/
+      );
+    });
+  });
 });
