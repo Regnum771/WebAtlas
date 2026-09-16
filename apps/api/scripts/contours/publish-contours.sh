@@ -19,6 +19,22 @@ USER="${GEOSERVER_ADMIN_USER:-admin}"
 AUTH="$USER:${GEOSERVER_ADMIN_PASSWORD:?set GEOSERVER_ADMIN_PASSWORD}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Every REST call below is captured into a variable with `-w "%{http_code}"` rather than
+# checked with curl's own --fail, so a non-2xx status is a value we can print — not just a
+# generic curl error. That means `set -e` alone does NOT catch a bad response: this
+# function is what actually fails the script. Without it, a wrong
+# GEOSERVER_ADMIN_PASSWORD (401) or a forbidden call (403) used to print the code and
+# fall through to the next REST call and eventually "Done." on exit 0 — the publish
+# looked successful while nothing was actually published or updated.
+require_2xx() {
+  local label="$1" code="$2"
+  echo "   ${label}: ${code}"
+  case "$code" in
+    2??) ;;
+    *) echo "ERROR: ${label} returned ${code}, expected 2xx" >&2; exit 1 ;;
+  esac
+}
+
 # Never hand-copy the interval list: styles.py parses it from
 # packages/shared/src/contours.ts (same source the data generator and the browser use),
 # and we shell out to it here because bash cannot import TS itself. Fails loudly (set -e)
@@ -63,18 +79,20 @@ XML
     code=$(curl -s -o /dev/null -w "%{http_code}" -u "$AUTH" -XPUT -H "Content-Type: text/xml" \
       "$GS/workspaces/$WS/datastores/$STORE/featuretypes/$NAME" -d "$BODY")
   fi
-  echo "   featuretype: $code"
+  require_2xx featuretype "$code"
 
   # Default style plain; labelled offered as an alternate so GWC caches both. Style names
   # are workspace-qualified (webatlas:...) so this resolves even if a same-named style
   # ever exists in another workspace.
-  curl -s -o /dev/null -w "   style: %{http_code}\n" -u "$AUTH" -XPUT -H "Content-Type: text/xml" \
+  style_code=$(curl -s -o /dev/null -w "%{http_code}" -u "$AUTH" -XPUT -H "Content-Type: text/xml" \
     "$GS/layers/$WS:$NAME" -d \
     "<layer><defaultStyle><name>$WS:contours_plain</name></defaultStyle>
-       <styles><style><name>$WS:contours_labelled</name></style></styles></layer>"
+       <styles><style><name>$WS:contours_labelled</name></style></styles></layer>")
+  require_2xx style "$style_code"
 
-  curl -s -o /dev/null -w "   truncate: %{http_code}\n" -u "$AUTH" -XPOST -H "Content-Type: text/xml" \
+  truncate_code=$(curl -s -o /dev/null -w "%{http_code}" -u "$AUTH" -XPOST -H "Content-Type: text/xml" \
     --data "<truncateLayer><layerName>$WS:$NAME</layerName></truncateLayer>" \
-    "${GEOSERVER_URL}/gwc/rest/masstruncate"
+    "${GEOSERVER_URL}/gwc/rest/masstruncate")
+  require_2xx truncate "$truncate_code"
 done
 echo "Done."
