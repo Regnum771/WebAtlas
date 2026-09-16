@@ -15,11 +15,12 @@ export const LEGEND_ATTRIBUTION = {
     // MapModel.ts deliberately carries no ol/control/Attribution (see the comment at
     // MapModel.ts:368-370 — it collided with the toolbar and the bottom-right readouts),
     // so every `attributions` string passed to an OpenLayers source is inert. This legend
-    // is the ONLY place any of these notices reach a user. That currently covers rivers,
-    // lakes and the contour layer below; the basemap context layers (roads/railways/water/
-    // landuse) and the OSM/Esri basemap tiles themselves are still uncovered — a known,
-    // deliberately unfixed gap (see final-review-fixes.md C1), not an inconsistency to
-    // "fix" by mechanically adding OSM_ODBL to every OSM-derived entry.
+    // is the ONLY place any of these notices reach a user. That covers rivers, lakes, the
+    // basemap context layers below (roads/railways/water/landuse) and the contour layer.
+    // The one genuinely uncovered residual is the RASTER basemap tiles themselves — the
+    // OSM street tiles and Esri satellite tiles drawn as the map background — which have
+    // no legend row and are not credited anywhere in the UI (a known, user-accepted gap,
+    // see final-review-fixes.md C1; do not claim it is fixed by adding an entry here).
     layer_bm_roads: OSM_ODBL,
     layer_bm_railways: OSM_ODBL,
     layer_bm_water: OSM_ODBL,
