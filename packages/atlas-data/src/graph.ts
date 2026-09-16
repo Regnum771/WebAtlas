@@ -56,6 +56,15 @@ export function withDependencies(datasets: Dataset[], ids: string[]): Dataset[] 
  * be materialised without its parent, so excluding `dem` must also exclude `contours`.
  */
 export function withoutDependents(datasets: Dataset[], ids: string[]): Dataset[] {
+  const byId = index(datasets);
+
+  // Validate that all ids exist; a typo must not silently skip validation.
+  for (const id of ids) {
+    if (!byId.has(id)) {
+      throw new Error(`Unknown dataset "${id}"`);
+    }
+  }
+
   const drop = new Set(ids);
   let changed = true;
 

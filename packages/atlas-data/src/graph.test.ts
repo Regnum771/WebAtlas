@@ -34,6 +34,10 @@ describe('withDependencies (--only)', () => {
     const ids = withDependencies(graph, ['contours']).map((d) => d.id).sort();
     expect(ids).toEqual(['contours', 'dem']);
   });
+
+  it('throws on an unknown id, naming it', () => {
+    expect(() => withDependencies(graph, ['nope'])).toThrow(/Unknown dataset "nope"/);
+  });
 });
 
 describe('withoutDependents (--except)', () => {
@@ -42,5 +46,10 @@ describe('withoutDependents (--except)', () => {
     // without its parent (spec §4).
     const ids = withoutDependents(graph, ['dem']).map((d) => d.id).sort();
     expect(ids).toEqual(['rivers', 'rivers_overview']);
+  });
+
+  it('throws on an unknown id rather than silently excluding nothing', () => {
+    // A typo like --except demm must not quietly build everything, including dem.
+    expect(() => withoutDependents(graph, ['demm'])).toThrow(/Unknown dataset "demm"/);
   });
 });
