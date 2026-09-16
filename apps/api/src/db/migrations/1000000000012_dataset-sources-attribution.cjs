@@ -15,7 +15,7 @@ exports.shorthands = undefined;
  * docs/runbooks/elevation-dem.md — không diễn giải lại, vì đây là điều kiện giấy phép.
  */
 const FABDEM_ATTRIBUTION =
-  'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018';
+  'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';
 
 exports.up = (pgm) => {
   pgm.addColumn(

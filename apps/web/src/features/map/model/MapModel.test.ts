@@ -131,7 +131,7 @@ describe('MapModel.setContourSettings', () => {
     expect(url).toContain('LAYER=webatlas%3Acontours_100');
     expect(url).toContain('STYLE=webatlas:contours_plain');
     expect(source.getAttributions()?.(undefined as never)).toEqual([
-      'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018',
+      'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.',
     ]);
 
     // Đổi mức thu phóng và bắn moveend thủ công (như OpenLayers sẽ làm khi người

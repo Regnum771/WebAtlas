@@ -14,7 +14,7 @@ const OSM_ATTRIBUTION = '© OpenStreetMap contributors (ODbL)';
 // Câu ghi công FABDEM bắt buộc theo giấy phép CC BY-NC-SA — nguyên văn giống hệt
 // CONTOUR_ATTRIBUTION trong contours.ts và LEGEND_ATTRIBUTION.layer_contours.
 const FABDEM_ATTRIBUTION =
-  'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018';
+  'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';
 
 describe('Legend composition (real layersState -> LEGEND_ATTRIBUTION derivation)', () => {
   it('renders OSM attribution for lakes when rivers is hidden — the previously-shipped bug', () => {

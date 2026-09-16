@@ -64,4 +64,4 @@ export const CONTOUR_EXTENT_4326: [number, number, number, number] = [107.2, 10.
  * lớp này không hề chứa dữ liệu OSM, và bỏ sót ghi công FABDEM là vi phạm giấy phép.
  */
 export const CONTOUR_ATTRIBUTION =
-  'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018';
+  'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';

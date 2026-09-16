@@ -25,7 +25,7 @@ const OSM_ODBL = '© OpenStreetMap contributors (ODbL)';
  * terrain-contours.md — do not paraphrase, it is a licence condition.
  */
 const FABDEM_ATTRIBUTION =
-  'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018';
+  'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';
 
 export const LEGEND_ATTRIBUTION: Record<string, string> = {
   layer_rivers: OSM_ODBL,
