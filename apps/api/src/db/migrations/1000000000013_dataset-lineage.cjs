@@ -42,10 +42,14 @@ exports.up = (pgm) => {
   pgm.sql(`CREATE INDEX IF NOT EXISTS dataset_lineage_source_dataset_idx
              ON app.dataset_lineage_source (dataset_id)`);
 
+  // ON DELETE RESTRICT (không phải CASCADE): lịch sử xử lý là dấu vết xuất xứ của dữ
+  // liệu có giấy phép công khai và không được phép bị một lệnh xoá nhầm âm thầm xoá
+  // sạch. Muốn gỡ một tập dữ liệu thì phải xử lý lịch sử của nó có chủ đích (ví dụ xoá
+  // rõ ràng các bước trước), chứ không để nó biến mất theo.
   pgm.sql(`
     CREATE TABLE IF NOT EXISTS app.dataset_lineage_step (
       id          bigserial PRIMARY KEY,
-      dataset_id  text NOT NULL REFERENCES app.dataset_lineage(dataset_id) ON DELETE CASCADE,
+      dataset_id  text NOT NULL REFERENCES app.dataset_lineage(dataset_id) ON DELETE RESTRICT,
       description text NOT NULL,
       tool        text,
       ran_at      timestamptz NOT NULL DEFAULT now()
@@ -56,9 +60,16 @@ exports.up = (pgm) => {
 
   // Trạng thái theo TỪNG STAGE, không phải từng tập dữ liệu: sửa một phép ánh xạ cột
   // phải khiến đúng stage đó chạy lại, mà không đụng tới một lần tải DEM 40 phút.
+  //
+  // Khoá ngoại tới dataset_lineage (CASCADE): trạng thái stage cho một dataset_id
+  // không có lý lịch phải bị từ chối ngay — id gõ nhầm không được âm thầm tạo trạng
+  // thái mồ côi. Xoá tập dữ liệu thì dọn luôn trạng thái build của nó, để một tập dữ
+  // liệu đăng ký lại không thừa hưởng trạng thái "ok" cũ và bỏ qua việc cần chạy lại.
+  // Hệ quả bộ chạy phải tuân theo: lý lịch phải được upsert trước khi ghi bất kỳ
+  // trạng thái stage hay bước xử lý nào (kế hoạch của bộ chạy đã làm đúng thứ tự này).
   pgm.sql(`
     CREATE TABLE IF NOT EXISTS app.dataset_stage_state (
-      dataset_id  text NOT NULL,
+      dataset_id  text NOT NULL REFERENCES app.dataset_lineage(dataset_id) ON DELETE CASCADE,
       stage       text NOT NULL,
       input_hash  text NOT NULL,
       status      text NOT NULL CHECK (status IN ('ok', 'failed')),
