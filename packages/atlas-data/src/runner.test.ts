@@ -131,9 +131,13 @@ describe('runBuild', () => {
   it('resumes after a mid-dataset failure: the fixed stage and everything after it run once', async () => {
     const state = new Map<string, { input_hash: string; status: string }>();
     const steps: string[] = [];
-    let s1: string = 'FAIL ME';
+    // S1's statement never changes across runs — only this flag does. That is what
+    // proves the skip decision reads `status`, not just the hash: if the status check
+    // were dropped, S1 would look "current" (same hash as the failed write) and never
+    // rerun. See R2-I1.
+    let failS1 = true;
     const query = vi.fn(async (sql: string, params?: unknown[]) => {
-      if (sql === 'FAIL ME') throw new Error('boom in S1');
+      if (sql === 'S1' && failS1) throw new Error('boom in S1');
       if (sql.includes('FROM app.dataset_stage_state')) {
         const row = state.get(`${params![0]}|${params![1]}`);
         return { rows: row ? [row] : [] };
@@ -154,7 +158,7 @@ describe('runBuild', () => {
     const connect = vi.fn(async () => ({ query, release: vi.fn() }));
     const pool = { query, connect } as unknown as Pool;
 
-    const build = () => [dsMulti('y', ['S0', s1, 'S2'])];
+    const build = () => [dsMulti('y', ['S0', 'S1', 'S2'])];
 
     const first = await runBuild(pool, build());
     expect(first.executed).toEqual(['y/0:sql']);
@@ -162,27 +166,144 @@ describe('runBuild', () => {
     expect(first.blocked).toEqual(['y/2:sql']);
     expect(first.errors['y/1:sql']).toContain('boom in S1');
 
-    s1 = 'S1 FIXED';
+    failS1 = false;
     const second = await runBuild(pool, build());
     expect(second.skipped).toEqual(['y/0:sql']);
     expect(second.executed).toEqual(['y/1:sql', 'y/2:sql']);
   });
 
-  it('an infrastructure error isolates the dataset without rejecting the build', async () => {
+  it('records "stage executed but recording failed" when appendProcessStep throws after a successful execution', async () => {
+    const state = new Map<string, { input_hash: string; status: string }>();
+    const steps: string[] = [];
+    let failStep = true;
     const query = vi.fn(async (sql: string, params?: unknown[]) => {
-      if (sql.includes('INTO app.dataset_lineage_step') && params?.[0] === 'a') {
-        throw new Error('db connection lost');
+      if (sql.includes('INTO app.dataset_lineage_step')) {
+        if (failStep) throw new Error('step write boom');
+        steps.push(params![0] as string);
+        return { rows: [] };
       }
-      if (sql.includes('FROM app.dataset_stage_state')) return { rows: [] };
+      if (sql.includes('FROM app.dataset_stage_state')) {
+        const row = state.get(`${params![0]}|${params![1]}`);
+        return { rows: row ? [row] : [] };
+      }
+      if (sql.includes('INTO app.dataset_stage_state')) {
+        state.set(`${params![0]}|${params![1]}`, {
+          input_hash: params![2] as string,
+          status: params![3] as string,
+        });
+        return { rows: [] };
+      }
       return { rows: [] };
     });
     const connect = vi.fn(async () => ({ query, release: vi.fn() }));
     const pool = { query, connect } as unknown as Pool;
 
-    const report = await runBuild(pool, [ds('a', 'SELECT 1'), ds('c', 'SELECT 3')]);
+    const graph = [ds('a', 'SELECT 1')];
+    const first = await runBuild(pool, graph);
+    expect(first.failed).toEqual(['a/0:sql']);
+    expect(first.errors['a/0:sql']).toMatch(/^stage executed but recording failed: /);
+    expect(state.get('a|0:sql')?.status).not.toBe('ok');
+
+    failStep = false;
+    const second = await runBuild(pool, graph);
+    expect(second.executed).toEqual(['a/0:sql']);
+    expect(steps).toEqual(['a']);
+  });
+
+  it('records "stage executed but recording failed" when writeStageState(ok) throws after a successful execution', async () => {
+    const state = new Map<string, { input_hash: string; status: string }>();
+    const steps: string[] = [];
+    let failWrite = true;
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('INTO app.dataset_stage_state')) {
+        if (params![3] === 'ok' && failWrite) throw new Error('state write boom');
+        state.set(`${params![0]}|${params![1]}`, {
+          input_hash: params![2] as string,
+          status: params![3] as string,
+        });
+        return { rows: [] };
+      }
+      if (sql.includes('FROM app.dataset_stage_state')) {
+        const row = state.get(`${params![0]}|${params![1]}`);
+        return { rows: row ? [row] : [] };
+      }
+      if (sql.includes('INTO app.dataset_lineage_step')) {
+        steps.push(params![0] as string);
+        return { rows: [] };
+      }
+      return { rows: [] };
+    });
+    const connect = vi.fn(async () => ({ query, release: vi.fn() }));
+    const pool = { query, connect } as unknown as Pool;
+
+    const graph = [ds('a', 'SELECT 1')];
+    const first = await runBuild(pool, graph);
+    expect(first.failed).toEqual(['a/0:sql']);
+    expect(first.errors['a/0:sql']).toMatch(/^stage executed but recording failed: /);
+    // The process step was recorded even though the state write failed — over-recording
+    // a re-execution is acceptable, under-recording one is not.
+    expect(steps).toEqual(['a']);
+    expect(state.get('a|0:sql')?.status).not.toBe('ok');
+
+    failWrite = false;
+    const second = await runBuild(pool, graph);
+    expect(second.executed).toEqual(['a/0:sql']);
+    expect(steps).toEqual(['a', 'a']);
+  });
+
+  it('an infrastructure error isolates the dataset and blocks its dependents without rejecting the build', async () => {
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('INTO app.dataset_lineage_step') && params?.[0] === 'a') {
+        throw new Error('db connection lost');
+      }
+      return { rows: [] };
+    });
+    const connect = vi.fn(async () => ({ query, release: vi.fn() }));
+    const pool = { query, connect } as unknown as Pool;
+
+    const report = await runBuild(pool, [
+      ds('a', 'SELECT 1'),
+      ds('b', 'SELECT 2', ['a']),
+      ds('c', 'SELECT 3'),
+    ]);
     expect(report.executed).toContain('c/0:sql');
     expect(report.failed).toContain('a/0:sql');
     expect(report.errors['a/0:sql']).toContain('db connection lost');
+    expect(report.blocked).toContain('b/0:sql');
+  });
+
+  it('an upsertLineage failure blocks all of that dataset\'s stages and its dependents', async () => {
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('app.dataset_lineage (') && params?.[0] === 'a') {
+        throw new Error('lineage insert boom');
+      }
+      return { rows: [] };
+    });
+    const connect = vi.fn(async () => ({ query, release: vi.fn() }));
+    const pool = { query, connect } as unknown as Pool;
+
+    const a = dsMulti('a', ['S0', 'S1']);
+    const b = ds('b', 'SELECT 2', ['a']);
+    const report = await runBuild(pool, [a, b]);
+    expect(report.failed).toEqual(['a/lineage']);
+    expect(report.errors['a/lineage']).toContain('lineage insert boom');
+    expect(report.blocked).toEqual(expect.arrayContaining(['a/0:sql', 'a/1:sql', 'b/0:sql']));
+  });
+
+  it('keeps the original execution error when the best-effort failed-state write also throws', async () => {
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql === 'FAIL ME') throw new Error('original boom');
+      if (sql.includes('INTO app.dataset_stage_state') && params?.[3] === 'failed') {
+        throw new Error('state write also boom');
+      }
+      return { rows: [] };
+    });
+    const connect = vi.fn(async () => ({ query, release: vi.fn() }));
+    const pool = { query, connect } as unknown as Pool;
+
+    const report = await runBuild(pool, [ds('a', 'FAIL ME')]);
+    expect(report.failed).toEqual(['a/0:sql']);
+    expect(report.errors['a/0:sql']).toBe('original boom');
   });
 
   it('blocks transitively through a chain of dependents', async () => {

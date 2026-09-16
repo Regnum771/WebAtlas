@@ -113,6 +113,14 @@ describe('stageHashPlan', () => {
     expect(() => stageHashPlan(graph)).toThrow(/dem/);
   });
 
+  it('throws naming the dependency when it has zero stages', () => {
+    const graph = [
+      dataset('empty', []),
+      dataset('contours', [sql('DERIVE contours')], ['empty']),
+    ];
+    expect(() => stageHashPlan(graph)).toThrow(/empty/);
+  });
+
   it('is deterministic: same descriptors produce an identical plan', () => {
     const build = () => [
       dataset('dem', [sql('FETCH A'), sql('LOAD dem')]),

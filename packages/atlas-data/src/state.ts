@@ -77,6 +77,11 @@ export function stageHashPlan(orderedDatasets: Dataset[]): Map<string, string[]>
           `stageHashPlan: dependency "${dep}" of "${d.id}" has no computed hash; pass datasets in topological order`
         );
       }
+      if (upstream.length === 0) {
+        throw new Error(
+          `stageHashPlan: dependency "${dep}" of "${d.id}" has zero stages; cannot use it as an upstream hash`
+        );
+      }
       return upstream[upstream.length - 1];
     });
 

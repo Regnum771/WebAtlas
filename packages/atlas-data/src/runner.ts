@@ -47,13 +47,17 @@ export async function runBuild(pool: Pool, datasets: Dataset[]): Promise<BuildRe
 
     const hashes = plan.get(d.id)!;
     let current = `${d.id}/lineage`;
+    let currentIndex = -1;
     let failedAt = -1;
+    let stageExecuted = false;
 
     try {
       await upsertLineage(pool, d);
 
       for (const [i, stage] of d.stages.entries()) {
         current = labels[i];
+        currentIndex = i;
+        stageExecuted = false;
         const hash = hashes[i];
         const key = stageKey(i, stage);
 
@@ -65,6 +69,7 @@ export async function runBuild(pool: Pool, datasets: Dataset[]): Promise<BuildRe
 
         try {
           await executeStage(pool, stage);
+          stageExecuted = true;
         } catch (err) {
           report.failed.push(current);
           report.errors[current] = errorMessage(err);
@@ -78,9 +83,12 @@ export async function runBuild(pool: Pool, datasets: Dataset[]): Promise<BuildRe
           break;
         }
 
-        await writeStageState(pool, d.id, key, hash, 'ok');
-        // Lineage is written from what actually ran, so it cannot drift (spec §3).
+        // Recorded before the state write: lineage is written from what actually ran,
+        // so it cannot drift (spec §3). If the state write below then fails, the stage
+        // reruns and appends a second, accurate step — over-recording a re-execution,
+        // never under-recording one.
         await appendProcessStep(pool, d.id, `stage ${key} completed`, stage.type);
+        await writeStageState(pool, d.id, key, hash, 'ok');
         report.executed.push(current);
       }
 
@@ -90,12 +98,15 @@ export async function runBuild(pool: Pool, datasets: Dataset[]): Promise<BuildRe
     } catch (err) {
       // Infrastructure error: lineage upsert, a state read/write, or a step append threw
       // outside the stage-execution try above. The dataset is broken; every label from
-      // the one being processed onward is unattempted.
+      // the one being processed onward is unattempted. If the current stage had already
+      // executed successfully before the failing write, say so — the operator must know
+      // data changed even though the build reports this stage as failed.
       report.failed.push(current);
-      report.errors[current] = errorMessage(err);
+      report.errors[current] = stageExecuted
+        ? `stage executed but recording failed: ${errorMessage(err)}`
+        : errorMessage(err);
       broken.add(d.id);
-      const idx = labels.indexOf(current);
-      report.blocked.push(...labels.slice(idx + 1));
+      report.blocked.push(...labels.slice(currentIndex + 1));
     }
   }
 
