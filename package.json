@@ -23,7 +23,7 @@
     "publish:geoserver": "npm run publish:geoserver -w @webatlas/api",
     "test:api": "npm run test -w @webatlas/api",
     "test:api:live": "npm run test:live -w @webatlas/api",
-    "atlas:build": "npm run atlas:build -w @webatlas/atlas-data",
-    "atlas:status": "npm run atlas:status -w @webatlas/atlas-data"
+    "atlas:build": "npm run atlas:build -w @webatlas/atlas-data --",
+    "atlas:status": "npm run atlas:status -w @webatlas/atlas-data --"
   }
 }

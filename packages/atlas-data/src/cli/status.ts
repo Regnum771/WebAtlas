@@ -6,6 +6,15 @@ import { stageKey, stageHashPlan, readStageState } from '../state';
 async function main(): Promise<void> {
   validateRegistry();
 
+  // atlas:status takes no flags; a stray argument (e.g. a typo'd --only) must be
+  // rejected rather than silently ignored, and rejected before the pool exists.
+  const argv = process.argv.slice(2);
+  if (argv.length > 0) {
+    console.error(`atlas:status: unexpected argument "${argv[0]}" (atlas:status takes no arguments)`);
+    process.exitCode = 1;
+    return;
+  }
+
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL is not set');
   const pool = new pg.Pool({ connectionString });

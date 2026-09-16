@@ -2,20 +2,24 @@ import pg from 'pg';
 import { ALL_DATASETS, validateRegistry } from '../registry';
 import { withDependencies, withoutDependents } from '../graph';
 import { runBuild } from '../runner';
-
-function listArg(flag: string): string[] {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1].split(',') : [];
-}
+import { parseBuildArgs } from './args';
 
 async function main(): Promise<void> {
   validateRegistry();
 
-  const only = listArg('--only');
-  const except = listArg('--except');
+  // Argument and id errors are usage mistakes, not crashes: report just the message
+  // (no stack) and exit before the pool is ever created, so a typo can never fall
+  // through to "build everything" against a real database.
   let datasets = ALL_DATASETS;
-  if (only.length > 0) datasets = withDependencies(datasets, only);
-  if (except.length > 0) datasets = withoutDependents(datasets, except);
+  try {
+    const { only, except } = parseBuildArgs(process.argv.slice(2));
+    if (only.length > 0) datasets = withDependencies(datasets, only);
+    if (except.length > 0) datasets = withoutDependents(datasets, except);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+    return;
+  }
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL is not set');
