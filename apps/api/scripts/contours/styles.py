@@ -163,11 +163,22 @@ def write(name: str, body: str) -> None:
 def upload(name: str, body: str, pw: str) -> None:
     import requests  # see note above import block
 
+    # Write first, then read the bytes back off disk and send exactly those — not
+    # `body.encode()` straight from memory. `write()` is idempotent, so calling it again
+    # here (main() already called it once, for --write-only) costs nothing, but it turns
+    # "upload sends what write() wrote" from an incidental fact of call order into
+    # something upload() itself guarantees: it is now IMPOSSIBLE for GeoServer to receive
+    # a style that the committed .sld (and contourStyles.test.ts, which asserts against
+    # that file) does not also hold.
+    write(name, body)
+    path = pathlib.Path(__file__).resolve().parent / f"{name}.sld"
+    data = path.read_bytes()
+
     auth = (USER, pw)
     r = requests.post(
         f"{GS}/workspaces/{WS}/styles",
         params={"name": name},
-        data=body.encode("utf-8"),
+        data=data,
         headers={"Content-Type": "application/vnd.ogc.sld+xml"},
         auth=auth,
     )
@@ -180,7 +191,7 @@ def upload(name: str, body: str, pw: str) -> None:
         # actually survives a second run regardless of which code a given endpoint uses.
         r = requests.put(
             f"{GS}/workspaces/{WS}/styles/{name}",
-            data=body.encode("utf-8"),
+            data=data,
             headers={"Content-Type": "application/vnd.ogc.sld+xml"},
             auth=auth,
         )
