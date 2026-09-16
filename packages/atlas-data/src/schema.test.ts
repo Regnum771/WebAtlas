@@ -27,12 +27,22 @@ describe('defineDataset', () => {
     ).toThrow();
   });
 
-  it('rejects a run stage missing its promotion fields', () => {
+  it('rejects a run stage missing promoteTo', () => {
     expect(() =>
       defineDataset({
         ...valid,
-        // @ts-expect-error deliberately omitting promoteTo/promoteBy
-        stages: [{ type: 'run', command: './x.sh', produces: 'out' }],
+        // @ts-expect-error deliberately omitting promoteTo
+        stages: [{ type: 'run', command: './x.sh', produces: 'out', promoteBy: '2099-01-01' }],
+      })
+    ).toThrow();
+  });
+
+  it('rejects a run stage missing promoteBy', () => {
+    expect(() =>
+      defineDataset({
+        ...valid,
+        // @ts-expect-error deliberately omitting promoteBy
+        stages: [{ type: 'run', command: './x.sh', produces: 'out', promoteTo: 'fetch-cog' }],
       })
     ).toThrow();
   });
