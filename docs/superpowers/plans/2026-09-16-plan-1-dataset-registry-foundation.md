@@ -16,7 +16,7 @@
 - New workspace lives at `packages/atlas-data`. Same repository. This is a directory boundary, not a repository split.
 - `tsconfig.json` mirrors `packages/shared`: `target es2023`, `module esnext`, `moduleResolution bundler`, `strict`, `verbatimModuleSyntax`, `declaration`, `noUnusedLocals`, `noUnusedParameters`.
 - Migrations stay in `apps/api/src/db/migrations` — one migration chain for the whole repo. Do not create a second chain in the new workspace.
-- Migration filenames continue the existing sequence: the next free number is `1000000000012`.
+- Migration filenames continue the existing sequence: the next free number is `1000000000013` (`1000000000012` is taken by `1000000000012_dataset-sources-attribution.cjs` from the contours branch).
 - All new lineage tables live in the `app` schema (INV-1: PostGIS is the single source of truth).
 - Snapshot versioning (`app.dataset_versions`) is **not modified by this plan**. See spec §0.
 - Tests use a synthetic dataset. No test in this plan may depend on the real basemap, DEM, or contour data.
@@ -41,7 +41,7 @@
 | `packages/atlas-data/src/cli/build.ts` | `atlas:build` entry point |
 | `packages/atlas-data/src/cli/status.ts` | `atlas:status` entry point |
 | `packages/atlas-data/src/descriptors/index.ts` | Collects descriptors; the registry's input |
-| `apps/api/src/db/migrations/1000000000012_dataset-lineage.cjs` | `app.dataset_lineage`, `_source`, `_step`, `app.dataset_stage_state` |
+| `apps/api/src/db/migrations/1000000000013_dataset-lineage.cjs` | `app.dataset_lineage`, `_source`, `_step`, `app.dataset_stage_state`, and the scaffolding table `app.dataset_demo` used by Task 10 |
 
 **Modified**
 
@@ -673,7 +673,7 @@ git commit -m "feat(atlas-data): đồ thị phụ thuộc, thứ tự tô-pô v
 The tables that replace `basemap.dataset_sources` and that make stage-level idempotence possible.
 
 **Files:**
-- Create: `apps/api/src/db/migrations/1000000000012_dataset-lineage.cjs`
+- Create: `apps/api/src/db/migrations/1000000000013_dataset-lineage.cjs`
 - Test: `apps/api/src/db/datasetLineage.test.ts`
 
 **Interfaces:**
@@ -724,6 +724,12 @@ describe('dataset lineage schema', () => {
     );
   });
 
+  it('app.dataset_demo exists for the Task 10 demo dataset to populate', async () => {
+    // Created here rather than by the demo's sql stage: in this repo migrations create
+    // tables and pipeline code only populates them.
+    expect(await columns('dataset_demo')).toEqual(expect.arrayContaining(['id', 'note']));
+  });
+
   it('re-registering a dataset replaces its lineage row rather than duplicating it', async () => {
     const pool = getPool();
     await pool.query(
@@ -753,7 +759,7 @@ Expected: FAIL — the tables do not exist, so `columns()` returns `[]`.
 
 - [ ] **Step 3: Write the migration**
 
-Create `apps/api/src/db/migrations/1000000000012_dataset-lineage.cjs`:
+Create `apps/api/src/db/migrations/1000000000013_dataset-lineage.cjs`:
 
 ```js
 /* eslint-disable camelcase */
@@ -770,6 +776,11 @@ exports.shorthands = undefined;
  *
  * Bảng cũ basemap.dataset_sources KHÔNG bị xoá ở migration này — nó được gỡ sau khi
  * các tập dữ liệu basemap đã chuyển sang sổ đăng ký (bước 4 của lộ trình di trú).
+ *
+ * app.dataset_demo là giàn giáo cho tập dữ liệu `demo` dùng để chứng minh bộ chạy. Tạo
+ * nó ở đây chứ không để stage sql của bộ chạy tự tạo, vì quy ước của repo này là
+ * migration tạo bảng còn mã đường ống chỉ đổ dữ liệu vào. Gỡ cùng tập dữ liệu demo khi
+ * các tập dữ liệu thật đã chuyển sang sổ đăng ký.
  */
 exports.up = (pgm) => {
   pgm.sql(`
@@ -819,9 +830,17 @@ exports.up = (pgm) => {
       PRIMARY KEY (dataset_id, stage)
     )
   `);
+
+  pgm.sql(`
+    CREATE TABLE IF NOT EXISTS app.dataset_demo (
+      id   integer PRIMARY KEY,
+      note text NOT NULL
+    )
+  `);
 };
 
 exports.down = (pgm) => {
+  pgm.sql('DROP TABLE IF EXISTS app.dataset_demo');
   pgm.sql('DROP TABLE IF EXISTS app.dataset_stage_state');
   pgm.sql('DROP TABLE IF EXISTS app.dataset_lineage_step');
   pgm.sql('DROP TABLE IF EXISTS app.dataset_lineage_source');
@@ -832,12 +851,12 @@ exports.down = (pgm) => {
 - [ ] **Step 4: Apply the migration**
 
 Run: `npm run migrate:up -w @webatlas/api`
-Expected: `Migrations complete!`, naming `1000000000012_dataset-lineage`.
+Expected: `Migrations complete!`, naming `1000000000013_dataset-lineage`.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `npm run test:api -- datasetLineage`
-Expected: PASS — 5 tests.
+Expected: PASS — 6 tests.
 
 - [ ] **Step 6: Verify the migration reverses cleanly**
 
@@ -847,7 +866,7 @@ Expected: both exit 0. A migration that cannot roll back is a migration you cann
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/api/src/db/migrations/1000000000012_dataset-lineage.cjs apps/api/src/db/datasetLineage.test.ts
+git add apps/api/src/db/migrations/1000000000013_dataset-lineage.cjs apps/api/src/db/datasetLineage.test.ts
 git commit -m "feat(api): bảng lý lịch nguồn theo ISO 19115 và trạng thái từng stage"
 ```
 
@@ -1531,7 +1550,12 @@ import { defineDataset } from '../schema';
 
 /**
  * Tập dữ liệu tối giản để chứng minh bộ chạy hoạt động từ đầu tới cuối mà không cần
- * bất kỳ dữ liệu thật nào. Nó tạo một bảng, nên "đã dựng" là thứ quan sát được.
+ * bất kỳ dữ liệu thật nào. Nó ghi hai dòng vào app.dataset_demo, nên "đã dựng" là thứ
+ * quan sát được.
+ *
+ * Bảng do migration 1000000000013 tạo, KHÔNG phải do stage ở đây: quy ước của repo là
+ * migration tạo bảng, mã đường ống chỉ đổ dữ liệu. Hai stage chứ không phải một, để
+ * chứng minh thứ tự stage trong cùng một tập dữ liệu.
  */
 export const demo = defineDataset({
   id: 'demo',
@@ -1544,15 +1568,14 @@ export const demo = defineDataset({
   stages: [
     {
       type: 'sql',
-      statement: `CREATE TABLE IF NOT EXISTS app.dataset_demo (
-                    id integer PRIMARY KEY,
-                    note text NOT NULL
-                  )`,
+      statement: `INSERT INTO app.dataset_demo (id, note)
+                  VALUES (1, 'materialised by the atlas runner')
+                  ON CONFLICT (id) DO NOTHING`,
     },
     {
       type: 'sql',
       statement: `INSERT INTO app.dataset_demo (id, note)
-                  VALUES (1, 'materialised by the atlas runner')
+                  VALUES (2, 'second stage, proving in-dataset stage order')
                   ON CONFLICT (id) DO NOTHING`,
     },
   ],
