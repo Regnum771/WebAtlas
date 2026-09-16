@@ -1,0 +1,11 @@
+# Repo này soạn trên Windows nhưng chạy trên Linux. Ép LF cho những file mà CRLF
+# không chỉ xấu mà là hỏng thật.
+#
+# deploy.sh với dòng shebang kết thúc bằng CRLF sẽ đổ ở Linux với lỗi
+# "$'\r': command not found" — một thông báo không gợi ý gì về nguyên nhân. Hiện
+# core.autocrlf=true đang chuẩn hoá đúng, nhưng đó là cấu hình của từng máy: một
+# người trong đội đặt autocrlf=false là CRLF vào thẳng index.
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+Caddyfile   text eol=lf
+*.yml       text eol=lf
