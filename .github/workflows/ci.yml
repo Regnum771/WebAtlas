@@ -63,3 +63,35 @@ jobs:
       - run: npm run migrate
       - run: npm run seed
       - run: npm run test:api
+
+  # Triển khai lên máy chủ. Chỉ chạy khi push thẳng vào main VÀ cả ba job test ở trên
+  # đã xanh — `needs` là thứ bảo đảm điều đó, không phải thứ tự viết trong file.
+  deploy:
+    needs: [shared, web, api]
+    # Pull request không bao giờ chạm tới job này: với PR thì event_name là
+    # pull_request nên điều kiện sai ngay từ đầu.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Runner cài trên chính VM production. Nhãn riêng `webatlas-deploy` chứ không chỉ
+    # `self-hosted`: thêm một máy self-hosted nào nữa về sau, job này vẫn không rơi nhầm.
+    #
+    # ĐIỀU KIỆN BẮT BUỘC: repo phải PRIVATE. Với repo công khai, bất kỳ ai cũng fork được
+    # rồi mở PR, và một workflow chạy trên self-hosted runner nghĩa là mã của người lạ
+    # thực thi ngay trên máy chủ production.
+    runs-on: [self-hosted, webatlas-deploy]
+    # Job này không gọi API của GitHub. Không cấp quyền nào cho token của nó.
+    permissions: {}
+    # Không đời nào để hai lần triển khai chồng lên nhau — migration không chịu được.
+    # cancel-in-progress: false vì cắt ngang một lần migrate đang chạy còn tệ hơn xếp hàng.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    timeout-minutes: 30
+    steps:
+      # Cố ý KHÔNG dùng actions/checkout. deploy.sh tự fetch và reset trong thư mục làm
+      # việc thật trên máy chủ ($HOME/webatlas) — nơi có infra/.env.prod và các volume
+      # của compose. Workspace tạm mà runner tạo ra không phải chỗ đó.
+      # Gọi qua `bash` chứ không chạy thẳng file: repo được soạn trên Windows nên bit
+      # thực thi không đi theo git, và một lần `chmod` quên mất trên máy chủ sẽ thành
+      # "Permission denied" ngay giữa lần triển khai đầu tiên.
+      - name: Triển khai
+        run: bash "$HOME/webatlas/infra/deploy.sh"
