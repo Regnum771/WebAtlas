@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { FABDEM_ATTRIBUTION } from '@webatlas/shared';
 
 // Mutable box so each test can drive a different layersState through the
 // same mocked useMapContext.
@@ -11,10 +12,8 @@ vi.mock('../../app/providers/MapProvider', () => ({
 import Legend from './index';
 
 const OSM_ATTRIBUTION = '© OpenStreetMap contributors (ODbL)';
-// Câu ghi công FABDEM bắt buộc theo giấy phép CC BY-NC-SA — nguyên văn giống hệt
-// CONTOUR_ATTRIBUTION trong contours.ts và LEGEND_ATTRIBUTION.layer_contours.
-const FABDEM_ATTRIBUTION =
-  'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';
+// FABDEM_ATTRIBUTION nhập từ @webatlas/shared (nguồn duy nhất) thay vì chép tay —
+// cùng hằng số mà CONTOUR_ATTRIBUTION và LEGEND_ATTRIBUTION.layer_contours dùng.
 
 describe('Legend composition (real layersState -> LEGEND_ATTRIBUTION derivation)', () => {
   it('renders OSM attribution for lakes when rivers is hidden — the previously-shipped bug', () => {

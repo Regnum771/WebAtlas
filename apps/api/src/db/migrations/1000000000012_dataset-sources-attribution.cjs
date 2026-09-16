@@ -13,6 +13,15 @@ exports.shorthands = undefined;
  *
  * Câu ghi công dùng đúng nguyên văn đã có ở CONTOUR_ATTRIBUTION (contours.ts) và
  * docs/runbooks/elevation-dem.md — không diễn giải lại, vì đây là điều kiện giấy phép.
+ *
+ * Hằng số dưới đây là một BẢN CHỤP tại thời điểm viết migration này, CỐ Ý không liên
+ * kết với legend.ts hay docs/runbooks/elevation-dem.md (không import, không đọc file
+ * lúc chạy migrate hay lúc test). Một migration là bản ghi lịch sử tại một thời điểm —
+ * sửa lại giá trị ở đây sau khi đã chạy tương đương với viết lại lịch sử. Nếu câu ghi
+ * công FABDEM từng thay đổi, hành động đúng là tạo MIGRATION MỚI để UPDATE lại hàng dữ
+ * liệu, không sửa file này (RE-REVIEW ROUND 2, R3 — controller decision: không gắn
+ * guard runbook vào đây, vì guard đó sẽ vỡ vĩnh viễn ngay sau lần đổi câu chữ hợp lệ
+ * đầu tiên và ép ai đó phải viết lại lịch sử migration).
  */
 const FABDEM_ATTRIBUTION =
   'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';

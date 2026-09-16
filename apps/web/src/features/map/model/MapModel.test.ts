@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { FABDEM_ATTRIBUTION } from '@webatlas/shared';
 import { MapModel } from './MapModel';
 import { settleZoomCorrection, zoomForScale, scaleAtZoom } from './zoomScale';
 import type TileLayer from 'ol/layer/Tile';
@@ -130,9 +131,7 @@ describe('MapModel.setContourSettings', () => {
     const url = source.getUrls()?.[0] ?? '';
     expect(url).toContain('LAYER=webatlas%3Acontours_100');
     expect(url).toContain('STYLE=webatlas:contours_plain');
-    expect(source.getAttributions()?.(undefined as never)).toEqual([
-      'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.',
-    ]);
+    expect(source.getAttributions()?.(undefined as never)).toEqual([FABDEM_ATTRIBUTION]);
 
     // Đổi mức thu phóng và bắn moveend thủ công (như OpenLayers sẽ làm khi người
     // dùng cuộn chuột) — khoảng cố định không được bị mức tự động ghi đè.

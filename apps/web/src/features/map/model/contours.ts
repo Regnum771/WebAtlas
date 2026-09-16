@@ -5,7 +5,7 @@
  * riverOverview.ts tồn tại.
  */
 
-import type { ContourInterval } from '@webatlas/shared';
+import { FABDEM_ATTRIBUTION, type ContourInterval } from '@webatlas/shared';
 
 /**
  * Cài đặt của lớp đường đồng mức.
@@ -62,6 +62,10 @@ export const CONTOUR_EXTENT_4326: [number, number, number, number] = [107.2, 10.
  * Ghi công bắt buộc theo giấy phép FABDEM (CC BY-NC-SA, dẫn xuất từ Copernicus
  * WorldDEM-30). Đường đồng mức không được dùng ghi công OSM của gwcSource() —
  * lớp này không hề chứa dữ liệu OSM, và bỏ sót ghi công FABDEM là vi phạm giấy phép.
+ *
+ * Nhập từ @webatlas/shared thay vì chép tay câu chữ ở đây — legend.ts đã có sẵn
+ * đúng câu này (FABDEM_ATTRIBUTION), chép tay lần hai chỉ tạo thêm một bản có thể
+ * lệch (RE-REVIEW ROUND 2, R3). Vẫn export dưới tên CONTOUR_ATTRIBUTION vì các nơi
+ * gọi hiện có (MapModel.ts) đã dùng tên này.
  */
-export const CONTOUR_ATTRIBUTION =
-  'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';
+export const CONTOUR_ATTRIBUTION = FABDEM_ATTRIBUTION;

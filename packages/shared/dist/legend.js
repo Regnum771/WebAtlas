@@ -7,8 +7,12 @@ const OSM_ODBL = '© OpenStreetMap contributors (ODbL)';
  * FABDEM (CC BY-NC-SA 4.0) attribution, required wherever elevation-derived data
  * surfaces. Kept as the exact sentence from docs/runbooks/elevation-dem.md and
  * terrain-contours.md — do not paraphrase, it is a licence condition.
+ *
+ * Exported (re-exported via index.ts) so this is the single source apps/web's
+ * CONTOUR_ATTRIBUTION and tests import from, instead of hand-typing a second
+ * literal copy that can drift (RE-REVIEW ROUND 2, R3).
  */
-const FABDEM_ATTRIBUTION = 'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';
+export const FABDEM_ATTRIBUTION = 'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';
 export const LEGEND_ATTRIBUTION = {
     layer_rivers: OSM_ODBL,
     layer_lakes: OSM_ODBL,
