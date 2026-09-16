@@ -56,3 +56,10 @@ either downloadable on demand or, for contours, cheaply regenerable from what wa
 downloaded. The cost is that every machine pays the generation time once — the DEM runbook
 and the contours runbook both record the measured time and output so a future run can be
 compared against a known-good one.
+
+## Triển khai
+
+Thứ tự ở trên là để dựng **máy dev**. Đưa lên một địa chỉ công khai thì xem
+[Triển khai trên Google Compute Engine](deploy-gcp.md) — các bước 2–8 chạy y nguyên trên
+máy chủ, nhưng bước 1 dùng `infra/docker-compose.prod.yml` thay cho file compose của bản
+dev: nó thêm service `api` và `caddy`, và không phơi Postgres ra Internet.
