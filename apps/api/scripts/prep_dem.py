@@ -19,9 +19,8 @@ contours derived from it are cartographic rather than merely de-noised.
     source cannot stay: Fathom sells a commercial equivalent (FABDEM+/FathomDEM), and raw
     Copernicus GLO-30 (no licence restriction, but a surface model) is the fallback.
 
-    ATTRIBUTION, required wherever these elevations surface:
-        FABDEM is produced using Copernicus WorldDEM-30
-        (c) DLR e.V. 2010-2014 and (c) Airbus Defence and Space GmbH 2014-2018.
+    ATTRIBUTION, required wherever these elevations surface: see FABDEM_ATTRIBUTION in
+    packages/shared/src/legend.ts (also quoted in docs/runbooks/elevation-dem.md).
 
     CITATION: Hawker, L., Uhe, P., Paulo, L., Sosa, J., Savage, J., Sampson, C., & Neal, J.
     (2022). A 30 m global map of elevation with forests and buildings removed.

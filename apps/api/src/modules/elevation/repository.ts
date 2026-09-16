@@ -13,9 +13,9 @@ import type { Pool } from 'pg';
  * What the provenance chip and the API response credit as the source. Not a
  * dataset_versions label — the DEM is unversioned reference data — but the licence
  * REQUIRES the source wherever these numbers surface, and FABDEM is CC BY-NC-SA, so
- * the obligation is stricter than a courtesy. The full notice (FABDEM is produced using
- * Copernicus WorldDEM-30 (c) DLR e.V. 2010-2014 and (c) Airbus Defence and Space GmbH
- * 2014-2018) and the required citation are in docs/runbooks/elevation-dem.md.
+ * the obligation is stricter than a courtesy. See FABDEM_ATTRIBUTION in
+ * packages/shared/src/legend.ts (also quoted in docs/runbooks/elevation-dem.md) for the
+ * required attribution text.
  *
  * FABDEM is bare earth: Copernicus GLO-30 with forest and building height removed. The
  * distinction matters to callers — a value here is ground level, not canopy top.
