@@ -54,6 +54,8 @@ pipeline step whose obligations are encoded in a call site rather than in a cont
 - A one-command environment build covering the compose stack, the data pipeline, and a
   post-build verification probe; plus a status command.
 - Migration of existing ingest paths onto the registry, incrementally.
+- Extraction of the pipeline into a `packages/atlas-data` workspace, leaving `apps/api`
+  as the Fastify server alone. Same repository — a directory boundary, not a split.
 
 **Out of scope** (separate sub-projects, see [Decomposition](#decomposition))
 
@@ -90,12 +92,31 @@ versioning to reference data.
 
 ## §1 Architecture
 
+The registry lives in a **new workspace**, not inside `apps/api`:
+
 ```
-apps/api/src/datasets/
-  descriptors/     one module per dataset — dams.ts, basemap-roads.ts, dem.ts, contours.ts
-  registry.ts      collects + validates descriptors, exposes the dependency graph
-  runner/          topological execution, idempotence, lineage writes
+packages/
+  shared/              types and contracts (unchanged)
+  atlas-data/          ← new workspace, same repository
+    descriptors/       one module per dataset — dams.ts, basemap-roads.ts, dem.ts, contours.ts
+    registry.ts        collects + validates descriptors, exposes the dependency graph
+    runner/            topological execution, idempotence, lineage writes
+    scripts/           GDAL/Python preparation moved from apps/api/scripts
+apps/
+  api/                 Fastify server only
+  web/
 ```
+
+This stays in the same repository — it is a directory boundary, not a repository split.
+See [Why not separate repositories](#why-not-separate-repositories).
+
+**Why a separate workspace.** `apps/api` currently holds two subsystems of comparable
+size wearing one name: ~2,987 lines of Fastify server against ~2,573 lines of data
+pipeline. They differ in every operational dimension — the server runs continuously, the
+pipeline runs rarely for hours; the server is TypeScript, the pipeline is substantially
+Python and GDAL; the server is deployed, the pipeline is not. A deployment image built
+from `apps/api` today ships every GDAL script into the API container to sit unused
+forever.
 
 Descriptors are **TypeScript modules, not YAML**. Three reasons:
 
@@ -105,6 +126,43 @@ Descriptors are **TypeScript modules, not YAML**. Three reasons:
 3. A TS descriptor can import attribute definitions directly from `packages/shared`,
    which is what INV-4 requires — one definition consumed by migrations, the API
    registry, and the frontend.
+
+### Why not separate repositories
+
+The question was evaluated and rejected. The monorepo stays.
+
+The workspace dependency graph is already the shape it should be: `shared` depends on
+nothing, `api` and `web` both depend on it, no cycles and no reverse coupling. Three
+reasons not to break it apart:
+
+**Splitting would violate INV-4 in order to gain repository boundaries.**
+`@webatlas/shared` has 65 import sites — 34 in `apps/api`, 31 in `apps/web`. Separate
+repositories require publishing it as a versioned package, after which the API can sit on
+one version while the frontend sits on another. That skew is exactly what INV-4 exists to
+forbid: *"Attribute schema has one definition."* The split would manufacture the failure
+mode the invariant was written to prevent.
+
+**Neither problem in this spec is caused by the monorepo.** A clone cannot build because
+1.4 GB lives outside git behind manual steps — more repositories makes that strictly
+worse. Ingest is bespoke because pipelines grew independently inside one application —
+that is a module boundary problem, which this spec solves.
+
+**The costs land immediately and the benefits are not needed.** Cross-repository pull
+requests, version coordination, duplicated CI, and atomic changes becoming multi-PR
+sequences all arrive on day one. Independent release cadence and separate access control
+— the reasons teams accept those costs — do not currently apply to one product built by
+one team.
+
+### The `apps/web/public` boundary violation
+
+[`seeds/registry.ts`](../../../apps/api/src/db/seeds/registry.ts) resolves the dams
+dataset from `apps/web/public/thuydienvietnam.geojson`. The frontend never references
+that file, so Vite ships 38 KB to every browser for nothing, while the API depends on the
+web application's directory layout. A preparation script also *overwrites* it, meaning a
+pipeline step mutates a file inside the frontend's public directory.
+
+Migrating the dams descriptor moves this file into the pipeline workspace's own data
+directory. Nothing in the frontend changes, because nothing in the frontend used it.
 
 ## §2 The descriptor
 
@@ -352,10 +410,10 @@ runbook steps remain valid in parallel until step 5, so nobody is blocked mid-mi
 
 | # | Step | Why this order |
 |---|---|---|
-| 1 | Registry, runner, lineage tables — **zero datasets migrated**, proven on one trivial dataset | Foundation lands and is testable before anything depends on it |
-| 2 | Migrate the seven `SEED_LAYERS` datasets | They already fit `load-geojson` almost exactly — best effort-to-value ratio |
+| 1 | Create `packages/atlas-data`; registry, runner, lineage tables land there — **zero datasets migrated**, proven on one trivial dataset | Foundation lands and is testable before anything depends on it; the workspace exists before code needs a home, so nothing moves twice |
+| 2 | Migrate the seven `SEED_LAYERS` datasets, relocating their data files into the new workspace | They already fit `load-geojson` almost exactly — best effort-to-value ratio. Migrating dams also resolves the `apps/web/public` violation |
 | 3 | Migrate rivers | Proves `dependsOn` and the `sql` derive stage against `rivers_overview` |
-| 4 | Wrap basemap, DEM, contours as `run` stages with promotion deadlines | No behaviour change; brings them into the graph and under governance |
+| 4 | Wrap basemap, DEM, contours as `run` stages with promotion deadlines; move `apps/api/scripts` into the workspace | No behaviour change; brings them into the graph and under governance, and leaves `apps/api` holding only the server |
 | 5 | `atlas:up` becomes the documented onboarding path | All eight runbook steps, step 1 included, collapse into one command |
 | 6 | Promote `run` stages to built-ins as deadlines fall due | The raster ones are sub-project C |
 
