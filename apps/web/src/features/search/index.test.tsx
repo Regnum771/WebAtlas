@@ -42,9 +42,9 @@ async function renderAndSelectFirstHit() {
   const input = screen.getByPlaceholderText('Tìm kiếm đối tượng…') as HTMLInputElement;
   fireEvent.change(input, { target: { value: 'la' } });
   await act(async () => { vi.advanceTimersByTime(500); });
-  await waitFor(() => expect(screen.getByText(/Hồ Lắk/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('button', { name: /Hồ Lắk/ })).toBeInTheDocument());
 
-  fireEvent.click(screen.getByText(/Hồ Lắk/));
+  fireEvent.click(screen.getByRole('button', { name: /Hồ Lắk/ }));
   return input;
 }
 
@@ -64,7 +64,7 @@ describe('Search (feature slice)', () => {
     const input = await renderAndSelectFirstHit();
 
     expect(input.value).toBe('');
-    expect(screen.queryByText(/Hồ Lắk/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Hồ Lắk/ })).not.toBeInTheDocument();
   });
 
   it('draws and frames the whole geometry of the selected hit', async () => {
