@@ -1,9 +1,12 @@
 import type { ZodTypeAny } from 'zod';
 import type { AnalysisOp, AnalysisResult } from '@webatlas/shared';
 import type { Queryable } from '../../assistant/tools/data/helpers';
-import { BufferInput, SelectWithinInput } from '../schemas';
+import { BufferInput, NearestInput, ProfileInput, SelectWithinInput, ZonalInput } from '../schemas';
 import { bufferOp } from './buffer';
+import { elevationProfileOp } from './elevationProfile';
+import { nearestOp } from './nearest';
 import { selectWithinOp } from './selectWithin';
+import { zonalElevationOp } from './zonalElevation';
 
 export interface OpDef {
   schema: ZodTypeAny;
@@ -16,4 +19,7 @@ export interface OpDef {
 export const OPS: Partial<Record<AnalysisOp, OpDef>> = {
   buffer: { schema: BufferInput, run: bufferOp },
   select_within: { schema: SelectWithinInput, run: selectWithinOp },
+  nearest: { schema: NearestInput, run: nearestOp },
+  elevation_profile: { schema: ProfileInput, run: elevationProfileOp },
+  zonal_elevation: { schema: ZonalInput, run: zonalElevationOp },
 };

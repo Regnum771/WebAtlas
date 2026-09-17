@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
 import { withAnalysisTimeout } from './db';
+import { demAvailable } from './dem';
 
 let app: ReturnType<typeof buildApp>;
 let dam: { id: string; lon: number; lat: number };
@@ -85,6 +86,59 @@ describe('POST /api/analysis/select_within', () => {
 describe('analysis route', () => {
   it('400s an unknown operation', async () => {
     expect((await post('teleport', {})).statusCode).toBe(400);
+  });
+});
+
+describe('POST /api/analysis/nearest', () => {
+  it('returns k rows in ascending distance with connector lines', async () => {
+    const res = await post('nearest', { lon: 108.05, lat: 12.68, layerKey: 'dams', k: 3 });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.rows).toHaveLength(3);
+    const d = body.rows.map((r: { distanceKm: number }) => r.distanceKm);
+    expect([...d].sort((a, b) => a - b)).toEqual(d);
+    expect(body.geometries.filter((g: { role: string }) => g.role === 'result')).toHaveLength(3);
+  });
+
+  it('rejects k above 25', async () => {
+    expect((await post('nearest', { lon: 108.05, lat: 12.68, layerKey: 'dams', k: 26 })).statusCode).toBe(400);
+  });
+});
+
+describe('DEM operations', () => {
+  const line = { type: 'LineString', coordinates: [[108.05, 12.68], [108.25, 12.68]] };
+
+  it('elevation_profile samples along the line, or reports an unloaded DEM', async () => {
+    const res = await post('elevation_profile', { geometry: line, samples: 50 });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    if (!(await demAvailable(getPool()))) {
+      expect(body.summary['Trạng thái']).toBe('Chưa nạp dữ liệu độ cao');
+      return;
+    }
+    expect(body.profile).toHaveLength(50);
+    expect(body.summary['Chiều dài (km)']).toBeGreaterThan(21);
+    expect(body.summary['Chiều dài (km)']).toBeLessThan(22.5);
+    expect(body.summary['Cao nhất (m)']).toBeGreaterThan(body.summary['Thấp nhất (m)']);
+    expect(body.attribution).toContain('FABDEM');
+  });
+
+  it('zonal_elevation summarises the DEM inside a polygon, or reports an unloaded DEM', async () => {
+    const res = await post('zonal_elevation', { geometry: square(108.05, 12.68, 0.02) });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    if (!(await demAvailable(getPool()))) {
+      expect(body.summary['Trạng thái']).toBe('Chưa nạp dữ liệu độ cao');
+      return;
+    }
+    expect(body.summary['Trung bình (m)']).toBeGreaterThan(300);
+    expect(body.summary['Trung bình (m)']).toBeLessThan(700);
+    expect(body.summary['Số điểm ảnh']).toBeGreaterThan(1000);
+  });
+
+  it('zonal_elevation refuses an area over the cap', async () => {
+    const res = await post('zonal_elevation', { geometry: square(108.0, 13.0, 0.5) });
+    expect(res.statusCode).toBe(400);
   });
 });
 
