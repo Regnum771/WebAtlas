@@ -30,3 +30,5 @@ export * from './assistant.js';
 export * from './layer-palette.js';
 export * from './legend.js';
 export * from './contours.js';
+export * from './geometry.js';
+export * from './analysis.js';

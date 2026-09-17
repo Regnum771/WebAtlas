@@ -7,7 +7,12 @@ import {
   BASEMAP_CONTEXT_LAYER_STATE_IDS,
   TERRAIN_LAYER_STATE_IDS,
   MAX_HIGHLIGHT_POINTS,
+  capResultItems,
+  editableColumns,
+  MAX_RESULT_ITEMS,
+  MAX_RESULT_VERTICES,
   type MapCommand,
+  type ResultGeometry,
 } from './map-commands.js';
 import { LAYER_ATTRIBUTE_MAP } from './layer-attributes.js';
 
@@ -84,10 +89,12 @@ describe('isMapCommand', () => {
     expect([...MAP_COMMAND_KINDS].sort()).toEqual([
       'clearHighlights',
       'highlightFeatures',
+      'proposeFeatureEdit',
       'resetView',
       'setBasemap',
       'setLayerOpacity',
       'setLayerVisible',
+      'showGeometries',
       'zoomTo',
       'zoomToFeature',
       'zoomToRegion',
@@ -178,5 +185,72 @@ describe('TERRAIN_LAYER_STATE_IDS', () => {
   it('accepts the contour layer as a command target, so the assistant can toggle it', () => {
     expect(isMapCommand({ kind: 'setLayerVisible', layerStateId: 'layer_contours', visible: true })).toBe(true);
     expect(isMapCommand({ kind: 'setLayerOpacity', layerStateId: 'layer_contours', opacity: 0.4 })).toBe(true);
+  });
+});
+
+const LINE: ResultGeometry = {
+  geometry: { type: 'LineString', coordinates: [[108, 12], [108.1, 12.1]] },
+  role: 'highlight',
+  label: 'Sông Ba',
+};
+
+describe('showGeometries', () => {
+  it('accepts a well-formed command', () => {
+    expect(isMapCommand({ kind: 'showGeometries', items: [LINE], fit: true })).toBe(true);
+  });
+
+  it('rejects an unknown role, a bad geometry, or an empty list', () => {
+    expect(isMapCommand({ kind: 'showGeometries', items: [{ ...LINE, role: 'glow' }] })).toBe(false);
+    expect(isMapCommand({ kind: 'showGeometries', items: [{ ...LINE, geometry: { type: 'Point', coordinates: [1] } }] })).toBe(false);
+    expect(isMapCommand({ kind: 'showGeometries', items: [] })).toBe(false);
+    expect(isMapCommand({ kind: 'showGeometries', items: [{ ...LINE, layerKey: 'nope' }] })).toBe(false);
+  });
+
+  it('rejects more than MAX_RESULT_ITEMS items or MAX_RESULT_VERTICES vertices', () => {
+    const tooMany = Array.from({ length: MAX_RESULT_ITEMS + 1 }, () => LINE);
+    expect(isMapCommand({ kind: 'showGeometries', items: tooMany })).toBe(false);
+    const huge: ResultGeometry = {
+      role: 'result',
+      geometry: { type: 'LineString', coordinates: Array.from({ length: MAX_RESULT_VERTICES + 1 }, (_, i) => [108, 12 + i * 1e-6]) },
+    };
+    expect(isMapCommand({ kind: 'showGeometries', items: [huge] })).toBe(false);
+  });
+
+  it('capResultItems trims to the caps and says so', () => {
+    const many = Array.from({ length: MAX_RESULT_ITEMS + 5 }, () => LINE);
+    const capped = capResultItems(many);
+    expect(capped.items).toHaveLength(MAX_RESULT_ITEMS);
+    expect(capped.truncated).toBe(true);
+    expect(capResultItems([LINE])).toEqual({ items: [LINE], truncated: false });
+  });
+});
+
+describe('proposeFeatureEdit', () => {
+  const base = {
+    kind: 'proposeFeatureEdit',
+    layerKey: 'dams',
+    featureId: '6f1c2a54-2b0e-4d8c-9d61-1f4f1f0c2a11',
+    name: 'Sông Hinh',
+    current: { wattage_mw: '70', status: null },
+    proposed: { wattage_mw: '72' },
+    sourceDocument: 'QĐ 123',
+  };
+
+  it('accepts a well-formed proposal', () => {
+    expect(isMapCommand(base)).toBe(true);
+  });
+
+  it('rejects unknown or non-editable columns, empty proposals and over-long sources', () => {
+    expect(isMapCommand({ ...base, proposed: { secret: '1' } })).toBe(false);
+    expect(isMapCommand({ ...base, proposed: { external_id: '9' } })).toBe(false);
+    expect(isMapCommand({ ...base, proposed: {} })).toBe(false);
+    expect(isMapCommand({ ...base, sourceDocument: 'x'.repeat(501) })).toBe(false);
+    expect(isMapCommand({ ...base, sourceProvider: 'x'.repeat(201) })).toBe(false);
+    expect(isMapCommand({ ...base, layerKey: 'nope' })).toBe(false);
+  });
+
+  it('editableColumns drops external_id', () => {
+    expect(editableColumns('dams')).toContain('wattage_mw');
+    expect(editableColumns('dams')).not.toContain('external_id');
   });
 });

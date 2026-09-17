@@ -12,6 +12,7 @@ import { REGION_PROVINCE_CODES } from './region.js';
 // re-exports this module, and routing through it would make LAYER_STATE_IDS'
 // top-level initialization depend on module-cycle load order.
 import { LAYER_ATTRIBUTE_MAP } from './layer-attributes.js';
+import { isGeoJsonGeometry, countVertices, type GeoJsonGeometry } from './geometry.js';
 
 export const MAP_COMMAND_KINDS = [
   'zoomToRegion',
@@ -23,6 +24,8 @@ export const MAP_COMMAND_KINDS = [
   'setBasemap',
   'highlightFeatures',
   'clearHighlights',
+  'showGeometries',
+  'proposeFeatureEdit',
 ] as const;
 
 export type MapCommandKind = (typeof MAP_COMMAND_KINDS)[number];
@@ -93,6 +96,61 @@ export interface HighlightPoint {
  *  tool result would push an unbounded payload through the route. */
 export const MAX_HIGHLIGHT_POINTS = 50;
 
+/** How a drawn result reads on the map: a feature the answer points at, a shape
+ *  the user supplied, or a shape an analysis produced. */
+export const RESULT_ROLES = ['highlight', 'input', 'result'] as const;
+export type ResultRole = (typeof RESULT_ROLES)[number];
+
+/** One shape to draw. Geometry travels inside the command, never through the
+ *  model, so it costs no tokens — but it does cost payload, hence the caps. */
+export interface ResultGeometry {
+  geometry: GeoJsonGeometry;
+  role: ResultRole;
+  label?: string;
+  layerKey?: EditableLayerKey;
+  featureId?: string;
+}
+
+export const MAX_RESULT_ITEMS = 200;
+export const MAX_RESULT_VERTICES = 20_000;
+export const MAX_SOURCE_DOCUMENT_LENGTH = 500;
+export const MAX_SOURCE_PROVIDER_LENGTH = 200;
+
+/** Keeps the leading items that fit both caps. The server calls this before
+ *  building a command so it never emits one its own validator rejects. */
+export function capResultItems(items: ResultGeometry[]): { items: ResultGeometry[]; truncated: boolean } {
+  const kept: ResultGeometry[] = [];
+  let vertices = 0;
+  for (const item of items) {
+    const n = countVertices(item.geometry);
+    if (kept.length >= MAX_RESULT_ITEMS || vertices + n > MAX_RESULT_VERTICES) {
+      return { items: kept, truncated: true };
+    }
+    kept.push(item);
+    vertices += n;
+  }
+  return { items: kept, truncated: false };
+}
+
+/** Columns an update may touch: the layer's attributes minus `external_id`, which
+ *  is identity, not data (the API's attributeSchema excludes it too). */
+export function editableColumns(layerKey: EditableLayerKey): string[] {
+  return Object.keys(LAYER_ATTRIBUTE_MAP[layerKey].attributes).filter((c) => c !== 'external_id');
+}
+
+export interface FeatureEditProposal {
+  kind: 'proposeFeatureEdit';
+  layerKey: EditableLayerKey;
+  featureId: string;
+  name?: string;
+  /** DB column → current value (as text). */
+  current: Record<string, string | null>;
+  /** Only the columns the proposal changes. */
+  proposed: Record<string, string | null>;
+  sourceDocument?: string;
+  sourceProvider?: string;
+}
+
 export type MapCommand =
   | { kind: 'zoomToRegion'; provinceCode: string }
   | { kind: 'zoomToFeature'; layerKey: EditableLayerKey; featureId: string; lonLat: [number, number] }
@@ -106,7 +164,9 @@ export type MapCommand =
   | { kind: 'setLayerOpacity'; layerStateId: string; opacity: number }
   | { kind: 'setBasemap'; basemap: BasemapName }
   | { kind: 'highlightFeatures'; points: HighlightPoint[] }
-  | { kind: 'clearHighlights' };
+  | { kind: 'clearHighlights' }
+  | { kind: 'showGeometries'; items: ResultGeometry[]; fit?: boolean }
+  | FeatureEditProposal;
 
 function isLonLat(value: unknown): value is [number, number] {
   return (
@@ -118,6 +178,30 @@ function isLonLat(value: unknown): value is [number, number] {
 
 function isLayerKey(value: unknown): value is EditableLayerKey {
   return typeof value === 'string' && (EDITABLE_LAYER_KEYS as readonly string[]).includes(value);
+}
+
+function isResultGeometry(value: unknown): value is ResultGeometry {
+  if (typeof value !== 'object' || value === null) return false;
+  const r = value as Record<string, unknown>;
+  return (
+    isGeoJsonGeometry(r.geometry) &&
+    typeof r.role === 'string' &&
+    (RESULT_ROLES as readonly string[]).includes(r.role) &&
+    (r.label === undefined || typeof r.label === 'string') &&
+    (r.layerKey === undefined || isLayerKey(r.layerKey)) &&
+    (r.featureId === undefined || typeof r.featureId === 'string')
+  );
+}
+
+function isValueRecord(value: unknown, allowed: string[]): value is Record<string, string | null> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  return Object.entries(value).every(
+    ([k, v]) => allowed.includes(k) && (v === null || typeof v === 'string')
+  );
+}
+
+function isOptionalText(value: unknown, max: number): boolean {
+  return value === undefined || (typeof value === 'string' && value.length <= max);
 }
 
 /**
@@ -167,6 +251,24 @@ export function isMapCommand(value: unknown): value is MapCommand {
       );
     case 'clearHighlights':
       return true;
+    case 'showGeometries': {
+      if (!Array.isArray(c.items) || c.items.length === 0 || c.items.length > MAX_RESULT_ITEMS) return false;
+      if (!c.items.every(isResultGeometry)) return false;
+      const vertices = (c.items as ResultGeometry[]).reduce((n, i) => n + countVertices(i.geometry), 0);
+      return vertices <= MAX_RESULT_VERTICES && (c.fit === undefined || typeof c.fit === 'boolean');
+    }
+    case 'proposeFeatureEdit': {
+      if (!isLayerKey(c.layerKey) || typeof c.featureId !== 'string') return false;
+      const allowed = editableColumns(c.layerKey);
+      return (
+        isValueRecord(c.current, allowed) &&
+        isValueRecord(c.proposed, allowed) &&
+        Object.keys(c.proposed as object).length > 0 &&
+        (c.name === undefined || typeof c.name === 'string') &&
+        isOptionalText(c.sourceDocument, MAX_SOURCE_DOCUMENT_LENGTH) &&
+        isOptionalText(c.sourceProvider, MAX_SOURCE_PROVIDER_LENGTH)
+      );
+    }
     default:
       return false;
   }

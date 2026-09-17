@@ -7,7 +7,8 @@
  * and must not add a validator dependency to it.
  */
 import { type EditableLayerKey } from './index.js';
-export declare const MAP_COMMAND_KINDS: readonly ["zoomToRegion", "zoomToFeature", "zoomTo", "resetView", "setLayerVisible", "setLayerOpacity", "setBasemap", "highlightFeatures", "clearHighlights"];
+import { type GeoJsonGeometry } from './geometry.js';
+export declare const MAP_COMMAND_KINDS: readonly ["zoomToRegion", "zoomToFeature", "zoomTo", "resetView", "setLayerVisible", "setLayerOpacity", "setBasemap", "highlightFeatures", "clearHighlights", "showGeometries", "proposeFeatureEdit"];
 export type MapCommandKind = (typeof MAP_COMMAND_KINDS)[number];
 export declare const BASEMAP_TYPES: readonly ["street", "satellite", "dem"];
 export type BasemapName = (typeof BASEMAP_TYPES)[number];
@@ -54,6 +55,44 @@ export interface HighlightPoint {
 /** Cap on one highlight command. Beyond this the map is noise, and a runaway
  *  tool result would push an unbounded payload through the route. */
 export declare const MAX_HIGHLIGHT_POINTS = 50;
+/** How a drawn result reads on the map: a feature the answer points at, a shape
+ *  the user supplied, or a shape an analysis produced. */
+export declare const RESULT_ROLES: readonly ["highlight", "input", "result"];
+export type ResultRole = (typeof RESULT_ROLES)[number];
+/** One shape to draw. Geometry travels inside the command, never through the
+ *  model, so it costs no tokens — but it does cost payload, hence the caps. */
+export interface ResultGeometry {
+    geometry: GeoJsonGeometry;
+    role: ResultRole;
+    label?: string;
+    layerKey?: EditableLayerKey;
+    featureId?: string;
+}
+export declare const MAX_RESULT_ITEMS = 200;
+export declare const MAX_RESULT_VERTICES = 20000;
+export declare const MAX_SOURCE_DOCUMENT_LENGTH = 500;
+export declare const MAX_SOURCE_PROVIDER_LENGTH = 200;
+/** Keeps the leading items that fit both caps. The server calls this before
+ *  building a command so it never emits one its own validator rejects. */
+export declare function capResultItems(items: ResultGeometry[]): {
+    items: ResultGeometry[];
+    truncated: boolean;
+};
+/** Columns an update may touch: the layer's attributes minus `external_id`, which
+ *  is identity, not data (the API's attributeSchema excludes it too). */
+export declare function editableColumns(layerKey: EditableLayerKey): string[];
+export interface FeatureEditProposal {
+    kind: 'proposeFeatureEdit';
+    layerKey: EditableLayerKey;
+    featureId: string;
+    name?: string;
+    /** DB column → current value (as text). */
+    current: Record<string, string | null>;
+    /** Only the columns the proposal changes. */
+    proposed: Record<string, string | null>;
+    sourceDocument?: string;
+    sourceProvider?: string;
+}
 export type MapCommand = {
     kind: 'zoomToRegion';
     provinceCode: string;
@@ -83,7 +122,11 @@ export type MapCommand = {
     points: HighlightPoint[];
 } | {
     kind: 'clearHighlights';
-};
+} | {
+    kind: 'showGeometries';
+    items: ResultGeometry[];
+    fit?: boolean;
+} | FeatureEditProposal;
 /**
  * Runtime guard. The API validates assistant-produced commands with this before
  * sending them to the browser, so an out-of-region province code, an unknown
