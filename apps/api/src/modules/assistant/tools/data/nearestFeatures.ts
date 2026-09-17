@@ -2,9 +2,12 @@
 import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS, capResultItems, isMapCommand } from '@webatlas/shared';
+import { AppError } from '../../../../errors';
 import type { ToolFactory } from '../types';
 import { inVietnam } from '../../../../lib/geo';
-import { nearestGeometries, queryNearest } from '../../../analysis/ops/nearest';
+import { withAnalysisTimeout } from '../../../analysis/db';
+import { getAnalysisPool } from '../../../analysis/pool';
+import { nearestGeometries, queryNearest, type NearestRow } from '../../../analysis/ops/nearest';
 import { LAYER_LABELS, activeVersionLabel } from './helpers';
 
 // Query lives in modules/analysis/ops/nearest.ts, shared with the toolbar.
@@ -24,10 +27,27 @@ export const nearestFeaturesTool: ToolFactory = (ctx) =>
       if (!inVietnam(input.lon, input.lat)) {
         return 'Toạ độ không hợp lệ — chỉ dùng toạ độ trong lãnh thổ Việt Nam do công cụ dữ liệu trả về.';
       }
-      const [rows, datasetVersion] = await Promise.all([
-        queryNearest(ctx.pool, { layerKey: input.layerKey, lon: input.lon, lat: input.lat, limit: input.limit }),
-        activeVersionLabel(ctx.pool, input.layerKey),
-      ]);
+      let rows: NearestRow[];
+      let datasetVersion: string | null;
+      try {
+        // Bounded like the four analysis tools (see analysisTool.ts): this is
+        // the same ORDER BY ST_Distance(geography) fallback query over a whole
+        // _active view (ops/nearest.ts) that the toolbar's analysis ops guard
+        // with a statement timeout on a small, dedicated pool — nothing here
+        // makes it safe to run unbounded just because it's reached from a tool.
+        [rows, datasetVersion] = await Promise.all([
+          withAnalysisTimeout(getAnalysisPool(), (db) =>
+            queryNearest(db, { layerKey: input.layerKey, lon: input.lon, lat: input.lat, limit: input.limit })
+          ),
+          activeVersionLabel(ctx.pool, input.layerKey),
+        ]);
+      } catch (e) {
+        if (e instanceof AppError && (e.code === 'ANALYSIS_TIMEOUT' || e.code === 'ANALYSIS_BUSY')) {
+          ctx.provenance({ tool: 'nearest_features', layerKey: input.layerKey, rowCount: 0, datasetVersion: null });
+          return `Không thực hiện được: ${e.message}`;
+        }
+        throw e;
+      }
 
       ctx.provenance({
         tool: 'nearest_features',
