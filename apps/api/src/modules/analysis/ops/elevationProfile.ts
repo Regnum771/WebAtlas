@@ -34,10 +34,10 @@ export function profileStats(elevations: (number | null)[], lengthM: number) {
  */
 export async function elevationProfileOp(db: Queryable, input: ProfileInput): Promise<AnalysisResult> {
   const src = await inputGeometry(db, input);
-  if (!(await demAvailable(db))) {
-    return { op: 'elevation_profile', summary: { ...DEM_UNAVAILABLE_SUMMARY }, geometries: [] };
-  }
 
+  // Independent of the DEM (pure PostGIS on the input line), so this runs before
+  // the demAvailable check below — that way an unloaded DEM still draws the
+  // user's line, the same as zonalElevationOp draws its input area.
   const { rows: [line] } = await db.query<{ line: string; lengthM: number; display: GeoJsonGeometry }>(
     `WITH src AS (SELECT ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS g),
           part AS (
@@ -52,6 +52,11 @@ export async function elevationProfileOp(db: Queryable, input: ProfileInput): Pr
        FROM part`,
     [src.geojson]
   );
+  const drawn = [{ geometry: line.display, role: 'result' as const, label: src.label ?? 'Trắc diện' }];
+
+  if (!(await demAvailable(db))) {
+    return { op: 'elevation_profile', summary: { ...DEM_UNAVAILABLE_SUMMARY }, geometries: drawn };
+  }
 
   const { rows: samples } = await db.query<{ i: number; elevationM: number | null }>(
     `WITH line AS (SELECT ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS g),
@@ -102,7 +107,7 @@ export async function elevationProfileOp(db: Queryable, input: ProfileInput): Pr
     op: 'elevation_profile',
     summary,
     profile,
-    geometries: [{ geometry: line.display, role: 'result', label: src.label ?? 'Trắc diện' }],
+    geometries: drawn,
     attribution: FABDEM_ATTRIBUTION,
   };
 }

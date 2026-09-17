@@ -1,7 +1,16 @@
-import { describe, it, expect } from 'vitest';
-import { profileStats } from './elevationProfile';
+import { describe, it, expect, vi } from 'vitest';
+import { profileStats, elevationProfileOp } from './elevationProfile';
 import { getPool } from '../../../db/pool';
 import { demAvailable } from '../dem';
+
+// Wraps (not replaces) the real demAvailable: every test but the one below calls
+// straight through to it, so this file's other assertions — including the query
+// PLAN regression test, which needs the DEM's actual loaded/unloaded state — are
+// unaffected. Only the "DEM unavailable" test below overrides it, once.
+vi.mock('../dem', async (orig) => {
+  const actual = await orig<typeof import('../dem')>();
+  return { ...actual, demAvailable: vi.fn(actual.demAvailable) };
+});
 
 describe('profileStats', () => {
   it('computes range, ascent, descent and mean slope, skipping nodata samples', () => {
@@ -52,5 +61,26 @@ describe('per-sample DEM lookup query plan', () => {
 
     expect(plan).toContain('dem_region_rast_convexhull_idx');
     expect(plan).not.toContain('Seq Scan on dem_region');
+  });
+});
+
+describe('elevationProfileOp when the DEM is unavailable', () => {
+  // Regression test: this op used to return `geometries: []` on this branch, so a
+  // client drew nothing for a DEM-unavailable profile while zonalElevationOp (the
+  // other DEM op) drew the user's input shape either way — the two disagreed for
+  // no reason a user could see. demAvailable is forced false via the module mock
+  // above so this runs deterministically regardless of whether the dev DB actually
+  // has the DEM loaded; the line-selection query itself still executes for real
+  // (it is pure PostGIS on the input geometry, independent of basemap.dem_region).
+  it('still draws the input line, like zonalElevationOp draws its input area', async () => {
+    vi.mocked(demAvailable).mockResolvedValueOnce(false);
+    const line = { type: 'LineString' as const, coordinates: [[108.05, 12.68], [108.1052, 12.68]] };
+    const result = await elevationProfileOp(getPool(), { geometry: line, samples: 10 });
+
+    expect(result.summary['Trạng thái']).toBe('Chưa nạp dữ liệu độ cao');
+    expect(result.geometries).toHaveLength(1);
+    expect(result.geometries[0]).toMatchObject({ role: 'result' });
+    expect(result.geometries[0].geometry.type).toBe('LineString');
+    expect(result.profile).toBeUndefined();
   });
 });
