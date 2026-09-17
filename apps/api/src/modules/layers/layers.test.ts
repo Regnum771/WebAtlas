@@ -74,7 +74,7 @@ describe('feature CRUD (admin only)', () => {
     expect(anon.statusCode).toBe(401);
   });
 
-  it('editor can read and write features', async () => {
+  it('editor can read features but cannot write (read-only since 2026-09-17)', async () => {
     const editorToken = await tokenFor(EDITOR);
     const eAuth = { authorization: `Bearer ${editorToken}` };
 
@@ -85,11 +85,7 @@ describe('feature CRUD (admin only)', () => {
       method: 'POST', url: '/api/layers/dams/features', headers: eAuth,
       payload: { geometry: { type: 'Point', coordinates: [105.81, 21.01] }, properties: { name: NAME } },
     });
-    expect(create.statusCode).toBe(201);
-    const id = create.json().feature.id;
-
-    const del = await app.inject({ method: 'DELETE', url: `/api/layers/dams/features/${id}`, headers: eAuth });
-    expect(del.statusCode).toBe(204);
+    expect(create.statusCode).toBe(403);
   });
 
   it('404 for an unknown layer key', async () => {

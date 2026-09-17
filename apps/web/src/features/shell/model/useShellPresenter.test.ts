@@ -22,7 +22,7 @@ describe('useShellPresenter', () => {
     expect(result.current.hasDrawer).toBe(false);
   });
 
-  it('editor has a drawer', () => {
+  it('a steward persona set has a drawer', () => {
     available = ['steward'];
     const { result } = renderHook(() => useShellPresenter());
     expect(result.current.hasDrawer).toBe(true);

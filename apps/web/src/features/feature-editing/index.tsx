@@ -118,11 +118,11 @@ function EditExisting() {
 }
 
 // UX gate ONLY. Real authorization is enforced by the backend (401/403 on every
-// write route); a viewer who forces this open still gets 403 on the API call.
-// Editors and admins can edit features (design §2 CAN_WRITE_FEATURES).
+// write route); a non-admin who forces this open still gets 403 on the API call.
+// Only admins edit features (CAN_WRITE_FEATURES, supervisor feedback 2026-09-17).
 export default function FeatureEditing() {
   return (
-    <RequireRole role={['admin', 'editor']}>
+    <RequireRole role="admin">
       <EditToolbar />
       <EditExisting />
     </RequireRole>

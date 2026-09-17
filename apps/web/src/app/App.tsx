@@ -70,7 +70,7 @@ function App() {
 
           <TopBar />
 
-          {/* Left: doing. Burger drawer with the editing tools (editor/admin). */}
+          {/* Left: doing. Burger drawer with the editing tools (admin only). */}
           <Shell />
 
           <OGCClient />

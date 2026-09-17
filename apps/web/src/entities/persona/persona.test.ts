@@ -5,8 +5,8 @@ describe('rolePersonas', () => {
   it('admin gets steward + admin (superset)', () => {
     expect(rolePersonas('admin')).toEqual(['steward', 'admin']);
   });
-  it('editor gets steward', () => {
-    expect(rolePersonas('editor')).toEqual(['steward']);
+  it('editor is read-only: governance + research, like viewer', () => {
+    expect(rolePersonas('editor')).toEqual(['governance', 'research']);
   });
   it('viewer gets governance + research', () => {
     expect(rolePersonas('viewer')).toEqual(['governance', 'research']);
@@ -24,6 +24,6 @@ describe('PERSONAS registry', () => {
       expect(typeof PERSONAS[id].label).toBe('string');
     }
     expect(PERSONAS.public.requiredRole).toBeNull();
-    expect(PERSONAS.steward.requiredRole).toBe('editor');
+    expect(PERSONAS.steward.requiredRole).toBe('admin');
   });
 });

@@ -41,17 +41,17 @@ describe('usePersona', () => {
   });
 
   it('ignores a stored pick that is invalid for the role (falls back to first available)', () => {
-    mockRole = 'editor'; // only steward
-    localStorage.setItem(PERSONA_STORAGE_KEY, 'governance'); // not allowed for editor
+    mockRole = 'viewer'; // governance + research
+    localStorage.setItem(PERSONA_STORAGE_KEY, 'steward'); // not allowed for viewer
     const { result } = renderHook(() => usePersona());
-    expect(result.current.active).toBe('steward');
+    expect(result.current.active).toBe('governance');
   });
 
   it('setActive rejects an id not available to the role', () => {
-    mockRole = 'editor';
+    mockRole = 'viewer';
     const { result } = renderHook(() => usePersona());
     act(() => result.current.setActive('admin')); // not allowed
-    expect(result.current.active).toBe('steward'); // unchanged
+    expect(result.current.active).toBe('governance'); // unchanged
     expect(localStorage.getItem(PERSONA_STORAGE_KEY)).not.toBe('admin');
   });
 
