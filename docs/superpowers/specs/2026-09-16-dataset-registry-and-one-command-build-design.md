@@ -405,6 +405,9 @@ suite stays fast and fully CI-runnable even though the real data is not availabl
 
 ## §7 Migration path
 
+> **Amended 2026-09-17:** steps 2–3, a rebuild-cascade fix, process-step detail and the edit guard are
+> designed in [`2026-09-17-registry-plan-2-design.md`](2026-09-17-registry-plan-2-design.md).
+
 Six independently shippable steps. The repository works after each one, and the existing
 runbook steps remain valid in parallel until step 5, so nobody is blocked mid-migration.
 
