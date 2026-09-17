@@ -6,6 +6,7 @@ import {
   REGION_PROVINCE_NAMES,
   type MapContext,
 } from '@webatlas/shared';
+import type { Role } from '../users/repository';
 
 /**
  * The stable half of the prompt. Everything here must be byte-identical on every
@@ -16,7 +17,7 @@ import {
  * Vietnamese, because the answers are Vietnamese and an English instruction to
  * "reply in Vietnamese" is a weaker signal than writing the whole brief in it.
  */
-export const SYSTEM_PROMPT = `Bạn là trợ lý bản đồ của WebATLAS — hệ thống bản đồ tài nguyên nước vùng ${REGION_NAME}, gồm ${REGION_PROVINCE_CODES.length} tỉnh: ${REGION_PROVINCE_CODES.map(
+const BASE_RULES = `Bạn là trợ lý bản đồ của WebATLAS — hệ thống bản đồ tài nguyên nước vùng ${REGION_NAME}, gồm ${REGION_PROVINCE_CODES.length} tỉnh: ${REGION_PROVINCE_CODES.map(
   (c) => REGION_PROVINCE_NAMES[c]
 ).join(', ')}.
 
@@ -34,9 +35,23 @@ QUY TẮC BẮT BUỘC
 
 6. Khi người dùng nói "ở đây", "vùng này", "trên màn hình", hãy dùng khung nhìn hiện tại trong phần BỐI CẢNH BẢN ĐỒ của lượt hỏi.
 
-7. Khi câu trả lời nhắc tới các đối tượng cụ thể trên bản đồ, hãy dùng công cụ đánh dấu để người dùng nhìn thấy chúng.
+7. Khi câu trả lời nhắc tới các đối tượng cụ thể trên bản đồ, hãy dùng công cụ đánh dấu để người dùng nhìn thấy chúng.`;
 
-8. Bạn chỉ đọc dữ liệu. Bạn không thể thêm, sửa hay xoá bất cứ thứ gì; nếu người dùng yêu cầu, hãy chỉ họ tới bảng Biên tập.`;
+const READ_ONLY_RULE = `8. Bạn chỉ đọc dữ liệu. Nếu người dùng yêu cầu thêm, sửa hay xoá dữ liệu, hãy trả lời đúng câu: "Bạn chỉ có quyền xem dữ liệu; chỉ quản trị viên mới cập nhật được." và không gọi công cụ nào cho yêu cầu đó.`;
+
+const ADMIN_UPDATE_RULE = `8. Bạn không tự ghi dữ liệu. Khi quản trị viên yêu cầu cập nhật thuộc tính của một đối tượng: trước hết tìm đúng đối tượng bằng công cụ dữ liệu (ví dụ filter_by_attribute theo tên) để lấy featureId, rồi gọi propose_feature_update. Công cụ này chỉ mở biểu mẫu để quản trị viên kiểm tra và bấm Lưu. Nếu người dùng chưa nêu tài liệu nguồn hoặc người cung cấp, hãy hỏi lại hai thông tin đó. Không đề xuất thêm mới hay xoá đối tượng — hãy chỉ họ tới bảng Biên tập.`;
+
+/**
+ * Two stable variants rather than one prompt with the role interpolated: each must
+ * be byte-identical across requests to stay inside the cached prefix. Admin and
+ * non-admin simply warm two caches.
+ */
+export const SYSTEM_PROMPT = `${BASE_RULES}\n\n${READ_ONLY_RULE}`;
+export const ADMIN_SYSTEM_PROMPT = `${BASE_RULES}\n\n${ADMIN_UPDATE_RULE}`;
+
+export function systemPromptFor(role: Role): string {
+  return role === 'admin' ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT;
+}
 
 /**
  * The volatile half. Serialized into the LATEST USER TURN — not the top-level

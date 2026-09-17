@@ -14,6 +14,7 @@ const ctx: ToolContext = {
   } satisfies MapContext,
   collect: vi.fn(),
   provenance: vi.fn(),
+  role: 'viewer',
 };
 
 describe('buildTools', () => {

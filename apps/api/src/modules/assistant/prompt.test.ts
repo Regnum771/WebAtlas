@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { KNOWLEDGE_OPEN_TAG, KNOWLEDGE_CLOSE_TAG, type MapContext } from '@webatlas/shared';
-import { SYSTEM_PROMPT, formatMapContext } from './prompt';
+import { SYSTEM_PROMPT, ADMIN_SYSTEM_PROMPT, systemPromptFor, formatMapContext } from './prompt';
 
 const MAP_CONTEXT: MapContext = {
   bbox: [107.5, 12.0, 109.0, 13.5],
@@ -57,5 +57,29 @@ describe('formatMapContext', () => {
 
   it('omits the selection line entirely when nothing is selected', () => {
     expect(formatMapContext(MAP_CONTEXT)).not.toContain('Đối tượng đang chọn');
+  });
+});
+
+describe('role-specific prompts', () => {
+  it('read-only prompt gives non-admins the exact refusal sentence', () => {
+    expect(SYSTEM_PROMPT).toContain('Bạn chỉ có quyền xem dữ liệu; chỉ quản trị viên mới cập nhật được.');
+    expect(SYSTEM_PROMPT).not.toContain('propose_feature_update');
+  });
+
+  it('admin prompt routes update requests to propose_feature_update', () => {
+    expect(ADMIN_SYSTEM_PROMPT).toContain('propose_feature_update');
+    expect(ADMIN_SYSTEM_PROMPT).toContain('tài liệu nguồn');
+  });
+
+  it('picks the admin prompt only for admin', () => {
+    expect(systemPromptFor('admin')).toBe(ADMIN_SYSTEM_PROMPT);
+    expect(systemPromptFor('editor')).toBe(SYSTEM_PROMPT);
+    expect(systemPromptFor('viewer')).toBe(SYSTEM_PROMPT);
+  });
+
+  it('shares every rule before rule 8, so the variants cannot drift', () => {
+    const before8 = (p: string) => p.slice(0, p.indexOf('\n\n8. '));
+    expect(before8(SYSTEM_PROMPT).length).toBeGreaterThan(100);
+    expect(before8(ADMIN_SYSTEM_PROMPT)).toBe(before8(SYSTEM_PROMPT));
   });
 });

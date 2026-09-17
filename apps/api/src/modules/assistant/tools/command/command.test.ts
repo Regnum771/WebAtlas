@@ -8,6 +8,18 @@ import { setLayerVisibleTool } from './setLayerVisible';
 import { setBasemapTool } from './setBasemap';
 import { highlightFeaturesTool } from './highlightFeatures';
 
+const KNOWN_ID = '6f1c2a54-2b0e-4d8c-9d61-1f4f1f0c2a11';
+vi.mock('../data/helpers', async (orig) => ({
+  ...(await orig<typeof import('../data/helpers')>()),
+  resolveFeature: vi.fn(async (_db: unknown, _layerKey: string, featureId: string) =>
+    featureId === '6f1c2a54-2b0e-4d8c-9d61-1f4f1f0c2a11'
+      ? {
+          featureId, name: 'Sông Ba', lon: 108.3, lat: 13.2, properties: {},
+          geometry: { type: 'LineString', coordinates: [[108, 13], [108.5, 13.4]] },
+        }
+      : null),
+}));
+
 const MAP_CONTEXT: MapContext = {
   bbox: [107.5, 12.0, 109.0, 13.5],
   zoom: 9,
@@ -22,6 +34,7 @@ function makeCtx() {
     mapContext: MAP_CONTEXT,
     collect: vi.fn((c: MapCommand) => collected.push(c)),
     provenance: vi.fn(),
+    role: 'viewer',
   } satisfies ToolContext;
   return { ctx, collected };
 }
@@ -118,5 +131,25 @@ describe('command tools', () => {
     await run(setLayerVisibleTool(ctx), { layerStateId: 'layer_lakes', visible: false });
     expect(collected).toHaveLength(3);
     expect(collected.every(isMapCommand)).toBe(true);
+  });
+
+  it('highlightFeatures resolves feature references into drawn, framed geometry', async () => {
+    const { ctx, collected } = makeCtx();
+    const text = await run(highlightFeaturesTool(ctx), {
+      featureRefs: [{ layerKey: 'rivers', featureId: KNOWN_ID }],
+    });
+    expect(collected).toHaveLength(1);
+    expect(collected[0]).toMatchObject({ kind: 'showGeometries', fit: true });
+    expect(collected.every(isMapCommand)).toBe(true);
+    expect(text).toContain('Đã tô sáng 1 đối tượng');
+  });
+
+  it('highlightFeatures reports references it could not find without collecting', async () => {
+    const { ctx, collected } = makeCtx();
+    const text = await run(highlightFeaturesTool(ctx), {
+      featureRefs: [{ layerKey: 'rivers', featureId: '00000000-0000-0000-0000-000000000000' }],
+    });
+    expect(collected).toEqual([]);
+    expect(text).toContain('Không có dữ liệu');
   });
 });

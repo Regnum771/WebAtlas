@@ -12,8 +12,9 @@ import { config } from '../../config/env';
 import { AppError } from '../../errors';
 import { createSessionStore } from './sessionStore';
 import { createBudget } from './budget';
-import { SYSTEM_PROMPT, formatMapContext } from './prompt';
+import { systemPromptFor, formatMapContext } from './prompt';
 import { buildTools } from './tools/registry';
+import type { Role } from '../users/repository';
 
 export const sessionStore = createSessionStore({
   ttlMs: config.ASSISTANT_SESSION_TTL_MS,
@@ -47,6 +48,7 @@ export interface AssistantDeps {
   /** The route's per-request logger, threaded through so the original
    *  Anthropic error can be logged before toAppError() discards its detail. */
   logger: FastifyBaseLogger;
+  role: Role;
 }
 
 /**
@@ -121,6 +123,7 @@ export async function runAssistant(deps: AssistantDeps): Promise<AssistantReply>
     mapContext: deps.mapContext,
     collect: (c) => commands.push(c),
     provenance: (p) => provenance.push(p),
+    role: deps.role,
   });
 
   const history = sessionStore.get(deps.sessionId, deps.userId);
@@ -132,7 +135,7 @@ export async function runAssistant(deps: AssistantDeps): Promise<AssistantReply>
     // The cache breakpoint goes on the last system block. Render order is
     // tools -> system -> messages, so one breakpoint here covers the tool
     // definitions too — and those dominate the prompt, being resent every turn.
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+    system: [{ type: 'text', text: systemPromptFor(deps.role), cache_control: { type: 'ephemeral' } }],
     tools,
     messages: [...history.map((t) => ({ role: t.role, content: t.content })), { role: 'user', content: userTurn }],
     max_iterations: MAX_ITERATIONS,

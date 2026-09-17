@@ -67,6 +67,7 @@ export async function postMessage(req: FastifyRequest, reply: FastifyReply) {
     message,
     mapContext,
     logger: req.log,
+    role: req.currentUser.role,
   });
   reply.send(result);
 }

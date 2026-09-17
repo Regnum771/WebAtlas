@@ -43,6 +43,7 @@ function ask(message: string, sessionId = `live-${Math.random()}`) {
     message,
     mapContext: MAP_CONTEXT,
     logger: testLogger,
+    role: 'viewer',
   });
 }
 
