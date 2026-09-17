@@ -7,6 +7,7 @@ import AdminUsersRoute from '../pages/admin-users';
 import MapView from '../features/map/ui/MapView';
 import LayersPanel from '../features/layers-panel';
 import MapToolbar from '../features/map/ui/MapToolbar';
+import { useAnalysisTools } from '../features/analysis';
 import MapLoadingBar from '../features/map/ui/MapLoadingBar';
 import DynamicPopup from '../components/DynamicPopup';
 import Legend from '../features/legend';
@@ -22,6 +23,7 @@ import '../styles/main.css';
 function RailAndFlyout() {
   const rail = useRail();
   const { status } = useSession();
+  const analysis = useAnalysisTools();
   // The assistant costs API tokens per message, so the route is authenticated;
   // showing the entry to an anonymous visitor would only ever produce a 401.
   const items = [
@@ -46,7 +48,7 @@ function RailAndFlyout() {
     <>
       <MapView flyoutOpen={rail.active !== null} />
       <MapLoadingBar flyoutOpen={rail.active !== null} />
-      <MapToolbar flyoutOpen={rail.active !== null} />
+      <MapToolbar flyoutOpen={rail.active !== null} analysisButtons={analysis.buttons} analysisPanel={analysis.panel} />
       <IconRail items={items} active={rail.active} onToggle={rail.toggle} />
       {rail.active !== null && (
         <aside className="rail-flyout">
