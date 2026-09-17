@@ -1,4 +1,5 @@
 import Map from 'ol/Map';
+import type MousePosition from 'ol/control/MousePosition';
 import { createRiverOverviewSource, riverOverviewVisibleAt } from './riverOverview';
 import { createLoadTracker } from './loadingState';
 import { createScaleBar, createMousePosition } from './mapReadouts';
@@ -123,6 +124,8 @@ export class MapModel {
    *  `layers` is typed for vector sources and its consumers call getSource().refresh(). */
   private contextLayers: Record<string, TileLayer<XYZ>> = {};
   private selectInteraction: Select | null = null;
+  /** Coordinate readout control — kept to swap its formatter on CRS toggle. */
+  private mousePosition: MousePosition | null = null;
   private reservoirFilter: ReservoirFilterType = 'all';
   private layerStates: LayerState[] = [];
   private moveendHandler: (() => void) | null = null;
@@ -333,6 +336,7 @@ export class MapModel {
     });
 
     // 3. Khởi tạo Map
+    this.mousePosition = createMousePosition();
     const map = new Map({
       target,
       layers: [
@@ -373,7 +377,7 @@ export class MapModel {
       }),
       // Giữ danh sách TƯỜNG MINH, không dùng defaults(): defaults() kèm nút zoom
       // và ô ghi công, chồng lên thanh công cụ và góc dưới phải của chính ta.
-      controls: [createScaleBar(), createMousePosition()],
+      controls: [createScaleBar(), this.mousePosition],
     });
 
     // Thêm interaction để highlight sông khi click
@@ -597,6 +601,12 @@ export class MapModel {
     this.selectInteraction?.setActive(active);
   }
 
+  /** Swaps the coordinate readout's formatter (CRS toggle). The control keeps
+   *  projecting to EPSG:4326; the formatter converts from there. */
+  setCoordinateFormat(format: (coord?: number[]) => string): void {
+    this.mousePosition?.setCoordinateFormat(format);
+  }
+
   dispose(): void {
     if (!this.map) return;
 
@@ -626,6 +636,7 @@ export class MapModel {
     this.map.setTarget(undefined);
     this.map = null;
     this.basemapLayer = null;
+    this.mousePosition = null;
     this.layers = {};
   }
 }

@@ -29,3 +29,4 @@ export * from './legend.js';
 export * from './contours.js';
 export * from './geometry.js';
 export * from './analysis.js';
+export * from './crs.js';

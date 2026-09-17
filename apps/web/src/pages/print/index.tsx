@@ -1,9 +1,11 @@
 import { useNavigate } from 'react-router-dom';
+import { findCrs } from '@webatlas/shared';
 import { useMapContext } from '../../app/providers/MapProvider';
 import Legend from '../../features/legend';
 import { useAnalysisResult } from '../../features/analysis/model/analysisResult.store';
 import { ANALYSIS_TOOL_LABELS } from '../../features/analysis/model/tools';
 import { formatScale, scaleAtZoom } from '../../features/map/model/zoomScale';
+import { useCrsPreference } from '../../features/map/model/crsPreference';
 import { usePrintPage } from './model/usePrintPage';
 import { PrintPageView } from './ui/PrintPage.view';
 
@@ -11,12 +13,12 @@ export default function PrintRoute() {
   const navigate = useNavigate();
   const { map, basemap, layersState } = useMapContext();
   const analysis = useAnalysisResult();
+  const [crsId] = useCrsPreference();
   const p = usePrintPage({
     map,
     basemap,
     visibleLayerIds: layersState.filter((l) => l.visible).map((l) => l.id),
-    // Task 16 replaces this with the selected CRS alias.
-    crsLabel: 'WGS 84 (EPSG:4326)',
+    crsLabel: findCrs(crsId).alias,
   });
   const zoom = map?.getView().getZoom() ?? 0;
 

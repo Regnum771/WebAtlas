@@ -227,6 +227,19 @@ body {
   bottom: calc(var(--space-3) + 30px);
 }
 
+/* Bộ chọn hệ quy chiếu: xếp thêm một bậc 30px lên trên ô độ cao, theo đúng cấp
+   số cộng đã dùng để xếp ô độ cao lên trên ô toạ độ (var(--space-3), +30px, +30px). */
+.map-crs-select {
+  position: absolute;
+  right: var(--space-3);
+  bottom: calc(var(--space-3) + 60px);
+  z-index: 5;
+  max-width: 260px;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
 .toolbar-rail {
   display: flex;
   flex-direction: row;
