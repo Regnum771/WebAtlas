@@ -215,11 +215,12 @@ DEM ops reuse the tri-state from [elevation/repository.ts](../../../apps/api/src
 
 - Bottom toolbar ([MapToolbar.tsx](../../../apps/web/src/features/map/ui/MapToolbar.tsx)) gains a **Phân tích** group:
   Đo khoảng cách, Đo diện tích (existing), Vùng đệm, Chọn trong vùng, Gần nhất, Trắc diện độ cao, Thống kê độ cao.
-- Each button enters a draw/pick mode through a new `useAnalysisTool` hook in `features/map/model/` (OpenLayers stays
-  quarantined there): line, polygon, point, or "pick a feature / use the current result". A small popover collects
-  parameters (radius, layers, k).
-- Measure results now persist as `input` geometries so they can feed buffer / select-within / profile ("use last
-  shape").
+- Each button opens a small popover for parameters (radius, layers, k), then either enters a draw mode (point, line or
+  polygon, via `startAnalysisDraw` in `features/map/model/` — OpenLayers stays quarantined there) or reuses the last
+  drawn shape. Picking an existing map feature as input goes through the assistant (feature references) in this
+  cycle; a toolbar feature picker is a later addition.
+- The last shape drawn by the measure tools or an analysis is remembered (`lastShape.ts`) so it can feed
+  buffer / select-within / profile ("Dùng hình vừa vẽ").
 - `AnalysisResultCard` (extends the existing `.measure-result` spot above the toolbar): summary rows, ≤ 25 listed rows
   (click → zoom), an inline SVG line chart for profiles (no chart library), **Xoá kết quả**, **Xuất CSV**.
 - New slice `features/analysis/` (api + presenter + views); the toolbar hosts its buttons.
