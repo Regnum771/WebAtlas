@@ -8,7 +8,11 @@ import type { Pool } from 'pg';
  * thì bản đồ ở mức thu nhỏ vẫn vẽ mạng lưới cũ mà không báo gì.
  *
  * Có HAI dịp như vậy:
- *   1. Sau khi nạp dữ liệu mới — ingestRivers gọi sẵn.
+ *   1. Sau khi nạp dữ liệu mới — ingestHydroRivers() gọi sẵn, ngay trong thân hàm
+ *      chứ không phải trong khối chạy-từ-dòng-lệnh của nó. Chỗ đặt này là quan
+ *      trọng: đã có lúc lời gọi nằm trong khối isMainModule, nên chỉ
+ *      `npm run ingest:rivers` mới làm mới, còn mã gọi thẳng hàm đó thì kích hoạt
+ *      phiên bản mới và bỏ lại ảnh chụp cũ.
  *   2. Sau khi kích hoạt một phiên bản khác — HIỆN CHƯA CÓ đường mã nào làm việc
  *      này; phiên bản được kích hoạt bằng SQL tay. Ai làm việc đó phải tự chạy
  *      lại hàm này (hoặc REFRESH MATERIALIZED VIEW CONCURRENTLY water.rivers_overview).

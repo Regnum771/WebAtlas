@@ -61,6 +61,7 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
     return { versionId: id, count: existing.rows[0].feature_count ?? 0 };
   }
 
+  let result: { versionId: string; count: number };
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -75,13 +76,25 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
     );
     await svc.activate(client, 'rivers', versionId);
     await client.query('COMMIT');
-    return { versionId, count };
+    result = { versionId, count };
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
   } finally {
     client.release();
   }
+
+  // Làm mới ảnh chụp ngay tại đây, không để cho người gọi. Trước đây việc này nằm
+  // trong khối isMainModule bên dưới, nên chỉ `npm run ingest:rivers` mới làm —
+  // còn ai gọi thẳng ingestHydroRivers() thì kích hoạt một phiên bản 'rivers' mới
+  // và bỏ lại water.rivers_overview là ảnh chụp của phiên bản CŨ. Không báo lỗi ở
+  // đâu cả: bản đồ ở mức thu nhỏ lặng lẽ vẽ mạng lưới cũ.
+  //
+  // Sau COMMIT và ngoài giao dịch, vì REFRESH MATERIALIZED VIEW CONCURRENTLY không
+  // chạy được bên trong một khối giao dịch. Dùng `pool` chứ không phải `client`, vì
+  // client đã được trả lại ở khối finally ngay trên.
+  await refreshRiverOverview(pool);
+  return result;
 }
 
 // Run directly (npm run ingest:rivers), not when imported.
@@ -90,9 +103,8 @@ if (isMainModule) {
   ingestHydroRivers()
     .then(async (r) => {
       console.log(`rivers HydroRIVERS version ${r.versionId}: ${r.count} features`);
-      // Ảnh chụp sông tổng quan dựng từ rivers_active, nên dữ liệu mới nạp xong
-      // là nó lạc hậu ngay. Không làm mới thì mức thu nhỏ vẫn vẽ mạng lưới cũ.
-      await refreshRiverOverview(getPool());
+      // Không làm mới ở đây nữa: ingestHydroRivers() tự lo, nên mọi người gọi đều
+      // được, không riêng đường chạy từ dòng lệnh này.
       console.log('refreshed water.rivers_overview');
       return closePool();
     })
