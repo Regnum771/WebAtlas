@@ -40,15 +40,18 @@ describe('PrintPageView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Đóng' }));
   });
 
-  // Regression for the licence-clipping finding: .print-sheet is a
-  // fixed-height, overflow: hidden box, and .print-attribution (last child)
-  // must never be the thing that silently loses to that overflow — see the
-  // CSS comments on .print-title/.print-attribution in main.css. The title
-  // input's maxLength is the input-side half of the fix (bounds how tall the
-  // title can grow); this suite can't assert computed CSS height/clipping in
-  // jsdom, so it asserts the two things that ARE meaningful here: the cap
-  // exists on the input, and every attribution line still renders even when
-  // there are many of them (the other overflow trigger the reviewer named).
+  // NOTE on scope: the licence-clipping finding is a LAYOUT/geometry claim
+  // (".print-attribution is never clipped by .print-sheet's fixed-height
+  // overflow: hidden box"), and jsdom has no layout engine — it cannot
+  // compute box sizes, so no assertion in this file can prove or disprove
+  // clipping. That guarantee now comes from .print-sheet being a CSS Grid
+  // with .print-content as its only flexible row and .print-attribution as
+  // a separate, always-fully-sized auto row (see the comments on those rules
+  // in main.css) — it is verified geometrically in a real browser/PDF, not
+  // here (see task-15-report.md, "Fix 2: attribution guarantee"). The two
+  // tests below only cover what jsdom CAN meaningfully assert: the title
+  // input's structural cap, and that every attribution string is present in
+  // the rendered markup at all (not whether it stays on-screen).
   it('caps the title input so it cannot grow into an unbounded number of lines', () => {
     render(<PrintPageView {...props()} />);
     expect(screen.getByLabelText('Tiêu đề')).toHaveAttribute('maxLength', '120');

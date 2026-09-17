@@ -39,11 +39,12 @@ export function PrintPageView(p: PrintPageViewProps) {
         <label htmlFor="print-title">Tiêu đề</label>
         {/* maxLength=120 keeps the title within ~2 wrapped lines on the sheet
             at any paper width/size (see .print-title in main.css) — without
-            it, an arbitrarily long title can grow tall enough to squeeze the
-            fixed-height sheet's other blocks, and since .print-attribution is
-            the last child it is what silently loses the fight against
-            .print-sheet's overflow: hidden (the licence footer must always
-            print — see .print-attribution's comment). */}
+            it, an arbitrarily long title can grow tall enough to squeeze
+            .print-content's other blocks (map/meta/legend/analysis). It
+            cannot reach .print-attribution: that footer is now a separate,
+            unconditionally-sized grid row on .print-sheet, not a sibling in
+            this flex column — see .print-sheet's and .print-attribution's
+            comments in main.css (the licence footer must always print). */}
         <input id="print-title" type="text" maxLength={120} value={p.title} onChange={(e) => p.onTitle(e.target.value)} />
         <label htmlFor="print-paper">Khổ giấy</label>
         <select id="print-paper" value={p.paper} onChange={(e) => p.onPaper(e.target.value as PaperId)}>
@@ -63,20 +64,28 @@ export function PrintPageView(p: PrintPageViewProps) {
       </aside>
 
       <article className={`print-sheet print-${p.paper}`}>
-        <h1 className="print-title">{p.title}</h1>
-        <div className="print-map">
-          {p.capturing && !p.imageUrl && <p className="analysis-note">Đang chụp bản đồ…</p>}
-          {p.imageUrl && <img src={p.imageUrl} alt="Bản đồ in" />}
-          {p.toggles.north && <NorthArrow />}
-        </div>
-        <div className="print-meta">
-          {p.toggles.scale && <span>Tỷ lệ (theo màn hình): {p.scaleText}</span>}
-          {p.toggles.crs && <span>Hệ quy chiếu: {p.crsLabel}</span>}
-          {p.toggles.date && <span>Ngày in: {p.date}</span>}
-        </div>
-        <div className="print-body">
-          {p.toggles.legend && <div className="print-legend">{p.legend}</div>}
-          {p.analysis && <div className="print-analysis">{p.analysis}</div>}
+        {/* .print-content is the sheet's ONE flexible grid row — see
+            .print-sheet's comment in main.css. Wrapping title/map/meta/body
+            here (instead of leaving them as direct .print-sheet children,
+            as before) is what makes .print-attribution below a structurally
+            separate, always-fully-sized sibling rather than a fifth
+            competitor in the same shrink-or-clip flex column. */}
+        <div className="print-content">
+          <h1 className="print-title">{p.title}</h1>
+          <div className="print-map">
+            {p.capturing && !p.imageUrl && <p className="analysis-note">Đang chụp bản đồ…</p>}
+            {p.imageUrl && <img src={p.imageUrl} alt="Bản đồ in" />}
+            {p.toggles.north && <NorthArrow />}
+          </div>
+          <div className="print-meta">
+            {p.toggles.scale && <span>Tỷ lệ (theo màn hình): {p.scaleText}</span>}
+            {p.toggles.crs && <span>Hệ quy chiếu: {p.crsLabel}</span>}
+            {p.toggles.date && <span>Ngày in: {p.date}</span>}
+          </div>
+          <div className="print-body">
+            {p.toggles.legend && <div className="print-legend">{p.legend}</div>}
+            {p.analysis && <div className="print-analysis">{p.analysis}</div>}
+          </div>
         </div>
         <footer className="print-attribution">
           {p.attributions.map((a) => <p key={a}>{a}</p>)}
