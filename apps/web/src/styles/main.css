@@ -1177,7 +1177,25 @@ body {
 .print-A4-portrait { width: 190mm; height: 277mm; }
 .print-A3-landscape { width: 400mm; height: 277mm; }
 .print-A3-portrait { width: 277mm; height: 400mm; }
-.print-title { margin: 0; font-size: 20px; text-align: center; flex: none; }
+/* Clamped to at most 2 lines regardless of title length/width — the input
+   carries maxLength=120 (PrintPage.view.tsx) so almost every real title
+   already fits in 2 lines, but this is the hard backstop for the case where
+   it wouldn't (e.g. a 120-char title with no spaces, or a narrow A4-portrait
+   sheet). Without this cap the title is the one block above .print-map that
+   has no ceiling: it would keep growing with wrapped lines and eat into the
+   fixed-height sheet's budget, and since .print-map/.print-body already give
+   up their space first (see their own comments), the deficit would land on
+   whichever block has no protection — .print-attribution, last in the flex
+   column. overflow: hidden here is required for -webkit-line-clamp to work,
+   and it also has a side benefit: on any element, an overflow other than
+   'visible' makes its flex automatic minimum size 0, so IF this ever still
+   overflows its 2-line budget, this box is allowed to shrink instead of
+   forcing something else to. */
+.print-title {
+  margin: 0; font-size: 20px; line-height: 1.25; text-align: center; flex: none;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; max-height: calc(1.25em * 2);
+}
 /* flex: 1 + min-height: 0 lets the map take exactly the height left over
    after the title/meta/legend/footer — object-fit: contain then scales the
    image DOWN to fit that box without cropping, rather than forcing width:
@@ -1191,7 +1209,24 @@ body {
 .print-legend, .print-analysis { flex: 1; overflow: hidden; }
 .print-rows { border-collapse: collapse; width: 100%; }
 .print-rows th, .print-rows td { border-bottom: 1px solid #e5e7eb; text-align: left; padding: 2px 4px; }
-.print-attribution { font-size: 10px; color: #4b5563; border-top: 1px solid #e5e7eb; padding-top: 4px; }
+/* Must never be the block that gets clipped: this footer is how the sheet
+   satisfies a binding licence constraint (OSM ODbL, Esri, FABDEM, Open
+   Development Vietnam attributions) — printing it silently truncated is as
+   much a violation as leaving it off. Every sibling above absorbs the fixed
+   -height .print-sheet's overflow FIRST and is deliberately allowed to shrink
+   to 0 to do so: .print-map (min-height: 0, overflow: hidden) and .print-body
+   (max-height: 45%, overflow: hidden) both opt into a flex automatic minimum
+   size of 0 via their own overflow: hidden, and .print-title is now clamped
+   to 2 lines (see above) instead of growing unbounded. This block does the
+   opposite on purpose: flex: none pins it to its natural, un-shrunk content
+   height (no shrink, no grow — do NOT add overflow: hidden or min-height: 0
+   here, that would let this box give up space too, defeating the point), and
+   min-height reserves room for at least one line up front, budgeted the same
+   way .print-map/.print-body reserve their share. If content above still
+   cannot shrink enough to leave room (e.g. an extreme number of visible
+   layers stacking many attribution lines at once), this is the block that
+   should push the sheet's total height, not the one that silently loses. */
+.print-attribution { font-size: 10px; color: #4b5563; border-top: 1px solid #e5e7eb; padding-top: 4px; flex: none; min-height: 12px; }
 .print-attribution p { margin: 0; }
 @media print {
   body * { visibility: hidden; }

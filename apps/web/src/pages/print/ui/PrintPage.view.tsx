@@ -37,7 +37,14 @@ export function PrintPageView(p: PrintPageViewProps) {
       <aside className="print-controls glass-panel" aria-label="Tuỳ chọn in">
         <h2 className="panel-title">In / Xuất bản đồ</h2>
         <label htmlFor="print-title">Tiêu đề</label>
-        <input id="print-title" type="text" value={p.title} onChange={(e) => p.onTitle(e.target.value)} />
+        {/* maxLength=120 keeps the title within ~2 wrapped lines on the sheet
+            at any paper width/size (see .print-title in main.css) — without
+            it, an arbitrarily long title can grow tall enough to squeeze the
+            fixed-height sheet's other blocks, and since .print-attribution is
+            the last child it is what silently loses the fight against
+            .print-sheet's overflow: hidden (the licence footer must always
+            print — see .print-attribution's comment). */}
+        <input id="print-title" type="text" maxLength={120} value={p.title} onChange={(e) => p.onTitle(e.target.value)} />
         <label htmlFor="print-paper">Khổ giấy</label>
         <select id="print-paper" value={p.paper} onChange={(e) => p.onPaper(e.target.value as PaperId)}>
           {(Object.keys(PAPER_SIZES) as PaperId[]).map((id) => <option key={id} value={id}>{PAPER_SIZES[id].label}</option>)}

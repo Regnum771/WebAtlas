@@ -39,4 +39,34 @@ describe('PrintPageView', () => {
     expect(screen.getByRole('button', { name: 'Tải PNG' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Đóng' }));
   });
+
+  // Regression for the licence-clipping finding: .print-sheet is a
+  // fixed-height, overflow: hidden box, and .print-attribution (last child)
+  // must never be the thing that silently loses to that overflow — see the
+  // CSS comments on .print-title/.print-attribution in main.css. The title
+  // input's maxLength is the input-side half of the fix (bounds how tall the
+  // title can grow); this suite can't assert computed CSS height/clipping in
+  // jsdom, so it asserts the two things that ARE meaningful here: the cap
+  // exists on the input, and every attribution line still renders even when
+  // there are many of them (the other overflow trigger the reviewer named).
+  it('caps the title input so it cannot grow into an unbounded number of lines', () => {
+    render(<PrintPageView {...props()} />);
+    expect(screen.getByLabelText('Tiêu đề')).toHaveAttribute('maxLength', '120');
+  });
+
+  it('renders every attribution even when many layers stack up their licence notes', () => {
+    const attributions = [
+      'Nền bản đồ: © OpenStreetMap contributors (ODbL)',
+      'Địa hình: FABDEM',
+      'Hồ: HydroLAKES',
+      'Sông: HydroRIVERS',
+      'Dữ liệu đập: Open Development Vietnam',
+      'Ảnh vệ tinh: Esri, Maxar, Earthstar Geographics',
+      'Ranh giới hành chính: GADM',
+    ];
+    render(<PrintPageView {...props({ attributions })} />);
+    for (const a of attributions) {
+      expect(screen.getByText(a)).toBeInTheDocument();
+    }
+  });
 });
