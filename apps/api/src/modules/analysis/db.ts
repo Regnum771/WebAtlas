@@ -18,7 +18,15 @@ export async function withAnalysisTimeout<T>(
   fn: (db: Queryable) => Promise<T>,
   timeoutMs: number = ANALYSIS_TIMEOUT_MS
 ): Promise<T> {
-  const client = await pool.connect();
+  let client;
+  try {
+    client = await pool.connect();
+  } catch {
+    // The analysis pool is deliberately small and has a connectionTimeoutMillis
+    // (see modules/analysis/pool.ts): once every client is checked out, a new
+    // request should fail fast and cleanly rather than hang waiting for one.
+    throw new AppError(503, 'ANALYSIS_BUSY', 'Hệ thống phân tích đang bận, vui lòng thử lại sau.');
+  }
   try {
     await client.query('BEGIN READ ONLY');
     await client.query(`SET LOCAL statement_timeout = ${Math.trunc(timeoutMs)}`);

@@ -3,6 +3,7 @@ import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
 import { withAnalysisTimeout } from './db';
 import { demAvailable } from './dem';
+import { getAnalysisPool, closeAnalysisPool } from './pool';
 
 let app: ReturnType<typeof buildApp>;
 let dam: { id: string; lon: number; lat: number };
@@ -17,7 +18,10 @@ beforeAll(async () => {
   ));
   ({ rows: [{ id: riverId }] } = await pool.query(`SELECT id::text FROM water.rivers_active LIMIT 1`));
 });
-afterAll(async () => { await app.close(); });
+afterAll(async () => {
+  await app.close();
+  await closeAnalysisPool();
+});
 
 const post = (op: string, payload: unknown) => app.inject({ method: 'POST', url: `/api/analysis/${op}`, payload: payload as object });
 
@@ -174,5 +178,47 @@ describe('withAnalysisTimeout', () => {
     await expect(
       withAnalysisTimeout(getPool(), (db) => db.query('CREATE TEMP TABLE nope (x int)'))
     ).rejects.toMatchObject({ code: '25006' });
+  });
+});
+
+// Finding: POST /api/analysis/:op is unauthenticated and each request held a
+// client from the APP's own pool (max 10, no connectionTimeoutMillis) for up to
+// 5s — a few parallel toolbar calls could occupy every client and hang every
+// other route instead of erroring. controller.ts now runs analyses on this
+// separate, small pool instead (same isolation as modules/assistant/sql/pool.ts).
+describe('analysis pool', () => {
+  it('is bounded well below the app pool default, with its own connection timeout', () => {
+    const pool = getAnalysisPool();
+    expect(pool.options.max).toBe(3);
+    expect(pool.options.connectionTimeoutMillis).toBe(3000);
+  });
+
+  it('fails fast with a clean 503 instead of hanging once every client is checked out', async () => {
+    const pool = getAnalysisPool();
+    const max = pool.options.max!;
+    const held = await Promise.all(Array.from({ length: max }, () => pool.connect()));
+    try {
+      const start = Date.now();
+      await expect(
+        withAnalysisTimeout(pool, (db) => db.query('SELECT 1'))
+      ).rejects.toMatchObject({ statusCode: 503, code: 'ANALYSIS_BUSY' });
+      // Must fail at roughly connectionTimeoutMillis (3s), not hang indefinitely.
+      expect(Date.now() - start).toBeLessThan(pool.options.connectionTimeoutMillis! + 2000);
+    } finally {
+      held.forEach((c) => c.release());
+    }
+  });
+
+  it('POST /api/analysis/:op returns the same clean 503 when the pool is exhausted', async () => {
+    const pool = getAnalysisPool();
+    const max = pool.options.max!;
+    const held = await Promise.all(Array.from({ length: max }, () => pool.connect()));
+    try {
+      const res = await post('buffer', { geometry: { type: 'Point', coordinates: [108.05, 12.68] }, radiusKm: 1 });
+      expect(res.statusCode).toBe(503);
+      expect(res.json().error.code).toBe('ANALYSIS_BUSY');
+    } finally {
+      held.forEach((c) => c.release());
+    }
   });
 });

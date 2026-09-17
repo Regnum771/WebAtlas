@@ -1,6 +1,7 @@
 import { isMapCommand, type AnalysisResult, type EditableLayerKey } from '@webatlas/shared';
 import { AppError, NotFoundError, ValidationError } from '../../../../errors';
 import { withAnalysisTimeout } from '../../../analysis/db';
+import { getAnalysisPool } from '../../../analysis/pool';
 import type { ToolContext } from '../types';
 import { activeVersionLabel, type Queryable } from './helpers';
 
@@ -18,11 +19,14 @@ export async function runAnalysisTool(
   const datasetVersion = layerKey ? await activeVersionLabel(ctx.pool, layerKey) : null;
   let result: AnalysisResult;
   try {
-    result = await withAnalysisTimeout(ctx.pool, run);
+    // Its own small bounded pool, not ctx.pool: same reasoning as the toolbar's
+    // controller.ts — an unauthenticated-shaped, heavy read must not be able to
+    // exhaust the app's connection pool (see modules/analysis/pool.ts).
+    result = await withAnalysisTimeout(getAnalysisPool(), run);
   } catch (e) {
     ctx.provenance({ tool, layerKey, rowCount: 0, datasetVersion });
     if (e instanceof NotFoundError) return 'Không có dữ liệu: không tìm thấy đối tượng.';
-    if (e instanceof ValidationError || (e instanceof AppError && e.code === 'ANALYSIS_TIMEOUT')) {
+    if (e instanceof ValidationError || (e instanceof AppError && (e.code === 'ANALYSIS_TIMEOUT' || e.code === 'ANALYSIS_BUSY'))) {
       return `Không thực hiện được: ${e.message}`;
     }
     throw e;
