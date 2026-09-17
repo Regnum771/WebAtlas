@@ -9,7 +9,7 @@ import type { ZonalInput } from '../schemas';
 export const MAX_ZONAL_AREA_KM2 = 5000;
 
 export async function zonalElevationOp(db: Queryable, input: ZonalInput): Promise<AnalysisResult> {
-  const area = await areaGeometry(db, input);
+  const area = await areaGeometry(db, input as ZonalInput & { bufferKm?: number });
   if (area.areaKm2 > MAX_ZONAL_AREA_KM2) {
     throw new ValidationError(`Vùng quá lớn (${Math.round(area.areaKm2)} km²); tối đa ${MAX_ZONAL_AREA_KM2} km².`);
   }

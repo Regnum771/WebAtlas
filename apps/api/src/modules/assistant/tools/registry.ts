@@ -13,6 +13,10 @@ import { areaOfTool } from './data/areaOf';
 import { filterByAttributeTool } from './data/filterByAttribute';
 import { relatedFeaturesTool } from './data/relatedFeatures';
 import { elevationAtPointTool } from './data/elevationAtPoint';
+import { bufferFeatureTool } from './data/bufferFeature';
+import { selectWithinTool } from './data/selectWithin';
+import { elevationProfileTool } from './data/elevationProfile';
+import { zonalElevationTool } from './data/zonalElevation';
 import { runSqlTool } from './data/runSql';
 import { proposeFeatureUpdateTool } from './command/proposeFeatureUpdate';
 
@@ -50,6 +54,12 @@ const FACTORIES: ToolFactory[] = [
   // elevation tools land — one probe gating three definitions pays for itself,
   // one gating a single definition does not.
   elevationAtPointTool,
+  // Analysis tools (2026-09-17): thin wrappers over modules/analysis, the same
+  // ops the toolbar calls. Appended, never inserted.
+  bufferFeatureTool,
+  selectWithinTool,
+  elevationProfileTool,
+  zonalElevationTool,
 ];
 
 /**

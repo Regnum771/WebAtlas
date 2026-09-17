@@ -1,10 +1,10 @@
 // Xem zoomToRegion.ts: 'zod/v4' là bắt buộc do betaZodTool.
 import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
+import { EDITABLE_LAYER_KEYS, capResultItems, isMapCommand } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
 import { inVietnam } from '../../../../lib/geo';
-import { queryNearest } from '../../../analysis/ops/nearest';
+import { nearestGeometries, queryNearest } from '../../../analysis/ops/nearest';
 import { LAYER_LABELS, activeVersionLabel } from './helpers';
 
 // Query lives in modules/analysis/ops/nearest.ts, shared with the toolbar.
@@ -39,6 +39,11 @@ export const nearestFeaturesTool: ToolFactory = (ctx) =>
       if (rows.length === 0) {
         return `Không có dữ liệu: lớp ${LAYER_LABELS[input.layerKey]} chưa có đối tượng nào.`;
       }
+
+      const connectors = { kind: 'showGeometries' as const, fit: true,
+        items: capResultItems(nearestGeometries(input.layerKey, input.lon, input.lat, rows)).items };
+      if (isMapCommand(connectors)) ctx.collect(connectors);
+
       return JSON.stringify({ layerKey: input.layerKey, from: [input.lon, input.lat], rows });
     },
   });
