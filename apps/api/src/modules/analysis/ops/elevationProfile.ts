@@ -61,7 +61,18 @@ export async function elevationProfileOp(db: Queryable, input: ProfileInput): Pr
      SELECT pts.i,
             (SELECT round(ST_Value(r.rast, pts.p)::numeric, 1)::float8
                FROM basemap.dem_region r
-              WHERE ST_Intersects(r.rast, pts.p)
+              -- Filter on ST_ConvexHull(r.rast) — not on r.rast directly — so this
+              -- matches dem_region_rast_convexhull_idx (a GiST index on that exact
+              -- expression) and runs as an index scan. The raw ST_Intersects(rast,
+              -- point) form below it isn't indexable, so Postgres falls back to a
+              -- sequential scan of every DEM tile per sample point: for a 100-sample
+              -- profile that's 100 full scans of basemap.dem_region (~7,200 tiles),
+              -- ~1.9s just for this step and the main cause of the 504s a ~5-6 km
+              -- line at the default 100 samples hit (ANALYSIS_TIMEOUT_MS = 5000, see
+              -- db.ts). Measured: ~1941ms (seq scan) vs ~103ms (index scan) for the
+              -- same 100-sample, ~5.9 km query — see
+              -- .superpowers/sdd/post-verification-fixes-report.md.
+              WHERE ST_Intersects(ST_ConvexHull(r.rast), pts.p)
               LIMIT 1) AS "elevationM"
        FROM pts
       ORDER BY pts.i`,

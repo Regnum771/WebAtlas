@@ -108,6 +108,27 @@ describe('POST /api/analysis/nearest', () => {
 describe('DEM operations', () => {
   const line = { type: 'LineString', coordinates: [[108.05, 12.68], [108.25, 12.68]] };
 
+  it('completes a ~6 km line at the default 100 samples within the analysis timeout', async () => {
+    // Regression test for the 504 ANALYSIS_TIMEOUT a ~5-6 km line at the default
+    // sample count used to hit: the per-sample raster lookup did a correlated
+    // subquery filtered on `ST_Intersects(rast, point)`, which isn't indexable and
+    // fell back to a sequential scan of every DEM tile (~7,200 rows) for each of
+    // the 100 samples. This test runs inside the real 5s statement_timeout (no
+    // override), so the slow path fails it with a 504 rather than a slow pass.
+    const sixKmLine = { type: 'LineString', coordinates: [[108.05, 12.68], [108.1052, 12.68]] };
+    const res = await post('elevation_profile', { geometry: sixKmLine });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    if (!(await demAvailable(getPool()))) {
+      expect(body.summary['Trạng thái']).toBe('Chưa nạp dữ liệu độ cao');
+      return;
+    }
+    expect(body.profile).toHaveLength(100);
+    expect(body.summary['Chiều dài (km)']).toBeGreaterThan(5.9);
+    expect(body.summary['Chiều dài (km)']).toBeLessThan(6.1);
+    expect(body.attribution).toContain('FABDEM');
+  });
+
   it('elevation_profile samples along the line, or reports an unloaded DEM', async () => {
     const res = await post('elevation_profile', { geometry: line, samples: 50 });
     expect(res.statusCode).toBe(200);
