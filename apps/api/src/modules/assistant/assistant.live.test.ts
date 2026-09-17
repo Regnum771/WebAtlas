@@ -35,16 +35,8 @@ let pool: ReturnType<typeof getPool>;
 beforeAll(() => { pool = getPool(); });
 afterAll(async () => { await closePool(); });
 
-function ask(message: string, sessionId = `live-${Math.random()}`) {
-  return runAssistant({
-    pool,
-    userId: 'live-test-user',
-    sessionId,
-    message,
-    mapContext: MAP_CONTEXT,
-    logger: testLogger,
-    role: 'viewer',
-  });
+function ask(message: string, role: 'admin' | 'viewer' = 'viewer', sessionId = `live-${Math.random()}`) {
+  return runAssistant({ pool, userId: 'live-test-user', sessionId, message, mapContext: MAP_CONTEXT, logger: testLogger, role });
 }
 
 maybe('intent routing (live model)', () => {
@@ -106,8 +98,8 @@ maybe('intent routing (live model)', () => {
 
   it('keeps multi-turn context within one session', async () => {
     const sessionId = `live-multiturn-${Math.random()}`;
-    await ask('Chuyển bản đồ tới Đắk Lắk', sessionId);
-    const { segments } = await ask('Còn tỉnh nào nữa trong vùng công tác?', sessionId);
+    await ask('Chuyển bản đồ tới Đắk Lắk', 'viewer', sessionId);
+    const { segments } = await ask('Còn tỉnh nào nữa trong vùng công tác?', 'viewer', sessionId);
     expect(segments.length).toBeGreaterThan(0);
   }, 90_000);
 
@@ -155,5 +147,31 @@ maybe('intent routing (live model)', () => {
     } finally {
       await app.close();
     }
+  }, 90_000);
+
+  it('admin update request becomes a proposal, never a write', async () => {
+    const { commands } = await ask(
+      'Cập nhật công suất thuỷ điện Sông Hinh thành 72 MW theo Quyết định 123/QĐ-UBND, Sở Công Thương Đắk Lắk cung cấp',
+      'admin'
+    );
+    const proposal = commands.find((c: MapCommand) => c.kind === 'proposeFeatureEdit');
+    expect(proposal).toBeDefined();
+    expect(proposal).toMatchObject({ proposed: { wattage_mw: expect.stringMatching(/^72(\.0+)?$/) } });
+  }, 90_000);
+
+  it('viewer update request is refused with the fixed sentence and no proposal', async () => {
+    const { commands, segments } = await ask('Sửa công suất đập Sông Hinh thành 72 MW', 'viewer');
+    expect(commands.some((c: MapCommand) => c.kind === 'proposeFeatureEdit')).toBe(false);
+    expect(segments.map((s) => s.text).join(' ')).toContain('chỉ quản trị viên mới cập nhật được');
+  }, 60_000);
+
+  it('routes a buffer-and-count question to select_within', async () => {
+    const { provenance } = await ask('Có bao nhiêu đập trong phạm vi 10 km quanh hồ Lắk?');
+    expect(provenance.some((p) => p.tool === 'select_within')).toBe(true);
+  }, 90_000);
+
+  it('routes a river gradient question to elevation_profile', async () => {
+    const { provenance } = await ask('Trắc diện độ cao sông Srêpốk thế nào?');
+    expect(provenance.some((p) => p.tool === 'elevation_profile')).toBe(true);
   }, 90_000);
 });
