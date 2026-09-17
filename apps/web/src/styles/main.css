@@ -1111,3 +1111,10 @@ body {
 .zoom-group {
   gap: 6px;
 }
+
+/* Đề xuất cập nhật từ trợ lý */
+.proposal-wizard { display: flex; flex-direction: column; gap: 8px; min-width: 360px; max-height: 80vh; overflow-y: auto; }
+.proposal-subtitle { margin: 0 0 4px; font-size: 13px; color: var(--text-muted, #6b7280); }
+.proposal-field.changed { border-left: 3px solid #d97706; padding-left: 8px; }
+.proposal-previous { font-size: 12px; color: #92400e; }
+.proposal-source { display: flex; flex-direction: column; gap: 4px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }

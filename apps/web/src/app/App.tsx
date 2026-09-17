@@ -12,6 +12,7 @@ import DynamicPopup from '../components/DynamicPopup';
 import Legend from '../features/legend';
 import OGCClient from '../components/OGCClient';
 import Assistant from '../features/assistant';
+import ProposedEdit from '../features/feature-editing/ProposedEdit';
 import { IconRail } from '../features/shell/ui/IconRail.view';
 import { useRail } from '../features/shell/model/useRail';
 import { useSession } from '../entities/session/model/session.store';
@@ -76,6 +77,8 @@ function App() {
           <OGCClient />
 
           <DynamicPopup />
+
+          <ProposedEdit />
 
           <Routes>
             <Route path="/" element={null} />

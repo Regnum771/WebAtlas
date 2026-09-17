@@ -17,6 +17,8 @@ export async function createFeature(key: string, payload: CreateFeaturePayload):
 export interface UpdateFeaturePayload {
   geometry?: GeoJSONGeometry;
   properties: Record<string, unknown>;
+  /** Required by the proposal wizard; the API stores it on the audit row. */
+  source?: { document: string; provider: string };
 }
 
 export async function updateFeature(key: string, id: string, payload: UpdateFeaturePayload): Promise<{ id: string }> {
