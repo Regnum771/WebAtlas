@@ -38,7 +38,10 @@ export async function upsertLineage(pool: Pool, d: Dataset): Promise<void> {
 
     await client.query('COMMIT');
   } catch (err) {
-    await client.query('ROLLBACK');
+    // If ROLLBACK itself fails (e.g. connection lost), swallow that failure: the
+    // caller needs the original error, not one that occurred while cleaning up
+    // after it (M2).
+    await client.query('ROLLBACK').catch(() => {});
     throw err;
   } finally {
     client.release();

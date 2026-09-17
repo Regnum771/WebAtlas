@@ -109,6 +109,6 @@ describe.skipIf(!DB)('lineage database writes', () => {
     const id = '__atlasdata_test__no-lineage';
     await expect(
       appendProcessStep(pool, id, 'should not be written', 'curl')
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: '23503' }); // foreign_key_violation
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { resolveLicences } from './lineage';
+import type { Pool } from 'pg';
+import { resolveLicences, upsertLineage } from './lineage';
 import type { Dataset } from './types';
 
 const ds = (id: string, licence: string, dependsOn?: string[]): Dataset => ({
@@ -52,5 +53,43 @@ describe('resolveLicences', () => {
       'CC-BY-NC-SA-4.0',
       'CC0-1.0',
     ]);
+  });
+});
+
+describe('upsertLineage error handling (M2)', () => {
+  // A fake pg client: BEGIN/lineage-upsert/DELETE succeed, the source INSERT fails
+  // (simulating e.g. a NOT NULL violation), and — the point of this test — ROLLBACK
+  // *also* fails (simulating a lost connection). The caller must still see the
+  // original source-insert error, not the rollback failure that happened while
+  // trying to clean up after it.
+  it('rethrows the original error, not the ROLLBACK failure, when ROLLBACK also fails', async () => {
+    const originalError = new Error('insert source failed: NOT NULL violation');
+    const rollbackError = new Error('connection lost');
+
+    const client = {
+      query: async (sql: string) => {
+        if (sql.startsWith('BEGIN')) return {};
+        if (sql.startsWith('INSERT INTO app.dataset_lineage ')) return {};
+        if (sql.startsWith('DELETE FROM app.dataset_lineage_source')) return {};
+        if (sql.startsWith('INSERT INTO app.dataset_lineage_source')) throw originalError;
+        if (sql.startsWith('ROLLBACK')) throw rollbackError;
+        throw new Error(`unexpected query in test double: ${sql}`);
+      },
+      release: () => {},
+    };
+    const pool = { connect: async () => client } as unknown as Pool;
+
+    const d: Dataset = {
+      id: 'x',
+      kind: 'derived',
+      lineage: {
+        statement: 's',
+        licence: 'CC0-1.0',
+        sources: [{ citation: 'c', licence: 'CC0-1.0' }],
+      },
+      stages: [{ type: 'sql', statement: 'SELECT 1' }],
+    };
+
+    await expect(upsertLineage(pool, d)).rejects.toBe(originalError);
   });
 });

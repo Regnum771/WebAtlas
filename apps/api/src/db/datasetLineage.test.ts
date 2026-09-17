@@ -68,12 +68,16 @@ describe('dataset lineage schema', () => {
 
   it('rejects a lineage row with no licence', async () => {
     const pool = getPool();
-    await expect(
-      pool.query(
-        `INSERT INTO app.dataset_lineage (dataset_id, statement, licence)
-         VALUES ('__test__licence', 'a', NULL)`
-      )
-    ).rejects.toThrow();
+    try {
+      await expect(
+        pool.query(
+          `INSERT INTO app.dataset_lineage (dataset_id, statement, licence)
+           VALUES ('__test__licence', 'a', NULL)`
+        )
+      ).rejects.toMatchObject({ code: '23502' }); // not_null_violation
+    } finally {
+      await pool.query(`DELETE FROM app.dataset_lineage WHERE dataset_id = '__test__licence'`);
+    }
   });
 
   it('rejects stage state for a dataset with no lineage row', async () => {
@@ -83,7 +87,7 @@ describe('dataset lineage schema', () => {
         `INSERT INTO app.dataset_stage_state (dataset_id, stage, input_hash, status)
          VALUES ('__test__no-lineage', 'sql', 'h', 'ok')`
       )
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: '23503' }); // foreign_key_violation
   });
 
   it('rejects deleting a lineage row that still has a process step', async () => {
@@ -102,7 +106,7 @@ describe('dataset lineage schema', () => {
       );
       await expect(
         pool.query(`DELETE FROM app.dataset_lineage WHERE dataset_id = $1`, [datasetId])
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({ code: '23503' }); // foreign_key_violation (RESTRICT)
     } finally {
       await pool.query(`DELETE FROM app.dataset_lineage_step WHERE dataset_id = $1`, [datasetId]);
       await pool.query(`DELETE FROM app.dataset_lineage WHERE dataset_id = $1`, [datasetId]);
