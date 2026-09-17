@@ -78,7 +78,15 @@ describe('legendFor', () => {
   it('carries ODbL attribution for the OSM-sourced layers', () => {
     expect(LEGEND_ATTRIBUTION.layer_rivers).toContain('OpenStreetMap');
     expect(LEGEND_ATTRIBUTION.layer_lakes).toContain('OpenStreetMap');
-    expect(LEGEND_ATTRIBUTION.layer_dams).toBeUndefined();
+  });
+
+  // Regression test: the dams dataset (thuydienvietnam.geojson) is published by Open
+  // Development Vietnam under CC BY-SA 4.0, which requires attribution wherever the
+  // data is shown — but LEGEND_ATTRIBUTION had no entry for layer_dams, so a printed
+  // map of the dams layer carried no attribution for that data at all.
+  it('carries CC BY-SA attribution for the dams layer (Open Development Vietnam)', () => {
+    expect(LEGEND_ATTRIBUTION.layer_dams).toContain('Open Development Vietnam');
+    expect(LEGEND_ATTRIBUTION.layer_dams).toContain('CC BY-SA');
   });
 
   // Drift guard: the FABDEM attribution is a licence condition, and it has already

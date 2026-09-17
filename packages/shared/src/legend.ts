@@ -31,14 +31,25 @@ const OSM_ODBL = '© OpenStreetMap contributors (ODbL)';
 export const FABDEM_ATTRIBUTION =
   'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';
 
+/**
+ * The dams layer (water.dams) is seeded from apps/web/public/thuydienvietnam.geojson,
+ * published by Open Development Vietnam under CC BY-SA 4.0 — a share-alike licence
+ * that, like OSM's ODbL above, requires attribution wherever the data is shown.
+ * This is that attribution; do not drop it thinking dams "just" needs a legend swatch.
+ */
+const ODV_CC_BY_SA = 'Dữ liệu đập: Open Development Vietnam (CC BY-SA 4.0)';
+
 export const LEGEND_ATTRIBUTION: Record<string, string> = {
   layer_rivers: OSM_ODBL,
   layer_lakes: OSM_ODBL,
   // MapModel.ts deliberately carries no ol/control/Attribution (see the comment at
   // MapModel.ts:368-370 — it collided with the toolbar and the bottom-right readouts),
   // so every `attributions` string passed to an OpenLayers source is inert. This legend
-  // is the ONLY place any of these notices reach a user. That covers rivers, lakes, the
-  // basemap context layers below (roads/railways/water/landuse) and the contour layer.
+  // is the ONLY place any of these notices reach a user. That covers rivers, lakes, dams,
+  // the basemap context layers below (roads/railways/water/landuse) and the contour layer.
+  // The hazard layers (flood/drought/saltwater-intrusion/flood-generation) and stations
+  // are seeded from local placeholder data (db/seeds/registry.ts), not a licensed
+  // third-party source, so they carry no attribution obligation and none is added here.
   // The one genuinely uncovered residual is the RASTER basemap tiles themselves — the
   // OSM street tiles and Esri satellite tiles drawn as the map background — which have
   // no legend row and are not credited anywhere in the UI (a known, user-accepted gap,
@@ -48,6 +59,7 @@ export const LEGEND_ATTRIBUTION: Record<string, string> = {
   layer_bm_water: OSM_ODBL,
   layer_bm_landuse: OSM_ODBL,
   layer_contours: FABDEM_ATTRIBUTION,
+  layer_dams: ODV_CC_BY_SA,
 };
 
 const CAPACITY_ENTRIES: LegendEntry[] = [
