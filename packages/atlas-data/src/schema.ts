@@ -40,11 +40,22 @@ const stageSchema = z.discriminatedUnion('type', [
     produces: z.string().min(1),
     // Both required: the escape hatch cannot be constructed untracked (spec §2).
     promoteTo: z.string().min(1),
-    promoteBy: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'promoteBy must be YYYY-MM-DD'),
+    promoteBy: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'promoteBy must be YYYY-MM-DD')
+      // The regex alone accepts impossible dates like 2026-02-30 (JS Date parsing
+      // silently rolls those over to March). Re-render through Date and compare the
+      // ISO calendar date back to the input: a real date round-trips, an impossible
+      // one does not. Number.isNaN guards non-date strings so this never throws
+      // (Date#toISOString throws RangeError on an Invalid Date).
+      .refine((v) => {
+        const d = new Date(`${v}T00:00:00Z`);
+        return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+      }, 'promoteBy must be a real calendar date (e.g. 2026-02-30 is invalid)'),
   }),
 ]);
 
-const datasetSchema = z.object({
+export const datasetSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(['vector', 'raster', 'derived']),
   lineage: lineageSchema,

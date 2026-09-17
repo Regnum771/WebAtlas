@@ -46,4 +46,21 @@ describe('defineDataset', () => {
       })
     ).toThrow();
   });
+
+  it('rejects a run stage whose promoteBy is not a real calendar date (I1)', () => {
+    expect(() =>
+      defineDataset({
+        ...valid,
+        stages: [
+          {
+            type: 'run',
+            command: './x.sh',
+            produces: 'out',
+            promoteTo: 'fetch-cog',
+            promoteBy: '2026-02-30',
+          },
+        ],
+      })
+    ).toThrow();
+  });
 });
