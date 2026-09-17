@@ -135,4 +135,40 @@ describe('feature CRUD (admin only)', () => {
     );
     expect(audit.rows.map((r) => r.action)).toEqual(['create', 'update', 'delete']);
   });
+
+  it('admin update stores the source document and provider on the audit row', async () => {
+    const token = await tokenFor(ADMIN);
+    const auth = { authorization: `Bearer ${token}` };
+    const create = await app.inject({
+      method: 'POST', url: '/api/layers/dams/features', headers: auth,
+      payload: { geometry: { type: 'Point', coordinates: [108.99, 12.93] }, properties: { name: NAME } },
+    });
+    const id = create.json().feature.id;
+
+    const upd = await app.inject({
+      method: 'PUT', url: `/api/layers/dams/features/${id}`, headers: auth,
+      payload: {
+        properties: { wattage_mw: 72 },
+        source: { document: 'Quyết định 123/QĐ-UBND', provider: 'Sở Công Thương Đắk Lắk' },
+      },
+    });
+    expect(upd.statusCode).toBe(200);
+
+    const { rows } = await getPool().query(
+      `SELECT source_document, source_provider FROM app.audit_log
+        WHERE feature_id = $1 AND action = 'update' ORDER BY id DESC LIMIT 1`,
+      [id]
+    );
+    expect(rows[0]).toEqual({ source_document: 'Quyết định 123/QĐ-UBND', source_provider: 'Sở Công Thương Đắk Lắk' });
+  });
+
+  it('rejects a blank source provider', async () => {
+    const token = await tokenFor(ADMIN);
+    const res = await app.inject({
+      method: 'PUT', url: '/api/layers/dams/features/00000000-0000-0000-0000-000000000000',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { properties: { name: 'x' }, source: { document: 'QĐ 1', provider: '' } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
 });

@@ -2,12 +2,12 @@ import type { Pool } from 'pg';
 import { getLayer, type LayerDef } from '../../layers/registry';
 import { featuresRepository, type FeatureRow } from './repository';
 import { assertGeometry, assertValidInPg } from './geometry';
-import { auditService } from '../audit/service';
+import { auditService, type EditSource } from '../audit/service';
 import { versionsService } from '../versions/service';
 import { validate } from '../../lib/validate';
 import { ConflictError, NotFoundError } from '../../errors';
 
-type FeatureInput = { geometry?: unknown; properties?: Record<string, unknown> };
+type FeatureInput = { geometry?: unknown; properties?: Record<string, unknown>; source?: EditSource };
 
 async function prepare(pg: Pool, def: LayerDef, input: FeatureInput, geometryRequired: boolean) {
   const attrs = validate(def.attributeSchema, input.properties ?? {}) as Record<string, unknown>;
@@ -97,7 +97,7 @@ export function featuresService(pg: Pool) {
           const row = await repo.insertIntoVersion(client, def, draftId, {
             attrs, geometryJson: geometryJson ?? null, actorId,
           });
-          await audit.record({ userId: actorId, action: 'create', tableName: def.table, featureId: row.id, after: row });
+          await audit.record({ userId: actorId, action: 'create', tableName: def.table, featureId: row.id, after: row, source: input.source });
           return row;
         } catch (e) { return fail(e); }
       },
@@ -110,7 +110,7 @@ export function featuresService(pg: Pool) {
           if (!before) throw new NotFoundError('Feature not found');
           const { attrs, geometryJson } = await prepare(pg, def, input, false);
           const after = await repo.upsertChangeInVersion(client, def, draftId, id, { attrs, geometryJson, actorId });
-          await audit.record({ userId: actorId, action: 'update', tableName: def.table, featureId: id, before, after });
+          await audit.record({ userId: actorId, action: 'update', tableName: def.table, featureId: id, before, after, source: input.source });
           return after;
         } catch (e) { return fail(e); }
       },
