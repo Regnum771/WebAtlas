@@ -3,18 +3,33 @@ import { LAYER_PALETTE } from './layer-palette.js';
 /** Attribution required by the data licence, keyed by layerStateId.
  *  OSM data is ODbL and MUST carry this wherever the layer is shown. */
 const OSM_ODBL = '© OpenStreetMap contributors (ODbL)';
+/**
+ * FABDEM (CC BY-NC-SA 4.0) attribution, required wherever elevation-derived data
+ * surfaces. Kept as the exact sentence from docs/runbooks/elevation-dem.md and
+ * terrain-contours.md — do not paraphrase, it is a licence condition.
+ *
+ * Exported (re-exported via index.ts) so this is the single source apps/web's
+ * CONTOUR_ATTRIBUTION and tests import from, instead of hand-typing a second
+ * literal copy that can drift (RE-REVIEW ROUND 2, R3).
+ */
+export const FABDEM_ATTRIBUTION = 'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';
 export const LEGEND_ATTRIBUTION = {
     layer_rivers: OSM_ODBL,
     layer_lakes: OSM_ODBL,
-    // The basemap context layers are OSM-derived too. The tile source in
-    // MapModel already declares this on the map's attribution control, so the
-    // licence obligation is met either way — but attributing two OSM layers and
-    // silently not the other four is precisely the inconsistency that produced
-    // the earlier dropped-attribution bug.
+    // MapModel.ts deliberately carries no ol/control/Attribution (see the comment at
+    // MapModel.ts:368-370 — it collided with the toolbar and the bottom-right readouts),
+    // so every `attributions` string passed to an OpenLayers source is inert. This legend
+    // is the ONLY place any of these notices reach a user. That covers rivers, lakes, the
+    // basemap context layers below (roads/railways/water/landuse) and the contour layer.
+    // The one genuinely uncovered residual is the RASTER basemap tiles themselves — the
+    // OSM street tiles and Esri satellite tiles drawn as the map background — which have
+    // no legend row and are not credited anywhere in the UI (a known, user-accepted gap,
+    // see final-review-fixes.md C1; do not claim it is fixed by adding an entry here).
     layer_bm_roads: OSM_ODBL,
     layer_bm_railways: OSM_ODBL,
     layer_bm_water: OSM_ODBL,
     layer_bm_landuse: OSM_ODBL,
+    layer_contours: FABDEM_ATTRIBUTION,
 };
 const CAPACITY_ENTRIES = [
     { swatch: '#6b7280', shape: 'dot', size: 6, label: 'Nhỏ (< 200 MW)' },

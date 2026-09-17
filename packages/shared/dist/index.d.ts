@@ -15,3 +15,4 @@ export * from './map-commands.js';
 export * from './assistant.js';
 export * from './layer-palette.js';
 export * from './legend.js';
+export * from './contours.js';

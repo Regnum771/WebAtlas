@@ -55,14 +55,24 @@ export const BASEMAP_CONTEXT_LAYER_STATE_IDS = [
 ] as const;
 
 /**
+ * Lớp địa hình dẫn xuất từ DEM. Tách khỏi BASEMAP_CONTEXT_* vì đây không phải ngữ cảnh
+ * nền OSM: nó sinh ra từ basemap.dem_region, và hàng xóm tương lai của nó là lớp đổ bóng
+ * địa hình, không phải đường sá.
+ *
+ * Là mục tiêu lệnh hợp lệ, nên trợ lý bật/tắt được khi người dùng yêu cầu.
+ */
+export const TERRAIN_LAYER_STATE_IDS = ['layer_contours'] as const;
+
+/**
  * Every valid `layerStateId`: the 8 editable layers' ids (derived from
- * LAYER_ATTRIBUTE_MAP, not hand-copied), the 2 admin-boundary ids, and the 4
- * basemap context ids above.
+ * LAYER_ATTRIBUTE_MAP, not hand-copied), the 2 admin-boundary ids, the 4
+ * basemap context ids, and the terrain layer ids above.
  */
 export const LAYER_STATE_IDS: readonly string[] = [
   ...Object.values(LAYER_ATTRIBUTE_MAP).map((info) => info.layerStateId),
   ...ADMIN_BOUNDARY_LAYER_STATE_IDS,
   ...BASEMAP_CONTEXT_LAYER_STATE_IDS,
+  ...TERRAIN_LAYER_STATE_IDS,
 ];
 
 function isLayerStateId(value: unknown): value is string {

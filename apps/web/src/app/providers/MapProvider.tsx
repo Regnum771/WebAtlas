@@ -1,13 +1,19 @@
 import React, { createContext, useContext, useState, type ReactNode } from 'react';
 import type { Map } from 'ol';
 import type { BasemapType, ReservoirFilterType, LayerState } from '../../features/map/model/MapModel';
+import type { ContourSettings } from '../../features/map/model/contours';
 import { LAYER_DISPLAY } from '../../entities/layer/layerDisplay';
 
-export type { BasemapType, ReservoirFilterType, LayerState };
+export type { BasemapType, ReservoirFilterType, LayerState, ContourSettings };
 
 interface MapContextType {
   map: Map | null;
   setMap: (map: Map | null) => void;
+  /** Có yêu cầu tải tile nền còn treo quá LOADING_DELAY_MS hay không — xem
+   *  features/map/model/loadingState.ts. MapView đăng ký setBusy làm listener
+   *  của MapModel; MapLoadingBar đọc lại giá trị này để vẽ thanh báo. */
+  busy: boolean;
+  setBusy: (busy: boolean) => void;
   basemap: BasemapType;
   setBasemap: (basemap: BasemapType) => void;
   layersState: LayerState[];
@@ -15,15 +21,19 @@ interface MapContextType {
   setLayerOpacity: (layerId: string, opacity: number) => void;
   reservoirFilter: ReservoirFilterType;
   setReservoirFilter: (filter: ReservoirFilterType) => void;
+  contourSettings: ContourSettings;
+  setContourSettings: (settings: ContourSettings) => void;
 }
 
 const MapContext = createContext<MapContextType | undefined>(undefined);
 
 export const MapProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [map, setMap] = useState<Map | null>(null);
+  const [busy, setBusy] = useState(false);
   const [basemap, setBasemap] = useState<BasemapType>('street');
   const [reservoirFilter, setReservoirFilter] = useState<ReservoirFilterType>('all');
-  
+  const [contourSettings, setContourSettings] = useState<ContourSettings>({ interval: 'auto', labels: true });
+
   // Initialize layers state from LAYER_DISPLAY (presentation metadata for the layers panel)
   const initialLayersState: LayerState[] = Object.entries(LAYER_DISPLAY).map(([id, meta]) => ({
     id,
@@ -48,9 +58,11 @@ export const MapProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   return (
     <MapContext.Provider value={{
       map, setMap,
+      busy, setBusy,
       basemap, setBasemap,
       layersState, toggleLayerVisibility, setLayerOpacity,
-      reservoirFilter, setReservoirFilter
+      reservoirFilter, setReservoirFilter,
+      contourSettings, setContourSettings
     }}>
       {children}
     </MapContext.Provider>

@@ -7,6 +7,7 @@ import AdminUsersRoute from '../pages/admin-users';
 import MapView from '../features/map/ui/MapView';
 import LayersPanel from '../features/layers-panel';
 import MapToolbar from '../features/map/ui/MapToolbar';
+import MapLoadingBar from '../features/map/ui/MapLoadingBar';
 import DynamicPopup from '../components/DynamicPopup';
 import Legend from '../features/legend';
 import OGCClient from '../components/OGCClient';
@@ -43,6 +44,7 @@ function RailAndFlyout() {
   return (
     <>
       <MapView flyoutOpen={rail.active !== null} />
+      <MapLoadingBar flyoutOpen={rail.active !== null} />
       <MapToolbar flyoutOpen={rail.active !== null} />
       <IconRail items={items} active={rail.active} onToggle={rail.toggle} />
       {rail.active !== null && (

@@ -3,15 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS, isMapCommand } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-
-/**
- * Rough Vietnam bounds. `isMapCommand` only checks that lonLat is two finite
- * numbers, so without this a (0, 0) from a null-island row would fly the map
- * into the Atlantic and report success.
- */
-export function inVietnam(lon: number, lat: number): boolean {
-  return lon >= 102 && lon <= 110 && lat >= 8 && lat <= 24;
-}
+import { inVietnam } from '../../../../lib/geo';
 
 export const zoomToFeatureTool: ToolFactory = (ctx) =>
   betaZodTool({

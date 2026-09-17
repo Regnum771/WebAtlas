@@ -133,6 +133,100 @@ body {
   pointer-events: auto;
 }
 
+/* Thanh báo tải: bám cạnh trên vùng bản đồ, lặp lại phép tính left/width của
+   .map-container giống .map-toolbar để dịch cùng nhịp khi bảng trượt đóng mở. */
+.map-loading-bar {
+  position: absolute;
+  top: var(--topbar-height);
+  left: var(--rail-width);
+  width: calc(100% - var(--rail-width));
+  height: 3px;
+  z-index: 30;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+  transition: left 200ms ease, width 200ms ease;
+}
+
+.map-loading-bar.flyout-open {
+  left: calc(var(--rail-width) + var(--flyout-width));
+  width: calc(100% - var(--rail-width) - var(--flyout-width));
+}
+
+.map-loading-bar-fill {
+  display: block;
+  height: 100%;
+  width: 35%;
+  background: var(--color-primary, #15803d);
+  animation: map-loading-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes map-loading-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* Không chạy hoạt cảnh với người đã tắt hiệu ứng chuyển động; thanh vẫn hiện,
+   chỉ đứng yên, nên thông tin "đang tải" không mất. */
+@media (prefers-reduced-motion: reduce) {
+  .map-loading-bar-fill { animation: none; width: 100%; opacity: 0.5; }
+}
+
+/* Thanh công cụ chiếm giữa cạnh dưới, nên hai góc còn trống — đúng chỗ quy ước
+   đặt thanh tỷ lệ (trái) và toạ độ con trỏ (phải). Cả hai control OL này nhận
+   className riêng nên mất hết CSS mặc định của ol/ol.css dành cho .ol-scale-line
+   và .ol-mouse-position (phần tử gốc + phần tử -inner) — ta tự cấp nền/khung để
+   đọc được trên cả nền phố sáng lẫn ảnh vệ tinh tối màu. Các phần tử con bên
+   trong thanh tỷ lệ (vạch chia .ol-scale-singlebar, chữ .ol-scale-step-text/
+   .ol-scale-text) vẫn giữ nguyên class ol-scale-* cứng (ScaleLine.js không suy
+   className cho chúng từ option className) nên vẫn ăn theo biến --ol-* mặc định. */
+.map-scaleline {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 20;
+  pointer-events: none;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  box-shadow: var(--glass-shadow);
+}
+
+/* .ol-scale-bar-inner mặc định là `display: flex` (xếp các đoạn vạch theo
+   hàng ngang) — mất đi cùng lúc với .ol-scale-bar vì className đã đổi tên
+   phần tử -inner thành map-scaleline-inner. Thiếu dòng này các đoạn vạch xếp
+   dọc thay vì tạo thành một thanh liền mạch. */
+.map-scaleline-inner {
+  display: flex;
+}
+
+/* Ô độ cao xếp NGAY TRÊN ô toạ độ, dùng chung toàn bộ kiểu dáng để hai ô đọc như một
+   khối. Không gộp vào cùng một ô: toạ độ do OpenLayers vẽ lại tức thì theo con trỏ, còn
+   độ cao về sau một nhịp mạng — nhét chung một dòng thì hoặc phải giữ con số cũ bên cạnh
+   toạ độ mới (sai), hoặc phải vẽ lại cả dòng mỗi lần (nháy). */
+.map-mouseposition,
+.map-cursor-elevation {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 20;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums; /* số không nhảy ngang khi con trỏ di chuyển */
+  pointer-events: none;
+  background: var(--bg-panel);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Chiều cao một ô đọc số (12px * 1.4 + padding + viền) ~ 26px, cộng khoảng cách. */
+.map-cursor-elevation {
+  bottom: calc(var(--space-3) + 30px);
+}
+
 .toolbar-rail {
   display: flex;
   flex-direction: row;
@@ -868,6 +962,16 @@ body {
 .layer-row {
   display: flex; align-items: center; gap: var(--space-2);
   padding: var(--space-1) 0;
+  /* Cho phép .layer-suboptions (flex-basis 100%, bên dưới) rơi xuống dòng
+     riêng. Các hàng bình thường (nhãn + thanh trượt, hoặc nhãn + gợi ý
+     ngưỡng zoom) hiện vẫn vừa một dòng, nhưng KHÔNG PHẢI vì có quy tắc nào
+     chặn wrap cho chúng — flex-wrap: wrap áp dụng cho mọi phần tử con như
+     nhau, bất kể flex-basis. Chúng vừa một dòng chỉ vì độ dài chuỗi hiện tại
+     (nhãn lớp + số liệu) đủ ngắn so với bề rộng bảng. Một tên lớp dài hơn
+     trong tương lai vẫn có thể khiến hàng đó wrap âm thầm, giống hệt
+     .layer-suboptions — flex-basis 100% ở dưới chỉ đảm bảo NÓ luôn rơi
+     xuống dòng riêng, không đảm bảo các phần tử khác không rơi theo. */
+  flex-wrap: wrap;
 }
 .layer-row.gated { opacity: 0.7; }
 .layer-row .layer-label {
@@ -878,6 +982,32 @@ body {
   font-size: 11px; color: var(--text-muted); white-space: nowrap;
 }
 .layer-row input[type='range'] { width: 72px; }
+
+/* Tuỳ chọn con: thụt vào để thấy rõ là thuộc về hàng bên trên, và chỉ hiện khi lớp bật.
+ * flex-basis: 100% buộc nó không bao giờ vừa chung dòng với nhãn/thanh trượt phía
+ * trên (xem flex-wrap ở .layer-row) nên luôn rơi xuống dòng riêng, đủ rộng bằng
+ * cả hàng — tránh tràn ra ngoài bảng như trước khi có hai quy tắc này.
+ */
+.layer-suboptions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-left: var(--space-4);
+  font-size: 12px;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+/* select co giãn theo đúng bề rộng bảng: min-width:0 để không bị neo theo bề rộng
+ * chữ dài nhất ("Tự động theo mức thu phóng"), max-width/overflow để phần đóng
+ * (control) cắt gọn bằng dấu ba chấm thay vì tràn — danh sách mở (dropdown) vẫn do
+ * trình duyệt vẽ riêng nên chữ trong đó luôn hiện đầy đủ, không bị quy tắc này ảnh hưởng. */
+.layer-suboptions select {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Chú giải — các quy tắc còn thiếu từ slice legend (Task 6): view dùng
    .legend-panel/.legend-layer/.legend-layer-title/.legend-note nhưng chưa có

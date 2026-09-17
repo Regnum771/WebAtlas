@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { legendFor, LEGEND_ATTRIBUTION } from './legend.js';
 import { DAM_STATUS_SLUGS } from './dam-status.js';
@@ -77,5 +79,22 @@ describe('legendFor', () => {
     expect(LEGEND_ATTRIBUTION.layer_rivers).toContain('OpenStreetMap');
     expect(LEGEND_ATTRIBUTION.layer_lakes).toContain('OpenStreetMap');
     expect(LEGEND_ATTRIBUTION.layer_dams).toBeUndefined();
+  });
+
+  // Drift guard: the FABDEM attribution is a licence condition, and it has already
+  // drifted once (RE-REVIEW ROUND 1, R1 — every in-code copy was missing the runbook's
+  // trailing period). Read the sentence straight from the runbook's blockquote at test
+  // time so a future edit to either side (this file or the runbook) fails the build
+  // instead of silently diverging again.
+  it('matches the FABDEM attribution sentence verbatim from docs/runbooks/elevation-dem.md', () => {
+    const runbookPath = fileURLToPath(
+      new URL('../../../docs/runbooks/elevation-dem.md', import.meta.url)
+    );
+    const runbookText = readFileSync(runbookPath, 'utf8');
+    const match = runbookText.match(/^> (FABDEM is produced using Copernicus.*)$/m);
+    expect(match, 'attribution blockquote not found in runbook').not.toBeNull();
+    const runbookSentence = match![1];
+
+    expect(LEGEND_ATTRIBUTION.layer_contours).toBe(runbookSentence);
   });
 });

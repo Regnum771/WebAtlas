@@ -3,7 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { inVietnam } from '../command/zoomToFeature';
+import { inVietnam } from '../../../../lib/geo';
 import { LAYER_LABELS, POINT_SQL, activeVersionLabel, candidateCtes, layerTable, layerView } from './helpers';
 
 // How many nearest-by-planar-distance candidates to pull off the base table

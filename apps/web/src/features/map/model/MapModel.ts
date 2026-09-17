@@ -1,5 +1,7 @@
 import Map from 'ol/Map';
 import { createRiverOverviewSource, riverOverviewVisibleAt } from './riverOverview';
+import { createLoadTracker } from './loadingState';
+import { createScaleBar, createMousePosition } from './mapReadouts';
 import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
@@ -11,7 +13,15 @@ import Select from 'ol/interaction/Select';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
 import { GEOSERVER_URL } from '../../../shared/config';
-import { BASEMAP_CONTEXT_LAYER_STATE_IDS } from '@webatlas/shared';
+import { BASEMAP_CONTEXT_LAYER_STATE_IDS, TERRAIN_LAYER_STATE_IDS, type ContourInterval } from '@webatlas/shared';
+import {
+  contourGwcLayer,
+  contourIntervalFor,
+  contourStyle,
+  CONTOUR_EXTENT_4326,
+  CONTOUR_ATTRIBUTION,
+  type ContourSettings,
+} from './contours';
 import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM, settleZoomCorrection } from './zoomScale';
 import {
   createBboxLoadGate,
@@ -48,18 +58,20 @@ export type ReservoirFilterType = 'all' | 'binh_thuong' | 'xa_lu' | 'nguy_hiem';
  *
  * Dữ liệu OSM là ODbL: BẮT BUỘC ghi công "© OpenStreetMap contributors".
  */
-function gwcSource(layer: string): XYZ {
+const OSM_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)';
+
+function gwcSource(layer: string, style = '', attributions: string = OSM_ATTRIBUTION): XYZ {
   // WMTS TILEROW is top-origin, matching OpenLayers' {y}. (TMS is bottom-origin —
   // mixing the two yields TileOutOfRange.) Every basemap layer group is published
   // with identical national bounds so no tile OL asks for falls out of range.
   const wmts =
     `${GEOSERVER_URL}/gwc/service/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0` +
-    `&LAYER=${encodeURIComponent(layer)}&STYLE=&TILEMATRIXSET=EPSG:900913&FORMAT=image/png` +
+    `&LAYER=${encodeURIComponent(layer)}&STYLE=${style}&TILEMATRIXSET=EPSG:900913&FORMAT=image/png` +
     `&TILEMATRIX=EPSG:900913:{z}&TILEROW={y}&TILECOL={x}`;
   return new XYZ({
     url: wmts,
-    attributions:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)',
+    attributions,
     maxZoom: 18,
   });
 }
@@ -99,7 +111,10 @@ export interface LayerState {
 export class MapModel {
   private map: Map | null = null;
   private basemapLayer: TileLayer<XYZ | OSM> | null = null;
-  private layers: Record<string, VectorLayer<VectorSource>> = {};
+  /** Đăng ký các lớp bật/tắt được từ bảng điều khiển. Chủ yếu là vector, cộng thêm
+   *  lớp raster đường đồng mức (layer_contours) — cả hai đều có setVisible/
+   *  setOpacity/getSource().refresh(), nên union này không phá các nơi dùng chung. */
+  private layers: Record<string, VectorLayer<VectorSource> | TileLayer<XYZ>> = {};
   /** Raster context layers (roads/rail/landuse/water). Separate registry because
    *  `layers` is typed for vector sources and its consumers call getSource().refresh(). */
   private contextLayers: Record<string, TileLayer<XYZ>> = {};
@@ -109,6 +124,12 @@ export class MapModel {
   private moveendHandler: (() => void) | null = null;
   /** Lớp sông tổng quan cho mức thu nhỏ — xem riverOverview.ts. */
   private riversOverviewLayer: VectorLayer<VectorSource> | null = null;
+  private contourLayer: TileLayer<XYZ> | null = null;
+  /** Khoảng đang hiển thị, để không đặt lại source khi không cần. */
+  private contourInterval: ContourInterval | null = null;
+  /** Người dùng chọn cứng một khoảng; null nghĩa là để mức thu phóng quyết định. */
+  private contourFixedInterval: ContourInterval | null = null;
+  private contourLabels = true;
   /** Bám nấc nghìn khi khung nhìn dừng — xem settleZoomCorrection. */
   private settleSnapHandler: (() => void) | null = null;
   /** Cổng tải sông/hồ theo zoom — chạy mỗi lần moveend (xem zoomLoadGate.ts). */
@@ -124,6 +145,34 @@ export class MapModel {
    * lưu thất bại. Ghi nhận lại ở đây để nạp bù đúng lúc gắn source trở lại.
    */
   private pendingRefresh = createPendingRefreshQueue();
+  /** Bận/rảnh của việc tải tile nền — xem loadingState.ts. Chỉ theo dõi nguồn
+   *  raster (GWC); nguồn WFS bắn featuresloadstart/end theo nhịp khác và sẽ
+   *  khiến thanh báo hiện cả lúc tải dữ liệu chuyên đề thông thường. */
+  private loadTracker = createLoadTracker((busy) => this.onLoadingChange?.(busy));
+  private onLoadingChange: ((busy: boolean) => void) | null = null;
+  /**
+   * Tay cầm tileloadstart/end/error gắn trên từng nguồn ngữ cảnh, lưu lại để
+   * gỡ đúng trong dispose(). Đăng ký bằng arrow vô danh (như trước đây) thì
+   * KHÔNG THỂ un() được — phải đặt tên và giữ tham chiếu, giống hệt quy ước
+   * moveendHandler/settleSnapHandler ở trên.
+   *
+   * Vì sao bắt buộc phải gỡ: setTarget(undefined) không huỷ các request tile
+   * đang bay. Nếu MapView unmount rồi mount lại (StrictMode dev double-invoke,
+   * hay remount thật sau này), instance MapModel cũ vẫn còn nguyên các tay cầm
+   * này gắn trên source cũ và vẫn còn onLoadingChange trỏ tới setBusy của React
+   * đã bị thay. Một tileloadstart trễ trên instance đã dispose() sẽ ghi đè
+   * cùng state `busy` mà instance mới đang sở hữu, gây tranh chấp (race).
+   */
+  private contextLoadHandlers: Array<{
+    source: XYZ;
+    type: 'tileloadstart' | 'tileloadend' | 'tileloaderror';
+    handler: () => void;
+  }> = [];
+
+  /** Đăng ký nơi nhận trạng thái bận/rảnh (MapView/MapProvider phía React). */
+  setLoadingListener(fn: ((busy: boolean) => void) | null): void {
+    this.onLoadingChange = fn;
+  }
 
   init(target: HTMLElement): void {
     // Idempotency guard for React 19 StrictMode double-invoked effects.
@@ -144,6 +193,43 @@ export class MapModel {
       });
     }
     this.basemapLayer = initialBasemap;
+
+    // Lớp đường đồng mức: nằm TRÊN nền và ngữ cảnh nhưng DƯỚI ranh giới/dữ liệu
+    // chuyên đề (xem vị trí trong mảng `layers` của map bên dưới). Tắt theo mặc
+    // định — bật qua bảng điều khiển ('Địa hình' > 'Đường đồng mức').
+    //
+    // extent: các lớp GWC đường đồng mức được xuất bản với biên DỮ LIỆU
+    // (CONTOUR_EXTENT_4326), khác với biên toàn quốc mà mọi lớp nền khác dùng —
+    // xem ghi chú tại khai báo hằng số đó trong contours.ts. Thiếu extent thì mỗi
+    // lần rê bản đồ ra ngoài vùng công tác sẽ xin tile ngoài phạm vi, GWC trả về
+    // 400 TileOutOfRange cho từng ô.
+    const [CONTOURS] = TERRAIN_LAYER_STATE_IDS;
+    const contourLayer = new TileLayer({
+      source: gwcSource(contourGwcLayer(250), contourStyle(this.contourLabels), CONTOUR_ATTRIBUTION),
+      visible: false,
+      extent: transformExtent(CONTOUR_EXTENT_4326, 'EPSG:4326', 'EPSG:3857'),
+      properties: { id: CONTOURS },
+    });
+    this.contourLayer = contourLayer;
+    this.layers[CONTOURS] = contourLayer;
+
+    // Chỉ theo dõi tải cho các nguồn tile raster (nền + ngữ cảnh) — xem ghi chú
+    // tại khai báo loadTracker phía trên.
+    for (const { stateId } of CONTEXT_LAYERS) {
+      const src = this.contextLayers[stateId].getSource();
+      if (!src) continue;
+      const onTileLoadStart = () => this.loadTracker.start();
+      const onTileLoadEnd = () => this.loadTracker.done();
+      const onTileLoadError = () => this.loadTracker.done();
+      src.on('tileloadstart', onTileLoadStart);
+      src.on('tileloadend', onTileLoadEnd);
+      src.on('tileloaderror', onTileLoadError);
+      this.contextLoadHandlers.push(
+        { source: src, type: 'tileloadstart', handler: onTileLoadStart },
+        { source: src, type: 'tileloadend', handler: onTileLoadEnd },
+        { source: src, type: 'tileloaderror', handler: onTileLoadError },
+      );
+    }
 
     // Helper tạo vector layer từ URL GeoJSON
     const createVectorLayerFromUrl = (id: string, url: string, style: any, options: any = {}) => {
@@ -250,6 +336,7 @@ export class MapModel {
         // Ngữ cảnh nền: trên nền, dưới ranh giới và dữ liệu chuyên đề. Thứ tự trong
         // CONTEXT_LAYERS là thứ tự vẽ (sử dụng đất -> mặt nước -> đường sắt -> đường bộ).
         ...CONTEXT_LAYERS.map(({ stateId }) => this.contextLayers[stateId]),
+        contourLayer,
         provincesLayer,
         wardsLayer,
         floodLayer,
@@ -280,7 +367,9 @@ export class MapModel {
         // Chỉ ràng buộc TÂM: rìa bản đồ được phép tràn ra ngoài extent.
         constrainOnlyCenter: true,
       }),
-      controls: []
+      // Giữ danh sách TƯỜNG MINH, không dùng defaults(): defaults() kèm nút zoom
+      // và ô ghi công, chồng lên thanh công cụ và góc dưới phải của chính ta.
+      controls: [createScaleBar(), createMousePosition()],
     });
 
     // Thêm interaction để highlight sông khi click
@@ -303,6 +392,20 @@ export class MapModel {
         // tắc 'Mạng lưới sông ngòi' của người dùng — không có mục bật/tắt riêng.
         const riversOn = this.layerStates.find((l) => l.id === 'layer_rivers')?.visible ?? true;
         this.riversOverviewLayer?.setVisible(riverOverviewVisibleAt(zoom) && riversOn);
+
+        // Chỉ đổi source khi khoảng cao đều thật sự đổi: đặt lại source đồng nghĩa vứt bỏ
+        // toàn bộ tile đã tải, nên gọi mỗi lần di chuyển bản đồ sẽ nháy liên tục.
+        // contourFixedInterval do người dùng chọn cứng (setContourSettings, Nhiệm vụ 6)
+        // được ưu tiên hơn mức tự động theo zoom: khi khác null, `wanted` luôn bằng
+        // đúng giá trị cố định đó bất kể zoom, nên nó khớp contourInterval ngay từ lần
+        // gọi đầu và nhánh dưới đây không bao giờ đặt lại source vì đổi zoom nữa.
+        const wanted = this.contourFixedInterval ?? contourIntervalFor(zoom);
+        if (this.contourLayer && wanted !== this.contourInterval) {
+          this.contourInterval = wanted;
+          this.contourLayer.setSource(
+            gwcSource(contourGwcLayer(wanted), contourStyle(this.contourLabels), CONTOUR_ATTRIBUTION),
+          );
+        }
       }
       this.recomputeVisibility();
     };
@@ -444,6 +547,24 @@ export class MapModel {
   }
 
   /**
+   * Bảng điều khiển (Nhiệm vụ 6) gọi khi người dùng đổi khoảng cao đều hoặc bật/tắt
+   * nhãn. Một khoảng cố định (khác 'auto') ưu tiên hơn mức tự động theo zoom: đặt
+   * contourFixedInterval khác null khiến nhánh trong updateLayersVisibility() (moveend)
+   * luôn tính lại `wanted` bằng đúng giá trị này, nên nó không bao giờ lệch khỏi
+   * contourInterval và source không bị đặt lại khi zoom đổi.
+   */
+  setContourSettings(settings: ContourSettings): void {
+    this.contourLabels = settings.labels;
+    this.contourFixedInterval = settings.interval === 'auto' ? null : settings.interval;
+    const zoom = this.map?.getView().getZoom() ?? 0;
+    const wanted = this.contourFixedInterval ?? contourIntervalFor(zoom);
+    this.contourInterval = wanted;
+    this.contourLayer?.setSource(
+      gwcSource(contourGwcLayer(wanted), contourStyle(settings.labels), CONTOUR_ATTRIBUTION),
+    );
+  }
+
+  /**
    * Force a WFS refetch for a thematic layer by its layersState id (e.g. 'layer_dams').
    * Called after an admin create/edit so the new feature renders live (design §4.7).
    */
@@ -484,6 +605,14 @@ export class MapModel {
     this.waterGate = null;
     this.wardsGate = null;
     this.pendingRefresh.clear();
+    // Gỡ từng tay cầm tileload* khỏi đúng source đã đăng ký — xem ghi chú tại
+    // khai báo contextLoadHandlers phía trên.
+    for (const { source, type, handler } of this.contextLoadHandlers) {
+      source.un(type, handler);
+    }
+    this.contextLoadHandlers = [];
+    this.loadTracker.reset();
+    this.onLoadingChange = null;
     this.map.setTarget(undefined);
     this.map = null;
     this.basemapLayer = null;

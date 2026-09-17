@@ -3,7 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { MAX_HIGHLIGHT_POINTS, isMapCommand, type HighlightPoint } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { inVietnam } from './zoomToFeature';
+import { inVietnam } from '../../../../lib/geo';
 
 export const highlightFeaturesTool: ToolFactory = (ctx) =>
   betaZodTool({
