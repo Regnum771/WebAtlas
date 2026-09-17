@@ -1135,3 +1135,54 @@ body {
 .analysis-layers label { justify-content: flex-start; }
 .profile-chart { margin: 0; }
 .profile-chart-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted, #6b7280); }
+
+/* In / Xuất bản đồ */
+.top-bar-print { display: inline-flex; align-items: center; color: inherit; padding: 6px; border-radius: 6px; margin-right: 8px; }
+/* 1500 matches .admin-users-route: must outrank .top-bar (1200), .icon-rail/
+   .rail-flyout (1102) and .edit-drawer (1101/1300) — the map and its chrome
+   stay mounted underneath (see App.tsx), so a lower z-index left the layers
+   panel and top bar visible on top of the print sheet. */
+.print-route { position: fixed; inset: 0; z-index: 1500; background: #e5e7eb; overflow: auto; display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
+.print-controls { width: 260px; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 12px; }
+.print-toggle { display: flex; gap: 6px; align-items: center; }
+/* Width AND height both fixed to the paper's PRINTABLE area (physical size
+   minus the @page margin above, 10mm each side) — verified in a real browser
+   print/PDF (Task 15 Step 9): with only width constrained (as first written),
+   the map image's own height (at full sheet width, cropped to the FULL paper
+   aspect) already used up nearly the whole page, so title/meta/legend/footer
+   pushed the sheet past one page and the browser paginated — splitting the
+   map image itself across two printed pages. A4 and A3 need their OWN sizes:
+   A3 (297×420mm) is physically larger than A4 (210×297mm), so reusing A4's
+   printable width for A3 (as first written) would print A3 with a wide blank
+   margin instead of using the extra paper. overflow: hidden below then caps
+   the sheet at exactly one page regardless of how much legend/analysis
+   content is toggled on — clipping instead of spawning a second page, and
+   visible in the on-screen preview too so the mismatch is not a surprise only
+   discovered after printing. */
+.print-sheet { background: #fff; color: #111827; padding: 12mm; box-shadow: 0 4px 16px rgba(0,0,0,.2); display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.print-A4-landscape { width: 277mm; height: 190mm; }
+.print-A4-portrait { width: 190mm; height: 277mm; }
+.print-A3-landscape { width: 400mm; height: 277mm; }
+.print-A3-portrait { width: 277mm; height: 400mm; }
+.print-title { margin: 0; font-size: 20px; text-align: center; flex: none; }
+/* flex: 1 + min-height: 0 lets the map take exactly the height left over
+   after the title/meta/legend/footer — object-fit: contain then scales the
+   image DOWN to fit that box without cropping, rather than forcing width:
+   100% and letting the height (fixed by the export's paper-aspect crop)
+   overflow the page. */
+.print-map { position: relative; border: 1px solid #9ca3af; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.print-map img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.print-north { position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,.85); border-radius: 4px; padding: 2px; }
+.print-meta { display: flex; gap: 16px; font-size: 12px; flex: none; }
+.print-body { display: flex; gap: 16px; font-size: 12px; flex: none; max-height: 45%; overflow: hidden; }
+.print-legend, .print-analysis { flex: 1; overflow: hidden; }
+.print-rows { border-collapse: collapse; width: 100%; }
+.print-rows th, .print-rows td { border-bottom: 1px solid #e5e7eb; text-align: left; padding: 2px 4px; }
+.print-attribution { font-size: 10px; color: #4b5563; border-top: 1px solid #e5e7eb; padding-top: 4px; }
+.print-attribution p { margin: 0; }
+@media print {
+  body * { visibility: hidden; }
+  .print-sheet, .print-sheet * { visibility: visible; }
+  .print-route { position: static; background: none; padding: 0; overflow: visible; }
+  .print-sheet { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none; padding: 0; }
+}

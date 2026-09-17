@@ -249,8 +249,8 @@ line feature reference (a river).
 - **Report:** if an analysis result is active, the print page appends its summary and row table; the result card's
   **Xuất CSV** downloads rows (UTF-8 with BOM so Excel renders Vietnamese).
 - **Risk — tainted canvas:** tiles without CORS headers block `toBlob`. Sources get `crossOrigin: 'anonymous'`. Verify
-  GeoServer (WMTS/WMS), Esri and OSM tiles during implementation. If a source cannot be exported, PNG download shows
-  *"Không xuất được ảnh do máy chủ bản đồ nền chặn"* and print still works (the browser prints the live DOM).
+  GeoServer (WMTS/WMS), Esri and OSM tiles during implementation. If a source cannot be exported, the preview says so
+  and suggests switching basemap; PNG and print both use the composed image.
 
 ## §6 Coordinate reference systems (#8) — stretch
 

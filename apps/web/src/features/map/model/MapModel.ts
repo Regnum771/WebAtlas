@@ -73,6 +73,10 @@ function gwcSource(layer: string, style = '', attributions: string = OSM_ATTRIBU
     url: wmts,
     attributions,
     maxZoom: 18,
+    // GeoServer compose sets CORS_ENABLED/CORS_ALLOWED_ORIGINS "*" (verified with
+    // curl -H "Origin: ..." during Task 15 Step 1) — safe to tag tiles as CORS-clean
+    // so the canvas stays exportable (features/map/model/exportMap.ts).
+    crossOrigin: 'anonymous',
   });
 }
 
@@ -512,14 +516,20 @@ export class MapModel {
       case 'satellite':
         newSource = new XYZ({
           url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-          maxZoom: 19
+          maxZoom: 19,
+          // Esri returns access-control-allow-origin: * (verified with curl during
+          // Task 15 Step 1) — safe to tag as CORS-clean for map export.
+          crossOrigin: 'anonymous',
         });
         break;
       case 'dem':
         newSource = new XYZ({
           url: 'https://services.arcgisonline.com/arcgis/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
           attributions: 'Tiles &copy; Esri &mdash; Source: Esri, USGS, NOAA',
-          maxZoom: 15
+          maxZoom: 15,
+          // Esri returns access-control-allow-origin: * (verified with curl during
+          // Task 15 Step 1) — safe to tag as CORS-clean for map export.
+          crossOrigin: 'anonymous',
         });
         break;
       case 'street':

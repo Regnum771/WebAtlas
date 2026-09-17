@@ -4,6 +4,7 @@ import { AppProviders } from './providers/AppProviders';
 import TopBar from '../widgets/top-bar';
 import Shell from '../features/shell';
 import AdminUsersRoute from '../pages/admin-users';
+import PrintRoute from '../pages/print';
 import MapView from '../features/map/ui/MapView';
 import LayersPanel from '../features/layers-panel';
 import MapToolbar from '../features/map/ui/MapToolbar';
@@ -84,6 +85,7 @@ function App() {
 
           <Routes>
             <Route path="/" element={null} />
+            <Route path="/print" element={<PrintRoute />} />
             <Route path="/admin/users" element={<AdminUsersRoute />} />
           </Routes>
         </div>
