@@ -1,8 +1,8 @@
 import pg from 'pg';
 import { ALL_DATASETS, validateRegistry } from '../registry';
-import { withDependencies, withoutDependents } from '../graph';
 import { runBuild } from '../runner';
 import { parseBuildArgs } from './args';
+import { selectDatasets, type ExclusionReason } from './select';
 
 async function main(): Promise<void> {
   validateRegistry();
@@ -11,15 +11,22 @@ async function main(): Promise<void> {
   // (no stack) and exit before the pool is ever created, so a typo can never fall
   // through to "build everything" against a real database.
   let datasets = ALL_DATASETS;
+  let excluded: ExclusionReason[] = [];
   try {
     const { only, except } = parseBuildArgs(process.argv.slice(2));
-    if (only.length > 0) datasets = withDependencies(datasets, only);
-    if (except.length > 0) datasets = withoutDependents(datasets, except);
+    ({ selected: datasets, excluded } = selectDatasets(ALL_DATASETS, { only, except }));
+    if (datasets.length === 0) {
+      throw new Error('atlas:build: no datasets selected (--only/--except excluded everything)');
+    }
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
     return;
   }
+
+  // I2: say what was excluded and why, before the build summary — an empty --only/--except
+  // combination must never be able to look, silently, like "nothing to do".
+  for (const e of excluded) console.log(`  excluded ${e.id} (${e.reason})`);
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL is not set');
