@@ -3,12 +3,13 @@ import { fromLonLat } from 'ol/proj';
 import {
   REGION_PROVINCE_NAMES,
   type BasemapName,
+  type FeatureEditProposal,
   type MapCommand,
 } from '@webatlas/shared';
 import type { BasemapType } from './MapModel';
 import { PROVINCE_CENTROIDS } from './provinceCentroids';
 import { MIN_ZOOM, MAX_ZOOM, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
-import { showHighlights, clearHighlights } from './highlightLayer';
+import { showHighlights, showResults, clearHighlights } from './highlightLayer';
 
 // Guard: BasemapName (shared contract) and BasemapType (MapModel) are independent
 // types with the same literal set. If either drifts, this fails to compile.
@@ -30,6 +31,12 @@ export interface CommandDeps {
    * setLayerVisible/setLayerOpacity and still be reported as `ok: true`.
    */
   layerExists: (layerStateId: string) => boolean;
+  /**
+   * Opens the admin update wizard. Optional: only the assistant slice wires it,
+   * and the wizard itself is admin-gated — a proposal reaching a caller without
+   * one fails cleanly instead of silently doing nothing.
+   */
+  onProposeEdit?: (proposal: FeatureEditProposal) => void;
 }
 
 export type CommandResult = { ok: true; text: string } | { ok: false; reason: string };
@@ -106,6 +113,16 @@ export function createCommandExecutor(deps: CommandDeps) {
       case 'clearHighlights': {
         if (deps.map) clearHighlights(deps.map);
         return { ok: true, text: 'Đã xoá đánh dấu.' };
+      }
+      case 'showGeometries': {
+        if (!deps.map) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
+        showResults(deps.map, cmd.items, cmd.fit ?? false);
+        return { ok: true, text: `Đã hiển thị ${cmd.items.length} hình trên bản đồ.` };
+      }
+      case 'proposeFeatureEdit': {
+        if (!deps.onProposeEdit) return { ok: false, reason: 'Không mở được biểu mẫu cập nhật.' };
+        deps.onProposeEdit(cmd);
+        return { ok: true, text: 'Đã mở biểu mẫu đề xuất cập nhật.' };
       }
     }
   };

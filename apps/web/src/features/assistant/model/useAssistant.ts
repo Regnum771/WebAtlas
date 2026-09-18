@@ -79,5 +79,10 @@ export function useAssistant({ getMapContext, run }: UseAssistantDeps) {
     await send(message);
   }, [send, loading]);
 
-  return { turns, loading, error, send, retry };
+  /** A local assistant line, e.g. confirming a save made in the update wizard. */
+  const notify = useCallback((text: string) => {
+    setTurns((prev) => [...prev, { role: 'assistant', segments: [{ kind: 'grounded', text }], provenance: [] }]);
+  }, []);
+
+  return { turns, loading, error, send, retry, notify };
 }

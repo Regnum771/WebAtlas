@@ -156,4 +156,32 @@ describe('createCommandExecutor — highlights', () => {
     const result = createCommandExecutor(makeDeps())({ kind: 'clearHighlights' });
     expect(result).toEqual({ ok: true, text: 'Đã xoá đánh dấu.' });
   });
+
+  it('showGeometries draws results and reports the count', () => {
+    const deps = makeDeps();
+    (deps.map as unknown as { getSize: () => number[] }).getSize = () => [800, 600];
+    const result = createCommandExecutor(deps)({
+      kind: 'showGeometries',
+      items: [{ role: 'highlight', geometry: { type: 'Point', coordinates: [108, 12] } }],
+    });
+    expect(result).toEqual({ ok: true, text: 'Đã hiển thị 1 hình trên bản đồ.' });
+  });
+
+  it('proposeFeatureEdit hands the proposal to the wizard callback', () => {
+    const onProposeEdit = vi.fn();
+    const deps = makeDeps({ onProposeEdit });
+    const proposal = {
+      kind: 'proposeFeatureEdit' as const, layerKey: 'dams' as const, featureId: 'f1',
+      current: { wattage_mw: '70' }, proposed: { wattage_mw: '72' },
+    };
+    expect(createCommandExecutor(deps)(proposal)).toEqual({ ok: true, text: 'Đã mở biểu mẫu đề xuất cập nhật.' });
+    expect(onProposeEdit).toHaveBeenCalledWith(proposal);
+  });
+
+  it('proposeFeatureEdit fails cleanly with no wizard mounted', () => {
+    const result = createCommandExecutor(makeDeps())({
+      kind: 'proposeFeatureEdit', layerKey: 'dams', featureId: 'f1', current: {}, proposed: { name: 'x' },
+    });
+    expect(result).toEqual({ ok: false, reason: 'Không mở được biểu mẫu cập nhật.' });
+  });
 });

@@ -6,6 +6,9 @@ import VectorLayer from 'ol/layer/Vector';
 import { getLength, getArea } from 'ol/sphere';
 import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
+import { olGeometryTo4326GeoJSON } from './geo';
+import { setLastShape } from './lastShape';
+import type { GeoJsonGeometry } from '@webatlas/shared';
 
 export type MeasureMode = 'none' | 'length' | 'area';
 
@@ -61,6 +64,7 @@ export function useMeasure(): UseMeasureResult {
       draw.on('drawend', (e) => {
         const geom = e.feature.getGeometry();
         if (!geom) return;
+        setLastShape(olGeometryTo4326GeoJSON(geom) as unknown as GeoJsonGeometry);
 
         if (geom instanceof LineString) {
           const length = getLength(geom);

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MapToolbarView } from './MapToolbar';
 import { ZOOM_STOPS } from '../model/zoomScale';
 
-const base = {
+const baseProps = {
   zoom: 9,
   scaleText: '1:200.000',
   measureMode: 'none' as const,
@@ -21,34 +21,34 @@ const base = {
 
 describe('MapToolbarView', () => {
   it('renders the current scale', () => {
-    render(<MapToolbarView {...base} />);
+    render(<MapToolbarView {...baseProps} />);
     expect(screen.getByText('1:200.000')).toBeInTheDocument();
   });
 
   it('calls onReset when the home button is pressed', async () => {
     const onReset = vi.fn();
-    render(<MapToolbarView {...base} onReset={onReset} />);
+    render(<MapToolbarView {...baseProps} onReset={onReset} />);
     await userEvent.click(screen.getByRole('button', { name: 'Về vùng công tác' }));
     expect(onReset).toHaveBeenCalledTimes(1);
   });
 
   it('shows the measurement readout when there is a value', () => {
-    render(<MapToolbarView {...base} measureMode="length" measureValue="42,3 km" />);
+    render(<MapToolbarView {...baseProps} measureMode="length" measureValue="42,3 km" />);
     expect(screen.getByText('42,3 km')).toBeInTheDocument();
   });
 
   it('marks the active measure tool as pressed', () => {
-    render(<MapToolbarView {...base} measureMode="area" />);
+    render(<MapToolbarView {...baseProps} measureMode="area" />);
     expect(screen.getByRole('button', { name: /Đo diện tích/ })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('lays out as a bottom pill that clears the flyout when one is open', () => {
-    const { container, rerender } = render(<MapToolbarView {...base} flyoutOpen={false} />);
+    const { container, rerender } = render(<MapToolbarView {...baseProps} flyoutOpen={false} />);
     const bar = container.querySelector('.map-toolbar');
     expect(bar).not.toBeNull();
     expect(bar).not.toHaveClass('flyout-open');
 
-    rerender(<MapToolbarView {...base} flyoutOpen />);
+    rerender(<MapToolbarView {...baseProps} flyoutOpen />);
     expect(container.querySelector('.map-toolbar')).toHaveClass('flyout-open');
   });
 
@@ -59,7 +59,7 @@ describe('MapToolbarView', () => {
     const onBasemap = vi.fn();
     render(
       <MapToolbarView
-        {...base}
+        {...baseProps}
         onZoomIn={onZoomIn}
         onZoomOut={onZoomOut}
         onMeasure={onMeasure}
@@ -77,19 +77,19 @@ describe('MapToolbarView', () => {
   });
 
   it('puts the handle on the stop it was given', () => {
-    render(<MapToolbarView {...base} stopIndex={3} />);
+    render(<MapToolbarView {...baseProps} stopIndex={3} />);
     expect(screen.getByRole('slider', { name: 'Mức thu phóng' })).toHaveValue('3');
   });
 
   it('reports the stop it was moved to', () => {
     const onStopChange = vi.fn();
-    render(<MapToolbarView {...base} stopIndex={3} onStopChange={onStopChange} />);
+    render(<MapToolbarView {...baseProps} stopIndex={3} onStopChange={onStopChange} />);
     fireEvent.change(screen.getByRole('slider', { name: 'Mức thu phóng' }), { target: { value: '6' } });
     expect(onStopChange).toHaveBeenCalledWith(6);
   });
 
   it('spans exactly the eight scale stops', () => {
-    render(<MapToolbarView {...base} stopIndex={0} />);
+    render(<MapToolbarView {...baseProps} stopIndex={0} />);
     const slider = screen.getByRole('slider', { name: 'Mức thu phóng' });
     expect(slider).toHaveAttribute('min', '0');
     expect(slider).toHaveAttribute('max', String(ZOOM_STOPS.length - 1));
@@ -98,7 +98,13 @@ describe('MapToolbarView', () => {
 
   it('shows the true scale, not the stop the handle sits on', () => {
     // The handle is an approximate position indicator; the number is the truth.
-    render(<MapToolbarView {...base} stopIndex={4} scaleText="1:1.247.000" />);
+    render(<MapToolbarView {...baseProps} stopIndex={4} scaleText="1:1.247.000" />);
     expect(screen.getByText('1:1.247.000')).toBeInTheDocument();
+  });
+
+  it('renders the analysis slots when provided', () => {
+    render(<MapToolbarView {...baseProps} analysisButtons={<button>Vùng đệm</button>} analysisPanel={<p>panel</p>} />);
+    expect(screen.getByRole('button', { name: 'Vùng đệm' })).toBeInTheDocument();
+    expect(screen.getByText('panel')).toBeInTheDocument();
   });
 });

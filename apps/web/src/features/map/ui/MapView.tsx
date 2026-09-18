@@ -3,7 +3,10 @@ import 'ol/ol.css';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { useMapEditing } from '../model/mapEditing';
 import { MapModel } from '../model/MapModel';
+import { formatCoordinate } from '../model/crs';
+import { useCrsPreference } from '../model/crsPreference';
 import CursorElevation from './CursorElevation';
+import CrsSelect from './CrsSelect';
 
 export interface MapViewProps {
   /** Is the rail flyout (layers/legend) currently open? Docked, not overlaid —
@@ -35,6 +38,11 @@ const MapView: React.FC<MapViewProps> = ({ flyoutOpen }) => {
   useEffect(() => { modelRef.current?.setReservoirFilter(reservoirFilter); }, [reservoirFilter]);
   useEffect(() => { modelRef.current?.setContourSettings(contourSettings); }, [contourSettings]);
 
+  const [crsId] = useCrsPreference();
+  useEffect(() => {
+    modelRef.current?.setCoordinateFormat((c) => formatCoordinate(c, crsId));
+  }, [crsId]);
+
   // The CSS transition on .map-container's left/width (main.css) means the
   // container's box only reaches its final size once the transition ends —
   // reading it any earlier gives OpenLayers the mid-transition size. Cover
@@ -63,6 +71,7 @@ const MapView: React.FC<MapViewProps> = ({ flyoutOpen }) => {
     // không xoá các con sẵn có, nên hai bên sống chung được.
     <div ref={el} className={`map-container basemap-${basemap}${flyoutOpen ? ' flyout-open' : ''}`}>
       <CursorElevation />
+      <CrsSelect />
     </div>
   );
 };

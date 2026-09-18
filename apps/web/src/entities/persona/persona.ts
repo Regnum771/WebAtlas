@@ -12,14 +12,14 @@ export const PERSONAS: Record<PersonaId, Persona> = {
   public:     { id: 'public',     label: 'Public',       requiredRole: null },
   governance: { id: 'governance', label: 'Governance',   requiredRole: 'viewer' },
   research:   { id: 'research',   label: 'Research',     requiredRole: 'viewer' },
-  steward:    { id: 'steward',    label: 'Data Steward', requiredRole: 'editor' },
+  steward:    { id: 'steward',    label: 'Data Steward', requiredRole: 'admin' },
   admin:      { id: 'admin',      label: 'Management',   requiredRole: 'admin' },
 };
 
 // Which personas a role may inhabit. admin is a superset (steward + admin).
+// editor is read-only since 2026-09-17 (only admin writes), so it reads like viewer.
 export function rolePersonas(role: Role | null | undefined): PersonaId[] {
   if (role === 'admin') return ['steward', 'admin'];
-  if (role === 'editor') return ['steward'];
-  if (role === 'viewer') return ['governance', 'research'];
+  if (role === 'editor' || role === 'viewer') return ['governance', 'research'];
   return ['public'];
 }

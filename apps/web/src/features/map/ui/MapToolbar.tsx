@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, type ReactNode } from 'react';
 import { ZoomIn, ZoomOut, Home, Ruler, Square, MousePointer2, Map as MapIcon, Layers, Mountain } from 'lucide-react';
 import type { BasemapName } from '@webatlas/shared';
 import { useMapContext } from '../../../app/providers/MapProvider';
@@ -29,6 +29,9 @@ export interface MapToolbarViewProps {
   onReset: () => void;
   onMeasure: (mode: MeasureMode) => void;
   onBasemap: (basemap: BasemapName) => void;
+  /** Rendered inside the toolbar rail's control group / above the pill — see Task 13. */
+  analysisButtons?: ReactNode;
+  analysisPanel?: ReactNode;
 }
 
 /**
@@ -50,6 +53,8 @@ export function MapToolbarView({
   onReset,
   onMeasure,
   onBasemap,
+  analysisButtons,
+  analysisPanel,
 }: MapToolbarViewProps) {
   const isMinZoom = zoom <= MIN_ZOOM + 0.05;
   const isMaxZoom = zoom >= MAX_ZOOM - 0.05;
@@ -57,6 +62,8 @@ export function MapToolbarView({
   return (
     <div className={`map-toolbar${flyoutOpen ? ' flyout-open' : ''}`}>
       {measureValue && <div className="measure-result glass-panel">{measureValue}</div>}
+
+      {analysisPanel}
 
       <div className="glass-panel toolbar-rail">
         <div className="control-group">
@@ -85,6 +92,13 @@ export function MapToolbarView({
             <Square size={18} />
           </button>
         </div>
+
+        {analysisButtons && (
+          <>
+            <div className="control-divider" />
+            {analysisButtons}
+          </>
+        )}
 
         <div className="control-divider" />
 
@@ -154,7 +168,15 @@ export function MapToolbarView({
  * `map` arrives already typed via `useMapContext`, and is only ever handed to
  * `createCommandExecutor`, never called directly.
  */
-export default function MapToolbar({ flyoutOpen }: { flyoutOpen: boolean }) {
+export default function MapToolbar({
+  flyoutOpen,
+  analysisButtons,
+  analysisPanel,
+}: {
+  flyoutOpen: boolean;
+  analysisButtons?: ReactNode;
+  analysisPanel?: ReactNode;
+}) {
   const { map, basemap, setBasemap, layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
   const zoom = useMapZoom();
   const measure = useMeasure();
@@ -214,6 +236,8 @@ export default function MapToolbar({ flyoutOpen }: { flyoutOpen: boolean }) {
       onReset={onReset}
       onMeasure={onMeasure}
       onBasemap={onBasemap}
+      analysisButtons={analysisButtons}
+      analysisPanel={analysisPanel}
     />
   );
 }

@@ -26,6 +26,7 @@ function makeCtx(mapContext: MapContext = MAP_CONTEXT) {
     mapContext,
     collect: vi.fn((c: MapCommand) => commands.push(c)),
     provenance: vi.fn((p: Provenance) => records.push(p)),
+    role: 'viewer',
   } satisfies ToolContext;
   return { ctx, commands, records };
 }
@@ -88,7 +89,7 @@ describe('features_in_view', () => {
 
 describe('nearest_features', () => {
   it('returns features ordered by distance, in kilometres', async () => {
-    const { ctx, records } = makeCtx();
+    const { ctx, commands, records } = makeCtx();
     // Buôn Ma Thuột, roughly centre of the working region.
     const text = await run(nearestFeaturesTool(ctx), { layerKey: 'dams', lon: 108.05, lat: 12.68, limit: 5 });
     const parsed = JSON.parse(text) as { rows: Array<{ distanceKm: number }> };
@@ -97,6 +98,7 @@ describe('nearest_features', () => {
     const distances = parsed.rows.map((r) => r.distanceKm);
     expect([...distances].sort((a, b) => a - b)).toEqual(distances);
     expect(records[0]).toMatchObject({ tool: 'nearest_features', layerKey: 'dams' });
+    expect(commands.some((c) => c.kind === 'showGeometries')).toBe(true);
   });
 
   it('refuses coordinates outside Vietnam without querying', async () => {

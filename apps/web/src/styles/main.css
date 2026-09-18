@@ -227,6 +227,19 @@ body {
   bottom: calc(var(--space-3) + 30px);
 }
 
+/* Bộ chọn hệ quy chiếu: xếp thêm một bậc 30px lên trên ô độ cao, theo đúng cấp
+   số cộng đã dùng để xếp ô độ cao lên trên ô toạ độ (var(--space-3), +30px, +30px). */
+.map-crs-select {
+  position: absolute;
+  right: var(--space-3);
+  bottom: calc(var(--space-3) + 60px);
+  z-index: 5;
+  max-width: 260px;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
 .toolbar-rail {
   display: flex;
   flex-direction: row;
@@ -1110,4 +1123,156 @@ body {
 
 .zoom-group {
   gap: 6px;
+}
+
+/* Đề xuất cập nhật từ trợ lý */
+.proposal-wizard { display: flex; flex-direction: column; gap: 8px; min-width: 360px; max-height: 80vh; overflow-y: auto; }
+.proposal-subtitle { margin: 0 0 4px; font-size: 13px; color: var(--text-muted, #6b7280); }
+.proposal-field.changed { border-left: 3px solid #d97706; padding-left: 8px; }
+.proposal-previous { font-size: 12px; color: #92400e; }
+.proposal-source { display: flex; flex-direction: column; gap: 4px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
+
+/* Phân tích không gian */
+.analysis-card { max-width: 340px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.analysis-card label { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.analysis-card-title { margin: 0; font-size: 14px; font-weight: 600; }
+.analysis-summary { border-collapse: collapse; width: 100%; }
+.analysis-summary th { text-align: left; font-weight: 500; padding: 2px 8px 2px 0; }
+.analysis-summary td { text-align: right; font-variant-numeric: tabular-nums; }
+.analysis-rows { list-style: none; margin: 0; padding: 0; max-height: 140px; overflow-y: auto; }
+.analysis-row { background: none; border: none; padding: 2px 0; cursor: pointer; text-align: left; color: var(--primary); }
+.analysis-row-meta { color: var(--text-muted, #6b7280); }
+.analysis-note, .analysis-attribution { margin: 0; font-size: 12px; color: var(--text-muted, #6b7280); }
+.analysis-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.analysis-layers { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; border: none; padding: 0; margin: 0; }
+.analysis-layers label { justify-content: flex-start; }
+.profile-chart { margin: 0; }
+.profile-chart-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted, #6b7280); }
+
+/* In / Xuất bản đồ */
+.top-bar-print { display: inline-flex; align-items: center; color: inherit; padding: 6px; border-radius: 6px; margin-right: 8px; }
+/* 1500 matches .admin-users-route: must outrank .top-bar (1200), .icon-rail/
+   .rail-flyout (1102) and .edit-drawer (1101/1300) — the map and its chrome
+   stay mounted underneath (see App.tsx), so a lower z-index left the layers
+   panel and top bar visible on top of the print sheet. */
+.print-route { position: fixed; inset: 0; z-index: 1500; background: #e5e7eb; overflow: auto; display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
+.print-controls { width: 260px; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 12px; }
+.print-toggle { display: flex; gap: 6px; align-items: center; }
+/* Width AND height both fixed to the paper's PRINTABLE area (physical size
+   minus the @page margin above, 10mm each side) — verified in a real browser
+   print/PDF (Task 15 Step 9): with only width constrained (as first written),
+   the map image's own height (at full sheet width, cropped to the FULL paper
+   aspect) already used up nearly the whole page, so title/meta/legend/footer
+   pushed the sheet past one page and the browser paginated — splitting the
+   map image itself across two printed pages. A4 and A3 need their OWN sizes:
+   A3 (297×420mm) is physically larger than A4 (210×297mm), so reusing A4's
+   printable width for A3 (as first written) would print A3 with a wide blank
+   margin instead of using the extra paper. overflow: hidden below then caps
+   the sheet at exactly one page regardless of how much legend/analysis
+   content is toggled on — clipping instead of spawning a second page, and
+   visible in the on-screen preview too so the mismatch is not a surprise only
+   discovered after printing. */
+/* Two-row CSS Grid, not a flex column: this is what makes ".print-attribution
+   is never the clipped element" a GUARANTEE from the track-sizing algorithm
+   itself, rather than a size budget that happens to leave enough slack for
+   today's content (see the flex-column history in git blame, and the
+   re-review that rejected it — a flex-shrink:0 sibling still keeps its own
+   full computed size, but that says nothing about WHERE it's positioned: if
+   the stack above it overflows the fixed-height/overflow:hidden box, the
+   sibling that is LOWEST in the box is still the one whose bottom edge falls
+   outside the visible area and gets clipped, regardless of its own
+   flex-shrink value). Grid's row-sizing algorithm is different in the one way
+   that matters here: every non-flexible ("auto") row is sized to its own
+   max-content height FIRST, independent of how much space is left, and only
+   the single flexible (`minmax(0,1fr)`) row absorbs whatever remains —
+   including shrinking all the way to 0 — so an auto row can only ever be
+   denied space it doesn't need; it is never the one asked to give space up.
+   Row 1 (.print-content, minmax(0,1fr)) wraps title+map+meta+body: the exact
+   same "clip, don't paginate" trade-off as before now happens ENTIRELY inside
+   this row's own overflow: hidden, so it can never spill into row 2. Row 2
+   (.print-attribution, auto) is therefore guaranteed its full natural content
+   height by construction — the algorithm computes it before row 1 gets
+   anything, not as a leftover. */
+.print-sheet { background: #fff; color: #111827; padding: 12mm; box-shadow: 0 4px 16px rgba(0,0,0,.2); display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 8px; overflow: hidden; }
+/* The one flexible row from .print-sheet's grid (see its comment) — stretches
+   to fill exactly what's left after .print-attribution's row takes its
+   content height, then re-runs the SAME flex-column layout .print-sheet used
+   to run directly (title/map/meta/body), so map/legend/analysis keep the
+   pre-existing single-page clip behavior. overflow: hidden + min-height: 0
+   are required here for the same reason .print-map/.print-body needed them
+   below: without them this box's own automatic minimum size would be its
+   content size, and it could refuse to shrink below that even when the outer
+   grid computes its row at less than that — reintroducing the exact bug this
+   restructuring exists to close. */
+.print-content { display: flex; flex-direction: column; gap: 8px; overflow: hidden; min-height: 0; }
+.print-A4-landscape { width: 277mm; height: 190mm; }
+.print-A4-portrait { width: 190mm; height: 277mm; }
+.print-A3-landscape { width: 400mm; height: 277mm; }
+.print-A3-portrait { width: 277mm; height: 400mm; }
+/* Clamped to at most 2 lines regardless of title length/width — the input
+   carries maxLength=120 (PrintPage.view.tsx) so almost every real title
+   already fits in 2 lines, but this is the hard backstop for the case where
+   it wouldn't (e.g. a 120-char title with no spaces, or a narrow A4-portrait
+   sheet). Without this cap the title is the one block in .print-content
+   (see .print-sheet's comment) that has no ceiling: it would keep growing
+   with wrapped lines and eat into .print-content's own share of the sheet —
+   but even then it cannot reach .print-attribution, which is a separate,
+   already-sized grid row one level up. overflow: hidden here is required for
+   -webkit-line-clamp to work, and it also has a side benefit: on any element,
+   an overflow other than 'visible' makes its flex automatic minimum size 0,
+   so IF this ever still overflows its 2-line budget, this box is allowed to
+   shrink (within .print-content) instead of forcing something else to. */
+.print-title {
+  margin: 0; font-size: 20px; line-height: 1.25; text-align: center; flex: none;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; max-height: calc(1.25em * 2);
+}
+/* flex: 1 + min-height: 0 lets the map take exactly the height left over
+   after the title/meta/legend within .print-content's own budget (the
+   licence footer is a separate grid row one level up and never competes
+   here — see .print-sheet's comment) — object-fit: contain then scales the
+   image DOWN to fit that box without cropping, rather than forcing width:
+   100% and letting the height (fixed by the export's paper-aspect crop)
+   overflow the page. */
+.print-map { position: relative; border: 1px solid #9ca3af; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.print-map img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.print-north { position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,.85); border-radius: 4px; padding: 2px; }
+.print-meta { display: flex; gap: 16px; font-size: 12px; flex: none; }
+.print-body { display: flex; gap: 16px; font-size: 12px; flex: none; max-height: 45%; overflow: hidden; }
+.print-legend, .print-analysis { flex: 1; overflow: hidden; }
+.print-rows { border-collapse: collapse; width: 100%; }
+.print-rows th, .print-rows td { border-bottom: 1px solid #e5e7eb; text-align: left; padding: 2px 4px; }
+/* Must never be the block that gets clipped: this footer is how the sheet
+   satisfies a binding licence constraint (OSM ODbL, Esri, FABDEM, Open
+   Development Vietnam attributions) — printing it silently truncated is as
+   much a violation as leaving it off. This is now guaranteed structurally,
+   not budgeted: this element is the second row of .print-sheet's grid
+   (`grid-template-rows: minmax(0, 1fr) auto` — see that rule's comment), and
+   .print-content (title/map/meta/body) is the ONLY flexible row in that grid.
+   CSS Grid sizes every non-flexible ("auto") row to its own max-content
+   height first, regardless of how little space is left, and only THEN gives
+   whatever remains — down to nothing — to the flexible row. So this block's
+   full, un-shrunk content height is computed independently of how much
+   title/map/meta/body content there is; .print-content is the one that gets
+   whatever is left over, including 0, and its own overflow: hidden then
+   clips ITS contents (the pre-existing, intentional "clip, don't paginate"
+   trade-off for map/legend/analysis) rather than ever reaching into this
+   row. min-height is just a floor for the empty-attributions case, not part
+   of the guarantee above; do NOT add overflow: hidden here — this box is not
+   meant to be capable of losing content the way .print-content's children
+   are. (An earlier version of this rule lived in the same flex column as
+   .print-map/.print-body/.print-title and relied on flex: none + those
+   siblings shrinking first — that stops THIS box from being asked to shrink,
+   but does nothing about where it's positioned: if the stack above it still
+   overflowed the fixed-height, overflow: hidden sheet, this box — being
+   lowest — was still the one whose bottom fell outside the visible area and
+   got silently clipped, regardless of its own flex-shrink. The grid
+   restructuring above is what actually closes that gap.) */
+.print-attribution { font-size: 10px; color: #4b5563; border-top: 1px solid #e5e7eb; padding-top: 4px; min-height: 12px; }
+.print-attribution p { margin: 0; }
+@media print {
+  body * { visibility: hidden; }
+  .print-sheet, .print-sheet * { visibility: visible; }
+  .print-route { position: static; background: none; padding: 0; overflow: visible; }
+  .print-sheet { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none; padding: 0; }
 }

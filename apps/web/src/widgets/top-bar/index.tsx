@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+import { Printer } from 'lucide-react';
 import { useSession } from '../../entities/session/model/session.store';
 import AuthWidget from '../../features/auth';
 import Search from '../../features/search';
@@ -12,6 +14,9 @@ export default function TopBar() {
         <Search />
       </div>
       <div className="top-bar-right">
+        <Link to="/print" className="top-bar-print" title="In / Xuất bản đồ" aria-label="In / Xuất bản đồ">
+          <Printer size={18} />
+        </Link>
         {status === 'authenticated' && currentUser ? (
           <TopBarView email={currentUser.email} role={currentUser.role} onLogout={logout} />
         ) : (

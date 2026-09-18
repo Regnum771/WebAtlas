@@ -1,4 +1,5 @@
 import Map from 'ol/Map';
+import type MousePosition from 'ol/control/MousePosition';
 import { createRiverOverviewSource, riverOverviewVisibleAt } from './riverOverview';
 import { createLoadTracker } from './loadingState';
 import { createScaleBar, createMousePosition } from './mapReadouts';
@@ -73,6 +74,10 @@ function gwcSource(layer: string, style = '', attributions: string = OSM_ATTRIBU
     url: wmts,
     attributions,
     maxZoom: 18,
+    // GeoServer compose sets CORS_ENABLED/CORS_ALLOWED_ORIGINS "*" (verified with
+    // curl -H "Origin: ..." during Task 15 Step 1) — safe to tag tiles as CORS-clean
+    // so the canvas stays exportable (features/map/model/exportMap.ts).
+    crossOrigin: 'anonymous',
   });
 }
 
@@ -119,6 +124,8 @@ export class MapModel {
    *  `layers` is typed for vector sources and its consumers call getSource().refresh(). */
   private contextLayers: Record<string, TileLayer<XYZ>> = {};
   private selectInteraction: Select | null = null;
+  /** Coordinate readout control — kept to swap its formatter on CRS toggle. */
+  private mousePosition: MousePosition | null = null;
   private reservoirFilter: ReservoirFilterType = 'all';
   private layerStates: LayerState[] = [];
   private moveendHandler: (() => void) | null = null;
@@ -329,6 +336,7 @@ export class MapModel {
     });
 
     // 3. Khởi tạo Map
+    this.mousePosition = createMousePosition();
     const map = new Map({
       target,
       layers: [
@@ -369,7 +377,7 @@ export class MapModel {
       }),
       // Giữ danh sách TƯỜNG MINH, không dùng defaults(): defaults() kèm nút zoom
       // và ô ghi công, chồng lên thanh công cụ và góc dưới phải của chính ta.
-      controls: [createScaleBar(), createMousePosition()],
+      controls: [createScaleBar(), this.mousePosition],
     });
 
     // Thêm interaction để highlight sông khi click
@@ -512,14 +520,20 @@ export class MapModel {
       case 'satellite':
         newSource = new XYZ({
           url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-          maxZoom: 19
+          maxZoom: 19,
+          // Esri returns access-control-allow-origin: * (verified with curl during
+          // Task 15 Step 1) — safe to tag as CORS-clean for map export.
+          crossOrigin: 'anonymous',
         });
         break;
       case 'dem':
         newSource = new XYZ({
           url: 'https://services.arcgisonline.com/arcgis/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
           attributions: 'Tiles &copy; Esri &mdash; Source: Esri, USGS, NOAA',
-          maxZoom: 15
+          maxZoom: 15,
+          // Esri returns access-control-allow-origin: * (verified with curl during
+          // Task 15 Step 1) — safe to tag as CORS-clean for map export.
+          crossOrigin: 'anonymous',
         });
         break;
       case 'street':
@@ -587,6 +601,12 @@ export class MapModel {
     this.selectInteraction?.setActive(active);
   }
 
+  /** Swaps the coordinate readout's formatter (CRS toggle). The control keeps
+   *  projecting to EPSG:4326; the formatter converts from there. */
+  setCoordinateFormat(format: (coord?: number[]) => string): void {
+    this.mousePosition?.setCoordinateFormat(format);
+  }
+
   dispose(): void {
     if (!this.map) return;
 
@@ -616,6 +636,7 @@ export class MapModel {
     this.map.setTarget(undefined);
     this.map = null;
     this.basemapLayer = null;
+    this.mousePosition = null;
     this.layers = {};
   }
 }

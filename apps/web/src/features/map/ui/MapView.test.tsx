@@ -31,6 +31,7 @@ vi.mock('../model/MapModel', () => ({
     setBasemap: vi.fn(),
     setReservoirFilter: vi.fn(),
     setContourSettings: vi.fn(),
+    setCoordinateFormat: vi.fn(),
   })),
 }));
 

@@ -7,9 +7,12 @@ import authRoutes from './modules/auth/routes';
 import usersRoutes from './modules/users/routes';
 import layersRoutes from './modules/layers/routes';
 import searchRoutes from './modules/search/routes';
+import geometryRoutes from './modules/geometry/routes';
 import elevationRoutes from './modules/elevation/routes';
+import analysisRoutes from './modules/analysis/routes';
 import assistantRoutes from './modules/assistant/routes';
 import { closeAssistantPool } from './modules/assistant/sql/pool';
+import { closeAnalysisPool } from './modules/analysis/pool';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -33,7 +36,9 @@ export function buildApp(): FastifyInstance {
   app.register(usersRoutes, { prefix: '/api/users' });
   app.register(layersRoutes, { prefix: '/api' });
   app.register(searchRoutes, { prefix: '/api' });
+  app.register(geometryRoutes, { prefix: '/api' });
   app.register(elevationRoutes, { prefix: '/api' });
+  app.register(analysisRoutes, { prefix: '/api' });
   app.register(assistantRoutes, { prefix: '/api' });
 
   // The assistant's read-only pool is a SEPARATE pg.Pool from app.pg (deliberately
@@ -43,6 +48,13 @@ export function buildApp(): FastifyInstance {
   // process exits.
   app.addHook('onClose', async () => {
     await closeAssistantPool();
+  });
+
+  // Same reasoning as closeAssistantPool above: modules/analysis/pool.ts is a
+  // SEPARATE pg.Pool from app.pg (deliberately, to bound analysis concurrency —
+  // see that file), so plugins/db.ts's onClose hook does not cover it.
+  app.addHook('onClose', async () => {
+    await closeAnalysisPool();
   });
 
   return app;

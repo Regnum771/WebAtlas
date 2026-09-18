@@ -3,10 +3,18 @@
 Vận hành `POST /api/assistant/messages` và bảng **Trợ lý** trong thanh biểu tượng.
 
 Trợ lý chạy hoàn toàn phía máy chủ: mô hình `claude-haiku-4-5` được điều khiển bằng
-Tool Runner của SDK Anthropic, gọi 14 công cụ chia làm hai nhóm — nhóm **dữ liệu**
+Tool Runner của SDK Anthropic, gọi công cụ chia làm hai nhóm — nhóm **dữ liệu**
 truy vấn PostGIS rồi trả về sự kiện kèm nguồn gốc, nhóm **lệnh** phát ra `MapCommand`
 đã được kiểm tra để trình duyệt thực thi. Trình duyệt chỉ nhận kết quả; nó không gọi
 mô hình và không giữ khoá API.
+
+Số công cụ: **17 công cụ luôn được đăng ký** (đếm bằng
+`grep -c "Tool," apps/api/src/modules/assistant/tools/registry.ts`), tính cả bốn
+công cụ phân tích `buffer_feature`, `select_within`, `elevation_profile`,
+`zonal_elevation` — cộng thêm `run_sql` khi `ASSISTANT_DATABASE_URL` được cấu hình
+(18), cộng thêm `propose_feature_update` khi người hỏi là quản trị viên (tối đa
+**19** khi cả hai điều kiện cùng đúng). Từ 14 lên 19 kể từ khi các công cụ phân
+tích và đề xuất cập nhật được thêm vào.
 
 ## Cấu hình
 
@@ -21,6 +29,49 @@ mô hình và không giữ khoá API.
 
 Sau khi thêm khoá vào `apps/api/.env`, khởi động lại API. Không commit `.env`
 (đã nằm trong `.gitignore`); `.env.example` mới là bản mẫu được theo dõi.
+
+## Công cụ phân tích không gian
+
+Bốn công cụ này là lớp bọc mỏng quanh `modules/analysis` — cùng phép tính mà thanh
+công cụ bản đồ gọi, chỉ khác đường vào:
+
+- **`buffer_feature`** — vẽ vùng đệm bán kính `radiusKm` quanh một đối tượng và báo
+  diện tích. `featureId` phải lấy từ một công cụ dữ liệu trước đó.
+- **`select_within`** — đếm và đánh dấu đối tượng của một hay nhiều lớp nằm trong một
+  vùng (một đa giác có sẵn, hoặc bất kỳ đối tượng nào đã đệm bán kính `radiusKm`).
+  Dùng cho các câu hỏi "trong phạm vi", "nằm trong", "dọc theo sông".
+- **`elevation_profile`** — trắc diện độ cao dọc một đối tượng đường (thường là sông):
+  chiều dài, điểm thấp/cao nhất, tổng lên/xuống, độ dốc trung bình. Đọc DEM FABDEM.
+- **`zonal_elevation`** — độ cao thấp nhất/cao nhất/trung bình trong một vùng (đa giác
+  có sẵn, hoặc đối tượng đã đệm bán kính). Giới hạn 5.000 km². Đọc DEM FABDEM.
+
+**Giới hạn đã biết:** `elevation_profile` và `zonal_elevation` (cũng như
+`elevation_at_point` có từ trước) trả lời "Không có dữ liệu" cho tới khi
+`scripts/load-dem.sh` đã được chạy trên triển khai đó — DEM không đi kèm migration
+hay seed, phải nạp riêng.
+
+## Cập nhật dữ liệu qua trợ lý (chỉ quản trị viên)
+
+Trợ lý **không bao giờ tự ghi dữ liệu**. Khi một quản trị viên yêu cầu cập nhật
+thuộc tính (ví dụ "cập nhật công suất thuỷ điện Sông Hinh thành 72 MW"), mô hình gọi
+`propose_feature_update`, công cụ chỉ mở **biểu mẫu Đề xuất cập nhật** trên trình
+duyệt kèm giá trị đề xuất — chưa có gì được lưu ở bước này.
+
+Biểu mẫu bắt hai trường bắt buộc trước khi cho lưu: **Tài liệu nguồn** (ví dụ
+"Quyết định 123/QĐ-UBND", tối đa 500 ký tự) và **Người cung cấp** (ví dụ "Sở Công
+Thương Đắk Lắk", tối đa 200 ký tự). Nút Lưu bị khoá cho tới khi cả hai được điền.
+
+Bấm Lưu đi qua đúng tuyến `PUT /api/layers/:key/features/:id` như một chỉnh sửa thủ
+công trong ngăn Biên tập — không có tuyến ghi riêng cho trợ lý. Hai trường nguồn được
+ghi kèm vào chính dòng `app.audit_log` của lần sửa đó (cột `source_document`,
+`source_provider`, thêm ở migration `1000000000014`), cạnh before/after, để một lần
+sửa và bằng chứng của nó không thể tách rời.
+
+Người dùng không phải quản trị viên (viewer/editor) yêu cầu sửa/thêm/xoá dữ liệu
+nhận đúng câu trả lời cố định: *"Bạn chỉ có quyền xem dữ liệu; chỉ quản trị viên mới
+cập nhật được."* — và mô hình không gọi công cụ nào cho yêu cầu đó. Câu này đến từ
+`READ_ONLY_RULE` trong `prompt.ts`; đổi chữ ở đó thì phải đổi cả assertion tương ứng
+trong `assistant.live.test.ts`.
 
 ## Kiểm tra lần đầu (cần một người thật và một khoá API)
 
@@ -110,6 +161,11 @@ Ghi ra đây để người sau không phải tự phát hiện:
 - **Năm trong tám lớp chuyên đề vẫn là dữ liệu giả 2 bản ghi** (trạm quan trắc và bốn
   lớp hiểm họa). Trợ lý trả lời trung thực theo những gì có trong cơ sở dữ liệu, nên
   câu trả lời về các lớp đó đúng về mặt truy vấn nhưng vô nghĩa về mặt thực tế.
+- **Các công cụ DEM trả lời "Không có dữ liệu" cho tới khi đã chạy `scripts/load-dem.sh`
+  trên triển khai đó.** Áp dụng cho `elevation_at_point`, `elevation_profile` và
+  `zonal_elevation` — cả ba đọc bảng DEM FABDEM, không phải PostGIS nạp sẵn qua
+  migration/seed. Quên bước này thì trợ lý vẫn trả lời (không lỗi), chỉ là câu trả lời
+  vô nghĩa giống hệt trường hợp lớp chuyên đề giả ở trên — dễ nhầm là bug ở công cụ.
 
 ## Chi phí
 

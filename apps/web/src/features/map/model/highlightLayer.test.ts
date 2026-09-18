@@ -1,12 +1,23 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Map } from 'ol';
-import { showHighlights, clearHighlights, HIGHLIGHT_LAYER_ID } from './highlightLayer';
+import { showHighlights, clearHighlights, HIGHLIGHT_LAYER_ID, showResults, RESULTS_LAYER_ID } from './highlightLayer';
 import { fromLonLat } from 'ol/proj';
 
 function makeMap() {
   const added: unknown[] = [];
   const map = { addLayer: vi.fn((l: unknown) => added.push(l)) } as unknown as Map;
   return { map, added };
+}
+
+function makeMapWithView() {
+  const added: Array<{ get: (k: string) => unknown; getSource: () => { getFeatures: () => unknown[] } }> = [];
+  const fit = vi.fn();
+  const map = {
+    addLayer: vi.fn((l) => added.push(l)),
+    getView: () => ({ fit }),
+    getSize: () => [800, 600],
+  } as unknown as Map;
+  return { map, added, fit };
 }
 
 describe('highlightLayer', () => {
@@ -59,5 +70,33 @@ describe('highlightLayer', () => {
     const { map } = makeMap();
     expect(() => clearHighlights(map)).not.toThrow();
     expect((map.addLayer as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+});
+
+describe('showResults', () => {
+  const line = { role: 'highlight' as const, label: 'Sông Ba', geometry: { type: 'LineString' as const, coordinates: [[108, 12], [108.2, 12.2]] } };
+  const poly = { role: 'result' as const, geometry: { type: 'Polygon' as const, coordinates: [[[108, 12], [108.1, 12], [108.1, 12.1], [108, 12]]] } };
+
+  it('draws lines and polygons into its own tagged layer', () => {
+    const { map, added } = makeMapWithView();
+    showResults(map, [line, poly], false);
+    const layer = added.find((l) => l.get('id') === RESULTS_LAYER_ID)!;
+    expect(layer.getSource().getFeatures()).toHaveLength(2);
+  });
+
+  it('fits the view to the drawn extent only when asked', () => {
+    const { map, fit } = makeMapWithView();
+    showResults(map, [line], false);
+    expect(fit).not.toHaveBeenCalled();
+    showResults(map, [line], true);
+    expect(fit).toHaveBeenCalledTimes(1);
+  });
+
+  it('clearHighlights empties the results layer too', () => {
+    const { map, added } = makeMapWithView();
+    showResults(map, [line], false);
+    clearHighlights(map);
+    const layer = added.find((l) => l.get('id') === RESULTS_LAYER_ID)!;
+    expect(layer.getSource().getFeatures()).toHaveLength(0);
   });
 });

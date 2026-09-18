@@ -14,6 +14,7 @@ const ctx: ToolContext = {
   } satisfies MapContext,
   collect: vi.fn(),
   provenance: vi.fn(),
+  role: 'viewer',
 };
 
 describe('buildTools', () => {
@@ -67,6 +68,20 @@ describe('buildTools', () => {
       const with_ = buildTools(ctx).map((t) => (t as { name: string }).name);
       expect(with_).toEqual([...without, 'run_sql']);
     });
+  });
+});
+
+describe('propose_feature_update is admin-only', () => {
+  it('is offered to admin, last', () => {
+    const names = buildTools({ ...ctx, role: 'admin' }).map((t) => (t as { name: string }).name);
+    expect(names[names.length - 1]).toBe('propose_feature_update');
+  });
+
+  it('is never offered to editor or viewer', () => {
+    for (const role of ['editor', 'viewer'] as const) {
+      const names = buildTools({ ...ctx, role }).map((t) => (t as { name: string }).name);
+      expect(names).not.toContain('propose_feature_update');
+    }
   });
 });
 

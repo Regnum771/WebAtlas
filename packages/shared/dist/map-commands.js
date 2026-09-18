@@ -12,6 +12,7 @@ import { REGION_PROVINCE_CODES } from './region.js';
 // re-exports this module, and routing through it would make LAYER_STATE_IDS'
 // top-level initialization depend on module-cycle load order.
 import { LAYER_ATTRIBUTE_MAP } from './layer-attributes.js';
+import { isGeoJsonGeometry, countVertices } from './geometry.js';
 export const MAP_COMMAND_KINDS = [
     'zoomToRegion',
     'zoomToFeature',
@@ -22,6 +23,8 @@ export const MAP_COMMAND_KINDS = [
     'setBasemap',
     'highlightFeatures',
     'clearHighlights',
+    'showGeometries',
+    'proposeFeatureEdit',
 ];
 export const BASEMAP_TYPES = ['street', 'satellite', 'dem'];
 /**
@@ -71,6 +74,33 @@ function isLayerStateId(value) {
 /** Cap on one highlight command. Beyond this the map is noise, and a runaway
  *  tool result would push an unbounded payload through the route. */
 export const MAX_HIGHLIGHT_POINTS = 50;
+/** How a drawn result reads on the map: a feature the answer points at, a shape
+ *  the user supplied, or a shape an analysis produced. */
+export const RESULT_ROLES = ['highlight', 'input', 'result'];
+export const MAX_RESULT_ITEMS = 200;
+export const MAX_RESULT_VERTICES = 20_000;
+export const MAX_SOURCE_DOCUMENT_LENGTH = 500;
+export const MAX_SOURCE_PROVIDER_LENGTH = 200;
+/** Keeps the leading items that fit both caps. The server calls this before
+ *  building a command so it never emits one its own validator rejects. */
+export function capResultItems(items) {
+    const kept = [];
+    let vertices = 0;
+    for (const item of items) {
+        const n = countVertices(item.geometry);
+        if (kept.length >= MAX_RESULT_ITEMS || vertices + n > MAX_RESULT_VERTICES) {
+            return { items: kept, truncated: true };
+        }
+        kept.push(item);
+        vertices += n;
+    }
+    return { items: kept, truncated: false };
+}
+/** Columns an update may touch: the layer's attributes minus `external_id`, which
+ *  is identity, not data (the API's attributeSchema excludes it too). */
+export function editableColumns(layerKey) {
+    return Object.keys(LAYER_ATTRIBUTE_MAP[layerKey].attributes).filter((c) => c !== 'external_id');
+}
 function isLonLat(value) {
     return (Array.isArray(value) &&
         value.length === 2 &&
@@ -78,6 +108,25 @@ function isLonLat(value) {
 }
 function isLayerKey(value) {
     return typeof value === 'string' && EDITABLE_LAYER_KEYS.includes(value);
+}
+function isResultGeometry(value) {
+    if (typeof value !== 'object' || value === null)
+        return false;
+    const r = value;
+    return (isGeoJsonGeometry(r.geometry) &&
+        typeof r.role === 'string' &&
+        RESULT_ROLES.includes(r.role) &&
+        (r.label === undefined || typeof r.label === 'string') &&
+        (r.layerKey === undefined || isLayerKey(r.layerKey)) &&
+        (r.featureId === undefined || typeof r.featureId === 'string'));
+}
+function isValueRecord(value, allowed) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value))
+        return false;
+    return Object.entries(value).every(([k, v]) => allowed.includes(k) && (v === null || typeof v === 'string'));
+}
+function isOptionalText(value, max) {
+    return value === undefined || (typeof value === 'string' && value.length <= max);
 }
 /**
  * Runtime guard. The API validates assistant-produced commands with this before
@@ -122,6 +171,25 @@ export function isMapCommand(value) {
                 }));
         case 'clearHighlights':
             return true;
+        case 'showGeometries': {
+            if (!Array.isArray(c.items) || c.items.length === 0 || c.items.length > MAX_RESULT_ITEMS)
+                return false;
+            if (!c.items.every(isResultGeometry))
+                return false;
+            const vertices = c.items.reduce((n, i) => n + countVertices(i.geometry), 0);
+            return vertices <= MAX_RESULT_VERTICES && (c.fit === undefined || typeof c.fit === 'boolean');
+        }
+        case 'proposeFeatureEdit': {
+            if (!isLayerKey(c.layerKey) || typeof c.featureId !== 'string')
+                return false;
+            const allowed = editableColumns(c.layerKey);
+            return (isValueRecord(c.current, allowed) &&
+                isValueRecord(c.proposed, allowed) &&
+                Object.keys(c.proposed).length > 0 &&
+                (c.name === undefined || typeof c.name === 'string') &&
+                isOptionalText(c.sourceDocument, MAX_SOURCE_DOCUMENT_LENGTH) &&
+                isOptionalText(c.sourceProvider, MAX_SOURCE_PROVIDER_LENGTH));
+        }
         default:
             return false;
     }

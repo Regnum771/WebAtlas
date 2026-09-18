@@ -4,14 +4,17 @@ import { AppProviders } from './providers/AppProviders';
 import TopBar from '../widgets/top-bar';
 import Shell from '../features/shell';
 import AdminUsersRoute from '../pages/admin-users';
+import PrintRoute from '../pages/print';
 import MapView from '../features/map/ui/MapView';
 import LayersPanel from '../features/layers-panel';
 import MapToolbar from '../features/map/ui/MapToolbar';
+import { useAnalysisTools } from '../features/analysis';
 import MapLoadingBar from '../features/map/ui/MapLoadingBar';
 import DynamicPopup from '../components/DynamicPopup';
 import Legend from '../features/legend';
 import OGCClient from '../components/OGCClient';
 import Assistant from '../features/assistant';
+import ProposedEdit from '../features/feature-editing/ProposedEdit';
 import { IconRail } from '../features/shell/ui/IconRail.view';
 import { useRail } from '../features/shell/model/useRail';
 import { useSession } from '../entities/session/model/session.store';
@@ -21,6 +24,7 @@ import '../styles/main.css';
 function RailAndFlyout() {
   const rail = useRail();
   const { status } = useSession();
+  const analysis = useAnalysisTools();
   // The assistant costs API tokens per message, so the route is authenticated;
   // showing the entry to an anonymous visitor would only ever produce a 401.
   const items = [
@@ -45,7 +49,7 @@ function RailAndFlyout() {
     <>
       <MapView flyoutOpen={rail.active !== null} />
       <MapLoadingBar flyoutOpen={rail.active !== null} />
-      <MapToolbar flyoutOpen={rail.active !== null} />
+      <MapToolbar flyoutOpen={rail.active !== null} analysisButtons={analysis.buttons} analysisPanel={analysis.panel} />
       <IconRail items={items} active={rail.active} onToggle={rail.toggle} />
       {rail.active !== null && (
         <aside className="rail-flyout">
@@ -70,15 +74,18 @@ function App() {
 
           <TopBar />
 
-          {/* Left: doing. Burger drawer with the editing tools (editor/admin). */}
+          {/* Left: doing. Burger drawer with the editing tools (admin only). */}
           <Shell />
 
           <OGCClient />
 
           <DynamicPopup />
 
+          <ProposedEdit />
+
           <Routes>
             <Route path="/" element={null} />
+            <Route path="/print" element={<PrintRoute />} />
             <Route path="/admin/users" element={<AdminUsersRoute />} />
           </Routes>
         </div>

@@ -7,7 +7,15 @@ import type { FeatureRow } from './repository';
 
 const KeyParams = z.object({ key: z.string() });
 const KeyIdParams = z.object({ key: z.string(), id: z.string().uuid() });
-const FeatureBody = z.object({ geometry: z.unknown().optional(), properties: z.record(z.unknown()).optional() });
+const Source = z.object({
+  document: z.string().trim().min(1, 'Thiếu tài liệu nguồn').max(500),
+  provider: z.string().trim().min(1, 'Thiếu người cung cấp').max(200),
+});
+const FeatureBody = z.object({
+  geometry: z.unknown().optional(),
+  properties: z.record(z.unknown()).optional(),
+  source: Source.optional(),
+});
 
 function toFeature(row: FeatureRow) {
   return { type: 'Feature' as const, id: row.id, geometry: row.geometry, properties: row.properties };

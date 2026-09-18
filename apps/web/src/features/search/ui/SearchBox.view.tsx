@@ -5,6 +5,17 @@ const LAYER_BADGE: Record<string, string> = {
   dams: 'Đập', lakes: 'Hồ', rivers: 'Sông', stations: 'Trạm',
 };
 
+/**
+ * Many feature names already carry their layer word (HydroRIVERS names all
+ * start with "Sông", e.g. "Sông Srêpốk"), so pairing the badge chip with the
+ * raw name doubles it visually ("Sông Sông Srêpốk"). Strip a leading badge
+ * word from the displayed name — the chip still shows it once.
+ */
+function displayName(name: string, badge: string): string {
+  const prefix = `${badge} `;
+  return name.toLowerCase().startsWith(prefix.toLowerCase()) ? name.slice(prefix.length) : name;
+}
+
 interface Props {
   query: string;
   results: SearchHit[];
@@ -43,14 +54,17 @@ export function SearchBoxView({ query, results, loading, onQuery, onSelect }: Pr
         // is being clicked, so onBlur doesn't close the list out from under
         // the click before its onClick has a chance to fire.
         <ul className="search-results" onMouseDown={(e) => e.preventDefault()}>
-          {results.map((hit) => (
-            <li key={`${hit.layerKey}:${hit.featureId}`}>
-              <button type="button" className="search-result" onClick={() => onSelect(hit)}>
-                <span className="search-badge">{LAYER_BADGE[hit.layerKey] ?? hit.layerKey}</span>{' '}
-                <span>{hit.name}</span>
-              </button>
-            </li>
-          ))}
+          {results.map((hit) => {
+            const badge = LAYER_BADGE[hit.layerKey] ?? hit.layerKey;
+            return (
+              <li key={`${hit.layerKey}:${hit.featureId}`}>
+                <button type="button" className="search-result" onClick={() => onSelect(hit)}>
+                  <span className="search-badge">{badge}</span>{' '}
+                  <span>{displayName(hit.name, badge)}</span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

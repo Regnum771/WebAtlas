@@ -1,5 +1,11 @@
 import type { Pool } from 'pg';
-import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
+import {
+  EDITABLE_LAYER_KEYS,
+  LAYER_ATTRIBUTE_MAP,
+  type EditableLayerKey,
+  type GeoJsonGeometry,
+} from '@webatlas/shared';
+import { simplifiedGeoJsonSql } from '../../../../lib/resultGeometry';
 
 /** How many rows any single data tool will list. Beyond this the model is
  *  reading a table out loud rather than answering a question, and the tokens
@@ -120,14 +126,6 @@ export const LAYER_LABELS: Record<EditableLayerKey, string> = {
   flood_generation: 'vùng sinh lũ',
 };
 
-/** One row as every list-shaped data tool reports it. */
-export interface FeatureRow {
-  featureId: string;
-  name: string | null;
-  lon: number;
-  lat: number;
-}
-
 /**
  * The label of the layer's active dataset version — what the provenance chip
  * shows, so a reader can tell which map a number describes. Null when the layer
@@ -155,4 +153,53 @@ export const POINT_SQL = 'ST_X(ST_PointOnSurface(geom)) AS lon, ST_Y(ST_PointOnS
  */
 export function isFeatureId(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+/** A pool or a checked-out client — anything with pg's `query`. */
+export type Queryable = Pick<Pool, 'query'>;
+
+export interface ResolvedFeature {
+  featureId: string;
+  name: string | null;
+  lon: number;
+  lat: number;
+  geometry: GeoJsonGeometry;
+  /** Every LAYER_ATTRIBUTE_MAP column, as text (null stays null). */
+  properties: Record<string, string | null>;
+}
+
+/**
+ * One feature of the ACTIVE version, by id — the shared form of the
+ * candidate/re-apply dance that area_of, distance_between and related_features
+ * each hand-wrote (handover §5.3 #1).
+ *
+ * The candidate predicate `id = $1` is a primary-key hit on the base table; it is
+ * re-applied after resolution together with `NOT deleted`, because resolution
+ * returns the active row for that external_id — if the id belonged to a
+ * superseded version, the active row's id differs and the filter yields nothing.
+ */
+export async function resolveFeature(
+  db: Queryable,
+  layerKey: EditableLayerKey,
+  featureId: string,
+  opts: { simplify?: boolean } = {}
+): Promise<ResolvedFeature | null> {
+  if (!isFeatureId(featureId)) return null;
+  const table = layerTable(layerKey); // allowlist check before any interpolation
+  // Column names come from the shared constant map, never from tool input.
+  const props = Object.keys(LAYER_ATTRIBUTE_MAP[layerKey].attributes)
+    .map((c) => `'${c}', resolved.${c}::text`)
+    .join(', ');
+  const geometrySql = opts.simplify === false ? 'ST_AsGeoJSON(geom, 7)::json' : simplifiedGeoJsonSql('geom');
+  const ctes = candidateCtes(layerKey, `SELECT external_id FROM ${table} WHERE id = $1`);
+  const { rows } = await db.query<ResolvedFeature>(
+    `WITH RECURSIVE ${ctes}
+     SELECT id::text AS "featureId", name, ${POINT_SQL},
+            ${geometrySql} AS geometry,
+            jsonb_build_object(${props}) AS properties
+       FROM resolved
+      WHERE id = $1 AND NOT deleted AND geom IS NOT NULL`,
+    [featureId]
+  );
+  return rows[0] ?? null;
 }

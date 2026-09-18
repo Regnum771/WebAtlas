@@ -16,14 +16,36 @@ describe('SearchBoxView', () => {
 
   it('renders each result name', () => {
     render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
+    // Accessible name aggregates the badge chip + the displayed name.
+    expect(screen.getByRole('button', { name: 'Đập Thủy điện Ya Ly' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hồ Lắk' })).toBeInTheDocument();
+  });
+
+  it('does not double the layer word when the feature name already starts with it', () => {
+    const riverHit = { layerKey: 'rivers' as const, featureId: 'r1', name: 'Sông Srêpốk', lonLat: [108.1, 12.9] as [number, number] };
+    render(<SearchBoxView query="srêpốk" results={[riverHit]} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
+
+    // Accessible name aggregates the badge chip + displayed name text; it must
+    // read as the plain feature name, not "Sông Sông Srêpốk".
+    const button = screen.getByRole('button', { name: 'Sông Srêpốk' });
+    expect(button).toBeInTheDocument();
+    // The badge chip is still rendered on its own, so the layer is still shown.
+    expect(screen.getByText('Sông')).toBeInTheDocument();
+    // The name span must not repeat "Sông" — only the badge carries it.
+    expect(screen.queryByText('Sông Srêpốk')).not.toBeInTheDocument();
+    expect(screen.getByText('Srêpốk')).toBeInTheDocument();
+  });
+
+  it('leaves names that do not start with the badge word untouched', () => {
+    render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
+    expect(screen.getByText('Đập')).toBeInTheDocument();
     expect(screen.getByText('Thủy điện Ya Ly')).toBeInTheDocument();
-    expect(screen.getByText('Hồ Lắk')).toBeInTheDocument();
   });
 
   it('calls onSelect with the clicked hit', async () => {
     const onSelect = vi.fn();
     render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={onSelect} />);
-    await userEvent.click(screen.getByText('Hồ Lắk'));
+    await userEvent.click(screen.getByRole('button', { name: 'Hồ Lắk' }));
     expect(onSelect).toHaveBeenCalledWith(hits[1]);
   });
 
@@ -36,20 +58,20 @@ describe('SearchBoxView', () => {
 
   it('closes the dropdown on blur (clicking elsewhere on the map, tabbing away)', () => {
     render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
-    expect(screen.getByText('Hồ Lắk')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hồ Lắk' })).toBeInTheDocument();
 
     fireEvent.blur(screen.getByPlaceholderText('Tìm kiếm đối tượng…'));
 
-    expect(screen.queryByText('Hồ Lắk')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hồ Lắk' })).not.toBeInTheDocument();
   });
 
   it('closes the dropdown on Escape', () => {
     render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
-    expect(screen.getByText('Hồ Lắk')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hồ Lắk' })).toBeInTheDocument();
 
     fireEvent.keyDown(screen.getByPlaceholderText('Tìm kiếm đối tượng…'), { key: 'Escape' });
 
-    expect(screen.queryByText('Hồ Lắk')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hồ Lắk' })).not.toBeInTheDocument();
   });
 
   it('reopens on a fresh results set even after a prior dismissal', () => {
@@ -57,18 +79,18 @@ describe('SearchBoxView', () => {
       <SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />
     );
     fireEvent.blur(screen.getByPlaceholderText('Tìm kiếm đối tượng…'));
-    expect(screen.queryByText('Hồ Lắk')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hồ Lắk' })).not.toBeInTheDocument();
 
     const moreHits = [...hits, { layerKey: 'rivers' as const, featureId: 'r1', name: 'Sông Thu Bồn', lonLat: [108.3, 15.8] as [number, number] }];
     rerender(<SearchBoxView query="thu" results={moreHits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
 
-    expect(screen.getByText('Sông Thu Bồn')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sông Thu Bồn' })).toBeInTheDocument();
   });
 
   it('does not close on a mousedown inside the results list (so a result click still registers)', async () => {
     const onSelect = vi.fn();
     render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={onSelect} />);
-    await userEvent.click(screen.getByText('Hồ Lắk'));
+    await userEvent.click(screen.getByRole('button', { name: 'Hồ Lắk' }));
     expect(onSelect).toHaveBeenCalledWith(hits[1]);
   });
 });

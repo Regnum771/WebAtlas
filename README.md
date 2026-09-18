@@ -14,7 +14,8 @@ Four cooperating services (see the design spec for detail):
 - **Node/TS API** (Fastify) — the only writer: admin auth (JWT), user management, validation, and feature CRUD → PostGIS.
 - **React + OpenLayers frontend** — public viewer (no login) + administrator login/editing.
 
-Roles: **public viewer** (read-only, no login) and **administrator** (JWT auth, user + map CRUD).
+Roles: **public viewer** (read-only, no login), **viewer/editor** (authenticated, read-only),
+and **administrator** (the only role that writes).
 Authorization is enforced by the API (every admin route requires an admin JWT); the frontend
 authenticates its calls and gates admin UI, but the backend is the real security boundary.
 
@@ -121,6 +122,8 @@ GET    /api/layers/:key/features        → GeoJSON FeatureCollection           
 POST   /api/layers/:key/features        → create feature                     [admin]
 PUT    /api/layers/:key/features/:id    → update feature                     [admin]
 DELETE /api/layers/:key/features/:id    → delete feature                     [admin]
+GET    /api/features/:layerKey/:id/geometry → simplified GeoJSON geometry (public)
+POST   /api/analysis/:op                → buffer | select_within | nearest | elevation_profile | zonal_elevation (public, 60/min)
 ```
 
 Passwords are argon2-hashed; JWTs are signed from `JWT_SECRET` with a short expiry; every
