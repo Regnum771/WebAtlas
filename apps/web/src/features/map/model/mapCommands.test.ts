@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { createCommandExecutor, type CommandDeps } from './mapCommands';
 import { INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
 import { fromLonLat } from 'ol/proj';
+import { setProvinceBboxes } from '../../../entities/admin-unit/adminUnits.store';
 
 function makeDeps(
   overrides: Partial<CommandDeps> = {},
@@ -183,5 +184,29 @@ describe('createCommandExecutor — highlights', () => {
       kind: 'proposeFeatureEdit', layerKey: 'dams', featureId: 'f1', current: {}, proposed: { name: 'x' },
     });
     expect(result).toEqual({ ok: false, reason: 'Không mở được biểu mẫu cập nhật.' });
+  });
+});
+
+describe('zoomToRegion uses real extents when they are loaded', () => {
+  it('fits the province extent rather than a fixed zoom on a centroid', () => {
+    setProvinceBboxes({ '66': [107.5, 12.0, 109.0, 13.5] });
+    const deps = makeDeps();
+    const fit = vi.fn();
+    (deps.map as unknown as { getView: () => unknown }).getView = () => ({
+      fit, animate: deps.animate, getMinZoom: () => undefined, getMaxZoom: () => undefined,
+    });
+
+    const result = createCommandExecutor(deps)({ kind: 'zoomToRegion', provinceCode: '66' });
+
+    expect(fit).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: true, text: 'Đã phóng to tới Đắk Lắk.' });
+  });
+
+  it('falls back to the bundled centroid before the extents have loaded', () => {
+    setProvinceBboxes({});
+    const deps = makeDeps();
+    const result = createCommandExecutor(deps)({ kind: 'zoomToRegion', provinceCode: '66' });
+    expect(deps.animate).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: true, text: 'Đã phóng to tới Đắk Lắk.' });
   });
 });

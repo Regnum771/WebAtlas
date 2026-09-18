@@ -174,4 +174,14 @@ maybe('intent routing (live model)', () => {
     const { provenance } = await ask('Trắc diện độ cao sông Srêpốk thế nào?');
     expect(provenance.some((p) => p.tool === 'elevation_profile')).toBe(true);
   }, 90_000);
+
+  it('routes a province-scoped count question to features_in_admin_unit', async () => {
+    // Regression for the tool being unreachable: nothing gave the model the
+    // province code, so this question could only be answered by recalling '66'
+    // from world knowledge — which system prompt rule 2 forbids. The code
+    // parameter's description now carries the code↔name table (see
+    // featuresInAdminUnit.ts), the same fix zoomToRegion already used.
+    const { provenance } = await ask('Có bao nhiêu đập ở tỉnh Đắk Lắk?');
+    expect(provenance.some((p) => p.tool === 'features_in_admin_unit')).toBe(true);
+  }, 60_000);
 });

@@ -78,6 +78,11 @@ describe('seeds', () => {
     expect(rows[0].n).toBe(19);
   });
 
+  // This test calls runSeeds() a second time, i.e. the full seed pipeline (now
+  // including admin-code stamping) on top of the beforeAll run. That's the same
+  // 25-45s cost as the hook, but it's billed against testTimeout (30s), not
+  // hookTimeout (60s) — so it needs its own longer budget rather than relying on
+  // the suite-wide default.
   it('re-running appends a version rather than mutating the active one in place', async () => {
     const activeBefore = await getPool().query(
       `SELECT id FROM app.dataset_versions WHERE layer_key = 'flood_zones' AND is_active`
@@ -93,7 +98,7 @@ describe('seeds', () => {
       [activeAfter.rows[0].id]
     );
     expect(rows[0].n).toBe(2);
-  });
+  }, 120_000);
 
   it('assigns every dam a valid status slug (not null)', async () => {
     const { rows } = await getPool().query(
@@ -169,6 +174,9 @@ describe('seeds create dataset versions (§6)', () => {
     expect(rows[0].parent_version_id).toBeNull();
   });
 
+  // Same as above: a second full runSeeds() call, ~25-45s, needs a budget beyond
+  // the suite's 30s testTimeout default even though the beforeAll's identical cost
+  // is already covered by the separate (60s) hookTimeout.
   it('a second seed run creates a new active version and leaves the prior one addressable', async () => {
     const before = await getPool().query(
       `SELECT id FROM app.dataset_versions WHERE layer_key = 'stations' AND is_active`
@@ -193,5 +201,18 @@ describe('seeds create dataset versions (§6)', () => {
       [priorActive]
     );
     expect(prior.rows[0].n).toBe(2);
+  }, 120_000);
+});
+
+describe('administrative stamping during seed', () => {
+  it('stamps dams with the province they fall in', async () => {
+    const { rows } = await getPool().query<{ stamped: string; total: string }>(
+      `SELECT count(*) FILTER (WHERE array_length(province_codes, 1) IS NOT NULL)::text AS stamped,
+              count(*)::text AS total
+         FROM water.dams_active WHERE geom IS NOT NULL`
+    );
+    // Every dam in the working region sits inside a province; a handful outside the six
+    // provinces legitimately stamp empty, so this asserts the bulk rather than all.
+    expect(Number(rows[0].stamped)).toBeGreaterThan(Number(rows[0].total) * 0.9);
   });
 });

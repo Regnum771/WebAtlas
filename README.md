@@ -124,6 +124,8 @@ PUT    /api/layers/:key/features/:id    → update feature                     [
 DELETE /api/layers/:key/features/:id    → delete feature                     [admin]
 GET    /api/features/:layerKey/:id/geometry → simplified GeoJSON geometry (public)
 POST   /api/analysis/:op                → buffer | select_within | nearest | elevation_profile | zonal_elevation (public, 60/min)
+GET    /api/admin-units?level=province|ward&province= → administrative units with extents (public)
+GET    /api/layers/:key/features?province=&ward=      → features of the ACTIVE version, filtered   [auth]
 ```
 
 Passwords are argon2-hashed; JWTs are signed from `JWT_SECRET` with a short expiry; every

@@ -8,6 +8,7 @@ import usersRoutes from './modules/users/routes';
 import layersRoutes from './modules/layers/routes';
 import searchRoutes from './modules/search/routes';
 import geometryRoutes from './modules/geometry/routes';
+import adminUnitsRoutes from './modules/admin-units/routes';
 import elevationRoutes from './modules/elevation/routes';
 import analysisRoutes from './modules/analysis/routes';
 import assistantRoutes from './modules/assistant/routes';
@@ -37,6 +38,7 @@ export function buildApp(): FastifyInstance {
   app.register(layersRoutes, { prefix: '/api' });
   app.register(searchRoutes, { prefix: '/api' });
   app.register(geometryRoutes, { prefix: '/api' });
+  app.register(adminUnitsRoutes, { prefix: '/api' });
   app.register(elevationRoutes, { prefix: '/api' });
   app.register(analysisRoutes, { prefix: '/api' });
   app.register(assistantRoutes, { prefix: '/api' });

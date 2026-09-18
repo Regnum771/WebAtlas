@@ -40,24 +40,51 @@ export interface FeatureRow {
   properties: Record<string, unknown>; // attribute columns only
 }
 
-function selectSql(def: LayerDef): string {
+export interface FeatureFilter {
+  province?: string;
+  ward?: string;
+}
+
+/**
+ * Đọc từ view phiên bản đang hoạt động, KHÔNG phải bảng gốc: bảng gốc chứa mọi phiên bản,
+ * nên liệt kê từ đó trả về cả những hàng đã bị thay thế (604 hàng cho 151 cái đập, đo lúc
+ * viết). Ghi thì vẫn nhắm vào bảng gốc theo phiên bản nháp — chỉ phần đọc đổi.
+ */
+function activeRelation(def: LayerDef): string {
+  return `${def.table}_active`;
+}
+
+function selectSql(def: LayerDef, relation: string): string {
   const attrs = def.attributeColumns.map((c) => `'${c}', t.${c}`).join(', ');
   // jsonb_build_object over the fixed registry columns; geometry via ST_AsGeoJSON.
   return `SELECT t.id,
                  CASE WHEN t.${def.geomColumn} IS NULL THEN NULL
                       ELSE ST_AsGeoJSON(t.${def.geomColumn})::jsonb END AS geometry,
                  jsonb_build_object(${attrs}) AS properties
-          FROM ${def.table} t`;
+          FROM ${relation} t`;
 }
 
 export function featuresRepository(pg: Pool) {
   return {
-    async list(def: LayerDef): Promise<FeatureRow[]> {
-      const { rows } = await pg.query(`${selectSql(def)} ORDER BY t.created_at DESC`);
+    async list(def: LayerDef, filter: FeatureFilter = {}): Promise<FeatureRow[]> {
+      const where: string[] = [];
+      const params: string[] = [];
+      if (filter.province) {
+        params.push(filter.province);
+        where.push(`t.province_codes && ARRAY[$${params.length}]`);
+      }
+      if (filter.ward) {
+        params.push(filter.ward);
+        where.push(`t.ward_codes && ARRAY[$${params.length}]`);
+      }
+      const sql = `${selectSql(def, activeRelation(def))}
+                   ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+                   ORDER BY t.created_at DESC`;
+      const { rows } = await pg.query(sql, params);
       return rows;
     },
     async findById(def: LayerDef, id: string): Promise<FeatureRow | null> {
-      const { rows } = await pg.query(`${selectSql(def)} WHERE t.id = $1`, [id]);
+      const { rows } = await pg.query(`${selectSql(def, def.table)} WHERE t.id = $1`, [id]);
       return rows[0] ?? null;
     },
 
@@ -71,7 +98,7 @@ export function featuresRepository(pg: Pool) {
 
     // findById restricted to the session's transaction — sees its uncommitted rows.
     async findByIdOnClient(client: PoolClient, def: LayerDef, id: string): Promise<FeatureRow | null> {
-      const { rows } = await client.query(`${selectSql(def)} WHERE t.id = $1`, [id]);
+      const { rows } = await client.query(`${selectSql(def, def.table)} WHERE t.id = $1`, [id]);
       return rows[0] ?? null;
     },
 

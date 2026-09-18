@@ -18,6 +18,7 @@ import ProposedEdit from '../features/feature-editing/ProposedEdit';
 import { IconRail } from '../features/shell/ui/IconRail.view';
 import { useRail } from '../features/shell/model/useRail';
 import { useSession } from '../entities/session/model/session.store';
+import { primeAdminUnits } from '../entities/admin-unit/adminUnits.store';
 import { Layers, List, MessageSquare } from 'lucide-react';
 import '../styles/main.css';
 
@@ -44,6 +45,8 @@ function RailAndFlyout() {
       rail.toggle('assistant');
     }
   }, [status, rail.active, rail.toggle]);
+
+  useEffect(() => { void primeAdminUnits(); }, []);
 
   return (
     <>

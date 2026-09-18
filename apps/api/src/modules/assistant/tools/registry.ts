@@ -17,6 +17,7 @@ import { bufferFeatureTool } from './data/bufferFeature';
 import { selectWithinTool } from './data/selectWithin';
 import { elevationProfileTool } from './data/elevationProfile';
 import { zonalElevationTool } from './data/zonalElevation';
+import { featuresInAdminUnitTool } from './data/featuresInAdminUnit';
 import { runSqlTool } from './data/runSql';
 import { proposeFeatureUpdateTool } from './command/proposeFeatureUpdate';
 
@@ -60,6 +61,8 @@ const FACTORIES: ToolFactory[] = [
   selectWithinTool,
   elevationProfileTool,
   zonalElevationTool,
+  // Đóng dấu sẵn mã hành chính nên đây là tra chỉ mục, không phải phép giao hình học.
+  featuresInAdminUnitTool,
 ];
 
 /**

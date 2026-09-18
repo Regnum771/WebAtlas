@@ -1,3 +1,5 @@
+// Chỉ còn là phương án dự phòng lúc khởi động: khung bao thật đến từ GET /api/admin-units
+// (entities/admin-unit/adminUnits.store.ts). Đừng thêm tỉnh mới vào đây.
 /** Approximate centroids (lon, lat) for the six working-region provinces. */
 export const PROVINCE_CENTROIDS: Record<string, [number, number]> = {
   '48': [108.15, 16.05], // Đà Nẵng

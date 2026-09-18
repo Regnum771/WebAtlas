@@ -1,5 +1,5 @@
 import type { Map } from 'ol';
-import { fromLonLat } from 'ol/proj';
+import { fromLonLat, transformExtent } from 'ol/proj';
 import {
   REGION_PROVINCE_NAMES,
   type BasemapName,
@@ -8,6 +8,7 @@ import {
 } from '@webatlas/shared';
 import type { BasemapType } from './MapModel';
 import { PROVINCE_CENTROIDS } from './provinceCentroids';
+import { getProvinceBbox } from '../../../entities/admin-unit/adminUnits.store';
 import { MIN_ZOOM, MAX_ZOOM, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
 import { showHighlights, showResults, clearHighlights } from './highlightLayer';
 
@@ -67,10 +68,20 @@ export function createCommandExecutor(deps: CommandDeps) {
         return { ok: true, text: 'Đã phóng to tới đối tượng đã chọn.' };
       }
       case 'zoomToRegion': {
+        if (!deps.map) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
+        const name = REGION_PROVINCE_NAMES[cmd.provinceCode];
+        const bbox = getProvinceBbox(cmd.provinceCode);
+        if (bbox) {
+          // Khung bao thật: một tỉnh dài không còn bị cắt cụt như khi phóng cố định mức 9.
+          deps.map.getView().fit(transformExtent(bbox, 'EPSG:4326', 'EPSG:3857'), {
+            padding: [40, 40, 40, 40], duration: ANIMATE_MS,
+          });
+          return { ok: true, text: `Đã phóng to tới ${name}.` };
+        }
         const centre = PROVINCE_CENTROIDS[cmd.provinceCode];
         if (!centre) return { ok: false, reason: 'Không có toạ độ cho tỉnh này.' };
         if (!animateTo(centre, PROVINCE_ZOOM)) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
-        return { ok: true, text: `Đã phóng to tới ${REGION_PROVINCE_NAMES[cmd.provinceCode]}.` };
+        return { ok: true, text: `Đã phóng to tới ${name}.` };
       }
       case 'resetView': {
         if (!animateTo(INITIAL_CENTER_4326, INITIAL_ZOOM)) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };

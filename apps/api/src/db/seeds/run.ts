@@ -5,6 +5,9 @@ import type pg from 'pg';
 import { getPool, closePool } from '../pool';
 import { SEED_LAYERS, type SeedLayer } from './registry';
 import { versionsService } from '../../modules/versions/service';
+import { loadAdminBoundaries } from './adminBoundaries';
+import { stampAdminCodes } from '../adminStamp';
+import type { EditableLayerKey } from '@webatlas/shared';
 
 function geomExpr(layer: SeedLayer): string {
   // $GEOM is the feature geometry as a GeoJSON string
@@ -63,6 +66,19 @@ export async function runSeeds(): Promise<Record<string, number>> {
   const versions = versionsService(pool);
   const result: Record<string, number> = {};
   try {
+    // Ranh giới trước dữ liệu chuyên đề: bước đóng dấu mã hành chính (db/adminStamp.ts)
+    // chạy ngay sau khi nạp từng lớp và cần hai bảng này đã có dữ liệu.
+    await client.query('BEGIN');
+    try {
+      const admin = await loadAdminBoundaries(client);
+      await client.query('COMMIT');
+      // eslint-disable-next-line no-console
+      console.log(`seeded admin boundaries: ${admin.provinces} provinces, ${admin.wards} wards`);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    }
+
     for (const layer of SEED_LAYERS) {
       // One transaction per layer: create the version, load its features, record the
       // count, then flip active. A failure anywhere rolls the whole layer back and
@@ -78,6 +94,9 @@ export async function runSeeds(): Promise<Record<string, number>> {
         `UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`,
         [result[layer.table], versionId]
       );
+      // Đóng dấu trước khi kích hoạt: một phiên bản đã active mà chưa có mã hành chính sẽ
+      // khiến truy vấn theo tỉnh trả về thiếu, và không có gì báo cho ta biết.
+      await stampAdminCodes(client, layer.table as EditableLayerKey, versionId);
       await versions.activate(client, layer.table, versionId);
       await client.query('COMMIT');
       // eslint-disable-next-line no-console

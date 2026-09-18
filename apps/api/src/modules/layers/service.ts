@@ -1,11 +1,13 @@
 import type { Pool } from 'pg';
 import { getLayer, type LayerDef } from '../../layers/registry';
-import { featuresRepository, type FeatureRow } from './repository';
+import { featuresRepository, type FeatureFilter, type FeatureRow } from './repository';
 import { assertGeometry, assertValidInPg } from './geometry';
 import { auditService, type EditSource } from '../audit/service';
 import { versionsService } from '../versions/service';
 import { validate } from '../../lib/validate';
 import { ConflictError, NotFoundError } from '../../errors';
+import { stampAdminCodes } from '../../db/adminStamp';
+import type { EditableLayerKey } from '@webatlas/shared';
 
 type FeatureInput = { geometry?: unknown; properties?: Record<string, unknown>; source?: EditSource };
 
@@ -132,6 +134,9 @@ export function featuresService(pg: Pool) {
         // failing COMMIT must not be followed by a second ROLLBACK attempt from fail().
         settled = true;
         try {
+          // Giá trị dẫn xuất được dựng lại bởi chính đường ghi (tài liệu kiến trúc §9):
+          // đóng dấu hàng của bản nháp TRƯỚC khi công bố, trong cùng giao dịch.
+          await stampAdminCodes(client, def.key as EditableLayerKey, draftId);
           await versions.commitEditDraft(client, def.key, draftId);
           await client.query('COMMIT');
         } catch (e) {
@@ -179,7 +184,9 @@ export function featuresService(pg: Pool) {
   }
 
   return {
-    async list(key: string): Promise<FeatureRow[]> { return repo.list(getLayer(key)); },
+    async list(key: string, filter: FeatureFilter = {}): Promise<FeatureRow[]> {
+      return repo.list(getLayer(key), filter);
+    },
     async get(key: string, id: string): Promise<FeatureRow | null> { return repo.findById(getLayer(key), id); },
     editSession,
 
