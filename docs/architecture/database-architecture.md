@@ -1,7 +1,8 @@
 # WebATLAS Database Architecture
 
 **Document status:** Living document. Revise when the schema changes.
-**Revision:** 1.0 — 18 September 2026
+**Revision:** 1.1 — 18 September 2026
+Phase 1 (administrative boundaries and stamping) implemented; see docs/superpowers/plans/2026-09-18-plan-1-admin-boundaries-and-stamping.md.
 **Prepared for:** Engineers, data stewards and technical reviewers of the WebATLAS water-resources information system.
 
 ---
@@ -87,7 +88,7 @@ The database is divided into four schemas by *governance*: who writes the data, 
 |---|---|---|---|---|
 | `app` | Users, audit log, dataset versions, ingest lineage | Application, pipeline | n/a | Implemented |
 | `water` | Eight thematic feature layers | Pipeline and authorised editors | Yes | Implemented |
-| `admin` | Province and ward boundaries | Seed; later the dataset registry | No | **Designed** |
+| `admin` | Province and ward boundaries | Seed; later the dataset registry | No | Implemented |
 | `basemap` | Reference data: roads, railways, land use, settlements, water bodies, elevation raster, contours | Loader scripts | No | Implemented |
 
 The division is deliberate. Thematic data in `water` is editable and therefore requires a temporal model, audit trail
@@ -200,12 +201,12 @@ All geometry is stored in WGS 84 (EPSG:4326). The client presents coordinates in
 national projections, or the province-specific VN-2000 three-degree zones defined in reference [3] — but conversion is a
 presentation concern. Storage remains in one system so that no query must reason about mixed references.
 
-### 6.2 Administrative boundaries (designed)
+### 6.2 Administrative boundaries
 
 Province and ward polygons are held in the `admin` schema, populated during seeding from files committed to the
 repository, so that a newly cloned working copy functions without network access.
 
-### 6.3 Administrative stamping (designed)
+### 6.3 Administrative stamping
 
 Each feature carries the administrative units it intersects, as indexed arrays of province and ward codes. Arrays rather
 than scalars: a watercourse traverses several provinces, and a scalar column cannot answer which watercourses pass
@@ -333,7 +334,7 @@ not arise.
 | Unique index on (dataset version, business key) | Enforces one row per key per version |
 | Index on dataset version | Version-chain resolution |
 | Trigram index on name columns | Fuzzy search by name |
-| GIN indexes on administrative code arrays | Containment queries by province or ward (designed) |
+| GIN indexes on administrative code arrays | Containment queries by province or ward |
 
 Two measured observations inform the strategy.
 

@@ -29,6 +29,9 @@ dev box or optional (unlocks one feature, safe to skip and do later).
    drought points, saltwater intrusion) from the GeoJSON under
    [`apps/api/src/db/seeds/data`](../../apps/api/src/db/seeds/data) — these files are in
    git, so this step is fully reproducible from a checkout.
+
+   `npm run seed` now also loads `admin.provinces` / `admin.wards` from the GeoJSON committed in `apps/web/public`, and
+   stamps `province_codes` / `ward_codes` onto every feature. No network access is required.
 4. **Load the river network** into the `rivers` table — also seed data checked into git,
    run separately from step 3 because it has its own ingest path
    ([`ingestRivers.ts`](../../apps/api/src/db/seeds/ingestRivers.ts)).
