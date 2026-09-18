@@ -842,6 +842,113 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 5b: Stamp on the rivers ingest path
+
+**Files:**
+- Modify: `apps/api/src/db/seeds/ingestRivers.ts`
+- Modify: `apps/api/src/db/seeds/seed.test.ts` (move the misplaced river assertion out)
+- Test: `apps/api/src/db/seeds/ingestRivers.stamp.test.ts` (new)
+
+**Why this task exists (added during execution).** Task 5 wired stamping into `runSeeds()`, but `rivers` is **not** in
+`SEED_LAYERS` — it is loaded by a second ingest path, `npm run ingest:rivers` (`ingestRivers.ts`), which calls
+`createIngestVersion` and `activate` itself. Without the same call there, every rivers re-ingest silently publishes an
+active version whose `province_codes` are empty, and rivers is precisely the layer where the multi-province array
+matters. The spec requires codes computed at ingest (§3), so the obligation belongs on every ingest path, not just the
+seed loop.
+
+A second consequence: the "stamps a river with every province it crosses" test added in Task 5 lives in `seed.test.ts`
+but passes without the seed touching rivers at all — it reads state left by an earlier manual measurement. A test that
+passes for a reason unrelated to the code under test is worse than no test; it moves here.
+
+**Interfaces:**
+- Consumes: `stampAdminCodes(client, layerKey, versionId)`.
+- Produces: `npm run ingest:rivers` leaves every ingested river stamped.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `apps/api/src/db/seeds/ingestRivers.stamp.test.ts`:
+
+```ts
+import { describe, it, expect, afterAll } from 'vitest';
+import { getPool, closePool } from '../pool';
+
+afterAll(async () => { await closePool(); });
+
+describe('rivers ingest stamping', () => {
+  it('leaves every active river stamped with the provinces it crosses', async () => {
+    const { rows } = await getPool().query<{ total: string; stamped: string; multi: string }>(
+      `SELECT count(*)::text AS total,
+              count(*) FILTER (WHERE array_length(province_codes, 1) IS NOT NULL)::text AS stamped,
+              count(*) FILTER (WHERE array_length(province_codes, 1) > 1)::text AS multi
+         FROM water.rivers_active WHERE geom IS NOT NULL`
+    );
+    // Most watercourses sit inside the six provinces; a few reach beyond the clip edge and
+    // legitimately stamp empty, so assert the bulk rather than all.
+    expect(Number(rows[0].stamped)).toBeGreaterThan(Number(rows[0].total) * 0.9);
+    // At least one crosses a provincial boundary — the reason these columns are arrays.
+    expect(Number(rows[0].multi)).toBeGreaterThan(0);
+  });
+});
+```
+
+- [ ] **Step 2: Move the misplaced assertion**
+
+Delete the `it('stamps a river with every province it crosses', …)` case from
+`apps/api/src/db/seeds/seed.test.ts` — it now lives in the file above. Leave the dams case in `seed.test.ts`: dams *are*
+seeded by `runSeeds()`, so that one tests what it claims to.
+
+- [ ] **Step 3: Run to verify the current state**
+
+Run: `npm run test -w @webatlas/api -- src/db/seeds/ingestRivers.stamp.test.ts`
+This may PASS before your change, because a previous manual update left `province_codes` populated on the active rivers
+version. Prove the gap instead by re-ingesting first:
+
+```bash
+npm run ingest:rivers -w @webatlas/api
+npm run test -w @webatlas/api -- src/db/seeds/ingestRivers.stamp.test.ts
+```
+
+Expected after a fresh ingest and before your fix: FAIL — `stamped` is 0, because the new active version was never
+stamped. Record that output as your RED evidence.
+
+- [ ] **Step 4: Wire stamping into the ingest**
+
+In `apps/api/src/db/seeds/ingestRivers.ts`, import:
+
+```ts
+import { stampAdminCodes } from '../adminStamp';
+```
+
+and call it inside the same transaction, after the `feature_count` update and **before** `svc.activate(client, 'rivers', versionId)`:
+
+```ts
+  // Cùng nghĩa vụ như trong runSeeds: đóng dấu trước khi kích hoạt, nếu không phiên bản
+  // đang hoạt động sẽ thiếu mã hành chính mà không có gì báo.
+  await stampAdminCodes(client, 'rivers', versionId);
+```
+
+Check the early-return branch too (the path that reuses an existing version when the source is unchanged, around
+`ingestRivers.ts:42-61`): if it activates a version it did not stamp, stamp it there as well, and say in your report
+which branches you covered.
+
+- [ ] **Step 5: Verify**
+
+```bash
+npm run ingest:rivers -w @webatlas/api
+npm run test -w @webatlas/api -- src/db/seeds/ingestRivers.stamp.test.ts src/db/seeds/seed.test.ts
+```
+Expected: PASS. Report the ingest wall-clock time — stamping ~9,500 river rows was measured at ~28 s, so the ingest gets
+noticeably slower and that is expected, not a fault.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/api/src/db/seeds/ingestRivers.ts apps/api/src/db/seeds/ingestRivers.stamp.test.ts apps/api/src/db/seeds/seed.test.ts
+git commit -m "fix(api): đóng dấu mã hành chính cả trên đường nhập sông"
+```
+
+---
+
 ### Task 6: Re-stamp when an edit session commits
 
 **Files:**
