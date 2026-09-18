@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { getLayer, type LayerDef } from '../../layers/registry';
-import { featuresRepository, type FeatureRow } from './repository';
+import { featuresRepository, type FeatureFilter, type FeatureRow } from './repository';
 import { assertGeometry, assertValidInPg } from './geometry';
 import { auditService, type EditSource } from '../audit/service';
 import { versionsService } from '../versions/service';
@@ -184,7 +184,9 @@ export function featuresService(pg: Pool) {
   }
 
   return {
-    async list(key: string): Promise<FeatureRow[]> { return repo.list(getLayer(key)); },
+    async list(key: string, filter: FeatureFilter = {}): Promise<FeatureRow[]> {
+      return repo.list(getLayer(key), filter);
+    },
     async get(key: string, id: string): Promise<FeatureRow | null> { return repo.findById(getLayer(key), id); },
     editSession,
 

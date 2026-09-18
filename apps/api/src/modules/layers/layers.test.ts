@@ -202,3 +202,52 @@ describe('feature CRUD (admin only)', () => {
     expect(restamped.rows[0].province_codes).toEqual(['68']);
   });
 });
+
+describe('feature listing', () => {
+  it('returns one row per feature, not one per version', async () => {
+    const token = await tokenFor(ADMIN);
+    const res = await app.inject({
+      method: 'GET', url: '/api/layers/dams/features',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const ids: string[] = res.json().features.map((f: { id: string }) => f.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    const active = await getPool().query<{ n: string }>(`SELECT count(*)::text AS n FROM water.dams_active`);
+    expect(ids).toHaveLength(Number(active.rows[0].n));
+  });
+
+  it('filters by province and by ward', async () => {
+    const token = await tokenFor(ADMIN);
+    const auth = { authorization: `Bearer ${token}` };
+
+    const all = await app.inject({ method: 'GET', url: '/api/layers/dams/features', headers: auth });
+    const inDakLak = await app.inject({ method: 'GET', url: '/api/layers/dams/features?province=66', headers: auth });
+    expect(inDakLak.statusCode).toBe(200);
+
+    const total = all.json().features.length;
+    const subset = inDakLak.json().features.length;
+    expect(subset).toBeGreaterThan(0);
+    expect(subset).toBeLessThan(total);
+
+    const { rows } = await getPool().query<{ code: string }>(
+      `SELECT ward_codes[1] AS code FROM water.dams_active
+        WHERE array_length(ward_codes, 1) IS NOT NULL LIMIT 1`
+    );
+    const byWard = await app.inject({
+      method: 'GET', url: `/api/layers/dams/features?ward=${rows[0].code}`, headers: auth,
+    });
+    expect(byWard.json().features.length).toBeGreaterThan(0);
+    expect(byWard.json().features.length).toBeLessThanOrEqual(subset);
+  });
+
+  it('rejects a malformed unit code rather than ignoring it', async () => {
+    const token = await tokenFor(ADMIN);
+    const res = await app.inject({
+      method: 'GET', url: '/api/layers/dams/features?province=' + 'x'.repeat(20),
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

@@ -16,6 +16,12 @@ const FeatureBody = z.object({
   properties: z.record(z.unknown()).optional(),
   source: Source.optional(),
 });
+// Mã đơn vị hành chính là chuỗi số ngắn ('66', '66123'); giới hạn độ dài để một tham số
+// rác bị từ chối ở biên chứ không lặng lẽ khớp không ra gì.
+const FeatureQuery = z.object({
+  province: z.string().regex(/^\d{1,6}$/, 'Mã tỉnh không hợp lệ').optional(),
+  ward: z.string().regex(/^\d{1,8}$/, 'Mã xã/phường không hợp lệ').optional(),
+});
 
 function toFeature(row: FeatureRow) {
   return { type: 'Feature' as const, id: row.id, geometry: row.geometry, properties: row.properties };
@@ -27,7 +33,8 @@ export async function getLayers(_req: FastifyRequest, reply: FastifyReply) {
 
 export async function listFeatures(req: FastifyRequest, reply: FastifyReply) {
   const { key } = validate(KeyParams, req.params);
-  const rows = await featuresService(req.server.pg).list(key);
+  const filter = validate(FeatureQuery, req.query);
+  const rows = await featuresService(req.server.pg).list(key, filter);
   reply.send({ type: 'FeatureCollection', features: rows.map(toFeature) });
 }
 
