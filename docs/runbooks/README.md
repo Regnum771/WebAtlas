@@ -32,6 +32,13 @@ dev box or optional (unlocks one feature, safe to skip and do later).
 
    `npm run seed` now also loads `admin.provinces` / `admin.wards` from the GeoJSON committed in `apps/web/public`, and
    stamps `province_codes` / `ward_codes` onto every feature. No network access is required.
+
+   **Upgrading an existing database:** migration `1000000000016_admin-stamping` adds `province_codes` /
+   `ward_codes` with `DEFAULT '{}'` and does not backfill them — a database that already had data before that
+   migration reads every feature as belonging to no administrative unit until it is re-seeded. Run `npm run seed
+   -w @webatlas/api` and `npm run ingest:rivers -w @webatlas/api` again after migrating; otherwise
+   `GET /api/layers/<layer>/features?province=…` and the assistant's `features_in_admin_unit` tool return `200`
+   with an empty result, silently, rather than an error that would flag the staleness.
 4. **Load the river network** into the `rivers` table — also seed data checked into git,
    run separately from step 3 because it has its own ingest path
    ([`ingestRivers.ts`](../../apps/api/src/db/seeds/ingestRivers.ts)).

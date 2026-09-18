@@ -206,6 +206,10 @@ presentation concern. Storage remains in one system so that no query must reason
 Province and ward polygons are held in the `admin` schema, populated during seeding from files committed to the
 repository, so that a newly cloned working copy functions without network access.
 
+Coverage is asymmetric between the two levels: `admin.provinces` holds all 34 provinces nationally, while
+`admin.wards` holds only the 616 wards of the six provinces in the project's working region. A ward listing for a
+province outside the region therefore returns empty, not an error.
+
 ### 6.3 Administrative stamping
 
 Each feature carries the administrative units it intersects, as indexed arrays of province and ward codes. Arrays rather
@@ -394,9 +398,10 @@ Schema changes are applied as ordered, reviewed migrations; data loads are decla
 dependency order, lineage and licence of each dataset are recorded with it. The distinction is maintained deliberately:
 migrations create structure, and the pipeline populates it.
 
-The designed elements in this revision are introduced in the following order, each independently useful: administrative
-boundaries and stamping; reference-layer access and aggregation; watercourse topology and the entity hierarchy; the
-region-of-interest model; and the assistant operations that consume them.
+Administrative boundaries and stamping shipped first, in this revision (§6.2, §6.3). The remaining designed elements
+are introduced in the following order, each independently useful: reference-layer access and aggregation;
+watercourse topology and the entity hierarchy; the region-of-interest model; and the assistant operations that
+consume them.
 
 ---
 
