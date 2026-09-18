@@ -195,3 +195,25 @@ describe('seeds create dataset versions (§6)', () => {
     expect(prior.rows[0].n).toBe(2);
   });
 });
+
+describe('administrative stamping during seed', () => {
+  it('stamps dams with the province they fall in', async () => {
+    const { rows } = await getPool().query<{ stamped: string; total: string }>(
+      `SELECT count(*) FILTER (WHERE array_length(province_codes, 1) IS NOT NULL)::text AS stamped,
+              count(*)::text AS total
+         FROM water.dams_active WHERE geom IS NOT NULL`
+    );
+    // Every dam in the working region sits inside a province; a handful outside the six
+    // provinces legitimately stamp empty, so this asserts the bulk rather than all.
+    expect(Number(rows[0].stamped)).toBeGreaterThan(Number(rows[0].total) * 0.9);
+  });
+
+  it('stamps a river with every province it crosses', async () => {
+    const { rows } = await getPool().query<{ n: string }>(
+      `SELECT max(array_length(province_codes, 1))::text AS n FROM water.rivers_active`
+    );
+    // At least one watercourse crosses a provincial boundary; a scalar column could not
+    // represent this, which is why the columns are arrays.
+    expect(Number(rows[0].n)).toBeGreaterThanOrEqual(2);
+  });
+});
