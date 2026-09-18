@@ -1,5 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
+import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import { versionsRepository } from './repository';
+import { stampAdminCodes } from '../../db/adminStamp';
 import { ConflictError, NotFoundError } from '../../errors';
 
 export interface IngestVersionArgs {
@@ -48,6 +50,20 @@ export function versionsService(pg: Pool) {
 
     // Atomically make versionId the active version for its layer.
     async activate(client: PoolClient, layerKey: string, versionId: string): Promise<void> {
+      // A version cannot become active without its administrative codes (database
+      // architecture doc §9): the refresh obligation lives here, in the one contract every
+      // path to "active" passes through, not in each call site that happens to remember it.
+      // That's exactly how rivers_overview went stale for two days — its refresh sat in a
+      // single call site a programmatic caller didn't traverse. Scoped to the thematic
+      // layers (EDITABLE_LAYER_KEYS): those are the only water.<layerKey> tables with
+      // province_codes/ward_codes columns. Non-thematic layer_key values do occur — this
+      // module's own tests activate synthetic keys (e.g. "zz_svc_dams") against no real
+      // table on purpose, to exercise app.dataset_versions in isolation — and stamping them
+      // would fail loudly against a table that doesn't exist. Runs on the caller's client,
+      // inside the caller's transaction, same as every other call in this function.
+      if ((EDITABLE_LAYER_KEYS as readonly string[]).includes(layerKey)) {
+        await stampAdminCodes(client, layerKey as EditableLayerKey, versionId);
+      }
       // Clear current active first (so the partial-unique index never sees two), then
       // activate versionId scoped to this layer, verifying it actually matched a row so a
       // nonexistent or cross-layer versionId fails loudly instead of leaving the layer with

@@ -4,7 +4,6 @@ import { resolve as resolvePath } from 'node:path';
 import { getPool, closePool } from '../pool';
 import { versionsService } from '../../modules/versions/service';
 import { loadLayerFeatures } from './run';
-import { stampAdminCodes } from '../adminStamp';
 import type { SeedLayer } from './registry';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -51,10 +50,9 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      // Cùng nghĩa vụ như trong runSeeds: đóng dấu trước khi kích hoạt, nếu không phiên bản
-      // đang hoạt động sẽ thiếu mã hành chính mà không có gì báo. Nhánh này tái dùng phiên
-      // bản cũ nên phải đóng dấu lại ở đây, không thể trông chờ vào nhánh nạp mới bên dưới.
-      await stampAdminCodes(client, 'rivers', id);
+      // Đóng dấu mã hành chính giờ là nghĩa vụ của svc.activate() (xem versions/service.ts):
+      // nhánh này tái dùng phiên bản cũ nên vẫn cần đóng dấu lại, nhưng activate() tự lo,
+      // không cần gọi tường minh ở đây nữa.
       await svc.activate(client, 'rivers', id);
       await client.query('COMMIT');
     } catch (e) {
@@ -79,9 +77,8 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
       `UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`,
       [count, versionId]
     );
-    // Cùng nghĩa vụ như trong runSeeds: đóng dấu trước khi kích hoạt, nếu không phiên bản
-    // đang hoạt động sẽ thiếu mã hành chính mà không có gì báo.
-    await stampAdminCodes(client, 'rivers', versionId);
+    // Đóng dấu mã hành chính giờ là nghĩa vụ của svc.activate() (xem versions/service.ts):
+    // không còn gọi tường minh ở đây.
     await svc.activate(client, 'rivers', versionId);
     await client.query('COMMIT');
     result = { versionId, count };
