@@ -20,6 +20,10 @@ export default defineConfig({
     // (seeds, WFS publication, backfill) purely as a timing artifact rather than
     // a real defect. A genuinely hung query still fails the suite, just later.
     testTimeout: 30_000,
-    hookTimeout: 30_000,
+    // seed.test.ts's beforeAll runs the full seed pipeline (now including admin-code
+    // stamping) against the live DB. Measured 29-45s standalone; the full API suite adds
+    // contention from other suites hitting the same dev DB in the same run. 60s keeps
+    // comfortable margin above the observed worst case without masking a genuine hang.
+    hookTimeout: 60_000,
   },
 });

@@ -171,4 +171,34 @@ describe('feature CRUD (admin only)', () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it('stamps administrative codes when the edit session commits, and re-stamps on a move', async () => {
+    const token = await tokenFor(ADMIN);
+    const auth = { authorization: `Bearer ${token}` };
+
+    // Buôn Ma Thuột — Đắk Lắk, province code 66.
+    const create = await app.inject({
+      method: 'POST', url: '/api/layers/dams/features', headers: auth,
+      payload: { geometry: { type: 'Point', coordinates: [108.05, 12.68] }, properties: { name: NAME } },
+    });
+    expect(create.statusCode).toBe(201);
+    const id = create.json().feature.id;
+
+    const stamped = await getPool().query<{ province_codes: string[] }>(
+      `SELECT province_codes FROM water.dams_active WHERE id = $1`, [id]
+    );
+    expect(stamped.rows[0].province_codes).toEqual(['66']);
+
+    // Move it into Lâm Đồng (province code 68): Đà Lạt, 108.44 / 11.94.
+    const moved = await app.inject({
+      method: 'PUT', url: `/api/layers/dams/features/${id}`, headers: auth,
+      payload: { geometry: { type: 'Point', coordinates: [108.44, 11.94] } },
+    });
+    expect(moved.statusCode).toBe(200);
+
+    const restamped = await getPool().query<{ province_codes: string[] }>(
+      `SELECT province_codes FROM water.dams_active WHERE id = $1`, [moved.json().feature.id]
+    );
+    expect(restamped.rows[0].province_codes).toEqual(['68']);
+  });
 });
