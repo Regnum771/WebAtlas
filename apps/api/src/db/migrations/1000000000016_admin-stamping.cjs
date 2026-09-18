@@ -65,9 +65,42 @@ function viewSql(layer) {
 }
 
 exports.down = (pgm) => {
+  // Each _active view's `SELECT *` expands to include province_codes/ward_codes once up()
+  // has run, so Postgres refuses to drop those columns while the view still depends on
+  // them. Drop the views first, then the columns, then recreate the views from the same
+  // viewSql() used by up() — with the columns gone, that reproduces the pre-migration view.
+  //
+  // water.rivers_active also has a second, further-downstream dependent: the materialized
+  // view water.rivers_overview (migration 009_river-overview), which is built with
+  // `... FROM water.rivers_active`. DROP VIEW water.rivers_active fails against it too, so
+  // it must be dropped and rebuilt around the same DROP/CREATE, using the identical SQL
+  // migration 009's up() uses — this is not migration 016's structure to own, but leaving
+  // rivers_overview missing after a rollback would silently break the small-zoom rivers
+  // layer, which is worse than the duplication.
+  pgm.sql(`DROP MATERIALIZED VIEW IF EXISTS water.rivers_overview`);
+
+  for (const layer of LAYERS) {
+    pgm.sql(`DROP VIEW IF EXISTS water.${layer}_active`);
+  }
   for (const layer of LAYERS) {
     pgm.sql(`DROP INDEX IF EXISTS water.${layer}_province_codes_index`);
     pgm.sql(`DROP INDEX IF EXISTS water.${layer}_ward_codes_index`);
     pgm.sql(`ALTER TABLE water.${layer} DROP COLUMN IF EXISTS province_codes, DROP COLUMN IF EXISTS ward_codes`);
   }
+  for (const layer of LAYERS) {
+    pgm.sql(viewSql(layer));
+  }
+
+  pgm.sql(`
+    CREATE MATERIALIZED VIEW water.rivers_overview AS
+      SELECT COALESCE(name, '') AS name_key,
+             name,
+             5 AS stream_order,
+             ST_LineMerge(ST_Collect(ST_SimplifyPreserveTopology(geom, 0.01))) AS geom
+        FROM water.rivers_active
+       WHERE stream_order = 5
+       GROUP BY COALESCE(name, ''), name
+  `);
+  pgm.sql(`CREATE INDEX rivers_overview_geom_idx ON water.rivers_overview USING GIST (geom)`);
+  pgm.sql(`CREATE UNIQUE INDEX rivers_overview_name_idx ON water.rivers_overview (name_key)`);
 };
