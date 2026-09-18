@@ -91,6 +91,14 @@ exports.down = (pgm) => {
     pgm.sql(viewSql(layer));
   }
 
+  // DROP VIEW discards any privilege granted directly on that view object; CREATE (even
+  // of the identical definition) is a new object that starts with none. Migration 008
+  // granted webatlas_assistant SELECT on these eight views — re-grant it here, or the
+  // rollback silently locks the assistant out of every layer it reads.
+  for (const layer of LAYERS) {
+    pgm.sql(`GRANT SELECT ON water.${layer}_active TO webatlas_assistant;`);
+  }
+
   pgm.sql(`
     CREATE MATERIALIZED VIEW water.rivers_overview AS
       SELECT COALESCE(name, '') AS name_key,
