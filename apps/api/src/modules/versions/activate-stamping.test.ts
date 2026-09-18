@@ -10,7 +10,26 @@ import { versionsService } from './service';
 const LAYER = 'dams';
 const TEST_SOURCE = 'activate-stamping.test';
 
+// Held in outer scope so cleanup can run from afterAll. Cleanup MUST NOT sit after the
+// assertions: this test activates a throwaway version of a real layer, so a failing
+// assertion — precisely the regression this test exists to catch — would otherwise skip
+// cleanup and leave `dams` pointing at an unstamped test version for every later suite on
+// this shared dev database.
+let versionId: string | null = null;
+let priorActive: string | null = null;
+
 afterAll(async () => {
+  const pool = getPool();
+  if (versionId) {
+    // Deactivate before restoring the prior version: the partial unique index allows only
+    // one active row per layer_key at a time.
+    await pool.query(`UPDATE app.dataset_versions SET is_active = false WHERE id = $1`, [versionId]);
+    if (priorActive) {
+      await pool.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
+    }
+    await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = $1`, [versionId]);
+    await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [versionId]);
+  }
   await closePool();
 });
 
@@ -20,10 +39,9 @@ describe('versionsService.activate stamps administrative codes as part of the co
     const svc = versionsService(pool);
 
     // Whatever is active for 'dams' right now (seeded data), so we can restore it afterwards.
-    const priorActive = await svc.getActiveVersionId(LAYER);
+    priorActive = await svc.getActiveVersionId(LAYER);
 
     const client = await pool.connect();
-    let versionId: string;
     try {
       await client.query('BEGIN');
       const { rows } = await client.query<{ id: string }>(
@@ -56,15 +74,6 @@ describe('versionsService.activate stamps administrative codes as part of the co
     );
     expect(after[0].province_codes).toEqual(['66']);
     expect(after[0].ward_codes).toHaveLength(1);
-
-    // Cleanup: deactivate the test version before restoring the prior one (the partial
-    // unique index allows only one active row per layer_key at a time), then remove the
-    // test row and version entirely.
-    await pool.query(`UPDATE app.dataset_versions SET is_active = false WHERE id = $1`, [versionId]);
-    if (priorActive) {
-      await pool.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
-    }
-    await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = $1`, [versionId]);
-    await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [versionId]);
+    // Cleanup lives in afterAll — see the comment on `versionId` above.
   });
 });
