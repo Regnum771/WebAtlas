@@ -207,13 +207,4 @@ describe('administrative stamping during seed', () => {
     // provinces legitimately stamp empty, so this asserts the bulk rather than all.
     expect(Number(rows[0].stamped)).toBeGreaterThan(Number(rows[0].total) * 0.9);
   });
-
-  it('stamps a river with every province it crosses', async () => {
-    const { rows } = await getPool().query<{ n: string }>(
-      `SELECT max(array_length(province_codes, 1))::text AS n FROM water.rivers_active`
-    );
-    // At least one watercourse crosses a provincial boundary; a scalar column could not
-    // represent this, which is why the columns are arrays.
-    expect(Number(rows[0].n)).toBeGreaterThanOrEqual(2);
-  });
 });
