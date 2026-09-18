@@ -1,7 +1,7 @@
 // Xem zoomToRegion.ts: 'zod/v4' là bắt buộc do betaZodTool.
 import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
+import { EDITABLE_LAYER_KEYS, REGION_PROVINCE_CODES, REGION_PROVINCE_NAMES } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
 import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, layerView } from './helpers';
 
@@ -17,7 +17,14 @@ export const featuresInAdminUnitTool: ToolFactory = (ctx) =>
       'Count and list the features of one layer inside an administrative unit (province or ward), by its official code. Use for "ở tỉnh X", "trong xã Y". The code comes from the user or from another tool, never invented.',
     inputSchema: z.object({
       layerKey: z.enum(EDITABLE_LAYER_KEYS),
-      code: z.string().regex(/^\d{1,8}$/, 'Mã đơn vị hành chính gồm 1-8 chữ số'),
+      code: z
+        .string()
+        .regex(/^\d{1,8}$/, 'Mã đơn vị hành chính gồm 1-8 chữ số')
+        .describe(
+          `Administrative code. For a province, one of: ${REGION_PROVINCE_CODES.map(
+            (c) => `${c} (${REGION_PROVINCE_NAMES[c]})`
+          ).join(', ')}. For a ward, there is no gazetteer here — the code must come from the user's message or from another tool's result, never invented.`
+        ),
     }),
     run: async (input) => {
       const view = layerView(input.layerKey);

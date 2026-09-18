@@ -28,6 +28,16 @@ const run = (tool: { run: (i: never) => unknown }, input: unknown) =>
   Promise.resolve(tool.run(input as never)) as Promise<string>;
 
 describe('features_in_admin_unit', () => {
+  it('describes the code parameter with at least one province code and its name, so the model can supply one without inventing it', () => {
+    const { ctx } = makeCtx();
+    const tool = featuresInAdminUnitTool(ctx) as unknown as {
+      input_schema: { properties: { code: { description?: string } } };
+    };
+    const description = tool.input_schema.properties.code.description ?? '';
+    expect(description).toContain('66');
+    expect(description).toContain('Đắk Lắk');
+  });
+
   it('counts dams in Đắk Lắk and names the unit in Vietnamese', async () => {
     const { ctx, records } = makeCtx();
     const text = await run(featuresInAdminUnitTool(ctx), { layerKey: 'dams', code: '66' });
