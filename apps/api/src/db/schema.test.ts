@@ -186,3 +186,25 @@ describe('water.lakes', () => {
     await expect(getPool().query('SELECT count(*) FROM water.lakes_active')).resolves.toBeDefined();
   });
 });
+
+describe('admin schema', () => {
+  it('has provinces and wards with geometry and keys', async () => {
+    const { rows } = await getPool().query<{ table_name: string; column_name: string }>(
+      `SELECT table_name, column_name FROM information_schema.columns
+        WHERE table_schema = 'admin' ORDER BY table_name, column_name`
+    );
+    const cols = (t: string) => rows.filter((r) => r.table_name === t).map((r) => r.column_name);
+    expect(cols('provinces')).toEqual(['area_km2', 'code', 'full_name', 'geom', 'name', 'name_en']);
+    expect(cols('wards')).toEqual(['area_km2', 'code', 'full_name', 'geom', 'name', 'name_en', 'province_code']);
+  });
+
+  it('indexes both boundary geometries for spatial lookup', async () => {
+    const { rows } = await getPool().query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes WHERE schemaname = 'admin'`
+    );
+    const names = rows.map((r) => r.indexname);
+    expect(names).toContain('provinces_geom_index');
+    expect(names).toContain('wards_geom_index');
+    expect(names).toContain('wards_province_code_index');
+  });
+});
