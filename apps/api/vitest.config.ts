@@ -24,6 +24,14 @@ export default defineConfig({
     // stamping) against the live DB. Measured 29-45s standalone; the full API suite adds
     // contention from other suites hitting the same dev DB in the same run. 60s keeps
     // comfortable margin above the observed worst case without masking a genuine hang.
+    //
+    // Two test bodies in seed.test.ts (and one in modules/versions/integration.test.ts)
+    // also call the full seed/ingest pipeline a second time from inside the test itself,
+    // not just in beforeAll. That cost is billed against testTimeout, not hookTimeout, so
+    // raising hookTimeout alone doesn't cover them — each of those tests instead carries
+    // its own per-test timeout (vitest's third `it()` argument) rather than raising this
+    // suite-wide default, which stays a tight ceiling for the many tests that don't re-run
+    // a seed/ingest.
     hookTimeout: 60_000,
   },
 });
