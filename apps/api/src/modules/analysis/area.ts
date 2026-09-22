@@ -24,16 +24,48 @@ export const MAX_ROI_AREA_KM2 = 25_000;
  * bounds the RESULTING ROI after buffering/clipping -- both existing limits
  * (this file's MAX_ROI_AREA_KM2 and schemas.ts's MAX_INPUT_VERTICES) are
  * measured on the buffered/clipped output, so neither can stop an oversized
- * buffer from running in the first place. ST_Buffer's memory cost scales with
- * input complexity: buffering a 1,726-part road entity (22,662 points) by its
- * allowed maximum of 100 km OOM-killed a Postgres backend (signal 9) before
- * the 5s statement_timeout could cancel it. Measured per-layer p99 point
- * counts in the live dev database: landuse 241, places 2, railways 3,801,
- * roads 650, water 6,232 (max parts: railways 1,495, roads 1,726). 10,000
- * sits above every layer's p99 -- water's 6,232 is the highest -- while still
- * refusing the pathological roads/railways entities that caused the OOM.
+ * buffer from running in the first place. Buffering the 647-part Quốc lộ 14 -
+ * Đường Hồ Chí Minh entity (22,662 points) by its allowed maximum of 100 km
+ * OOM-killed a Postgres backend (signal 9) before the 5s statement_timeout
+ * could cancel it. Measured per-layer p99 point counts in the live dev
+ * database: landuse 241, places 2, railways 3,801, roads 650, water 6,232.
+ * 10,000 sits above every layer's p99 -- water's 6,232 is the highest --
+ * while still refusing that pathological roads entity.
+ *
+ * Vertex count alone is NOT a reliable proxy for ST_Buffer's cost, though:
+ * its cost is driven by the segments in the offset curve, which for a
+ * fragmented multi-part geometry is dominated by PART count, not point
+ * count -- each disjoint part contributes its own two round end caps and its
+ * own disc to union into the result. The Hoài Nhơn - Quy Nhơn expressway
+ * (roads:54958598e3554c044cafca823a92555d:0) is 9,050 points across 1,726
+ * disjoint OSM segments under one name/ref -- comfortably under this vertex
+ * ceiling, yet its buffer generates roughly as much offset-curve geometry as
+ * the entity that actually OOM-killed Postgres (~70k segments/caps vs.
+ * ~65k). That is why MAX_SOURCE_ENTITY_PARTS exists as a second, independent
+ * term below: bounding points alone leaves this exact entity reachable via
+ * a 100 km buffer request.
  */
 export const MAX_SOURCE_ENTITY_VERTICES = 10_000;
+
+/**
+ * The ceiling on a reference ENTITY's own part count (ST_NumGeometries),
+ * checked alongside MAX_SOURCE_ENTITY_VERTICES above and for the same reason
+ * -- before any ST_Buffer runs. See that constant's comment for why part
+ * count, not vertex count, is ST_Buffer's real cost driver for a fragmented
+ * multi-part geometry.
+ *
+ * Measured against the live dev database (20,913 reference entities across
+ * all layers): exactly one entity has <= MAX_SOURCE_ENTITY_VERTICES points
+ * AND more than 300 parts -- the Hoài Nhơn - Quy Nhơn expressway above
+ * (1,726 parts, 9,050 points). So a ceiling of 300 closes the hole this
+ * constant exists for at the cost of refusing that one entity as a buffer
+ * source; every other entity under the vertex ceiling is also under 300
+ * parts. Verified with:
+ *   SELECT count(*) FROM basemap.reference_entities
+ *    WHERE ST_NPoints(geom) <= 10000 AND ST_NumGeometries(geom) > 300;
+ * -- returns 1.
+ */
+export const MAX_SOURCE_ENTITY_PARTS = 300;
 
 /** Union of the six working-region provinces; an ROI is clipped to it. */
 const REGION_SQL = `
@@ -62,34 +94,43 @@ async function referenceGeometry(
 
   const { rows } = await db.query<{
     geojson: string | null; name: string | null; type: string; areaKm2: number; vertices: number;
-    sourceVertices: number;
+    sourceVertices: number; sourceParts: number;
   }>(
     `WITH region AS (${REGION_SQL}),
           e AS (
-            -- ST_NPoints on the raw fetched geometry, before any buffering: this is
-            -- what the CASE below tests so the ST_Buffer branch is never evaluated
-            -- for an entity that fails the complexity check (SQL CASE evaluates only
-            -- the matching WHEN branch, per row).
-            SELECT name, ref, geom, ST_NPoints(geom) AS npoints
+            -- ST_NPoints/ST_NumGeometries on the raw fetched geometry, before any
+            -- buffering: this is what the CASE below tests so the ST_Buffer branch is
+            -- never evaluated for an entity that fails either complexity check (SQL
+            -- CASE evaluates only the matching WHEN branch, per row).
+            SELECT name, ref, geom, ST_NPoints(geom) AS npoints, ST_NumGeometries(geom) AS nparts
               FROM basemap.reference_entities
              WHERE layer_key = $1 AND entity_id = $2
           ),
           shaped AS (
-            SELECT coalesce(e.ref, e.name) AS name, e.npoints,
+            SELECT coalesce(e.ref, e.name) AS name, e.npoints, e.nparts,
                    CASE WHEN $3::float8 IS NULL THEN e.geom
-                        WHEN e.npoints > ${MAX_SOURCE_ENTITY_VERTICES} THEN NULL::geometry
+                        WHEN e.npoints > ${MAX_SOURCE_ENTITY_VERTICES}
+                          OR e.nparts > ${MAX_SOURCE_ENTITY_PARTS} THEN NULL::geometry
                         ELSE ST_Buffer(e.geom::geography, $3 * 1000)::geometry END AS g
               FROM e
           ),
-          clipped AS (
-            SELECT s.name, s.npoints, ST_Intersection(s.g, r.g) AS g
+          -- MATERIALIZED: clipped.g is referenced four times below (ST_AsGeoJSON,
+          -- GeometryType, ST_Area, ST_NPoints). Without this, Postgres inlines this
+          -- single-reference CTE and pulls its subquery up into the outer SELECT, so
+          -- each of those four references gets its own copy of the full
+          -- ST_Intersection(CASE ... ST_Buffer ...) expression tree -- roughly 4x the
+          -- peak memory for every buffer the guard above does allow. Materializing
+          -- forces the CTE to be computed once and its result column reused.
+          clipped AS MATERIALIZED (
+            SELECT s.name, s.npoints, s.nparts, ST_Intersection(s.g, r.g) AS g
               FROM shaped s CROSS JOIN region r
           )
      SELECT ST_AsGeoJSON(g, 7) AS geojson, name,
             GeometryType(g) AS type,
             (ST_Area(g::geography) / 1e6)::float8 AS "areaKm2",
             ST_NPoints(g) AS vertices,
-            npoints AS "sourceVertices"
+            npoints AS "sourceVertices",
+            nparts AS "sourceParts"
        FROM clipped`,
     [ref.referenceLayer, ref.entityId, ref.radiusKm ?? null]
   );
@@ -101,10 +142,29 @@ async function referenceGeometry(
   // entity's geojson is also null (the CASE above returned NULL rather than
   // buffering it) -- without this ordering the caller would see the wrong,
   // generic message instead of one naming this specific limit (spec §4).
-  if (ref.radiusKm !== undefined && row.sourceVertices > MAX_SOURCE_ENTITY_VERTICES) {
+  // Two independent terms, matching the SQL CASE above: points and parts. Both
+  // are real cost drivers (see MAX_SOURCE_ENTITY_VERTICES/_PARTS' comments), so
+  // the message lists whichever one(s) this entity actually exceeded -- a user
+  // who hits it should know whether to pick a shorter road or a less
+  // fragmented one, not just that "something" was too complex.
+  const overVertices = row.sourceVertices > MAX_SOURCE_ENTITY_VERTICES;
+  const overParts = row.sourceParts > MAX_SOURCE_ENTITY_PARTS;
+  if (ref.radiusKm !== undefined && (overVertices || overParts)) {
+    const reasons: string[] = [];
+    if (overVertices) {
+      reasons.push(
+        `${row.sourceVertices.toLocaleString('vi-VN')} điểm vượt giới hạn ` +
+          `${MAX_SOURCE_ENTITY_VERTICES.toLocaleString('vi-VN')} điểm cho thực thể nguồn`
+      );
+    }
+    if (overParts) {
+      reasons.push(
+        `${row.sourceParts.toLocaleString('vi-VN')} phần rời rạc vượt giới hạn ` +
+          `${MAX_SOURCE_ENTITY_PARTS.toLocaleString('vi-VN')} phần cho thực thể nguồn`
+      );
+    }
     throw new ValidationError(
-      `Thực thể quá phức tạp để tạo vùng đệm: ${row.sourceVertices.toLocaleString('vi-VN')} điểm ` +
-        `vượt giới hạn ${MAX_SOURCE_ENTITY_VERTICES.toLocaleString('vi-VN')} điểm cho thực thể nguồn. ` +
+      `Thực thể quá phức tạp để tạo vùng đệm: ${reasons.join('; ')}. ` +
         `Hãy chọn thực thể khác hoặc bỏ bán kính.`
     );
   }

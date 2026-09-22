@@ -5,7 +5,7 @@ import { buildReferenceEntities } from '../../db/referenceEntities';
 import { withAnalysisTimeout } from './db';
 import { demAvailable } from './dem';
 import { getAnalysisPool, closeAnalysisPool } from './pool';
-import { MAX_SOURCE_ENTITY_VERTICES } from './area';
+import { MAX_SOURCE_ENTITY_VERTICES, MAX_SOURCE_ENTITY_PARTS } from './area';
 
 let app: ReturnType<typeof buildApp>;
 let dam: { id: string; lon: number; lat: number };
@@ -350,6 +350,49 @@ describe('analysis with a reference-entity ROI', () => {
     // tâm quá phức tạp"), so this test cannot pass on the wrong error.
     expect(message).toMatch(/thực thể quá phức tạp/i);
     expect(message).toMatch(new RegExp(MAX_SOURCE_ENTITY_VERTICES.toLocaleString('vi-VN')));
+    expect(message).not.toMatch(/diện tích/i);
+    expect(message).not.toMatch(/vùng quan tâm quá phức tạp/i);
+  });
+
+  it('refuses a fragmented entity that is under the vertex ceiling but over the parts ceiling, naming the parts limit', async () => {
+    // The vertex-only guard has a hole: a MultiLineString with many disjoint
+    // parts can stay well under MAX_SOURCE_ENTITY_VERTICES on point count alone
+    // while still generating enormous offset-curve geometry when buffered (each
+    // part contributes its own two round end caps and its own disc to union).
+    // Picked by complexity, not a hardcoded id, so this survives a basemap
+    // reload: among entities under the vertex ceiling, the one with the most
+    // parts. In the dev DB this resolves to the Hoài Nhơn-Quy Nhơn expressway
+    // (9,050 points / 1,726 parts under one name/ref) -- exactly the entity
+    // this ceiling exists to close off.
+    const { rows: [fragmented] } = await getPool().query<{
+      entity_id: string; layer_key: string; npoints: number; nparts: number;
+    }>(
+      `SELECT entity_id, layer_key, ST_NPoints(geom) AS npoints, ST_NumGeometries(geom) AS nparts
+         FROM basemap.reference_entities
+        WHERE ST_NPoints(geom) <= ${MAX_SOURCE_ENTITY_VERTICES}
+        ORDER BY ST_NumGeometries(geom) DESC LIMIT 1`
+    );
+    expect(fragmented.npoints).toBeLessThanOrEqual(MAX_SOURCE_ENTITY_VERTICES);
+    expect(fragmented.nparts).toBeGreaterThan(MAX_SOURCE_ENTITY_PARTS);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: {
+        reference: { referenceLayer: fragmented.layer_key, entityId: fragmented.entity_id, radiusKm: 1 },
+        radiusKm: 1,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const message = res.json().error.message as string;
+    // Names the complexity limit and specifically the PARTS dimension --
+    // distinguishable from the area limit, the post-clip vertex limit, and
+    // (since this entity is under the vertex ceiling) from the vertex term of
+    // this very check, so the test cannot pass on the wrong reason.
+    expect(message).toMatch(/thực thể quá phức tạp/i);
+    expect(message).toMatch(/phần rời rạc/i);
+    expect(message).toMatch(new RegExp(MAX_SOURCE_ENTITY_PARTS.toLocaleString('vi-VN')));
+    expect(message).not.toMatch(new RegExp(MAX_SOURCE_ENTITY_VERTICES.toLocaleString('vi-VN')));
     expect(message).not.toMatch(/diện tích/i);
     expect(message).not.toMatch(/vùng quan tâm quá phức tạp/i);
   });
