@@ -3,6 +3,7 @@ import { searchByName, type SearchHit } from './repository';
 
 export function searchService(pool: Pool) {
   return {
-    search: (q: string, limit: number): Promise<SearchHit[]> => searchByName(pool, q, limit),
+    search: (q: string, limit: number, sources?: readonly string[]): Promise<SearchHit[]> =>
+      searchByName(pool, q, limit, sources),
   };
 }

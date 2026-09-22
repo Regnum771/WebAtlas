@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { buildApp } from '../../server';
+import { getPool } from '../../db/pool';
+import { buildReferenceLayer } from '../../db/referenceEntities';
 
 let app: ReturnType<typeof buildApp>;
 
@@ -59,5 +61,58 @@ describe('GET /api/search', () => {
     // Highest-similarity match ('An Điềm', sim 0.375) must win the ordering, not
     // just whichever 3 rows a broken/unordered query happened to return first.
     expect(body.results[0].name).toBe('An Điềm');
+  });
+});
+
+describe('GET /api/search with sources', () => {
+  it('returns only water-layer hits by default, unchanged from before', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/search?q=song' });
+    expect(res.statusCode).toBe(200);
+    for (const hit of res.json().results) {
+      expect(hit.source).toBe('layer');
+    }
+  });
+
+  it('returns reference hits when a ref: source is asked for', async () => {
+    await buildReferenceLayer(getPool(), 'railways');
+    const list = await app.inject({ method: 'GET', url: '/api/reference/railways/entities?limit=50' });
+    const named = list.json().entities.find((e: { name: string | null }) => e.name);
+    const term = (named.name as string).slice(0, 6);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/search?q=${encodeURIComponent(term)}&sources=ref:railways`,
+    });
+    expect(res.statusCode).toBe(200);
+    const results = res.json().results;
+    expect(results.length).toBeGreaterThan(0);
+    for (const hit of results) {
+      expect(hit.source).toBe('reference');
+      expect(hit.layerKey).toBe('railways');
+      // A reference hit is navigable: featureId is the entity id.
+      expect(hit.featureId).toMatch(/^railways:[0-9a-f]{32}:\d+$/);
+      expect(hit.lonLat).toHaveLength(2);
+    }
+  });
+
+  it('mixes sources when both kinds are asked for', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/search?q=song&sources=rivers,ref:water',
+    });
+    expect(res.statusCode).toBe(200);
+    for (const hit of res.json().results) {
+      expect(['layer', 'reference']).toContain(hit.source);
+    }
+  });
+
+  it('rejects an unknown source', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/search?q=song&sources=ref:roads_vn' });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a water layer that has no searchable name column', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/search?q=song&sources=flood_zones' });
+    expect(res.statusCode).toBe(400);
   });
 });
