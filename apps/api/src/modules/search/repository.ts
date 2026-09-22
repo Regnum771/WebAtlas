@@ -96,8 +96,17 @@ export async function searchByName(
   limit: number,
   sources: readonly string[] = SEARCHABLE
 ): Promise<SearchHit[]> {
-  const layerKeys = sources.filter((s) => !s.startsWith(REFERENCE_PREFIX)) as EditableLayerKey[];
-  const referenceKeys = sources
+  // Self-defending, not just relying on the controller's allowlist refine: a
+  // duplicate token (e.g. `sources=dams,dams`) would otherwise reach layerCtes()
+  // twice and emit the same CTE name twice ("active_dams", "chain_dams", ...),
+  // which Postgres rejects with "WITH query name ... specified more than once" --
+  // a 500 on a public endpoint. This file is the one that interpolates those
+  // identifiers into SQL, so it must not trust the caller to have deduplicated.
+  // Also drops anything outside the allowlist for the same reason.
+  const unique = [...new Set(sources)].filter((s) => SEARCH_SOURCES.includes(s));
+
+  const layerKeys = unique.filter((s) => !s.startsWith(REFERENCE_PREFIX)) as EditableLayerKey[];
+  const referenceKeys = unique
     .filter((s) => s.startsWith(REFERENCE_PREFIX))
     .map((s) => s.slice(REFERENCE_PREFIX.length)) as ReferenceLayerKey[];
 

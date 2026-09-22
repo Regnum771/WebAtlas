@@ -147,4 +147,22 @@ describe('GET /api/search with sources', () => {
     const res = await app.inject({ method: 'GET', url: '/api/search?q=song&sources=flood_zones' });
     expect(res.statusCode).toBe(400);
   });
+
+  it('does not 500 on duplicate source tokens (each would otherwise emit the same CTE name twice)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/search?q=an&sources=dams,dams' });
+    expect(res.statusCode).toBe(200);
+    for (const hit of res.json().results) {
+      expect(hit.layerKey).toBe('dams');
+    }
+  });
+
+  it('does not 500 on a mixed duplicate reference source either', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/search?q=an&sources=ref:water,ref:water,rivers' });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('rejects an explicitly-supplied but empty/unusable sources list with a 400, not a silent empty success', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/search?q=song&sources=,,,' });
+    expect(res.statusCode).toBe(400);
+  });
 });
