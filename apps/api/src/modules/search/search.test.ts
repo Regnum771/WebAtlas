@@ -101,7 +101,7 @@ describe('GET /api/search with sources', () => {
       url: '/api/search?q=dinh&sources=rivers,ref:water',
     });
     expect(res.statusCode).toBe(200);
-    const results = res.json().results;
+    const results = res.json().results as Array<{ source: string }>;
     expect(results.length).toBeGreaterThan(0);
     expect(results.some((hit) => hit.source === 'layer')).toBe(true);
     expect(results.some((hit) => hit.source === 'reference')).toBe(true);
