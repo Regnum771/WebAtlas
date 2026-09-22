@@ -36,6 +36,20 @@ describe('SearchBoxView', () => {
     expect(screen.getByText('Srêpốk')).toBeInTheDocument();
   });
 
+  it('renders a hit with a null name without throwing (defensive against a future null from any source)', () => {
+    // SearchHit.name is typed `string`, but there is no ErrorBoundary anywhere in
+    // this app: a null reaching displayName's `.toLowerCase()` used to throw
+    // during render and unmount the whole tree. Bypass the type with `as unknown`
+    // to simulate a contract violation from a future data source.
+    const nullNameHit = { ...hits[0], name: null } as unknown as typeof hits[0];
+    expect(() =>
+      render(
+        <SearchBoxView query="th" results={[nullNameHit]} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />
+      )
+    ).not.toThrow();
+    expect(screen.getByText('(không tên)')).toBeInTheDocument();
+  });
+
   it('leaves names that do not start with the badge word untouched', () => {
     render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
     expect(screen.getByText('Đập')).toBeInTheDocument();

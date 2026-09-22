@@ -10,8 +10,16 @@ const LAYER_BADGE: Record<string, string> = {
  * start with "Sông", e.g. "Sông Srêpốk"), so pairing the badge chip with the
  * raw name doubles it visually ("Sông Sông Srêpốk"). Strip a leading badge
  * word from the displayed name — the chip still shows it once.
+ *
+ * `name` is typed `string` on SearchHit, but there is no ErrorBoundary anywhere
+ * in this app — a null/undefined value reaching `.toLowerCase()` here would
+ * throw during render and unmount the whole React tree, not just this list
+ * item. The API now guarantees a non-null name (coalesces to the route number
+ * for ref-only roads entities), but this guards the render path anyway
+ * against a future null from any source.
  */
-function displayName(name: string, badge: string): string {
+function displayName(name: string | null | undefined, badge: string): string {
+  if (!name) return '(không tên)';
   const prefix = `${badge} `;
   return name.toLowerCase().startsWith(prefix.toLowerCase()) ? name.slice(prefix.length) : name;
 }

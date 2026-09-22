@@ -73,7 +73,14 @@ function layerSelect(key: string): string {
  */
 function referenceSelect(keys: ReferenceLayerKey[]): string {
   return `
-      SELECT layer_key AS layer_key, 'reference'::text AS source, entity_id AS feature_id, name,
+      -- 24 roads entities (route numbers like "04/22L", "16", "18B", "19") carry a
+      -- ref but no name -- exactly the query this feature exists to serve. coalesce
+      -- to ref so those are still findable and SearchHit.name is never null; the
+      -- order (name first) matches search's intent of preferring the human name,
+      -- the opposite of area.ts's coalesce(ref, name) which prefers the route
+      -- number for a buffer label.
+      SELECT layer_key AS layer_key, 'reference'::text AS source, entity_id AS feature_id,
+             coalesce(name, ref) AS name,
              ST_X(ST_PointOnSurface(geom)) AS lon, ST_Y(ST_PointOnSurface(geom)) AS lat,
              GREATEST(coalesce(similarity(name, $1), 0), coalesce(similarity(ref, $1), 0)) AS sim
       FROM basemap.reference_entities
