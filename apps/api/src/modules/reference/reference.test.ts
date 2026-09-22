@@ -48,14 +48,34 @@ describe('GET /api/reference/:layer/entities', () => {
   });
 
   it('filters by trigram query', async () => {
-    const all = await app.inject({ method: 'GET', url: '/api/reference/railways/entities?limit=50' });
-    const first = all.json().entities.find((e: { name: string | null }) => e.name)?.name as string;
+    // limit=200 is the endpoint's max and comfortably covers the whole layer
+    // (203 rows), so this is the full unfiltered set to narrow against.
+    const all = await app.inject({ method: 'GET', url: '/api/reference/railways/entities?limit=200' });
+    const unfiltered = all.json().entities as { name: string | null; ref: string | null }[];
+    const first = unfiltered.find((e) => e.name)?.name as string;
+    const term = first.slice(0, 6);
+
+    // Same limit on the filtered request: if the q filter were ever dropped
+    // from the SQL, this call would return the same 200 rows as `unfiltered`
+    // and the narrowing assertion below would catch it.
     const res = await app.inject({
       method: 'GET',
-      url: `/api/reference/railways/entities?q=${encodeURIComponent(first.slice(0, 6))}`,
+      url: `/api/reference/railways/entities?limit=200&q=${encodeURIComponent(term)}`,
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().entities.length).toBeGreaterThan(0);
+    const filtered = res.json().entities as { name: string | null; ref: string | null }[];
+
+    // Narrowing: the filter actually excludes non-matching rows, not just re-sorts them.
+    expect(filtered.length).toBeGreaterThan(0);
+    expect(filtered.length).toBeLessThan(unfiltered.length);
+
+    // Relevance: every hit genuinely relates to the term (not just a trigram
+    // fluke) — name or ref contains the search substring, diacritics and all.
+    const needle = term.toLowerCase();
+    for (const e of filtered) {
+      const haystack = `${e.name ?? ''} ${e.ref ?? ''}`.toLowerCase();
+      expect(haystack).toContain(needle);
+    }
   });
 
   it('rejects an unknown layer with 404', async () => {
