@@ -5,6 +5,7 @@ import { buildReferenceEntities } from '../../db/referenceEntities';
 import { withAnalysisTimeout } from './db';
 import { demAvailable } from './dem';
 import { getAnalysisPool, closeAnalysisPool } from './pool';
+import { MAX_SOURCE_ENTITY_VERTICES } from './area';
 
 let app: ReturnType<typeof buildApp>;
 let dam: { id: string; lon: number; lat: number };
@@ -317,6 +318,66 @@ describe('analysis with a reference-entity ROI', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.message).toMatch(/diện tích/i);
+  });
+
+  it('refuses a pathologically complex entity before buffering it, naming the source-entity limit', async () => {
+    // Picked by complexity, not a hardcoded id, so this survives a basemap
+    // reload: the single roads entity with the most vertices. In the dev DB
+    // this resolves to the same 22,662-point entity that OOM-killed a Postgres
+    // backend (signal 9) when buffered by 100 km during development of this
+    // guard -- this test proves it is rejected instead, using only radiusKm: 1
+    // (any radius triggers the guard; a small one keeps the test itself safe).
+    const { rows: [complex] } = await getPool().query<{ entity_id: string; npoints: number }>(
+      `SELECT entity_id, ST_NPoints(geom) AS npoints
+         FROM basemap.reference_entities
+        WHERE layer_key = 'roads'
+        ORDER BY ST_NPoints(geom) DESC LIMIT 1`
+    );
+    expect(complex.npoints).toBeGreaterThan(MAX_SOURCE_ENTITY_VERTICES);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: {
+        reference: { referenceLayer: 'roads', entityId: complex.entity_id, radiusKm: 1 },
+        radiusKm: 1,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const message = res.json().error.message as string;
+    // Names this limit specifically -- distinguishable from the area limit
+    // ("diện tích") and the post-clip vertex limit's own wording ("Vùng quan
+    // tâm quá phức tạp"), so this test cannot pass on the wrong error.
+    expect(message).toMatch(/thực thể quá phức tạp/i);
+    expect(message).toMatch(new RegExp(MAX_SOURCE_ENTITY_VERTICES.toLocaleString('vi-VN')));
+    expect(message).not.toMatch(/diện tích/i);
+    expect(message).not.toMatch(/vùng quan tâm quá phức tạp/i);
+  });
+
+  it('does not gate the unbuffered path: an over-the-source-limit entity with no radius is not rejected by the new check', async () => {
+    // The source-entity guard is only meaningful ahead of ST_Buffer -- without a
+    // radius there is no buffer and thus no OOM risk from this path, so a large
+    // unbuffered polygon (e.g. the water layer's largest entity, 15,134 points
+    // per the measured data) must not be refused by THIS check. It may still be
+    // refused downstream by the pre-existing, unrelated MAX_INPUT_VERTICES
+    // post-clip check -- this test only asserts the new check's message never
+    // appears, not that the request necessarily succeeds.
+    const { rows: [bigWater] } = await getPool().query<{ entity_id: string; npoints: number }>(
+      `SELECT entity_id, ST_NPoints(geom) AS npoints
+         FROM basemap.reference_entities
+        WHERE layer_key = 'water'
+        ORDER BY ST_NPoints(geom) DESC LIMIT 1`
+    );
+    expect(bigWater.npoints).toBeGreaterThan(MAX_SOURCE_ENTITY_VERTICES);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/zonal_elevation',
+      payload: { reference: { referenceLayer: 'water', entityId: bigWater.entity_id } },
+    });
+    if (res.statusCode !== 200) {
+      expect(res.json().error.message as string).not.toMatch(/thực thể quá phức tạp/i);
+    }
   });
 
   it('404s on an unknown entity id', async () => {
