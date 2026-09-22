@@ -55,7 +55,11 @@ export function SearchBoxView({ query, results, loading, onQuery, onSelect }: Pr
         // the click before its onClick has a chance to fire.
         <ul className="search-results" onMouseDown={(e) => e.preventDefault()}>
           {results.map((hit) => {
-            const badge = LAYER_BADGE[hit.layerKey] ?? hit.layerKey;
+            // Reference hits get their own badge: they're basemap data (a road,
+            // railway, water body, landuse area, place), not one of the editable
+            // water layers LAYER_BADGE names — showing the raw OSM layer key
+            // ("roads") instead would be both untranslated and misleading.
+            const badge = hit.source === 'reference' ? 'Nền bản đồ' : (LAYER_BADGE[hit.layerKey] ?? hit.layerKey);
             return (
               <li key={`${hit.layerKey}:${hit.featureId}`}>
                 <button type="button" className="search-result" onClick={() => onSelect(hit)}>

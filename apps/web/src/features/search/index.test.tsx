@@ -32,7 +32,13 @@ vi.mock('../map/model/highlightLayer', async (orig) => ({
 }));
 
 const hits = [
-  { layerKey: 'lakes' as const, featureId: 'l1', name: 'Hồ Lắk', lonLat: [108.2, 12.4] as [number, number] },
+  {
+    layerKey: 'lakes' as const,
+    featureId: 'l1',
+    name: 'Hồ Lắk',
+    source: 'layer' as const,
+    lonLat: [108.2, 12.4] as [number, number],
+  },
 ];
 
 async function renderAndSelectFirstHit() {
@@ -84,5 +90,38 @@ describe('Search (feature slice)', () => {
     await renderAndSelectFirstHit();
     await vi.waitFor(() => expect(animate).toHaveBeenCalled());
     expect(showResults).not.toHaveBeenCalled();
+  });
+
+  it('labels a reference hit with the basemap badge and moves the map without selecting it as an editable feature', async () => {
+    const referenceHit = {
+      layerKey: 'roads',
+      featureId: 'roads:0123456789abcdef0123456789abcdef:0',
+      name: 'Quốc lộ 14',
+      source: 'reference' as const,
+      lonLat: [108.05, 12.67] as [number, number],
+    };
+    vi.spyOn(api, 'fetchSearch').mockResolvedValue([referenceHit]);
+    render(<Search />);
+
+    const input = screen.getByPlaceholderText('Tìm kiếm đối tượng…') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'quoc lo' } });
+    await act(async () => { vi.advanceTimersByTime(500); });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Quốc lộ 14/ })).toBeInTheDocument());
+
+    // The badge tells the user this is basemap reference data, not an editable feature.
+    expect(screen.getByText('Nền bản đồ')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Quốc lộ 14/ }));
+
+    // "Moves the map": showGeometries is the same navigation call the happy path
+    // above uses, run with fit so the view frames the point.
+    await vi.waitFor(() => expect(showResults).toHaveBeenCalledTimes(1));
+    const [, items, fit] = showResults.mock.calls[0];
+    expect(fit).toBe(true);
+    expect(items[0].geometry).toEqual({ type: 'Point', coordinates: referenceHit.lonLat });
+
+    // Reference entities have no feature id in the water layers and no edit path:
+    // clicking one must never try to fetch it as an editable feature.
+    expect(fetchFeatureGeometry).not.toHaveBeenCalled();
   });
 });

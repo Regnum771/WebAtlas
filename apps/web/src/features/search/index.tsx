@@ -19,6 +19,19 @@ export default function Search() {
     // so the dropdown never flashes stale results before useSearch's effect
     // catches up to the emptied query.
     clear();
+
+    if (hit.source === 'reference') {
+      // Reference entities are basemap data: no feature id in the water layers,
+      // no edit path. Move the map to the point directly — never call
+      // fetchFeatureGeometry, the editable-feature lookup, for one of these.
+      run({
+        kind: 'showGeometries',
+        fit: true,
+        items: [{ geometry: { type: 'Point', coordinates: hit.lonLat }, role: 'highlight', label: hit.name }],
+      });
+      return;
+    }
+
     // Draw the whole shape — a river lit along its length, a lake as its outline —
     // and frame it. If the geometry request fails, the point zoom still works.
     fetchFeatureGeometry(hit.layerKey, hit.featureId)
