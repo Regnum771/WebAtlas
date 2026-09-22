@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
+import { buildReferenceEntities } from '../../db/referenceEntities';
 import { withAnalysisTimeout } from './db';
 import { demAvailable } from './dem';
 import { getAnalysisPool, closeAnalysisPool } from './pool';
@@ -220,5 +221,140 @@ describe('analysis pool', () => {
     } finally {
       held.forEach((c) => c.release());
     }
+  });
+});
+
+describe('analysis with a reference-entity ROI', () => {
+  let roadEntityId: string;
+  let bigRoadEntityId: string;
+  let waterEntityId: string;
+
+  beforeAll(async () => {
+    await buildReferenceEntities(getPool(), ['roads', 'water']);
+
+    // A real but modest road: a handful of members, not the hundreds-to-thousands
+    // that share one ref/name on a busy highway. The busiest entities (e.g. the
+    // Hoài Nhơn-Quy Nhơn expressway, 1,726 disjoint OSM segments under one name)
+    // are unions of that many separately-capped LineStrings, so ST_Buffer alone
+    // produces 10,000+ vertices before any clipping -- past MAX_INPUT_VERTICES
+    // from a 1 km buffer alone. `ORDER BY member_count DESC` picks exactly that
+    // worst case, so this orders ASC instead, over a small band that excludes both
+    // single-stub segments and multi-hundred-member highways. Measured for the
+    // entity this resolves to: ~48-53 vertices at a 1-2 km buffer.
+    const { rows } = await getPool().query<{ entity_id: string }>(
+      `SELECT entity_id FROM basemap.reference_entities
+        WHERE layer_key = 'roads' AND member_count BETWEEN 2 AND 20
+        ORDER BY member_count ASC, entity_id LIMIT 1`
+    );
+    roadEntityId = rows[0].entity_id;
+
+    // Đường tỉnh 699D: a single-segment (member_count = 1) ~18 km provincial road,
+    // which keeps ST_Buffer cheap (no multi-part seam explosion) while still being
+    // long and centrally placed enough that its 100 km buffer, clipped to the six
+    // working-region provinces, genuinely exceeds MAX_ROI_AREA_KM2. Measured
+    // 2026-09-22: 31,937 km² (see task-7-report.md) -- a real, honest trip of the
+    // area limit, not a name/count heuristic that happened to be big enough.
+    bigRoadEntityId = 'roads:82ccce28b3c34d80ee4f3e80fd438e39:1';
+
+    // The single largest water entity by raw area (Hồ Đồng Nai 3) is a 12,242-
+    // vertex polygon on its own -- over MAX_INPUT_VERTICES with no buffering at
+    // all, which would make this fixture accidentally test the vertex limit
+    // instead of the "no radius needed" path it's meant to cover. Filtering out
+    // entities that complex before ranking by area picks a real lake that stays
+    // under the ceiling.
+    const water = await getPool().query<{ entity_id: string }>(
+      `SELECT entity_id FROM basemap.reference_entities
+        WHERE layer_key = 'water' AND ST_NPoints(geom) < 4000
+        ORDER BY ST_Area(geom) DESC LIMIT 1`
+    );
+    waterEntityId = water.rows[0].entity_id;
+  }, 300_000);
+
+  it('buffers a road entity into an area', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: { reference: { referenceLayer: 'roads', entityId: roadEntityId, radiusKm: 1 }, radiusKm: 1 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().summary['Diện tích vùng đệm (km²)']).toBeGreaterThan(0);
+  });
+
+  it('uses a water polygon entity directly, with no radius', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/zonal_elevation',
+      payload: { reference: { referenceLayer: 'water', entityId: waterEntityId } },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('refuses a line entity with no radius, naming the radius as the reason', async () => {
+    // elevation_profile (ProfileInput/inputGeometry), not zonal_elevation: zonal's
+    // areaGeometry already refuses any non-polygon input with its own pre-existing
+    // "cần bán kính" message, so that endpoint would pass this assertion even with
+    // referenceGeometry's own radius check deleted. elevation_profile takes a line
+    // directly and never calls areaGeometry, so only the reference-radius check
+    // guards it -- this is the case that actually depends on referenceGeometry's
+    // check firing.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/elevation_profile',
+      payload: { reference: { referenceLayer: 'roads', entityId: roadEntityId } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/bán kính/i);
+  });
+
+  it('refuses an ROI past the area limit, and says it was the area limit', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: {
+        reference: { referenceLayer: 'roads', entityId: bigRoadEntityId, radiusKm: 100 },
+        radiusKm: 1,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/diện tích/i);
+  });
+
+  it('404s on an unknown entity id', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: {
+        reference: { referenceLayer: 'roads', entityId: 'roads:' + '0'.repeat(32) + ':0', radiusKm: 1 },
+        radiusKm: 1,
+      },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('rejects more than one input family at once', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: {
+        geometry: { type: 'Point', coordinates: [108.05, 12.67] },
+        reference: { referenceLayer: 'roads', entityId: roadEntityId },
+        radiusKm: 1,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('stays inside the analysis timeout budget', async () => {
+    const started = Date.now();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/select_within',
+      payload: {
+        reference: { referenceLayer: 'roads', entityId: roadEntityId, radiusKm: 2 },
+        layerKeys: ['dams'],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 });
