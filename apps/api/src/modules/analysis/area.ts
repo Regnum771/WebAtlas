@@ -1,7 +1,7 @@
 import { REGION_PROVINCE_CODES, type GeoJsonGeometry } from '@webatlas/shared';
 import { NotFoundError, ValidationError } from '../../errors';
 import { simplifiedGeoJsonSql } from '../../lib/resultGeometry';
-import { getReferenceLayer } from '../../reference/registry';
+import { getReferenceLayer, type ReferenceLayerDef } from '../../reference/registry';
 import { resolveFeature, type Queryable } from '../assistant/tools/data/helpers';
 import { MAX_INPUT_VERTICES, type FeatureRefInput, type ReferenceRefInput } from './schemas';
 
@@ -74,14 +74,83 @@ const REGION_SQL = `
    WHERE code = ANY(ARRAY[${REGION_PROVINCE_CODES.map((c) => `'${c}'`).join(',')}])`;
 
 /**
+ * The entity's own line geometry for a path-shaped analysis (elevation_profile),
+ * clipped to the working region -- no buffer. The road/railway entity's geometry
+ * IS the path; elevationProfileOp already runs ST_LineMerge + ST_Dump + takes the
+ * longest part on whatever comes back, so this needs only the raw clipped line.
+ *
+ * MAX_SOURCE_ENTITY_VERTICES/_PARTS deliberately do NOT apply here: both exist
+ * solely to keep an oversized entity out of ST_Buffer (see their own comments),
+ * and this path performs no buffer at all. The post-clip MAX_INPUT_VERTICES
+ * ceiling still applies below, which is sufficient on its own to refuse a
+ * pathologically large road (e.g. Quốc lộ 14, 22,662 points) with a clear 400
+ * instead of profiling it -- an accepted outcome, not a gap, since roads' p99
+ * point count (650) is comfortably under that ceiling.
+ */
+async function referencePath(
+  db: Queryable,
+  ref: ReferenceRefInput,
+  def: ReferenceLayerDef
+): Promise<{ geojson: string; label?: string }> {
+  if (def.geomKind !== 'line') {
+    throw new ValidationError(
+      def.geomKind === 'point'
+        ? 'Thực thể dạng điểm không phải là một tuyến đường; trắc diện độ cao chỉ áp dụng cho thực thể dạng đường (đường bộ, đường sắt).'
+        : 'Thực thể dạng vùng không phải là một tuyến đường; trắc diện độ cao chỉ áp dụng cho thực thể dạng đường (đường bộ, đường sắt).'
+    );
+  }
+  // A path tool has no use for a radius -- refusing it beats silently ignoring
+  // a user's input.
+  if (ref.radiusKm !== undefined) {
+    throw new ValidationError('Tuyến đường không cần bán kính (radiusKm) để dùng làm trắc diện; hãy bỏ tham số này.');
+  }
+
+  const { rows } = await db.query<{ geojson: string | null; name: string | null; vertices: number }>(
+    `WITH region AS (${REGION_SQL}),
+          e AS (
+            SELECT coalesce(ref, name) AS name, geom
+              FROM basemap.reference_entities
+             WHERE layer_key = $1 AND entity_id = $2
+          ),
+          clipped AS MATERIALIZED (
+            SELECT e.name, ST_Intersection(e.geom, r.g) AS g
+              FROM e CROSS JOIN region r
+          )
+     SELECT ST_AsGeoJSON(g, 7) AS geojson, name, ST_NPoints(g) AS vertices
+       FROM clipped`,
+    [ref.referenceLayer, ref.entityId]
+  );
+
+  const row = rows[0];
+  if (!row) throw new NotFoundError('Không tìm thấy thực thể tham chiếu');
+
+  // An entity that lies wholly outside the working region clips to empty.
+  if (!row.geojson || row.vertices === 0) {
+    throw new ValidationError('Thực thể này nằm ngoài vùng làm việc.');
+  }
+
+  if (row.vertices > MAX_INPUT_VERTICES) {
+    throw new ValidationError(
+      `Tuyến quá phức tạp: ${row.vertices.toLocaleString('vi-VN')} điểm ` +
+        `vượt giới hạn ${MAX_INPUT_VERTICES.toLocaleString('vi-VN')} điểm.`
+    );
+  }
+
+  return { geojson: row.geojson, ...(row.name ? { label: row.name } : {}) };
+}
+
+/**
  * A reference entity's geometry, buffered if a radius was given, clipped to the
  * working region, and refused if it is too big to analyse.
  */
 async function referenceGeometry(
   db: Queryable,
-  ref: ReferenceRefInput
+  ref: ReferenceRefInput,
+  opts: { want?: 'path' | 'area' } = {}
 ): Promise<{ geojson: string; label?: string }> {
   const def = getReferenceLayer(ref.referenceLayer);
+
+  if (opts.want === 'path') return referencePath(db, ref, def);
 
   // Checked before the query: it depends only on the layer's geometry kind and the
   // caller's input, so there is nothing to look up. Lines and points have no area
@@ -193,13 +262,21 @@ async function referenceGeometry(
   return { geojson: row.geojson, ...(row.name ? { label: row.name } : {}) };
 }
 
-/** A drawn geometry as-is, a feature's full-precision geometry, or a reference entity. */
+/**
+ * A drawn geometry as-is, a feature's full-precision geometry, or a reference
+ * entity. `opts.want` says what shape the caller needs from a reference entity:
+ * 'area' (default, backward compatible with every existing op) buffers a
+ * line/point by `reference.radiusKm` into a polygon; 'path' (elevation_profile
+ * only) returns a line layer's own geometry unbuffered and refuses area/point
+ * layers outright -- see referencePath's comment.
+ */
 export async function inputGeometry(
   db: Queryable,
-  input: { geometry?: GeoJsonGeometry; feature?: FeatureRefInput; reference?: ReferenceRefInput }
+  input: { geometry?: GeoJsonGeometry; feature?: FeatureRefInput; reference?: ReferenceRefInput },
+  opts: { want?: 'path' | 'area' } = {}
 ): Promise<{ geojson: string; label?: string }> {
   if (input.geometry) return { geojson: JSON.stringify(input.geometry) };
-  if (input.reference) return referenceGeometry(db, input.reference);
+  if (input.reference) return referenceGeometry(db, input.reference, opts);
   const ref = input.feature!;
   const f = await resolveFeature(db, ref.layerKey, ref.featureId, { simplify: false });
   if (!f) throw new NotFoundError('Không tìm thấy đối tượng');

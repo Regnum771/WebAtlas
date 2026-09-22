@@ -33,7 +33,9 @@ export function profileStats(elevations: (number | null)[], lengthM: number) {
  * region's extent.
  */
 export async function elevationProfileOp(db: Queryable, input: ProfileInput): Promise<AnalysisResult> {
-  const src = await inputGeometry(db, input);
+  // 'path': for a reference entity, the road/railway's own line geometry, not a
+  // buffered area -- see referencePath's comment in area.ts for why.
+  const src = await inputGeometry(db, input, { want: 'path' });
 
   // Independent of the DEM (pure PostGIS on the input line), so this runs before
   // the demAvailable check below — that way an unloaded DEM still draws the

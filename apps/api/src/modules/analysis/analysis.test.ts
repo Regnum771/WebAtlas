@@ -290,18 +290,67 @@ describe('analysis with a reference-entity ROI', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it('refuses a line entity with no radius, naming the radius as the reason', async () => {
-    // elevation_profile (ProfileInput/inputGeometry), not zonal_elevation: zonal's
-    // areaGeometry already refuses any non-polygon input with its own pre-existing
-    // "cần bán kính" message, so that endpoint would pass this assertion even with
-    // referenceGeometry's own radius check deleted. elevation_profile takes a line
-    // directly and never calls areaGeometry, so only the reference-radius check
-    // guards it -- this is the case that actually depends on referenceGeometry's
-    // check firing.
+  it('refuses a line entity with no radius, naming the radius as the reason (an "area"-want op)', async () => {
+    // buffer (BufferInput/inputGeometry with the default want:'area'), not
+    // elevation_profile: elevation_profile now asks inputGeometry for
+    // want:'path' (finding 3 fix below), which needs no radius at all for a
+    // line entity -- that is the bug being fixed, not this check. buffer
+    // still goes through referenceGeometry's default 'area' branch, which is
+    // the one that actually depends on this radius check firing.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: { reference: { referenceLayer: 'roads', entityId: roadEntityId }, radiusKm: 1 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/bán kính/i);
+  });
+
+  it('produces a real elevation profile for a line-kind reference entity (finding 3 fix: reference on elevation_profile used to 500)', async () => {
+    // Selected dynamically by point count, not reused from roadEntityId above
+    // (which was picked for the buffer-guard tests): only needs to resolve, after
+    // clipping to the working region, to something safely under MAX_INPUT_VERTICES
+    // so this exercises the success path.
+    const { rows: [modest] } = await getPool().query<{ entity_id: string; npoints: number }>(
+      `SELECT entity_id, ST_NPoints(geom) AS npoints
+         FROM basemap.reference_entities
+        WHERE layer_key = 'roads' AND ST_NPoints(geom) BETWEEN 5 AND 500
+        ORDER BY ST_NPoints(geom) ASC LIMIT 1`
+    );
+    expect(modest).toBeDefined();
+
     const res = await app.inject({
       method: 'POST',
       url: '/api/analysis/elevation_profile',
-      payload: { reference: { referenceLayer: 'roads', entityId: roadEntityId } },
+      payload: { reference: { referenceLayer: 'roads', entityId: modest.entity_id }, samples: 10 },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // The length comes back regardless of DEM availability (pure PostGIS on the
+    // input line, see elevationProfileOp's comment on why it runs first); the
+    // per-sample elevation data additionally requires a loaded DEM.
+    expect(body.summary['Chiều dài (km)']).toBeGreaterThan(0);
+    if (await demAvailable(getPool())) {
+      expect(Array.isArray(body.profile)).toBe(true);
+      expect(body.profile.length).toBe(10);
+    }
+  });
+
+  it('refuses an area-kind reference entity on elevation_profile with a "not a path" message, not a 500', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/elevation_profile',
+      payload: { reference: { referenceLayer: 'water', entityId: waterEntityId } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/không phải là một tuyến đường/i);
+  });
+
+  it('refuses a radius on an elevation_profile path request instead of silently ignoring it', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/elevation_profile',
+      payload: { reference: { referenceLayer: 'roads', entityId: roadEntityId, radiusKm: 1 } },
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.message).toMatch(/bán kính/i);
