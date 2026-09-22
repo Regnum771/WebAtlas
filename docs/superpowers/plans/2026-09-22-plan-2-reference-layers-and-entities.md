@@ -1908,7 +1908,9 @@ git commit -m "feat(api): dùng thực thể nền bản đồ làm vùng quan t
 **Files:**
 - Modify: `docs/architecture/database-architecture.md`
 - Modify: `docs/runbooks/README.md`
-- Modify: the API reference doc (find it: `ls docs/architecture/` and `grep -rln "api/admin-units" docs/`)
+- Modify: `docs/runbooks/self-hosted-basemap.md`
+
+> **Correction (found during execution):** this plan originally told the implementer to find "the API reference doc". **There is no such document.** `grep -rln "GET /api" --include=*.md` over the repo returns only plans, specs, and one line of `docs/runbooks/README.md`. Route documentation in this project lives in the architecture doc and the runbooks. Document the new endpoints there; do not create a new API reference doc as part of this task.
 - Modify: `.superpowers/sdd/progress.md`
 
 - [ ] **Step 1: Flip the architecture doc's phase markers**

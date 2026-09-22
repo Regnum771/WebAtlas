@@ -81,6 +81,20 @@ Creates the `basemap` schema and 8 tables. Expect roughly:
 
 `places_*` are loaded but **not** in the layer group — see "no labels" above.
 
+### 3b. Rebuild the dissolved reference entities
+
+```bash
+npm run reference:build -w @webatlas/api
+```
+
+Step 3 loads every `basemap` table with GeoPandas `to_postgis(..., if_exists="replace")`, which **drops and
+recreates** each table it touches. `basemap.reference_entities` — the dissolved, named, searchable roads, railways,
+water bodies, land use and places that `GET /api/reference/*` and the `ref:*` sources on `GET /api/search` actually
+read — is built from those raw tables by a separate script, not by the loader, and is therefore stale the moment
+step 3 finishes: it can point at `osm_id`s that no longer exist and miss ones that now do. Run this before moving on
+to styles/publish, and every time step 3 is re-run. See `docs/architecture/database-architecture.md` §10.2 for why
+the search index lives on this derived table rather than on `roads_region` and friends.
+
 ### 4. Upload styles, then publish
 
 ```bash

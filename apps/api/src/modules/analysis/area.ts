@@ -12,9 +12,10 @@ const GEOM = 'ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)';
  *
  * Quốc lộ 14 dissolved end to end is ~1,000 km of line; at the 100 km maximum
  * radius its buffer would cover most of the country and put every downstream op
- * past the 5s analysis budget. The six working-region provinces together are on
- * the order of 50,000 km2, so this permits a genuinely large ROI while refusing
- * the runaway ones. The message must name WHICH limit was hit (spec §4).
+ * past the 5s analysis budget. The six working-region provinces together measure
+ * 103,198.50 km2 (union, measured), so this permits a genuinely large ROI --
+ * roughly a quarter of the working region -- while refusing the runaway ones.
+ * The message must name WHICH limit was hit (spec §4).
  */
 export const MAX_ROI_AREA_KM2 = 25_000;
 
