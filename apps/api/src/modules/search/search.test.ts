@@ -98,10 +98,14 @@ describe('GET /api/search with sources', () => {
   it('mixes sources when both kinds are asked for', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/api/search?q=song&sources=rivers,ref:water',
+      url: '/api/search?q=dinh&sources=rivers,ref:water',
     });
     expect(res.statusCode).toBe(200);
-    for (const hit of res.json().results) {
+    const results = res.json().results;
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some((hit) => hit.source === 'layer')).toBe(true);
+    expect(results.some((hit) => hit.source === 'reference')).toBe(true);
+    for (const hit of results) {
       expect(['layer', 'reference']).toContain(hit.source);
     }
   });
