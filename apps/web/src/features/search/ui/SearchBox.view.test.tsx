@@ -4,8 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { SearchBoxView } from './SearchBox.view';
 
 const hits = [
-  { layerKey: 'dams' as const, featureId: 'd1', name: 'Thủy điện Ya Ly', lonLat: [108.0, 14.2] as [number, number] },
-  { layerKey: 'lakes' as const, featureId: 'l1', name: 'Hồ Lắk', lonLat: [108.2, 12.4] as [number, number] },
+  { layerKey: 'dams' as const, featureId: 'd1', name: 'Thủy điện Ya Ly', source: 'layer' as const, lonLat: [108.0, 14.2] as [number, number] },
+  { layerKey: 'lakes' as const, featureId: 'l1', name: 'Hồ Lắk', source: 'layer' as const, lonLat: [108.2, 12.4] as [number, number] },
 ];
 
 describe('SearchBoxView', () => {
@@ -22,7 +22,7 @@ describe('SearchBoxView', () => {
   });
 
   it('does not double the layer word when the feature name already starts with it', () => {
-    const riverHit = { layerKey: 'rivers' as const, featureId: 'r1', name: 'Sông Srêpốk', lonLat: [108.1, 12.9] as [number, number] };
+    const riverHit = { layerKey: 'rivers' as const, featureId: 'r1', name: 'Sông Srêpốk', source: 'layer' as const, lonLat: [108.1, 12.9] as [number, number] };
     render(<SearchBoxView query="srêpốk" results={[riverHit]} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
 
     // Accessible name aggregates the badge chip + displayed name text; it must
@@ -34,6 +34,20 @@ describe('SearchBoxView', () => {
     // The name span must not repeat "Sông" — only the badge carries it.
     expect(screen.queryByText('Sông Srêpốk')).not.toBeInTheDocument();
     expect(screen.getByText('Srêpốk')).toBeInTheDocument();
+  });
+
+  it('renders a hit with a null name without throwing (defensive against a future null from any source)', () => {
+    // SearchHit.name is typed `string`, but there is no ErrorBoundary anywhere in
+    // this app: a null reaching displayName's `.toLowerCase()` used to throw
+    // during render and unmount the whole tree. Bypass the type with `as unknown`
+    // to simulate a contract violation from a future data source.
+    const nullNameHit = { ...hits[0], name: null } as unknown as typeof hits[0];
+    expect(() =>
+      render(
+        <SearchBoxView query="th" results={[nullNameHit]} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />
+      )
+    ).not.toThrow();
+    expect(screen.getByText('(không tên)')).toBeInTheDocument();
   });
 
   it('leaves names that do not start with the badge word untouched', () => {
@@ -81,7 +95,7 @@ describe('SearchBoxView', () => {
     fireEvent.blur(screen.getByPlaceholderText('Tìm kiếm đối tượng…'));
     expect(screen.queryByRole('button', { name: 'Hồ Lắk' })).not.toBeInTheDocument();
 
-    const moreHits = [...hits, { layerKey: 'rivers' as const, featureId: 'r1', name: 'Sông Thu Bồn', lonLat: [108.3, 15.8] as [number, number] }];
+    const moreHits = [...hits, { layerKey: 'rivers' as const, featureId: 'r1', name: 'Sông Thu Bồn', source: 'layer' as const, lonLat: [108.3, 15.8] as [number, number] }];
     rerender(<SearchBoxView query="thu" results={moreHits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
 
     expect(screen.getByRole('button', { name: 'Sông Thu Bồn' })).toBeInTheDocument();

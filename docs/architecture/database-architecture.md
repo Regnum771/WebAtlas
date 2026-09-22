@@ -1,8 +1,9 @@
 # WebATLAS Database Architecture
 
 **Document status:** Living document. Revise when the schema changes.
-**Revision:** 1.1 — 18 September 2026
+**Revision:** 1.2 — 22 September 2026
 Phase 1 (administrative boundaries and stamping) implemented; see docs/superpowers/plans/2026-09-18-plan-1-admin-boundaries-and-stamping.md.
+Phase 2 (reference layers, named entities and search) implemented; see docs/superpowers/plans/2026-09-22-plan-2-reference-layers-and-entities.md.
 **Prepared for:** Engineers, data stewards and technical reviewers of the WebATLAS water-resources information system.
 
 ---
@@ -96,6 +97,12 @@ and per-feature authorisation. Reference data in `basemap` changes only when an 
 same machinery for it would impose cost without benefit. Administrative boundaries occupy an intermediate position:
 they change rarely, but they are authoritative for statutory reporting, and they are therefore isolated in their own
 schema rather than mixed with imported reference data.
+
+One table in `basemap` departs from that governance rule and is written by the application rather than by a loader
+script: `basemap.reference_entities`, described in §10.2. It shares the schema for locality — it is derived
+entirely from the other `basemap` tables and has no reason to live elsewhere — but it is rebuilt by a dedicated
+script (`npm run reference:build`), not by `load_basemap.py`, and it deliberately does not share that script's
+lifecycle, because that lifecycle destroys indexes.
 
 ---
 
@@ -286,6 +293,12 @@ and it is the reason the region of interest must not be typed as a drawn shape.
 Operations are divided into those that require an area and those that require a path. A point or line entity must be
 buffered before it can serve as an area; the interface requires the radius rather than failing.
 
+Of the four admitted sources, the entity source is implemented, but only as an input accepted directly by each
+analysis operation (§10.2.1), not yet as the general first-class object described above. A caller names a reference
+entity — and, if it is a line or point, a radius — and the operation buffers and clips it before running, subject to
+the limits in §11. The object model that would let that same buffered result be labelled, retained and passed on to
+a further operation irrespective of its origin remains designed.
+
 ---
 
 ## 9. Derived values and their maintenance
@@ -321,12 +334,89 @@ Two properties are required of the record:
 2. Recomputation **must not overwrite a relationship asserted by a steward**. Automated association is incorrect
    sufficiently often that a human correction must survive the next ingest.
 
-### 10.2 Reference-data entities (designed)
+### 10.2 Reference-data entities (implemented)
 
-Reference layers are aggregated into named entities by the loader: segments sharing a name or route designation, and
-spatially proximate, are grouped and their geometry merged. The aggregation is rebuilt whenever the loader runs.
-Reference data has no editing path, so the derived relation has exactly one writer and the hazard described in §9 does
-not arise.
+Reference layers — roads, railways, water bodies, land use and places, each an unversioned OpenStreetMap import held
+in `basemap` — are aggregated into named entities by `apps/api/src/db/referenceEntities.ts`, the single writer of
+`basemap.reference_entities`. The table holds one row per named, spatially coherent group of segments: an
+`entity_id`, the layer it belongs to, the name and route designation the group shares, its dissolved geometry, the
+`osm_id` of every member segment, and a count and a sum of any summable attribute the layer declares (places sums
+`population`). The aggregation is rebuilt whole, one layer at a time inside a transaction, so a reader never observes
+a half-built layer; §10.2.2 explains when that rebuild must run.
+
+**Grouping and identity.** Each source row is keyed by `coalesce(ref, name)`, the OpenStreetMap route designation if
+present, otherwise the name. OpenStreetMap's `ref` field is multi-valued — 930 road rows carry a value such as
+`QL.14;HCM`, meaning that stretch of road belongs to both Quốc lộ 14 and the Hồ Chí Minh route — so the builder
+unnests it on `;` before grouping, and a single road segment may therefore be a member of more than one entity. A
+literal reading of `ref` would have grouped `QL.14;HCM` as a route distinct from plain `QL.14`, fragmenting the
+highway the grouping exists to unify; with the unnest, `QL.14` dissolves to one entity of 621 members spanning
+approximately 998 km. Within one grouping key, `ST_ClusterDBSCAN` then splits members that are not within
+`CLUSTER_EPS_DEGREES` (0.02°, approximately 2.2 km at this latitude) of each other into separate entities —
+`minpoints = 1`, so an isolated segment still forms its own single-member entity rather than being discarded as
+noise. This second step is what keeps identically named but unrelated features apart: the key `Thôn 3` alone groups
+into 147 separate clusters, because there are 147 different hamlets of that name in different communes, and merging
+them into one entity would be wrong regardless of how the name is spelled. Consequently every layer yields more
+entities than it has distinct grouping keys, and that inequality is the mechanism working as designed, not a defect
+to be reconciled. `entity_id` is formed as `<layer_key>:<md5(entity_key)>:<cluster_id>`, which is stable across
+rebuilds as long as the grouping key and cluster membership do not change.
+
+Measured on a full build against the live dataset (5.6 s for all five layers):
+
+| Layer | Entities | Distinct grouping keys |
+|---|---|---|
+| roads | 13,354 | 8,848 |
+| railways | 203 | 138 |
+| water | 597 | 572 |
+| landuse | 770 | 759 |
+| places | 5,989 | 4,025 |
+
+**Why the trigram indexes are on this table, not on the raw `basemap` tables.** This is a deliberate departure from
+treating reference layers exactly as they arrive from the loader, and it is the least obvious property of this
+design. `apps/api/scripts/basemap/load_basemap.py` loads each raw table with GeoPandas'
+`to_postgis(..., if_exists="replace")`, which **drops and recreates** the table on every run. An index created on
+`basemap.roads_region` by a migration would therefore vanish silently the next time the basemap is reloaded, with
+nothing to signal that search had quietly stopped using it. `basemap.reference_entities` is never touched by the
+loader, so it is the only object in the schema an index can be placed on safely, and its trigram indexes
+(`reference_entities_name_trgm_idx`, `reference_entities_ref_trgm_idx`) are created once, by migration, and survive
+every subsequent basemap reload. Searching the dissolved table is also the better result for a user: "Quốc lộ 14"
+returns one entity, not several thousand road segments.
+
+**Security.** Migration 1000000000008 withholds `USAGE` on the `basemap` schema from `webatlas_assistant`, so the
+assistant's generated-SQL path (§12.2) cannot reach `basemap.reference_entities` any more than it can reach the raw
+basemap tables. This table gains the assistant nothing; access to reference layers by the assistant, when it is
+introduced, will be through typed tools running under the application's own connection, not through `run_sql`.
+
+#### 10.2.1 Access paths (implemented)
+
+No separate API reference document exists in this repository; the read paths over reference data are recorded here,
+next to the table they serve, because §1.2 permits describing the interface where it constrains the database design,
+and every read path below exists because of a property of `basemap.reference_entities` established above.
+
+`GET /api/reference/layers` lists the five reference layers and, for each, its geometry kind, its classification
+column and its summable attributes. `GET /api/reference/:layer/entities` lists a layer's entities, optionally
+filtered by `q` (a trigram match against name and route designation, minimum two characters), `fclass`, and `limit`
+(default 50, maximum 200). `GET /api/reference/:layer/entities/:entityId` returns one entity. All three are public,
+by the same reasoning as `/api/search` and `/api/admin-units`: reference data carries no attribute that is sensitive
+to expose.
+
+`GET /api/search` gained a `sources` parameter: a comma-separated list drawn from `dams`, `lakes`, `rivers`,
+`stations` (the four editable layers with names worth matching) and `ref:roads`, `ref:railways`, `ref:water`,
+`ref:landuse`, `ref:places` (the five reference layers, prefixed so the two identifier spaces do not collide in one
+query string). Omitting `sources` preserves the pre-existing behaviour — the four editable layers only — so that no
+existing caller's result set changes by default.
+
+`POST /api/analysis/:op` gained a `reference` input, one of exactly three permitted per request alongside `geometry`
+and `feature`: `{ referenceLayer, entityId, radiusKm? }`. A line or point entity requires `radiusKm` to become an
+area; an already-areal entity (water, landuse) does not. §11 describes the limits this input is subject to before an
+operation is allowed to run on it.
+
+#### 10.2.2 Rebuild ordering (implemented)
+
+`basemap.reference_entities` is derived from the raw `basemap` tables, and `load_basemap.py` replaces every one of
+those tables wholesale on each run (§10.2). The dissolved entities are therefore stale — referring to rows that may
+no longer exist, or missing rows that now do — from the moment a basemap load finishes until `npm run reference:build
+-w @webatlas/api` is run again. The runbook (`docs/runbooks/README.md`) accordingly places the rebuild immediately
+after the basemap load, not as an independent, skippable step.
 
 ---
 
@@ -350,6 +440,22 @@ A regression test now asserts the query plan rather than only the result, becaus
 **Bounded work per request.** Analysis operations execute within a read-only transaction carrying a statement timeout,
 and results returned for display are capped in both item count and vertex count. An interactive system must degrade by
 refusing a request, not by becoming unresponsive.
+
+The reference-entity input to `POST /api/analysis/:op` (§10.2.1) showed that this must also bound the *source* of an
+operation, not only its result. That endpoint is public and unauthenticated, and `ST_Buffer` applied to a
+caller-named entity can exhaust backend memory before the five-second statement timeout gets a chance to cancel the
+statement — during development this OOM-killed a Postgres backend outright. Four limits now guard the two ends of
+the operation, and they are deliberately not redundant with one another. `MAX_SOURCE_ENTITY_VERTICES` (10,000
+points) and `MAX_SOURCE_ENTITY_PARTS` (300 parts) bound the source entity itself, enforced *before* any buffering
+runs: first by a SQL `CASE` that prevents the buffer expression from being evaluated at all once a limit is
+exceeded, and separately by an application-level check that produces the message naming which limit was hit, because
+the SQL failure alone does not distinguish the two. Part count is bounded independently of vertex count because part
+count, not vertex count, is what drives `ST_Buffer`'s cost on a fragmented multi-part geometry — each disjoint part
+contributes its own two round end caps and its own disc to the union, so a geometry can carry comfortably few
+vertices and still be expensive to buffer if it is split into enough separate pieces. `MAX_ROI_AREA_KM2` (25,000
+km²) and `MAX_INPUT_VERTICES` (5,000 points) bound the *resulting* region of interest, measured after buffering and
+after clipping to the working region — a distinct concern from the two limits above, which bound the cost of
+producing that result in the first place.
 
 ---
 
@@ -398,10 +504,10 @@ Schema changes are applied as ordered, reviewed migrations; data loads are decla
 dependency order, lineage and licence of each dataset are recorded with it. The distinction is maintained deliberately:
 migrations create structure, and the pipeline populates it.
 
-Administrative boundaries and stamping shipped first, in this revision (§6.2, §6.3). The remaining designed elements
-are introduced in the following order, each independently useful: reference-layer access and aggregation;
-watercourse topology and the entity hierarchy; the region-of-interest model; and the assistant operations that
-consume them.
+Administrative boundaries and stamping shipped first, in revision 1.1 (§6.2, §6.3). Reference-layer access and
+aggregation shipped second, in this revision (§10.2). The remaining designed elements are introduced in the following
+order, each independently useful: watercourse topology and the entity hierarchy; the region-of-interest model as a
+first-class object; and the assistant operations that consume them.
 
 ---
 

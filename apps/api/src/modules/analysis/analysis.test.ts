@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
+import { buildReferenceEntities } from '../../db/referenceEntities';
 import { withAnalysisTimeout } from './db';
 import { demAvailable } from './dem';
 import { getAnalysisPool, closeAnalysisPool } from './pool';
+import { MAX_SOURCE_ENTITY_VERTICES, MAX_SOURCE_ENTITY_PARTS } from './area';
 
 let app: ReturnType<typeof buildApp>;
 let dam: { id: string; lon: number; lat: number };
@@ -220,5 +222,292 @@ describe('analysis pool', () => {
     } finally {
       held.forEach((c) => c.release());
     }
+  });
+});
+
+describe('analysis with a reference-entity ROI', () => {
+  let roadEntityId: string;
+  let bigRoadEntityId: string;
+  let waterEntityId: string;
+
+  beforeAll(async () => {
+    await buildReferenceEntities(getPool(), ['roads', 'water']);
+
+    // A real but modest road: a handful of members, not the hundreds-to-thousands
+    // that share one ref/name on a busy highway. The busiest entities (e.g. the
+    // Hoài Nhơn-Quy Nhơn expressway, 1,726 disjoint OSM segments under one name)
+    // are unions of that many separately-capped LineStrings, so ST_Buffer alone
+    // produces 10,000+ vertices before any clipping -- past MAX_INPUT_VERTICES
+    // from a 1 km buffer alone. `ORDER BY member_count DESC` picks exactly that
+    // worst case, so this orders ASC instead, over a small band that excludes both
+    // single-stub segments and multi-hundred-member highways. Measured for the
+    // entity this resolves to: ~48-53 vertices at a 1-2 km buffer.
+    const { rows } = await getPool().query<{ entity_id: string }>(
+      `SELECT entity_id FROM basemap.reference_entities
+        WHERE layer_key = 'roads' AND member_count BETWEEN 2 AND 20
+        ORDER BY member_count ASC, entity_id LIMIT 1`
+    );
+    roadEntityId = rows[0].entity_id;
+
+    // Đường tỉnh 699D: a single-segment (member_count = 1) ~18 km provincial road,
+    // which keeps ST_Buffer cheap (no multi-part seam explosion) while still being
+    // long and centrally placed enough that its 100 km buffer, clipped to the six
+    // working-region provinces, genuinely exceeds MAX_ROI_AREA_KM2. Measured
+    // 2026-09-22: 31,937 km² (see task-7-report.md) -- a real, honest trip of the
+    // area limit, not a name/count heuristic that happened to be big enough.
+    bigRoadEntityId = 'roads:82ccce28b3c34d80ee4f3e80fd438e39:1';
+
+    // The single largest water entity by raw area (Hồ Đồng Nai 3) is a 12,242-
+    // vertex polygon on its own -- over MAX_INPUT_VERTICES with no buffering at
+    // all, which would make this fixture accidentally test the vertex limit
+    // instead of the "no radius needed" path it's meant to cover. Filtering out
+    // entities that complex before ranking by area picks a real lake that stays
+    // under the ceiling.
+    const water = await getPool().query<{ entity_id: string }>(
+      `SELECT entity_id FROM basemap.reference_entities
+        WHERE layer_key = 'water' AND ST_NPoints(geom) < 4000
+        ORDER BY ST_Area(geom) DESC LIMIT 1`
+    );
+    waterEntityId = water.rows[0].entity_id;
+  }, 300_000);
+
+  it('buffers a road entity into an area', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: { reference: { referenceLayer: 'roads', entityId: roadEntityId, radiusKm: 1 }, radiusKm: 1 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().summary['Diện tích vùng đệm (km²)']).toBeGreaterThan(0);
+  });
+
+  it('uses a water polygon entity directly, with no radius', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/zonal_elevation',
+      payload: { reference: { referenceLayer: 'water', entityId: waterEntityId } },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('refuses a line entity with no radius, naming the radius as the reason (an "area"-want op)', async () => {
+    // buffer (BufferInput/inputGeometry with the default want:'area'), not
+    // elevation_profile: elevation_profile now asks inputGeometry for
+    // want:'path' (finding 3 fix below), which needs no radius at all for a
+    // line entity -- that is the bug being fixed, not this check. buffer
+    // still goes through referenceGeometry's default 'area' branch, which is
+    // the one that actually depends on this radius check firing.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: { reference: { referenceLayer: 'roads', entityId: roadEntityId }, radiusKm: 1 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/bán kính/i);
+  });
+
+  it('produces a real elevation profile for a line-kind reference entity (finding 3 fix: reference on elevation_profile used to 500)', async () => {
+    // Selected dynamically by point count, not reused from roadEntityId above
+    // (which was picked for the buffer-guard tests): only needs to resolve, after
+    // clipping to the working region, to something safely under MAX_INPUT_VERTICES
+    // so this exercises the success path.
+    const { rows: [modest] } = await getPool().query<{ entity_id: string; npoints: number }>(
+      `SELECT entity_id, ST_NPoints(geom) AS npoints
+         FROM basemap.reference_entities
+        WHERE layer_key = 'roads' AND ST_NPoints(geom) BETWEEN 5 AND 500
+        ORDER BY ST_NPoints(geom) ASC LIMIT 1`
+    );
+    expect(modest).toBeDefined();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/elevation_profile',
+      payload: { reference: { referenceLayer: 'roads', entityId: modest.entity_id }, samples: 10 },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // The length comes back regardless of DEM availability (pure PostGIS on the
+    // input line, see elevationProfileOp's comment on why it runs first); the
+    // per-sample elevation data additionally requires a loaded DEM.
+    expect(body.summary['Chiều dài (km)']).toBeGreaterThan(0);
+    if (await demAvailable(getPool())) {
+      expect(Array.isArray(body.profile)).toBe(true);
+      expect(body.profile.length).toBe(10);
+    }
+  });
+
+  it('refuses an area-kind reference entity on elevation_profile with a "not a path" message, not a 500', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/elevation_profile',
+      payload: { reference: { referenceLayer: 'water', entityId: waterEntityId } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/không phải là một tuyến đường/i);
+  });
+
+  it('refuses a radius on an elevation_profile path request instead of silently ignoring it', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/elevation_profile',
+      payload: { reference: { referenceLayer: 'roads', entityId: roadEntityId, radiusKm: 1 } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/bán kính/i);
+  });
+
+  it('refuses an ROI past the area limit, and says it was the area limit', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: {
+        reference: { referenceLayer: 'roads', entityId: bigRoadEntityId, radiusKm: 100 },
+        radiusKm: 1,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/diện tích/i);
+  });
+
+  it('refuses a pathologically complex entity before buffering it, naming the source-entity limit', async () => {
+    // Picked by complexity, not a hardcoded id, so this survives a basemap
+    // reload: the single roads entity with the most vertices. In the dev DB
+    // this resolves to the same 22,662-point entity that OOM-killed a Postgres
+    // backend (signal 9) when buffered by 100 km during development of this
+    // guard -- this test proves it is rejected instead, using only radiusKm: 1
+    // (any radius triggers the guard; a small one keeps the test itself safe).
+    const { rows: [complex] } = await getPool().query<{ entity_id: string; npoints: number }>(
+      `SELECT entity_id, ST_NPoints(geom) AS npoints
+         FROM basemap.reference_entities
+        WHERE layer_key = 'roads'
+        ORDER BY ST_NPoints(geom) DESC LIMIT 1`
+    );
+    expect(complex.npoints).toBeGreaterThan(MAX_SOURCE_ENTITY_VERTICES);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: {
+        reference: { referenceLayer: 'roads', entityId: complex.entity_id, radiusKm: 1 },
+        radiusKm: 1,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const message = res.json().error.message as string;
+    // Names this limit specifically -- distinguishable from the area limit
+    // ("diện tích") and the post-clip vertex limit's own wording ("Vùng quan
+    // tâm quá phức tạp"), so this test cannot pass on the wrong error.
+    expect(message).toMatch(/thực thể quá phức tạp/i);
+    expect(message).toMatch(new RegExp(MAX_SOURCE_ENTITY_VERTICES.toLocaleString('vi-VN')));
+    expect(message).not.toMatch(/diện tích/i);
+    expect(message).not.toMatch(/vùng quan tâm quá phức tạp/i);
+  });
+
+  it('refuses a fragmented entity that is under the vertex ceiling but over the parts ceiling, naming the parts limit', async () => {
+    // The vertex-only guard has a hole: a MultiLineString with many disjoint
+    // parts can stay well under MAX_SOURCE_ENTITY_VERTICES on point count alone
+    // while still generating enormous offset-curve geometry when buffered (each
+    // part contributes its own two round end caps and its own disc to union).
+    // Picked by complexity, not a hardcoded id, so this survives a basemap
+    // reload: among entities under the vertex ceiling, the one with the most
+    // parts. In the dev DB this resolves to the Hoài Nhơn-Quy Nhơn expressway
+    // (9,050 points / 1,726 parts under one name/ref) -- exactly the entity
+    // this ceiling exists to close off.
+    const { rows: [fragmented] } = await getPool().query<{
+      entity_id: string; layer_key: string; npoints: number; nparts: number;
+    }>(
+      `SELECT entity_id, layer_key, ST_NPoints(geom) AS npoints, ST_NumGeometries(geom) AS nparts
+         FROM basemap.reference_entities
+        WHERE ST_NPoints(geom) <= ${MAX_SOURCE_ENTITY_VERTICES}
+        ORDER BY ST_NumGeometries(geom) DESC LIMIT 1`
+    );
+    expect(fragmented.npoints).toBeLessThanOrEqual(MAX_SOURCE_ENTITY_VERTICES);
+    expect(fragmented.nparts).toBeGreaterThan(MAX_SOURCE_ENTITY_PARTS);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: {
+        reference: { referenceLayer: fragmented.layer_key, entityId: fragmented.entity_id, radiusKm: 1 },
+        radiusKm: 1,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const message = res.json().error.message as string;
+    // Names the complexity limit and specifically the PARTS dimension --
+    // distinguishable from the area limit, the post-clip vertex limit, and
+    // (since this entity is under the vertex ceiling) from the vertex term of
+    // this very check, so the test cannot pass on the wrong reason.
+    expect(message).toMatch(/thực thể quá phức tạp/i);
+    expect(message).toMatch(/phần rời rạc/i);
+    expect(message).toMatch(new RegExp(MAX_SOURCE_ENTITY_PARTS.toLocaleString('vi-VN')));
+    expect(message).not.toMatch(new RegExp(MAX_SOURCE_ENTITY_VERTICES.toLocaleString('vi-VN')));
+    expect(message).not.toMatch(/diện tích/i);
+    expect(message).not.toMatch(/vùng quan tâm quá phức tạp/i);
+  });
+
+  it('does not gate the unbuffered path: an over-the-source-limit entity with no radius is not rejected by the new check', async () => {
+    // The source-entity guard is only meaningful ahead of ST_Buffer -- without a
+    // radius there is no buffer and thus no OOM risk from this path, so a large
+    // unbuffered polygon (e.g. the water layer's largest entity, 15,134 points
+    // per the measured data) must not be refused by THIS check. It may still be
+    // refused downstream by the pre-existing, unrelated MAX_INPUT_VERTICES
+    // post-clip check -- this test only asserts the new check's message never
+    // appears, not that the request necessarily succeeds.
+    const { rows: [bigWater] } = await getPool().query<{ entity_id: string; npoints: number }>(
+      `SELECT entity_id, ST_NPoints(geom) AS npoints
+         FROM basemap.reference_entities
+        WHERE layer_key = 'water'
+        ORDER BY ST_NPoints(geom) DESC LIMIT 1`
+    );
+    expect(bigWater.npoints).toBeGreaterThan(MAX_SOURCE_ENTITY_VERTICES);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/zonal_elevation',
+      payload: { reference: { referenceLayer: 'water', entityId: bigWater.entity_id } },
+    });
+    if (res.statusCode !== 200) {
+      expect(res.json().error.message as string).not.toMatch(/thực thể quá phức tạp/i);
+    }
+  });
+
+  it('404s on an unknown entity id', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: {
+        reference: { referenceLayer: 'roads', entityId: 'roads:' + '0'.repeat(32) + ':0', radiusKm: 1 },
+        radiusKm: 1,
+      },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('rejects more than one input family at once', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/buffer',
+      payload: {
+        geometry: { type: 'Point', coordinates: [108.05, 12.67] },
+        reference: { referenceLayer: 'roads', entityId: roadEntityId },
+        radiusKm: 1,
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('stays inside the analysis timeout budget', async () => {
+    const started = Date.now();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/analysis/select_within',
+      payload: {
+        reference: { referenceLayer: 'roads', entityId: roadEntityId, radiusKm: 2 },
+        layerKeys: ['dams'],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 });
