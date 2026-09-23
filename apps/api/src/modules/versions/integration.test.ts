@@ -97,7 +97,11 @@ describe('versioning integration (§6 rollback + addressability)', () => {
     const active = await svc.getActiveVersionId('rivers');
     expect(active).toBe(versionId);
     const v = await svc.getVersion(versionId);
-    expect(v).toMatchObject({ kind: 'ingest', source: 'OSM waterways', isActive: true });
+    // Source string was deliberately bumped (see ingestRivers.ts) because the version
+    // idempotency key partly rests on it: leaving it as 'OSM waterways' would silently
+    // reactivate the old ways-only version instead of registering this ingest, which
+    // now also loads level-2 HydroRIVERS reaches into the same version.
+    expect(v).toMatchObject({ kind: 'ingest', source: 'OSM waterways + HydroRIVERS v10', isActive: true });
 
     // rivers_active resolves to the OSM rows.
     const newIds = await svc.resolveFeatureIds('rivers', versionId);

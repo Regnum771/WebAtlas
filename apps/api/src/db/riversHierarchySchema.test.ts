@@ -37,13 +37,29 @@ describe('rivers hierarchy schema', () => {
   });
 
   it('defaults existing and steward-created rows to level 3', async () => {
-    const { rows } = await getPool().query<{ total: string; three: string }>(
-      `SELECT count(*)::text AS total,
-              count(*) FILTER (WHERE feature_level = 3)::text AS three
-         FROM water.rivers_active`
-    );
-    // Every row in the table today is an OSM way, which is exactly what level 3 means.
-    expect(rows[0].three).toBe(rows[0].total);
+    // The real claim here is about the column's DEFAULT, not about today's row mix:
+    // water.rivers_active now also holds level-2 HydroRIVERS reaches loaded into the
+    // same dataset_version_id, so "every row is level 3" no longer holds. Prove the
+    // DEFAULT directly instead, by inserting a row the way existing OSM-way inserts
+    // and the steward edit path do -- without naming feature_level -- and checking
+    // what comes out. Wrapped in a transaction that's rolled back so this leaves no
+    // trace in the shared dev DB.
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query<{ feature_level: number }>(
+        `INSERT INTO water.rivers (external_id, geom, dataset_version_id)
+         SELECT 'osm:zz-default-check',
+                ST_Multi(ST_GeomFromText('LINESTRING(108 12, 108.01 12.01)', 4326)),
+                id
+           FROM app.dataset_versions WHERE layer_key = 'rivers' AND is_active
+         RETURNING feature_level`
+      );
+      expect(rows[0].feature_level).toBe(3);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
   });
 
   it('refuses a feature_level outside 1..3', async () => {
