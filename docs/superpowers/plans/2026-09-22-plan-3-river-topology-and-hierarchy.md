@@ -41,9 +41,9 @@ Every number below was measured against the live dev DB and the real HydroRIVERS
 | Reaches with a ≥3-of-5 majority name | 5,813 |
 | Reaches assigned at this plan's threshold (≥3/5 **and** median ≤ 500 m) | **4,716** |
 | Distinct names assigned at that threshold | **439** of 466 |
-| **Level-1 rivers produced (name + connectivity)** | **631** |
+| **Level-1 rivers produced (name + connectivity)** | **631** before bridging; **588** after (see Deviation 4, reversed 2026-09-23) |
 | Names split across more than one connected component | 109 (max 15, for `Sông Cái` — literally "main river", genuinely many rivers) |
-| Single-reach naming gaps that bridging would close | 38 (measured; deliberately **not** implemented — Deviation 4) |
+| Single-reach naming gaps that bridging would close | 38 (measured; **implemented** after all — Deviation 4, reversed 2026-09-23) |
 | Total length, member ways vs member reaches | 13,483 km vs 11,961 km; median per-river ratio **1.11** |
 | Name join through `rivers_active` vs a materialised copy | **>120 s (timed out) vs 10.9 s** |
 
@@ -57,7 +57,7 @@ Five. Each is a measured correction, not a shortcut. A reviewer should check the
 
 **3. Level-1 geometry derives from member OSM ways (level 3), not member reaches (level 2).** Spec §1 says "merged, **derived** from member reaches". Measured: per-river length between the two sources agrees to a median ratio of 1.11 (Sông Ba: 349 km of way vs 352 km of reach; Sông Đồng Nai: 248 vs 254) — so the extra 1.11x is vertex detail, not extra extent. Deriving from ways therefore costs nothing in coverage while giving finer geometry, the same shape the detailed layer already draws (so far-zoom rendering stays visually consistent), and independence from the spatial vote, so a bad match cannot deform a river. The reaches keep their real job: topology (`flows_into`) and true Strahler order. Note this does **not** widen which rivers exist: spec §2's gate "every level-1 river has at least one reach" still holds, so the 27 names that have OSM ways but no confidently matched reach get no river row — geometry source and entity existence are separate questions. **Planner's call — flag at final review.**
 
-**4. Single-reach naming-gap bridging is deliberately not implemented.** A river can fragment because one middle reach failed the vote rather than because it is genuinely disjoint. Measured: only **38** reaches are single-reach gaps whose upstream and downstream carry the same name. Bridging them would infer a name the data does not state, for roughly a 6% reduction in fragmentation. YAGNI, and it would violate "never invent a relationship". Recorded here so nobody re-derives it. **Planner's call.**
+**4. REVERSED 2026-09-23 by user decision: single-reach same-name gaps ARE bridged.** ~~Originally: bridging deliberately not implemented, as inferring a name the data does not state.~~ Execution showed the plan's own headline acceptance test ("resolves Sông Thu Bồn to ONE searchable river") could never pass without it: Thu Bồn's 38-reach main group flows into ONE unmatched Strahler-6 reach (`hyriv:41295432`) and then into Thu Bồn's outlet. That reach's samples all found only "Sông Thu Bồn" but its 654 m median exceeded the 500 m cutoff, as HydroRIVERS drifts from OSM in the widening lower river. Rule as built (Task 6, `436ea4c`): a level-2 reach with no voted name whose downstream reach AND at least one upstream reach carry the same voted name gets that name, with `match_confidence = BRIDGED_CONFIDENCE = 0.2`. That's below the vote's 0.3 floor, so `confidence < 0.3` ⇔ bridged. It's evaluated in one pass against the vote snapshot, with no cascading. Result: exactly **38** bridged; **588** rivers (not 593: a bridged confluence can merge several same-name branches at once); `RIVER_BASELINE = { reaches: 4754, names: 439, rivers: 588 }`. The vote itself still pins 4,716 / 439 / Sông Ba 131.
 
 **5. The reach ingest is a script registered as an atlas-data `run` escape hatch, not a `load-geojson` descriptor.** Spec §2 wants it "declared as a descriptor in `packages/atlas-data` rather than a sixteenth bespoke script". Checked: `packages/atlas-data/src/runner.ts:118-121` implements only the `sql` stage — `load-geojson` is declared in `types.ts` but unimplemented, and belongs to the dataset-registry track, not this one. The repo already has the right mechanism for this situation: a `run` stage with `promoteTo` and `promoteBy`, which `assertNoOverdueEscapeHatches` (`packages/atlas-data/src/debt.ts`) turns into a build failure once the deadline passes. So the ingest ships as a script and is registered as a dated escape hatch that cannot quietly become permanent. **Planner's call.**
 
@@ -1278,7 +1278,7 @@ npm run ingest:rivers -w @webatlas/api
 npm run test -w @webatlas/api -- src/db/riverHierarchy.test.ts
 ```
 
-Deleting the version cascades to its `water.rivers` rows (`onDelete: 'CASCADE'` on `dataset_version_id`), which is why this is safe. Expected: the ingest prints `named 4716 reaches across 439 rivers`; 5/5 tests pass.
+**Deleting the version does NOT cascade.** `water.rivers.dataset_version_id`'s FK is `NO ACTION` (verified 2026-09-23: `pg_constraint.confdeltype = 'a'`), so delete that version's `water.rivers` rows first, then the version, in one transaction. Expected: the ingest prints `named 4716 reaches across 439 rivers`; 5/5 tests pass.
 
 - [ ] **Step 6: Prove the distance limit is load-bearing**
 
@@ -1741,7 +1741,7 @@ npm run ingest:rivers -w @webatlas/api
 npm run test -w @webatlas/api -- src/db/riverHierarchy.test.ts
 ```
 
-Expected: `631 rivers from 439 names over 4716 named reaches`; 13/13 tests pass (5 from Task 5 + 5 level-1 + 3 gates). `rivers_active` now holds 23,162 rows (9,486 ways + 13,045 reaches + 631 rivers).
+Expected: `588 rivers from 439 names over 4716 named reaches (38 bridged)`; 13/13 tests pass (5 from Task 5 + 5 level-1 + 3 gates). `rivers_active` now holds 23,119 rows (9,486 ways + 13,045 reaches + 588 rivers).
 
 - [ ] **Step 8: Prove the connectivity split is load-bearing**
 
@@ -1775,11 +1775,13 @@ Spec §1: level-1 geometry is rebuilt "on commit of any edit session that touche
 - Consumes: `assertRiverGates`, `RIVER_BASELINE`, and Task 5/6's internals.
 - Produces: **the same exported name and signature** `buildRiverHierarchy(client, versionId)`, reimplemented to be correct for any version and returning one extra field: `Promise<{ matched: number; names: number; rivers: number; superseded: number }>`. Task 6's tests and `scripts/buildRiverHierarchy.ts` keep working unchanged, which is this task's regression guard.
 
+**Bridging must survive this refactor (added 2026-09-23).** Since Task 6 landed, `buildRiverHierarchy` runs vote → **`bridgeNameGaps`** → level-1 build. Deviation 4 was reversed, so single-reach same-name gaps get `BRIDGED_CONFIDENCE`. Splitting the vote from its application must keep the bridge step between them, applied to the resolved set, so that an edit draft gets the same 38 bridges. The acceptance figure below includes `(38 bridged)`, and a draft that loses bridging will fail it with 593+ rivers and Thu Bồn = 2.
+
 **Keep one exported writer, not two.** Do not add a second function beside `buildRiverHierarchy`. The global constraint is that level-1 rows have exactly one owner; two entry points that both write them is the same defect in a new shape. Replace the body, keep the name.
 
-**Why a diff and not a wholesale rewrite.** An edit draft could simply re-insert all 13,045 reaches and 631 rivers, which is always correct and trivially simple. Do not: the version chain deepens by one per commit and `rivers_active`'s resolution walks it, so a hundred edit sessions would mean a hundred-deep chain over 1.37M rows. Superseding rows are written **only where a value actually changed** — for a one-way geometry edit that is typically a handful of reaches and one or two rivers.
+**Why a diff and not a wholesale rewrite.** An edit draft could simply re-insert all 13,045 reaches and 588 rivers, which is always correct and trivially simple. Do not: the version chain deepens by one per commit and `rivers_active`'s resolution walks it, so a hundred edit sessions would mean a hundred-deep chain over 1.37M rows. Superseding rows are written **only where a value actually changed** — for a one-way geometry edit that is typically a handful of reaches and one or two rivers.
 
-**Ordering inside `activate()` is load-bearing.** The rebuild inserts brand-new level-1 rows, and those rows need `province_codes`/`ward_codes` like any other feature. `stampAdminCodes` stamps every row of the version in one `UPDATE`, so the rebuild must run **before** it — otherwise every river ships with empty code arrays and `features_in_admin_unit` silently misses all 631 of them. Task 9's doc must state this ordering too.
+**Ordering inside `activate()` is load-bearing.** The rebuild inserts brand-new level-1 rows, and those rows need `province_codes`/`ward_codes` like any other feature. `stampAdminCodes` stamps every row of the version in one `UPDATE`, so the rebuild must run **before** it — otherwise every river ships with empty code arrays and `features_in_admin_unit` silently misses all 588 of them. Task 9's doc must state this ordering too.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2132,7 +2134,7 @@ In `apps/api/src/modules/versions/service.ts`, inside `activate`, **before** the
       // rivers_overview went stale for two days (see the comment below).
       //
       // BEFORE stampAdminCodes, not after: the rebuild INSERTS new level-1 rows, and
-      // stampAdminCodes stamps every row of the version in one UPDATE. Reversed, all 631
+      // stampAdminCodes stamps every row of the version in one UPDATE. Reversed, all 588
       // rivers ship with empty province_codes and features_in_admin_unit misses every one.
       //
       // Gates run before the pointer moves, so a version that fails them is never
@@ -2154,7 +2156,7 @@ Add a test for the ordering, in the hook suite:
         WHERE feature_level = 1 AND coalesce(array_length(province_codes, 1), 0) = 0`
     );
     // Level-1 rows are inserted by the rebuild, so they are only stamped if the rebuild
-    // runs BEFORE stampAdminCodes. Swap the two and this is 631.
+    // runs BEFORE stampAdminCodes. Swap the two and this is 588.
     expect(rows[0].unstamped).toBe('0');
   });
 ```
@@ -2179,7 +2181,7 @@ npm run ingest:rivers -w @webatlas/api
 npm run rivers:hierarchy -w @webatlas/api
 ```
 
-Expected: the ingest activates cleanly and `rivers:hierarchy` reports `631 rivers from 439 names over 4716 named reaches` — identical figures via the hook as via the explicit call in Task 6. A difference here means the resolved-set refactor changed the algorithm, which it must not.
+Expected: the ingest activates cleanly and `rivers:hierarchy` reports `588 rivers from 439 names over 4716 named reaches (38 bridged)` — identical figures via the hook as via the explicit call in Task 6. A difference here means the resolved-set refactor changed the algorithm, which it must not.
 
 - [ ] **Step 9: Typecheck and commit**
 
@@ -2248,7 +2250,7 @@ describe('per-level river views', () => {
       `SELECT count(*)::text AS n, count(*) FILTER (WHERE name IS NULL)::text AS nulls
          FROM water.rivers_overview`
     );
-    expect(rows[0].n).toBe('631');
+    expect(rows[0].n).toBe('588');
     expect(rows[0].nulls).toBe('0');
   });
 
@@ -2319,7 +2321,7 @@ exports.up = (pgm) => {
 
   // Same name, same columns, same WFS typename as the matview it replaces, so apps/web
   // needs no change -- but now the real level-1 entities rather than name-grouped,
-  // simplified stream_order = 5 fragments. No ST_Simplify: 631 merged rivers are a far
+  // simplified stream_order = 5 fragments. No ST_Simplify: 588 merged rivers are a far
   // smaller payload than the 1,723 fragments that made simplification necessary.
   pgm.sql(`
     CREATE VIEW water.rivers_overview AS
@@ -2521,7 +2523,7 @@ Run `npm run test -w @webatlas/atlas-data` and confirm the registry and debt sui
 
 Bump the revision number. Flip §1's and §2's `(designed)` markers to implemented and rewrite both to describe what shipped, not what was planned. Cover, with the measured figures from this plan:
 
-- the three levels and their row counts (9,486 ways / 13,045 reaches / 631 rivers);
+- the three levels and their row counts (9,486 ways / 13,045 reaches / 588 rivers);
 - the prefixed identity space, the four prefixes, and the view-dependency hazard that makes the type change a drop-and-recreate;
 - **all five deviations**, each with its measurement — a reader comparing doc to spec will otherwise think the code is wrong;
 - that `activate()` is the hierarchy's owner, alongside `stampAdminCodes`, and why (the `rivers_overview` scar);
@@ -2569,7 +2571,7 @@ npm run build:web
 cd apps/api && npx tsc --noEmit
 ```
 
-Expected: every command exits 0. Reference figures — `631 rivers from 439 names over 4716 named reaches`; `water.rivers_active` 23,162 rows; shared 101 tests; web 450 tests; API 417 at the start of this plan plus roughly 40 added here.
+Expected: every command exits 0. Reference figures — `588 rivers from 439 names over 4716 named reaches (38 bridged)`; `water.rivers_active` 23,119 rows; shared 101 tests; web 450 tests; API 417 at the start of this plan plus roughly 40 added here.
 
 Migration round-trip, to prove the three new migrations are reversible:
 
