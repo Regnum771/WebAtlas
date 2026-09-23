@@ -14,13 +14,17 @@ const HYDRORIVERS_SOURCE = 'OSM waterways';
 
 // OSM waterways → các cột `rivers` sẵn có. Khác HydroRIVERS: OSM CÓ tên sông,
 // và `stream_order` giờ là hạng theo loại chứ không phải bậc Strahler.
-const RIVERS_HYDRO_LAYER: SeedLayer = {
+//
+// Exported so the column map is unit-testable without a database: the 'osm:' prefix is
+// a contract other sources depend on, not an implementation detail.
+export const RIVERS_HYDRO_LAYER: SeedLayer = {
   table: 'rivers',
   file: resolvePath(here, 'data/osm-rivers-region.geojson'),
   source: HYDRORIVERS_SOURCE,
   multiLine: true,
   columns: (p) => ({
-    external_id: p.osmId,
+    // 'osm:' so an OSM way id can never be mistaken for a HYRIV_ID (migration 18).
+    external_id: `osm:${String(p.osmId)}`,
     code: p.waterway,
     name: p.name,
     stream_order: p.streamOrder,

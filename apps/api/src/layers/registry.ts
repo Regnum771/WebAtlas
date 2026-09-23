@@ -53,11 +53,12 @@ const ATTRS: Record<EditableLayerKey, z.ZodObject<z.ZodRawShape>> = {
   }),
 };
 
-// Mirrors the live column types in migration 1000000000002_water-schema.cjs:
-// dams/rivers/lakes carry a numeric upstream id, the rest a text one.
+// Mirrors the live column types in migration 1000000000002_water-schema.cjs, as amended
+// by 1000000000018: dams/lakes carry a numeric upstream id; rivers became prefixed text
+// when HydroRIVERS reaches and derived rivers joined OSM ways in one identity space.
 const EXTERNAL_ID_TYPE: Record<EditableLayerKey, 'integer' | 'text'> = {
   dams: 'integer',
-  rivers: 'integer',
+  rivers: 'text',
   lakes: 'integer',
   stations: 'text',
   flood_zones: 'text',
