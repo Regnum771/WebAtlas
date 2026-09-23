@@ -29,10 +29,10 @@ BBOX="102 8 110 24"
 echo "Clipping HydroLAKES -> hydrolakes-vn.geojson"
 python3 "$SCRIPT_DIR/prep_hydrosheds.py" lakes "$LAKES_SRC" "$OUT/hydrolakes-vn.geojson"
 
-# ORD_STRA >= 3 filter keeps the file lean (~9 MB / ~27k features for the Asia extract
-# clipped to Vietnam); raise RIVER_MIN_ORD_STRA in prep_hydrosheds.py if a future,
-# larger source region makes the clip too large to commit.
-echo "Clipping HydroRIVERS -> hydrorivers-vn.geojson"
-python3 "$SCRIPT_DIR/prep_hydrosheds.py" rivers "$RIVERS_SRC" "$OUT/hydrorivers-vn.geojson"
+# The rivers output is selected against the six working provinces (whole reaches, all
+# stream orders) rather than clipped at the Vietnam bbox; prep_hydrosheds.py reads
+# apps/web/public/provinces-34.geojson to do the selection.
+echo "Clipping HydroRIVERS -> hydrorivers-region.geojson"
+python3 "$SCRIPT_DIR/prep_hydrosheds.py" rivers "$RIVERS_SRC" "$OUT/hydrorivers-region.geojson"
 
 echo "Done. Verify file sizes are reasonable before committing."
