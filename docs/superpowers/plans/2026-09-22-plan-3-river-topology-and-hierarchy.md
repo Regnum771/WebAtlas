@@ -521,6 +521,7 @@ exports.up = (pgm) => {
   pgm.sql(RIVERS_ACTIVE);
   pgm.sql(RIVERS_OVERVIEW);
   for (const sql of OVERVIEW_INDEXES) pgm.sql(sql);
+  pgm.sql(REGRANT_ASSISTANT);
 };
 
 exports.down = (pgm) => {
@@ -533,7 +534,21 @@ exports.down = (pgm) => {
   pgm.sql(RIVERS_ACTIVE);
   pgm.sql(RIVERS_OVERVIEW);
   for (const sql of OVERVIEW_INDEXES) pgm.sql(sql);
+  pgm.sql(REGRANT_ASSISTANT);
 };
+```
+
+**`REGRANT_ASSISTANT` is mandatory in BOTH `up` and `down`, and in every later migration
+in this plan that drops and recreates these views.** Declare it beside the DDL constants:
+
+```js
+// DROP VIEW discards every privilege granted on that view object; CREATE, even of an
+// identical definition, makes a NEW object that starts with none. Migration
+// 1000000000008 granted webatlas_assistant SELECT on water.rivers_active, so without
+// this re-grant the assistant silently loses read access to rivers. Migration
+// 1000000000016 hit this first and documents it; migration 1000000000018 (Task 1) hit it
+// again. No existing test catches it — privileges.test.ts asserts against dams_active.
+const REGRANT_ASSISTANT = `GRANT SELECT ON water.rivers_active TO webatlas_assistant;`;
 ```
 
 `pgm.dropColumns` removes the three indexes with their columns, so they need no explicit drop.
