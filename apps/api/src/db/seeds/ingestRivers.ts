@@ -5,12 +5,14 @@ import { getPool, closePool } from '../pool';
 import { versionsService } from '../../modules/versions/service';
 import { loadLayerFeatures } from './run';
 import type { SeedLayer } from './registry';
+import { REACHES_LAYER } from './ingestReaches';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 // Đổi chuỗi này mỗi khi nội dung file seed đổi: hàm ingest dưới đây idempotent
 // THEO SOURCE, nên giữ nguyên chuỗi sẽ khiến nó kích hoạt lại version cũ thay vì
-// nạp dữ liệu mới.
-const HYDRORIVERS_SOURCE = 'OSM waterways';
+// nạp dữ liệu mới. Đổi lần này vì version giờ chứa CẢ đoạn sông HydroRIVERS (cấp 2),
+// không chỉ đường OSM (cấp 3).
+const HYDRORIVERS_SOURCE = 'OSM waterways + HydroRIVERS v10';
 
 // OSM waterways → các cột `rivers` sẵn có. Khác HydroRIVERS: OSM CÓ tên sông,
 // và `stream_order` giờ là hạng theo loại chứ không phải bậc Strahler.
@@ -34,9 +36,13 @@ export const RIVERS_HYDRO_LAYER: SeedLayer = {
 };
 
 /**
- * Ingest HydroRIVERS as a new active `rivers` version, off the versioning foundation.
- * Idempotent: if a HydroRIVERS ingest version already exists, return it without
- * creating a duplicate (so re-running is safe).
+ * Ingest OSM waterways (level 3) and HydroRIVERS reaches (level 2) into ONE new active
+ * `rivers` version, off the versioning foundation. An ingest version has no parent (the
+ * kind/parent_version_id check constraint in migration 1000000000004), so rivers_active
+ * resolves its chain to that version alone -- loading the two levels into separate
+ * versions would make one level invisible to every reader. Idempotent: if a version for
+ * this source already exists, return it without creating a duplicate (so re-running is
+ * safe).
  */
 export async function ingestHydroRivers(): Promise<{ versionId: string; count: number }> {
   const pool = getPool();
@@ -76,7 +82,13 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
       layerKey: 'rivers',
       source: HYDRORIVERS_SOURCE,
     });
-    const count = await loadLayerFeatures(client, RIVERS_HYDRO_LAYER, versionId);
+    // One ingest version is one COMPLETE snapshot of the layer: app.dataset_versions'
+    // kind/parent constraint gives an ingest version no parent, so rivers_active
+    // resolves its chain to this version alone. Loading the reaches into a separate
+    // ingest version would make every OSM way vanish from the map.
+    const ways = await loadLayerFeatures(client, RIVERS_HYDRO_LAYER, versionId);
+    const reaches = await loadLayerFeatures(client, REACHES_LAYER, versionId);
+    const count = ways + reaches;
     await client.query(
       `UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`,
       [count, versionId]
