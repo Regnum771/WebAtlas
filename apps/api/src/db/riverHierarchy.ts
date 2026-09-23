@@ -190,3 +190,282 @@ export async function assignReachNames(
   }
   return { matched: Number(rows[0].matched), names: Number(rows[0].names) };
 }
+
+/**
+ * Confidence written for a bridged gap reach (see `bridgeGaps`). Deliberately below the
+ * vote's documented floor of 0.3 (assignReachNames's `accepted` CTE never produces less),
+ * so `match_confidence < 0.3` is true if and only if a reach was bridged rather than
+ * voted -- a cheap, permanent way to tell the two apart later (see the confidence-range
+ * test in riverHierarchy.test.ts and the "reaches" count in riverGates.ts, which counts
+ * both). Never 0 and never NULL: a bridged reach IS named, just not by the spatial vote.
+ */
+export const BRIDGED_CONFIDENCE = 0.2;
+
+/**
+ * Bridge single-reach same-name gaps (2026-09-23 decision, reversing the plan's original
+ * Deviation 4). A gap is a level-2 reach with no voted name whose downstream reach and at
+ * least one upstream reach both carry the SAME voted name -- the reach's own vote found
+ * that name too, just not strongly enough to clear MATCH_MAX_MEDIAN_M (see
+ * assignReachNames), and one such reach otherwise severs a river connectivity-wise even
+ * though the network is physically continuous through it. Measured case: hyriv:41295432,
+ * between the 38-reach Sông Thu Bồn group and its own terminal outlet.
+ *
+ * Single pass against a SNAPSHOT of the vote result: `vote_snapshot` is materialised once,
+ * right after assignReachNames and before any bridging write, so every gap is evaluated
+ * against the vote as it left it -- never against a name this same pass just bridged. That
+ * makes two consecutive unnamed reaches never bridge each other (the "downstream" or
+ * "upstream" required to justify a bridge must be a voted name, which by construction a
+ * gap does not have in the snapshot), and makes the result independent of row order: no
+ * ORDER BY or DISTINCT ON is needed at all, because each gap's downstream reach is unique
+ * (flows_into is one outgoing edge per reach) and the upstream requirement is an EXISTS,
+ * not a pick.
+ *
+ * Reads `water.rivers` directly, not `res_rivers`: like buildLevelOne below, the version's
+ * level-2 rows (and the name assignReachNames just wrote) were inserted/updated inside
+ * THIS transaction, after res_rivers was snapshotted, so res_rivers has no rows for a
+ * brand-new ingest version and is stale for parent_external_id on an edit-draft version
+ * either way. vote_snapshot is this function's own ANALYZEd temp table for exactly that
+ * reason -- see the perf comment on the flows_into UPDATE in buildLevelOne for what
+ * joining a raw, freshly-written table with no planner statistics costs (~7.5 minutes,
+ * measured on the real ingest).
+ */
+async function bridgeGaps(client: PoolClient, versionId: string): Promise<number> {
+  await client.query(`DROP TABLE IF EXISTS vote_snapshot`);
+  await client.query(
+    `CREATE TEMP TABLE vote_snapshot AS
+     SELECT external_id, parent_external_id AS name, flows_into_external_id
+       FROM water.rivers
+      WHERE dataset_version_id = $1 AND feature_level = 2`,
+    [versionId]
+  );
+  await client.query(`CREATE UNIQUE INDEX ON vote_snapshot (external_id)`);
+  await client.query(`CREATE INDEX ON vote_snapshot (flows_into_external_id)`);
+  await client.query(`ANALYZE vote_snapshot`);
+
+  const { rows } = await client.query<{ n: string }>(
+    `WITH gaps AS (
+       SELECT g.external_id AS gap_id, d.name AS bridge_name
+         FROM vote_snapshot g
+         JOIN vote_snapshot d ON d.external_id = g.flows_into_external_id
+        WHERE g.name IS NULL AND d.name IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM vote_snapshot u
+             WHERE u.flows_into_external_id = g.external_id AND u.name = d.name
+          )
+     ),
+     applied AS (
+       UPDATE water.rivers t
+          SET parent_external_id = gaps.bridge_name, match_confidence = $2
+         FROM gaps
+        WHERE t.dataset_version_id = $1 AND t.feature_level = 2
+          AND t.external_id = gaps.gap_id
+        RETURNING 1
+     )
+     SELECT count(*)::text AS n FROM applied`,
+    [versionId, BRIDGED_CONFIDENCE]
+  );
+  return Number(rows[0].n);
+}
+
+/**
+ * Build the level-1 rivers for `versionId`, and rewrite the level-2 link that
+ * assignReachNames parked as a bare name into the id of the river it resolves to.
+ *
+ * A river is ONE NAME PLUS ONE CONNECTED GROUP, not one connected component. Spec §2
+ * says one river per connected reach set, but a component is a BASIN: measured, the
+ * largest one carries 134 distinct OSM names (Sê San, Srêpốk, Krông Ana, Đăk Bla and
+ * ~120 named suối), so one-river-per-component would emit a single river and discard 133
+ * names. Grouping by name and letting connectivity split disjoint same-name groups is
+ * Phase 2's pattern, and it is why 439 names yield 588 rivers (post-bridging; 631 before
+ * the 2026-09-23 same-name gap bridging decision -- see bridgeGaps above).
+ *
+ * The component root is found by walking DOWNSTREAM while the next reach carries the
+ * same name. flows_into is a tree (one outgoing link per reach), so a maximal connected
+ * same-name subgraph is a subtree with exactly one most-downstream member -- which makes
+ * that member a canonical, stable component id with no union-find needed.
+ *
+ * Reads `water.rivers` directly (scoped to `dataset_version_id = versionId`), not the
+ * res_rivers temp table materialiseResolved built: assignReachNames just wrote the voted
+ * name into parent_external_id on the live table, after res_rivers was snapshotted, so
+ * res_rivers is stale for exactly that column. For an ingest version (buildRiverHierarchy's
+ * only caller today) that scope already equals the version's full resolved row set, since
+ * an ingest version has no parent chain to inherit rows from.
+ */
+async function buildLevelOne(client: PoolClient, versionId: string): Promise<number> {
+  // Reach -> (name, root reach). Roots are computed over the version's own level-2 rows.
+  await client.query(`DROP TABLE IF EXISTS reach_river`);
+  await client.query(
+    `CREATE TEMP TABLE reach_river AS
+     WITH RECURSIVE named AS (
+       SELECT external_id, parent_external_id AS name, flows_into_external_id AS nd
+         FROM water.rivers
+        WHERE dataset_version_id = $1 AND feature_level = 2 AND parent_external_id IS NOT NULL
+     ),
+     edges AS (
+       SELECT n.external_id, n.name,
+              d.external_id AS same_name_down
+         FROM named n LEFT JOIN named d ON d.external_id = n.nd AND d.name = n.name
+     ),
+     walk AS (
+       SELECT external_id AS start_id, name, external_id AS cur, same_name_down AS nxt, 0 AS d
+         FROM edges
+       UNION ALL
+       SELECT w.start_id, w.name, e.external_id, e.same_name_down, w.d + 1
+         FROM walk w JOIN edges e ON e.external_id = w.nxt
+     )
+     SELECT DISTINCT ON (start_id)
+            start_id AS reach_external_id, name,
+            'river:' || substring(cur from 7) AS river_external_id
+       FROM walk WHERE nxt IS NULL
+      ORDER BY start_id, d DESC`,
+    [versionId]
+  );
+  await client.query(`CREATE INDEX ON reach_river (reach_external_id)`);
+  await client.query(`CREATE INDEX ON reach_river (river_external_id)`);
+  // Every later join against reach_river (way_river, the ways/reaches CTEs below, and the
+  // flows_into UPDATE) needs real row-count and distribution estimates: a freshly created
+  // temp table starts with none, so the planner falls back to defaults that are wildly
+  // wrong at this size. See the flows_into UPDATE's comment for the failure this caused.
+  await client.query(`ANALYZE reach_river`);
+
+  // Each named way joins the same-name river whose reaches lie nearest to it. A name with
+  // several disjoint rivers (Sông Cái has 15) must not give all its ways to one of them.
+  await client.query(`DROP TABLE IF EXISTS way_river`);
+  await client.query(
+    `CREATE TEMP TABLE way_river AS
+     SELECT w.external_id AS way_external_id, best.river_external_id
+       FROM res_named_ways w
+       CROSS JOIN LATERAL (
+         SELECT rr.river_external_id
+           FROM reach_river rr JOIN res_rivers r ON r.external_id = rr.reach_external_id
+          WHERE rr.name = w.name
+          ORDER BY r.geom <-> w.geom
+          LIMIT 1
+       ) best`
+  );
+  await client.query(`CREATE INDEX ON way_river (river_external_id)`);
+
+  // The level-1 rows. Geometry derives from the member OSM WAYS, not the member reaches:
+  // measured, the two agree to a median length ratio of 1.11 (Sông Ba 349 km of way vs
+  // 352 km of reach), so ways cost nothing in extent while giving finer geometry, the
+  // same shape the detailed layer already draws, and independence from the spatial vote --
+  // a bad match cannot deform a river. Reaches keep their real job: topology and order.
+  // COALESCE to the reach geometry because water.rivers.geom is NOT NULL and a river with
+  // no surviving member way would otherwise fail the insert.
+  //
+  // ST_Collect over rows that are ALREADY MultiLineString (every geom in water.rivers is)
+  // does not flatten them into one MultiLineString -- measured: it returns a
+  // GeometryCollection, which the water.rivers.geom column then refuses at INSERT time
+  // ("Geometry type (GeometryCollection) does not match column type (MultiLineString)").
+  // ST_Collect only promotes SIMPLE types (Point/LineString/Polygon) to their Multi form;
+  // fed a Multi* type it just nests. ST_Dump first, so ST_Collect aggregates plain
+  // LineStrings and genuinely returns a MultiLineString. Documented deviation from the
+  // plan's example, which collects the undumped geometry directly.
+  const { rows } = await client.query<{ n: string }>(
+    `WITH ways AS (
+       SELECT wr.river_external_id,
+              ST_Collect(d.geom) AS geom
+         FROM way_river wr JOIN res_rivers r ON r.external_id = wr.way_external_id,
+              ST_Dump(r.geom) AS d
+        GROUP BY wr.river_external_id
+     ),
+     reaches AS (
+       SELECT rr.river_external_id, min(rr.name) AS name,
+              max(r.stream_order) AS max_order, ST_Collect(d.geom) AS geom
+         FROM reach_river rr JOIN res_rivers r ON r.external_id = rr.reach_external_id,
+              ST_Dump(r.geom) AS d
+        GROUP BY rr.river_external_id
+     ),
+     built AS (
+       SELECT c.river_external_id, c.name, c.max_order,
+              ST_Multi(ST_LineMerge(COALESCE(w.geom, c.geom))) AS geom
+         FROM reaches c LEFT JOIN ways w ON w.river_external_id = c.river_external_id
+     ),
+     inserted AS (
+       INSERT INTO water.rivers
+         (external_id, feature_level, name, stream_order, length_m, geom, dataset_version_id)
+       SELECT b.river_external_id, 1, b.name, b.max_order,
+              ST_Length(b.geom::geography), b.geom, $1
+         FROM built b
+       RETURNING 1
+     )
+     SELECT count(*)::text AS n FROM inserted`,
+    [versionId]
+  );
+
+  // Replace the parked NAME with the river id, on both levels.
+  await client.query(
+    `UPDATE water.rivers t SET parent_external_id = rr.river_external_id
+       FROM reach_river rr
+      WHERE t.dataset_version_id = $1 AND t.feature_level = 2
+        AND t.external_id = rr.reach_external_id`,
+    [versionId]
+  );
+  await client.query(
+    `UPDATE water.rivers t SET parent_external_id = wr.river_external_id
+       FROM way_river wr
+      WHERE t.dataset_version_id = $1 AND t.feature_level = 3
+        AND t.external_id = wr.way_external_id`,
+    [versionId]
+  );
+
+  // One row per RIVER (not per member reach): the id of its own outlet/root reach. The
+  // filter picks out, from every named reach's reach_river row, exactly the one row whose
+  // reach IS that river's root (river_external_id was built FROM that reach's id in the
+  // first place), so this is 588 rows (post-bridging), never 4,754.
+  await client.query(`DROP TABLE IF EXISTS river_root`);
+  await client.query(
+    `CREATE TEMP TABLE river_root AS
+     SELECT river_external_id, reach_external_id AS root_reach_external_id
+       FROM reach_river
+      WHERE reach_external_id = 'hyriv:' || substring(river_external_id from 7)`
+  );
+  await client.query(`CREATE INDEX ON river_root (root_reach_external_id)`);
+  await client.query(`ANALYZE river_root`);
+
+  // River A flows into river B when A's outlet reach's NEXT_DOWN lands in B (spec §2).
+  // The outlet reach IS the component root, which is encoded in the river's own id.
+  //
+  // MUST NOT join the raw water.rivers table here: it was just written to by this very
+  // transaction (the level-2 UPDATEs above, and the ~23k-row ingest before that), so it
+  // carries no planner statistics inside the transaction, and the old version of this
+  // query joined it through a computed string expression ('hyriv:' || substring(...))
+  // rather than a plain indexed equality, on top of an un-ANALYZEd reach_river. Measured
+  // in the real ingest: ~7.5 minutes. river_root and res_rivers are both ANALYZEd temp
+  // tables (materialiseResolved ANALYZEs res_rivers; see above for river_root and
+  // reach_river), and river_root is one row per river rather than one per member reach,
+  // so the join the planner sees here is small, indexed, and estimable on both sides.
+  await client.query(
+    `UPDATE water.rivers t SET flows_into_external_id = down.river_external_id
+       FROM (
+         SELECT rv.river_external_id AS river,
+                drr.river_external_id
+           FROM river_root rv
+           JOIN res_rivers root ON root.external_id = rv.root_reach_external_id
+                                AND root.feature_level = 2
+           JOIN reach_river drr ON drr.reach_external_id = root.flows_into_external_id
+          WHERE drr.river_external_id <> rv.river_external_id
+       ) down
+      WHERE t.dataset_version_id = $1 AND t.feature_level = 1
+        AND t.external_id = down.river`,
+    [versionId]
+  );
+
+  return Number(rows[0].n);
+}
+
+/**
+ * The single writer of the derived river hierarchy. Runs inside the caller's
+ * transaction, BEFORE the version is activated, so a failed gate rolls the version away
+ * entirely -- which is what spec §2's "failure means the version is not activated" means.
+ */
+export async function buildRiverHierarchy(
+  client: PoolClient,
+  versionId: string
+): Promise<{ matched: number; names: number; rivers: number; bridged: number }> {
+  await materialiseResolved(client, versionId);
+  const named = await assignReachNames(client, versionId);
+  const bridged = await bridgeGaps(client, versionId);
+  const rivers = await buildLevelOne(client, versionId);
+  return { ...named, rivers, bridged };
+}
