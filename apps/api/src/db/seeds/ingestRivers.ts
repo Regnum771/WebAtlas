@@ -6,6 +6,7 @@ import { versionsService } from '../../modules/versions/service';
 import { loadLayerFeatures } from './run';
 import type { SeedLayer } from './registry';
 import { REACHES_LAYER } from './ingestReaches';
+import { materialiseResolved, assignReachNames } from '../riverHierarchy';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 // Đổi chuỗi này mỗi khi nội dung file seed đổi: hàm ingest dưới đây idempotent
@@ -93,6 +94,12 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
       `UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`,
       [count, versionId]
     );
+    // Gán tên cho đoạn sông cấp 2 trước activate(): chạy trong cùng giao dịch ingest
+    // để ROLLBACK khi lỗi xoá sạch cả version, đúng như spec "failure means the
+    // version is not activated" (xem riverHierarchy.ts).
+    await materialiseResolved(client, versionId);
+    const named = await assignReachNames(client, versionId);
+    console.log(`  named ${named.matched} reaches across ${named.names} rivers`);
     // Đóng dấu mã hành chính giờ là nghĩa vụ của svc.activate() (xem versions/service.ts):
     // không còn gọi tường minh ở đây.
     await svc.activate(client, 'rivers', versionId);

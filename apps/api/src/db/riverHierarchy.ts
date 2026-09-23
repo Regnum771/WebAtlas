@@ -1,0 +1,125 @@
+import type { PoolClient } from 'pg';
+
+/** Sample points per reach, at 0.1, 0.3, 0.5, 0.7, 0.9 along its length. */
+export const MATCH_SAMPLES = 5;
+/** A strict majority of MATCH_SAMPLES. A plurality would let a 2-2-1 split decide. */
+export const MATCH_MIN_VOTES = 3;
+/** ST_DWithin prefilter, in degrees. ~1.1 km at this latitude. */
+export const MATCH_TOLERANCE_DEG = 0.01;
+/** Median sample-to-way distance above which a majority is still refused. */
+export const MATCH_MAX_MEDIAN_M = 500;
+
+/**
+ * Resolve `versionId`'s chain into temp tables for the rest of the build.
+ *
+ * Why temp tables and not water.rivers_active: the view's WITH RECURSIVE + DISTINCT ON
+ * pipeline is an optimizer fence, so no predicate reaches the index underneath it.
+ * Measured 2026-09-22: the name join below timed out past 120s against the view and
+ * took 10.9s against these tables. Same reasoning, same fix as search's repository.
+ *
+ * Resolution is keyed on the GIVEN version's ancestor chain, not on the active pointer,
+ * so this works unchanged inside an ingest transaction (an ingest version has no parent,
+ * so the chain is itself) and inside an edit-draft commit (draft -> parent -> ...).
+ */
+export async function materialiseResolved(client: PoolClient, versionId: string): Promise<void> {
+  await client.query(`DROP TABLE IF EXISTS res_rivers, res_named_ways`);
+  await client.query(
+    `CREATE TEMP TABLE res_rivers AS
+     WITH RECURSIVE chain AS (
+       SELECT id, parent_version_id, 0 AS depth FROM app.dataset_versions WHERE id = $1
+       UNION ALL
+       SELECT p.id, p.parent_version_id, c.depth + 1
+         FROM app.dataset_versions p JOIN chain c ON p.id = c.parent_version_id
+     ),
+     resolved AS (
+       SELECT DISTINCT ON (t.external_id) t.*
+         FROM water.rivers t JOIN chain c ON t.dataset_version_id = c.id
+         ORDER BY t.external_id, c.depth
+     )
+     -- Every column Task 7's supersede step copies onto a new row, not just the ones the
+     -- vote reads: a superseding row must carry the feature's full current state, and
+     -- re-reading water.rivers for the rest would cross the optimizer fence again.
+     SELECT external_id, feature_level, name, code, stream_order, length_m,
+            parent_external_id, flows_into_external_id, match_confidence, geom
+       FROM resolved WHERE NOT deleted`,
+    [versionId]
+  );
+  await client.query(`CREATE INDEX ON res_rivers (external_id)`);
+  await client.query(`CREATE INDEX ON res_rivers (feature_level)`);
+  await client.query(`CREATE INDEX ON res_rivers USING GIST (geom)`);
+
+  await client.query(
+    `CREATE TEMP TABLE res_named_ways AS
+       SELECT external_id, name, geom FROM res_rivers
+        WHERE feature_level = 3 AND name IS NOT NULL AND geom IS NOT NULL`
+  );
+  await client.query(`CREATE INDEX ON res_named_ways USING GIST (geom)`);
+  await client.query(`ANALYZE res_rivers`);
+  await client.query(`ANALYZE res_named_ways`);
+}
+
+/**
+ * Give each level-2 reach the name of the nearest named OSM way, by majority vote.
+ *
+ * parent_external_id temporarily holds the NAME. Task 6 replaces it with the id of the
+ * level-1 river that name resolves to, once connectivity has split same-name groups.
+ * The intermediate state never reaches an active version: the whole build runs inside
+ * the ingest transaction, before activate().
+ *
+ * Confidence is the share of agreeing samples scaled by median distance (spec §2):
+ *   (votes / MATCH_SAMPLES) * (1 - 0.5 * min(median, MAX) / MAX)
+ * so an accepted match lands in [0.3, 1.0] -- a unanimous vote on top of the way scores
+ * 1.0, a bare majority at the distance limit scores 0.3. Never 0, because a match that
+ * was accepted is not no-confidence; a refused match stores NULL instead.
+ */
+export async function assignReachNames(
+  client: PoolClient,
+  versionId: string
+): Promise<{ matched: number; names: number }> {
+  const { rows } = await client.query<{ matched: string; names: string }>(
+    `WITH samples AS (
+       SELECT r.external_id,
+              ST_LineInterpolatePoint(ST_LineMerge(r.geom), (s.i * 2 - 1)::float / ($2 * 2)) AS pt
+         FROM res_rivers r, generate_series(1, $2) AS s(i)
+        WHERE r.feature_level = 2 AND r.geom IS NOT NULL
+          AND ST_GeometryType(ST_LineMerge(r.geom)) = 'ST_LineString'
+     ),
+     nearest AS (
+       SELECT s.external_id, w.name,
+              ST_Distance(w.geom::geography, s.pt::geography) AS dist_m
+         FROM samples s
+         CROSS JOIN LATERAL (
+           SELECT n.name, n.geom FROM res_named_ways n
+            WHERE ST_DWithin(n.geom, s.pt, $3)
+            ORDER BY n.geom <-> s.pt
+            LIMIT 1
+         ) w
+     ),
+     voted AS (
+       SELECT external_id, name, count(*) AS votes,
+              percentile_cont(0.5) WITHIN GROUP (ORDER BY dist_m) AS med_m
+         FROM nearest GROUP BY external_id, name
+     ),
+     best AS (
+       -- Ties break on the closer candidate, so the outcome does not depend on scan order.
+       SELECT DISTINCT ON (external_id) external_id, name, votes, med_m
+         FROM voted ORDER BY external_id, votes DESC, med_m ASC
+     ),
+     accepted AS (
+       SELECT external_id, name,
+              (votes::real / $2) * (1 - 0.5 * least(med_m, $4) / $4) AS confidence
+         FROM best WHERE votes >= $5 AND med_m <= $4
+     ),
+     applied AS (
+       UPDATE water.rivers t
+          SET parent_external_id = a.name, match_confidence = a.confidence
+         FROM accepted a
+        WHERE t.dataset_version_id = $1 AND t.external_id = a.external_id
+        RETURNING t.parent_external_id
+     )
+     SELECT count(*)::text AS matched, count(DISTINCT parent_external_id)::text AS names
+       FROM applied`,
+    [versionId, MATCH_SAMPLES, MATCH_TOLERANCE_DEG, MATCH_MAX_MEDIAN_M, MATCH_MIN_VOTES]
+  );
+  return { matched: Number(rows[0].matched), names: Number(rows[0].names) };
+}
