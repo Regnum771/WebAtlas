@@ -8,6 +8,22 @@ export const MATCH_MIN_VOTES = 3;
 export const MATCH_TOLERANCE_DEG = 0.01;
 /** Median sample-to-way distance above which a majority is still refused. */
 export const MATCH_MAX_MEDIAN_M = 500;
+/**
+ * Size of the nearest-candidate window the tie-break (external_id) is applied to,
+ * per sample point. It bounds how many ways tied at the exact minimum KNN distance
+ * the tie-break can see: an (N+1)-th tied candidate outside the window would make
+ * the result scan-order dependent again -- exactly the bug this whole mechanism
+ * exists to remove (see assignReachNames). It can't be raised by appending
+ * external_id straight onto the KNN ORDER BY instead -- measured 2026-09-23, that
+ * forces a full sort per sample point and takes the build from ~10s to >120s.
+ * res_named_ways holds 1,327 distinct geometries with zero duplicates, so an exact
+ * tie needs two *different* geometries at bit-identical distance from a sample
+ * point -- rare (one such pair is already known to exist: it moved the matched
+ * count from 4,715 to 4,716). 32 gives an 8x margin over the previous, unverified
+ * value of 4, at negligible cost: the window is still drawn via the index's native
+ * KNN traversal, and 32 rows is ~2% of the whole named-ways table.
+ */
+export const MATCH_KNN_WINDOW = 32;
 
 /**
  * Resolve `versionId`'s chain into temp tables for the rest of the build.
@@ -76,7 +92,7 @@ export async function assignReachNames(
   client: PoolClient,
   versionId: string
 ): Promise<{ matched: number; names: number }> {
-  const { rows } = await client.query<{ matched: string; names: string }>(
+  const { rows } = await client.query<{ matched: string; names: string; saturated: string }>(
     `WITH samples AS (
        SELECT r.external_id,
               ST_LineInterpolatePoint(ST_LineMerge(r.geom), (s.i * 2 - 1)::float / ($2 * 2)) AS pt
@@ -85,7 +101,7 @@ export async function assignReachNames(
           AND ST_GeometryType(ST_LineMerge(r.geom)) = 'ST_LineString'
      ),
      nearest AS (
-       SELECT s.external_id, w.name,
+       SELECT s.external_id, w.name, w.saturated,
               ST_Distance(w.geom::geography, s.pt::geography) AS dist_m
          FROM samples s
          CROSS JOIN LATERAL (
@@ -104,15 +120,25 @@ export async function assignReachNames(
            -- still-fast KNN path (an exact tie is always among the closest
            -- few, since it's tied for minimum distance by definition), and
            -- break the tie only within that tiny window.
-           SELECT knn.name, knn.geom FROM (
+           WITH knn AS (
              SELECT n.name, n.geom, n.external_id, n.geom <-> s.pt AS d
                FROM res_named_ways n
               WHERE ST_DWithin(n.geom, s.pt, $3)
               ORDER BY n.geom <-> s.pt
-              LIMIT 4
-           ) knn
-           ORDER BY d, external_id
-           LIMIT 1
+              LIMIT $6
+           ),
+           top AS (
+             SELECT name, geom FROM knn ORDER BY d, external_id LIMIT 1
+           )
+           -- The window rows are already materialised here, so checking whether the
+           -- window saturated (every one of its $6 rows sits at the same distance as
+           -- the closest) costs nothing extra -- unlike a standalone measurement pass
+           -- over the whole table, which is prohibitively expensive at this scale.
+           -- Saturation means a tie group may extend past the window, so the pick
+           -- above is no longer provably scan-order-independent.
+           SELECT top.name, top.geom,
+                  (SELECT count(*) = $6 AND max(d) = min(d) FROM knn) AS saturated
+             FROM top
          ) w
      ),
      voted AS (
@@ -139,10 +165,28 @@ export async function assignReachNames(
          FROM accepted a
         WHERE t.dataset_version_id = $1 AND t.external_id = a.external_id
         RETURNING t.parent_external_id
+     ),
+     applied_counts AS (
+       SELECT count(*) AS matched, count(DISTINCT parent_external_id) AS names FROM applied
+     ),
+     saturation AS (
+       SELECT count(*) AS n FROM nearest WHERE saturated
      )
-     SELECT count(*)::text AS matched, count(DISTINCT parent_external_id)::text AS names
-       FROM applied`,
-    [versionId, MATCH_SAMPLES, MATCH_TOLERANCE_DEG, MATCH_MAX_MEDIAN_M, MATCH_MIN_VOTES]
+     SELECT applied_counts.matched::text AS matched,
+            applied_counts.names::text AS names,
+            saturation.n::text AS saturated
+       FROM applied_counts, saturation`,
+    [versionId, MATCH_SAMPLES, MATCH_TOLERANCE_DEG, MATCH_MAX_MEDIAN_M, MATCH_MIN_VOTES, MATCH_KNN_WINDOW]
   );
+  const saturated = Number(rows[0].saturated);
+  if (saturated > 0) {
+    throw new Error(
+      `assignReachNames: ${saturated} sample point(s) saturated the KNN tie-break window ` +
+        `(MATCH_KNN_WINDOW=${MATCH_KNN_WINDOW} in riverHierarchy.ts) -- every candidate in the ` +
+        `window sat at the same distance, so a tie group may extend past it and the nearest-way ` +
+        `pick for those points is no longer provably deterministic across machines. Widen ` +
+        `MATCH_KNN_WINDOW and re-run.`
+    );
+  }
   return { matched: Number(rows[0].matched), names: Number(rows[0].names) };
 }
