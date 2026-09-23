@@ -113,13 +113,13 @@ Four things that will bite an implementer who has not been told. Each was reprod
 
 ## Prerequisite (already done by the planner)
 
-The HydroRIVERS Asia shapefile has been downloaded and extracted to the session scratchpad:
+The HydroRIVERS Asia shapefile has been downloaded and extracted (re-downloaded 2026-09-23; the earlier session-scratchpad copy is superseded). Note the archive nests one directory deep:
 
 ```
-C:\Users\quock\AppData\Local\Temp\claude\c--Users-quock-Documents-Projects-webatlas\4b50c169-a355-41a6-b54f-3051ff782f5e\scratchpad\hydro\HydroRIVERS_v10_as_shp\HydroRIVERS_v10_as.shp
+C:\Users\quock\Downloads\HydroRIVERS_v10_as_shp\HydroRIVERS_v10_as_shp\HydroRIVERS_v10_as.shp
 ```
 
-It is 207 MB of `.shp` plus a 147 MB `.dbf` and is **never committed** — only the 3.25 MB derived GeoJSON is. If the scratchpad has been cleaned, re-download from `https://data.hydrosheds.org/file/HydroRIVERS/HydroRIVERS_v10_as_shp.zip` (~90 MB, HydroSHEDS, CC BY 4.0). `geopandas 1.1.4` is already installed and importable; no system GDAL is needed or present.
+It is 207 MB of `.shp` plus a 147 MB `.dbf` and is **never committed** — only the 3.25 MB derived GeoJSON is. If that directory is gone, re-download from `https://data.hydrosheds.org/file/HydroRIVERS/HydroRIVERS_v10_as_shp.zip` (~90 MB, HydroSHEDS, CC BY 4.0). `geopandas 1.1.4` is already installed and importable; no system GDAL is needed or present.
 
 ---
 
@@ -780,7 +780,7 @@ def _write_geojson(gdf: "gpd.GeoDataFrame", dst: str, round_to: int | None = Non
 
 ```bash
 python apps/api/scripts/prep_hydrosheds.py rivers \
-  "C:/Users/quock/AppData/Local/Temp/claude/c--Users-quock-Documents-Projects-webatlas/4b50c169-a355-41a6-b54f-3051ff782f5e/scratchpad/hydro/HydroRIVERS_v10_as_shp/HydroRIVERS_v10_as.shp" \
+  "C:/Users/quock/Downloads/HydroRIVERS_v10_as_shp/HydroRIVERS_v10_as_shp/HydroRIVERS_v10_as.shp" \
   apps/api/src/db/seeds/data/hydrorivers-region.geojson
 ```
 
