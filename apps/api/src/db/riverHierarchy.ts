@@ -89,10 +89,30 @@ export async function assignReachNames(
               ST_Distance(w.geom::geography, s.pt::geography) AS dist_m
          FROM samples s
          CROSS JOIN LATERAL (
-           SELECT n.name, n.geom FROM res_named_ways n
-            WHERE ST_DWithin(n.geom, s.pt, $3)
-            ORDER BY n.geom <-> s.pt
-            LIMIT 1
+           -- external_id tie-breaks two equidistant ways: without it, the KNN
+           -- distance alone is not a total order and PostgreSQL may return
+           -- either row depending on scan order, which differs across machines
+           -- and would make a pinned baseline count unstable.
+           --
+           -- The tie-break can't just be appended to the outer ORDER BY
+           -- (<-> s.pt, external_id): that extra key stops the planner from using
+           -- the GiST index's native KNN traversal for the LIMIT, and it falls
+           -- back to fetching and sorting every way inside the tolerance
+           -- radius per sample point -- measured 2026-09-23: the whole build
+           -- went from ~10s to >120s (cancelled) with 65k+ sample points.
+           -- Instead, take a small window of the nearest candidates via the
+           -- still-fast KNN path (an exact tie is always among the closest
+           -- few, since it's tied for minimum distance by definition), and
+           -- break the tie only within that tiny window.
+           SELECT knn.name, knn.geom FROM (
+             SELECT n.name, n.geom, n.external_id, n.geom <-> s.pt AS d
+               FROM res_named_ways n
+              WHERE ST_DWithin(n.geom, s.pt, $3)
+              ORDER BY n.geom <-> s.pt
+              LIMIT 4
+           ) knn
+           ORDER BY d, external_id
+           LIMIT 1
          ) w
      ),
      voted AS (
@@ -102,8 +122,11 @@ export async function assignReachNames(
      ),
      best AS (
        -- Ties break on the closer candidate, so the outcome does not depend on scan order.
+       -- name is the final key: votes and med_m can still tie between two candidate
+       -- names for the same reach, and without a total order here too, DISTINCT ON
+       -- would pick an arbitrary one per machine, again breaking the pinned baseline.
        SELECT DISTINCT ON (external_id) external_id, name, votes, med_m
-         FROM voted ORDER BY external_id, votes DESC, med_m ASC
+         FROM voted ORDER BY external_id, votes DESC, med_m ASC, name ASC
      ),
      accepted AS (
        SELECT external_id, name,
