@@ -112,4 +112,27 @@ describe('roi.store', () => {
     pending.resolve(line); await p;
     expect(getRoiState()).toMatchObject({ status: 'ready' });
   });
+
+  it('a drawn shape ends the drawing', async () => {
+    const pending = deferred<ResolvedRoi>();
+    setRoiResolver(vi.fn().mockReturnValue(pending.promise));
+    startDrawing('Polygon');
+    expect(getRoiState()).toMatchObject({ status: 'drawing', drawKind: 'Polygon' });
+    const p = setRoi(river, { fit: false });
+    expect(getRoiState()).toMatchObject({ status: 'resolving', drawKind: null });
+    pending.resolve(line); await p;
+    expect(getRoiState()).toMatchObject({ status: 'ready', drawKind: null, resolved: line });
+  });
+
+  it('setRoi then stopDrawing keeps the pick resolving', async () => {
+    const pending = deferred<ResolvedRoi>();
+    setRoiResolver(vi.fn().mockReturnValue(pending.promise));
+    startDrawing('Point');
+    const p = setRoi(river, { fit: true });
+    expect(getRoiState()).toMatchObject({ status: 'resolving' });
+    stopDrawing();
+    expect(getRoiState()).toMatchObject({ status: 'resolving', drawKind: null });
+    pending.resolve(line); await p;
+    expect(getRoiState()).toMatchObject({ status: 'ready' });
+  });
 });

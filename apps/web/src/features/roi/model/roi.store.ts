@@ -45,8 +45,7 @@ export function resetRoiStore(): void { seq++; resolver = resolveRoi; publish(EM
 export async function setRoi(roi: Roi, opts: { fit: RoiFit }): Promise<void> {
   const mine = ++seq;
   const kept = { roi: state.roi, resolved: state.resolved };
-  const isDrawing = state.status === 'drawing';
-  update({ status: isDrawing ? 'drawing' : 'resolving', error: null, hint: null, ...(isDrawing ? {} : { drawKind: null }) });
+  update({ status: 'resolving', error: null, hint: null, drawKind: null });
   try {
     const resolved = await resolver(roi);
     if (mine !== seq) return;
@@ -57,15 +56,14 @@ export async function setRoi(roi: Roi, opts: { fit: RoiFit }): Promise<void> {
     }
   } catch (e) {
     if (mine !== seq) return;
+    const message = e instanceof ApiError ? e.message : 'Không xác định được vùng phân tích.';
     if (state.status === 'drawing') {
-      update({
-        error: e instanceof ApiError ? e.message : 'Không xác định được vùng phân tích.',
-      });
+      update({ error: message });
     } else {
       update({
         ...kept,
         status: kept.resolved ? 'ready' : 'empty',
-        error: e instanceof ApiError ? e.message : 'Không xác định được vùng phân tích.',
+        error: message,
       });
     }
   }
@@ -80,7 +78,7 @@ export function setRadius(radiusKm: number | null): Promise<void> {
 export function clearRoi(): void { seq++; publish(EMPTY); }
 export function startDrawing(kind: RoiDrawKind): void { update({ status: 'drawing', drawKind: kind, error: null, hint: null }); }
 export function stopDrawing(): void {
-  if (state.status !== 'drawing') { update({ drawKind: null }); return; }
+  if (state.status !== 'drawing') return;
   update({ status: state.resolved ? 'ready' : 'empty', drawKind: null });
 }
 export function setRoiHint(hint: string | null): void { update({ hint }); }
