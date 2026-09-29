@@ -104,11 +104,6 @@ function referenceSelect(keys: ReferenceLayerKey[]): string {
  * Only in-region units, because an ROI outside the region is refused anyway — a hit
  * that cannot be used would only mislead.
  */
-/**
- * The six working provinces and their 616 wards (spec §10). 622 rows: no index needed.
- * Only in-region units, because an ROI outside the region is refused anyway — a hit
- * that cannot be used would only mislead.
- */
 function adminSelect(): string {
   const codes = REGION_PROVINCE_CODES.map((c) => `'${c}'`).join(',');
   return `

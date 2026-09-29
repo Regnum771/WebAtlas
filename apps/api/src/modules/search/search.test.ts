@@ -225,6 +225,7 @@ describe('GET /api/search with the admin source', () => {
     // via trigram similarity. Verify that all returned admin units are in-region.
     const res = await search('Hà Nội', 'admin');
     const adminHits = (res.json().results as Hit[]).filter((h) => h.source === 'admin');
+    expect(adminHits.length).toBeGreaterThan(0);
 
     // No province from outside the region (e.g., Hà Nội = '01')
     for (const hit of adminHits) {
@@ -234,8 +235,8 @@ describe('GET /api/search with the admin source', () => {
     }
 
     // All ward results must have province_code in working region
-    if (adminHits.some((h) => h.layerKey === 'ward')) {
-      const wardCodes = adminHits.filter((h) => h.layerKey === 'ward').map((h) => h.featureId);
+    const wardCodes = adminHits.filter((h) => h.layerKey === 'ward').map((h) => h.featureId);
+    if (wardCodes.length > 0) {
       const { rows } = await getPool().query<{ code: string; province_code: string }>(
         `SELECT code, province_code FROM admin.wards WHERE code = ANY($1::text[])`,
         [wardCodes]
