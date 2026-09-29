@@ -35,8 +35,9 @@ export async function selectWithinOp(db: Queryable, input: SelectWithinInput): P
     ? {
         sql: `${facts.admin.level === 'province' ? 'province_codes' : 'ward_codes'} && ARRAY[$1]::text[]`,
         param: facts.admin.code,
+        method: 'Theo mã hành chính đã gán' as const,
       }
-    : { sql: `geom && ${GEOM} AND ST_Intersects(geom, ${GEOM})`, param: geojson as string };
+    : { sql: `geom && ${GEOM} AND ST_Intersects(geom, ${GEOM})`, param: geojson as string, method: null };
 
   const summary: Record<string, number | string> = { 'Tổng số': 0 };
   const rows: AnalysisRow[] = [];
@@ -75,7 +76,7 @@ export async function selectWithinOp(db: Queryable, input: SelectWithinInput): P
 
   summary['Tổng số'] = total;
   summary['Diện tích vùng (km²)'] = (resolved.measure as { areaKm2: number }).areaKm2;
-  if (facts.admin) summary['Cách đếm'] = 'Theo mã hành chính đã gán';
+  if (inArea.method) summary['Cách đếm'] = inArea.method;
   const capped = capResultItems([
     { geometry: resolved.display, role: 'input', label: resolved.label },
     ...highlights,
