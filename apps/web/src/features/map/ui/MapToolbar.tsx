@@ -32,6 +32,7 @@ export interface MapToolbarViewProps {
   /** Rendered inside the toolbar rail's control group / above the pill — see Task 13. */
   analysisButtons?: ReactNode;
   analysisPanel?: ReactNode;
+  roiChip?: ReactNode;
 }
 
 /**
@@ -55,6 +56,7 @@ export function MapToolbarView({
   onBasemap,
   analysisButtons,
   analysisPanel,
+  roiChip,
 }: MapToolbarViewProps) {
   const isMinZoom = zoom <= MIN_ZOOM + 0.05;
   const isMaxZoom = zoom >= MAX_ZOOM - 0.05;
@@ -64,6 +66,8 @@ export function MapToolbarView({
       {measureValue && <div className="measure-result glass-panel">{measureValue}</div>}
 
       {analysisPanel}
+
+      {roiChip}
 
       <div className="glass-panel toolbar-rail">
         <div className="control-group">
@@ -172,10 +176,12 @@ export default function MapToolbar({
   flyoutOpen,
   analysisButtons,
   analysisPanel,
+  roiChip,
 }: {
   flyoutOpen: boolean;
   analysisButtons?: ReactNode;
   analysisPanel?: ReactNode;
+  roiChip?: ReactNode;
 }) {
   const { map, basemap, setBasemap, layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
   const zoom = useMapZoom();
@@ -238,6 +244,7 @@ export default function MapToolbar({
       onBasemap={onBasemap}
       analysisButtons={analysisButtons}
       analysisPanel={analysisPanel}
+      roiChip={roiChip}
     />
   );
 }

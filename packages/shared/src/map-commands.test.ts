@@ -17,6 +17,18 @@ import {
 import { LAYER_ATTRIBUTE_MAP } from './layer-attributes.js';
 
 describe('isMapCommand', () => {
+  it('accepts showRoi with a geometry, a label and a fit mode', () => {
+    const geometry = { type: 'Point' as const, coordinates: [108, 13] };
+    expect(isMapCommand({ kind: 'showRoi', geometry, label: 'Đập A' })).toBe(true);
+    expect(isMapCommand({ kind: 'showRoi', geometry, label: 'Đập A', fit: 'ifOutside' })).toBe(true);
+    expect(isMapCommand({ kind: 'showRoi', geometry, label: 'Đập A', fit: 'sometimes' })).toBe(false);
+    expect(isMapCommand({ kind: 'showRoi', label: 'Đập A' })).toBe(false);
+  });
+
+  it('accepts clearRoi', () => {
+    expect(isMapCommand({ kind: 'clearRoi' })).toBe(true);
+  });
+
   it('accepts a well-formed zoomToRegion command', () => {
     const cmd: MapCommand = { kind: 'zoomToRegion', provinceCode: '66' };
     expect(isMapCommand(cmd)).toBe(true);
@@ -87,17 +99,8 @@ describe('isMapCommand', () => {
 
   it('lists every kind in MAP_COMMAND_KINDS', () => {
     expect([...MAP_COMMAND_KINDS].sort()).toEqual([
-      'clearHighlights',
-      'highlightFeatures',
-      'proposeFeatureEdit',
-      'resetView',
-      'setBasemap',
-      'setLayerOpacity',
-      'setLayerVisible',
-      'showGeometries',
-      'zoomTo',
-      'zoomToFeature',
-      'zoomToRegion',
+      'clearHighlights', 'clearRoi', 'highlightFeatures', 'proposeFeatureEdit', 'resetView', 'setBasemap',
+      'setLayerOpacity', 'setLayerVisible', 'showGeometries', 'showRoi', 'zoomTo', 'zoomToFeature', 'zoomToRegion',
     ]);
   });
 

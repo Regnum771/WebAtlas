@@ -8,6 +8,7 @@ import {
 } from '@webatlas/shared';
 import type { BasemapType } from './MapModel';
 import { PROVINCE_CENTROIDS } from './provinceCentroids';
+import { drawRoi, eraseRoi } from './roiLayer';
 import { getProvinceBbox } from '../../../entities/admin-unit/adminUnits.store';
 import { MIN_ZOOM, MAX_ZOOM, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
 import { showHighlights, showResults, clearHighlights } from './highlightLayer';
@@ -129,6 +130,15 @@ export function createCommandExecutor(deps: CommandDeps) {
         if (!deps.map) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
         showResults(deps.map, cmd.items, cmd.fit ?? false);
         return { ok: true, text: `Đã hiển thị ${cmd.items.length} hình trên bản đồ.` };
+      }
+      case 'showRoi': {
+        if (!deps.map) return { ok: false, reason: 'Bản đồ chưa sẵn sàng.' };
+        drawRoi(deps.map, cmd.geometry, cmd.label, cmd.fit ?? false);
+        return { ok: true, text: `Đã đặt vùng phân tích: ${cmd.label}.` };
+      }
+      case 'clearRoi': {
+        if (deps.map) eraseRoi(deps.map);
+        return { ok: true, text: 'Đã bỏ vùng phân tích.' };
       }
       case 'proposeFeatureEdit': {
         if (!deps.onProposeEdit) return { ok: false, reason: 'Không mở được biểu mẫu cập nhật.' };

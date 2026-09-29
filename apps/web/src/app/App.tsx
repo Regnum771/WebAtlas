@@ -8,6 +8,7 @@ import PrintRoute from '../pages/print';
 import MapView from '../features/map/ui/MapView';
 import LayersPanel from '../features/layers-panel';
 import MapToolbar from '../features/map/ui/MapToolbar';
+import RoiChip from '../features/roi/ui/RoiChip';
 import { useAnalysisTools } from '../features/analysis';
 import MapLoadingBar from '../features/map/ui/MapLoadingBar';
 import DynamicPopup from '../components/DynamicPopup';
@@ -52,7 +53,7 @@ function RailAndFlyout() {
     <>
       <MapView flyoutOpen={rail.active !== null} />
       <MapLoadingBar flyoutOpen={rail.active !== null} />
-      <MapToolbar flyoutOpen={rail.active !== null} analysisButtons={analysis.buttons} analysisPanel={analysis.panel} />
+      <MapToolbar flyoutOpen={rail.active !== null} analysisButtons={analysis.buttons} analysisPanel={analysis.panel} roiChip={<RoiChip />} />
       <IconRail items={items} active={rail.active} onToggle={rail.toggle} />
       {rail.active !== null && (
         <aside className="rail-flyout">
