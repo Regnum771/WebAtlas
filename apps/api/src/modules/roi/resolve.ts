@@ -148,10 +148,16 @@ export async function resolveRoi(db: Queryable, roi: Roi): Promise<RoiResolution
   const src = await sourceOf(db, roi);
   const radiusKm = roi.source === 'admin' ? null : roi.radiusKm ?? null;
   // Admin units are inside the region by construction (adminSource), so they skip the
-  // ~100 ms union-and-intersect; everything else is clipped to the six provinces.
+  // union and the clip; everything else is clipped to the six provinces. The union is
+  // computed once and joined in. A shape already covered by the region is kept as is:
+  // GEOS 3.9.0's overlay returns EMPTY for an exactly horizontal or vertical line lying
+  // wholly inside the region, while ST_CoveredBy answers correctly (and this also skips
+  // the costly overlay in the common case).
   const clip = src.bounded
-    ? `ST_CollectionExtract(ST_Intersection(s.g, (${REGION_SQL})), s.outdim + 1)`
+    ? `CASE WHEN ST_CoveredBy(s.g, rg.g) THEN s.g
+            ELSE ST_CollectionExtract(ST_Intersection(s.g, rg.g), s.outdim + 1) END`
     : 's.g';
+  const regionJoin = src.bounded ? `CROSS JOIN (${REGION_SQL}) rg` : '';
 
   const { rows: [row] } = await db.query<ShapeRow>(
     `WITH src AS (
@@ -173,7 +179,7 @@ export async function resolveRoi(db: Queryable, roi: Roi): Promise<RoiResolution
      clipped AS MATERIALIZED (
        SELECT dim, npoints, nparts, outdim,
               CASE WHEN s.g IS NULL THEN NULL::geometry ELSE ${clip} END AS g
-         FROM shaped s
+         FROM shaped s ${regionJoin}
      )
      SELECT dim AS "sourceDim", npoints AS "sourceVertices", nparts AS "sourceParts", outdim AS "outDim",
             g IS NULL AS refused, (g IS NULL OR ST_IsEmpty(g)) AS empty,

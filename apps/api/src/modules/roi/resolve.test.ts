@@ -68,11 +68,19 @@ describe('resolveRoi — drawn', () => {
   });
 
   it('measures a line in km', async () => {
-    const r = await resolve({ source: 'drawn', geometry: { type: 'LineString', coordinates: [[108.05, 12.68], [108.25, 12.681]] } });
+    const r = await resolve({ source: 'drawn', geometry: { type: 'LineString', coordinates: [[108.05, 12.68], [108.25, 12.68]] } });
     expect(r.resolved.kind).toBe('line');
     const { lengthKm } = r.resolved.measure as { lengthKm: number };
     expect(lengthKm).toBeGreaterThan(21);
     expect(lengthKm).toBeLessThan(22.5);
+  });
+
+  it('measures a vertical line in km', async () => {
+    const r = await resolve({ source: 'drawn', geometry: { type: 'LineString', coordinates: [[108.05, 12.68], [108.05, 12.9]] } });
+    expect(r.resolved.kind).toBe('line');
+    const { lengthKm } = r.resolved.measure as { lengthKm: number };
+    expect(lengthKm).toBeGreaterThan(24);
+    expect(lengthKm).toBeLessThan(25);
   });
 
   it('refuses a drawing entirely outside the working region', async () => {
