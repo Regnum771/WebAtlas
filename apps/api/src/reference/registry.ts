@@ -1,4 +1,7 @@
 import { NotFoundError } from '../errors';
+// Defined in @webatlas/shared since Phase 4, so the browser's Roi type and this
+// registry cannot drift apart; re-exported so existing imports keep working.
+import { REFERENCE_LAYER_KEYS, type ReferenceLayerKey } from '@webatlas/shared';
 
 /**
  * The `basemap` reference layers, per spec §4.
@@ -15,8 +18,8 @@ import { NotFoundError } from '../errors';
  * `places_vn`, which would confuse a region-scoped atlas. `railways_vn` IS in
  * scope despite the `_vn` suffix because the loader builds no region variant of it.
  */
-export const REFERENCE_LAYER_KEYS = ['roads', 'railways', 'water', 'landuse', 'places'] as const;
-export type ReferenceLayerKey = (typeof REFERENCE_LAYER_KEYS)[number];
+export { REFERENCE_LAYER_KEYS };
+export type { ReferenceLayerKey };
 
 /** Decides whether an ROI built from this layer needs a radius to become an area. */
 export type ReferenceGeomKind = 'line' | 'point' | 'area';
