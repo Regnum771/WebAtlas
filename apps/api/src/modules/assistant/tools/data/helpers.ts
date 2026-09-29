@@ -47,6 +47,23 @@ export function layerTable(key: EditableLayerKey): string {
 }
 
 /**
+ * SQL predicate that restricts a layer to its ENTITY rows. `water.rivers` holds three
+ * levels since the river-topology ingest (1 = named river, 2 = HydroRIVERS reach, 3 =
+ * OSM way), and any query that counts, lists, searches or ranks "rivers" means the
+ * level-1 river: without this, select_within over Đắk Lắk reported 2,991 rivers where
+ * there are 142 (found 2026-09-30). Every other layer has one level, so it is `true`.
+ *
+ * Collection queries apply it twice, like any other predicate over candidateCtes: in the
+ * candidate query (so a KNN over-fetch or LIMIT is not spent on reaches and ways) and
+ * again on `resolved`. Lookups BY ID do not use it: a click on one way must still
+ * resolve that way. Interpolated as text, but built only from the allowlisted key.
+ */
+export function entityPredicate(key: EditableLayerKey, alias = ''): string {
+  assertKnownLayer(key);
+  return key === 'rivers' ? `${alias}feature_level = 1` : 'true';
+}
+
+/**
  * Builds the candidate-then-resolve CTE chain that lets a predicate reach an
  * index on the base table, instead of hitting the wall documented in
  * modules/search/repository.ts's layerCtes: water.<layer>_active resolves the

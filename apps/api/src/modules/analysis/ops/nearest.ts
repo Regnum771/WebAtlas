@@ -1,6 +1,6 @@
 import type { AnalysisResult, EditableLayerKey, ResultGeometry } from '@webatlas/shared';
 import {
-  LAYER_LABELS, POINT_SQL, candidateCtes, layerTable, layerView, type Queryable,
+  LAYER_LABELS, POINT_SQL, candidateCtes, entityPredicate, layerTable, layerView, type Queryable,
 } from '../../assistant/tools/data/helpers';
 import type { NearestInput } from '../schemas';
 
@@ -22,9 +22,12 @@ export async function queryNearest(
 ): Promise<NearestRow[]> {
   const point = 'ST_SetSRID(ST_MakePoint($1, $2), 4326)';
   const overfetch = q.limit * NEAREST_OVERFETCH_FACTOR;
+  // The entity predicate goes in the KNN candidate step too: without it, the
+  // over-fetch for rivers is spent on reaches and ways, the nearest rows of all.
+  const entity = entityPredicate(q.layerKey);
   const ctes = candidateCtes(
     q.layerKey,
-    `SELECT external_id FROM ${layerTable(q.layerKey)} ORDER BY geom <-> ${point} LIMIT $4`
+    `SELECT external_id FROM ${layerTable(q.layerKey)} WHERE ${entity} ORDER BY geom <-> ${point} LIMIT $4`
   );
   const distanceExpr = `ST_Distance(geom::geography, ${point}::geography)`;
   const { rows: fastRows } = await db.query<NearestRow>(
@@ -32,7 +35,7 @@ export async function queryNearest(
      SELECT id::text AS "featureId", name, ${POINT_SQL},
             round((${distanceExpr} / 1000)::numeric, 2)::float8 AS "distanceKm"
        FROM resolved
-      WHERE NOT deleted
+      WHERE NOT deleted AND ${entity}
       ORDER BY ${distanceExpr}
       LIMIT $3`,
     [q.lon, q.lat, q.limit, overfetch]
@@ -46,12 +49,15 @@ export async function queryNearest(
   // physical rows than the over-fetch pulled). Rather than silently
   // return a short answer, fall back to the exact query.
   const view = layerView(q.layerKey);
-  const { rows: countRows } = await db.query<{ n: string }>(`SELECT count(*)::text AS n FROM ${view}`);
+  const { rows: countRows } = await db.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM ${view} WHERE ${entity}`
+  );
   if (Number(countRows[0].n) < q.limit) return fastRows;
   const { rows: exactRows } = await db.query<NearestRow>(
     `SELECT id::text AS "featureId", name, ${POINT_SQL},
             round((${distanceExpr} / 1000)::numeric, 2)::float8 AS "distanceKm"
        FROM ${view}
+      WHERE ${entity}
       ORDER BY ${distanceExpr}
       LIMIT $3`,
     [q.lon, q.lat, q.limit]

@@ -12,7 +12,7 @@ export const runSqlTool: ToolFactory = (ctx) =>
   betaZodTool({
     name: 'run_sql',
     description:
-      `Last resort for questions the typed tools cannot express (aggregates, groupings, numeric ranges). Read-only SELECT against these views only: ${VIEWS}. Every column of the underlying layer is available. Prefer a typed tool whenever one fits.`,
+      `Last resort for questions the typed tools cannot express (aggregates, groupings, numeric ranges). Read-only SELECT against these views only: ${VIEWS}. Every column of the underlying layer is available. water.rivers_active holds three levels in feature_level: 1 = a named river (use this to count, list or name rivers), 2 = a HydroRIVERS reach (flows_into_external_id links reaches downstream), 3 = an OSM way. Prefer a typed tool whenever one fits.`,
     inputSchema: z.object({
       sql: z.string().describe('A single read-only SELECT or WITH statement. No comments, no semicolons.'),
       purpose: z.string().max(200).describe('One Vietnamese sentence: what this query answers.'),
