@@ -75,12 +75,14 @@ describe('features_in_view', () => {
   // a candidate-then-resolve CTE chain (see helpers.ts's candidateCtes) built
   // to reach the geometry index, rather than the water.rivers_active view
   // directly. A plain count against that view is the ground truth it must
-  // still agree with.
+  // still agree with -- at level 1: rivers_active holds rivers, reaches and
+  // OSM ways, and "rivers in view" means the rivers.
   it('counts the same as a plain scan of the active view', async () => {
     const { ctx } = makeCtx();
     const parsed = JSON.parse(await run(featuresInViewTool(ctx), { layerKey: 'rivers' })) as { count: number };
     const { rows } = await pool.query<{ n: string }>(
-      'SELECT count(*)::text AS n FROM water.rivers_active WHERE geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)',
+      `SELECT count(*)::text AS n FROM water.rivers_active
+        WHERE feature_level = 1 AND geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)`,
       MAP_CONTEXT.bbox
     );
     expect(parsed.count).toBe(Number(rows[0].n));
@@ -114,7 +116,7 @@ describe('nearest_features', () => {
   // re-orders by true ::geography distance (see helpers.ts's candidateCtes
   // and NEAREST_OVERFETCH_FACTOR). The feature ids and order it returns must
   // still match a straightforward exact query against water.rivers_active
-  // for the same point.
+  // for the same point, over the level-1 rivers (not their reaches and ways).
   it('returns the same feature ids in the same order as an exact query against the active view', async () => {
     const { ctx } = makeCtx();
     const point = { layerKey: 'rivers' as const, lon: 108.05, lat: 12.68, limit: 5 };
@@ -124,6 +126,7 @@ describe('nearest_features', () => {
     const { rows: reference } = await pool.query<{ featureId: string }>(
       `SELECT id::text AS "featureId"
          FROM water.rivers_active
+        WHERE feature_level = 1
         ORDER BY geom::geography <-> ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
         LIMIT $3`,
       [point.lon, point.lat, point.limit]

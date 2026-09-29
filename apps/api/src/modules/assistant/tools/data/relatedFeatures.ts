@@ -3,7 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, candidateCtes, isFeatureId, layerTable } from './helpers';
+import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, candidateCtes, entityPredicate, isFeatureId, layerTable } from './helpers';
 
 /** A radius beyond this stops being a relationship and becomes a full scan of
  *  the layer — rivers alone is ~9,500 rows. */
@@ -84,7 +84,8 @@ export const relatedFeaturesTool: ToolFactory = (ctx) =>
       const relatedCtes = candidateCtes(
         input.relatedLayerKey,
         `SELECT external_id FROM ${layerTable(input.relatedLayerKey)}
-          WHERE ST_DWithin(geom, ST_GeomFromText($1, 4326), $2)`,
+          WHERE ST_DWithin(geom, ST_GeomFromText($1, 4326), $2)
+            AND ${entityPredicate(input.relatedLayerKey)}`,
         'related_'
       );
       const distanceExpr = 'ST_Distance(geom::geography, ST_GeomFromText($1, 4326)::geography)';
@@ -94,6 +95,7 @@ export const relatedFeaturesTool: ToolFactory = (ctx) =>
                 round((${distanceExpr} / 1000)::numeric, 2)::float8 AS "distanceKm"
            FROM related_resolved
           WHERE NOT deleted AND ST_DWithin(geom::geography, ST_GeomFromText($1, 4326)::geography, $3)
+            AND ${entityPredicate(input.relatedLayerKey)}
           ORDER BY ${distanceExpr}
           LIMIT ${ROW_LIMIT}`,
         [anchor.geomWkt, radiusDegrees, radiusM]

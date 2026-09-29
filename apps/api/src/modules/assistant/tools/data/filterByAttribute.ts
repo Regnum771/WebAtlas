@@ -3,7 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, layerView } from './helpers';
+import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, entityPredicate, layerView } from './helpers';
 
 /**
  * Which columns may be filtered, per layer. A column name cannot be a bind
@@ -72,7 +72,7 @@ export const filterByAttributeTool: ToolFactory = (ctx) =>
         ctx.pool.query(
           `SELECT id::text AS "featureId", name, ${input.column}::text AS "matchedValue", ${POINT_SQL}
              FROM ${layerView(input.layerKey)}
-            WHERE NOT deleted AND ${input.column}::text ILIKE $1
+            WHERE NOT deleted AND ${input.column}::text ILIKE $1 AND ${entityPredicate(input.layerKey)}
             ORDER BY name NULLS LAST
             LIMIT ${ROW_LIMIT + 1}`,
           [`%${input.value}%`]

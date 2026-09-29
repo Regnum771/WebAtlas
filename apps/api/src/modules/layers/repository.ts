@@ -75,6 +75,11 @@ export interface FeatureFilter {
  * viết). Ghi thì vẫn nhắm vào bảng gốc theo phiên bản nháp — chỉ phần đọc đổi.
  */
 function activeRelation(def: LayerDef): string {
+  // Rivers list their level-3 OSM ways (water.rivers_detail, migration 20): the rows the
+  // map's rivers layer draws and the only level a steward edits (assertHandEditable).
+  // rivers_active would list 23,000 rows -- every river three times, as its entity, its
+  // HydroRIVERS reaches and its ways.
+  if (def.key === 'rivers') return 'water.rivers_detail';
   return `${def.table}_active`;
 }
 

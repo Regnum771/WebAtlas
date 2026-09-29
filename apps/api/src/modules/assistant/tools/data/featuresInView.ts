@@ -3,7 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, candidateCtes, layerTable } from './helpers';
+import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, candidateCtes, entityPredicate, layerTable } from './helpers';
 
 export const featuresInViewTool: ToolFactory = (ctx) =>
   betaZodTool({
@@ -26,7 +26,8 @@ export const featuresInViewTool: ToolFactory = (ctx) =>
       // this filter on top cannot use that index at all.
       const ctes = candidateCtes(
         input.layerKey,
-        `SELECT external_id FROM ${layerTable(input.layerKey)} WHERE geom && ${envelope}`
+        `SELECT external_id FROM ${layerTable(input.layerKey)}
+          WHERE geom && ${envelope} AND ${entityPredicate(input.layerKey)}`
       );
 
       // The candidate step is a superset (it ran across every dataset
@@ -39,7 +40,7 @@ export const featuresInViewTool: ToolFactory = (ctx) =>
           `WITH RECURSIVE ${ctes}
            SELECT id::text AS "featureId", name, ${POINT_SQL}, count(*) OVER()::text AS "totalCount"
              FROM resolved
-            WHERE NOT deleted AND geom && ${envelope}
+            WHERE NOT deleted AND geom && ${envelope} AND ${entityPredicate(input.layerKey)}
             ORDER BY name NULLS LAST
             LIMIT ${ROW_LIMIT}`,
           bbox

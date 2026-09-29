@@ -3,7 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS, REGION_PROVINCE_CODES, REGION_PROVINCE_NAMES } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, candidateCtes, layerTable } from './helpers';
+import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, candidateCtes, entityPredicate, layerTable } from './helpers';
 
 /**
  * Truy vấn quan hệ, không phải phép toán hình học: mã hành chính đã được đóng dấu sẵn lên
@@ -53,7 +53,8 @@ export const featuresInAdminUnitTool: ToolFactory = (ctx) =>
       // it on top of the _active view instead cannot use that index at all.
       const ctes = candidateCtes(
         input.layerKey,
-        `SELECT external_id FROM ${layerTable(input.layerKey)} WHERE ${column} && ARRAY[$1]`
+        `SELECT external_id FROM ${layerTable(input.layerKey)}
+          WHERE ${column} && ARRAY[$1] AND ${entityPredicate(input.layerKey)}`
       );
       // The candidate step is a superset (it ran across every dataset version), so the
       // containment test is re-applied here, along with NOT deleted — this is the
@@ -62,7 +63,7 @@ export const featuresInAdminUnitTool: ToolFactory = (ctx) =>
         `WITH RECURSIVE ${ctes}
          SELECT id::text AS "featureId", name, ${POINT_SQL}, count(*) OVER () AS total
            FROM resolved
-          WHERE NOT deleted AND ${column} && ARRAY[$1]
+          WHERE NOT deleted AND ${column} && ARRAY[$1] AND ${entityPredicate(input.layerKey)}
           ORDER BY name NULLS LAST
           LIMIT $2`,
         [input.code, ROW_LIMIT]

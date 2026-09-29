@@ -8,7 +8,7 @@ import {
 } from '@webatlas/shared';
 import { simplifiedGeoJsonSql } from '../../../lib/resultGeometry';
 import {
-  LAYER_LABELS, POINT_SQL, ROW_LIMIT, candidateCtes, layerTable, type Queryable,
+  LAYER_LABELS, POINT_SQL, ROW_LIMIT, candidateCtes, entityPredicate, layerTable, type Queryable,
 } from '../../assistant/tools/data/helpers';
 import { areaGeometry } from '../area';
 import type { SelectWithinInput } from '../schemas';
@@ -31,7 +31,8 @@ export async function selectWithinOp(db: Queryable, input: SelectWithinInput): P
   for (const key of input.layerKeys) {
     const ctes = candidateCtes(
       key,
-      `SELECT external_id FROM ${layerTable(key)} WHERE geom && ${GEOM} AND ST_Intersects(geom, ${GEOM})`
+      `SELECT external_id FROM ${layerTable(key)}
+        WHERE geom && ${GEOM} AND ST_Intersects(geom, ${GEOM}) AND ${entityPredicate(key)}`
     );
     const { rows: found } = await db.query<{
       featureId: string; name: string | null; lon: number; lat: number; geometry: GeoJsonGeometry; total: string;
@@ -41,7 +42,7 @@ export async function selectWithinOp(db: Queryable, input: SelectWithinInput): P
               ${simplifiedGeoJsonSql('geom')} AS geometry,
               count(*) OVER () AS total
          FROM resolved
-        WHERE NOT deleted AND geom IS NOT NULL AND ST_Intersects(geom, ${GEOM})
+        WHERE NOT deleted AND geom IS NOT NULL AND ST_Intersects(geom, ${GEOM}) AND ${entityPredicate(key)}
         ORDER BY name NULLS LAST
         LIMIT $2`,
       [area.geojson, MAX_RESULT_ITEMS]

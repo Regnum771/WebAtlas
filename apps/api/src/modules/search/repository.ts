@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type { EditableLayerKey } from '@webatlas/shared';
 import { REFERENCE_LAYER_KEYS, type ReferenceLayerKey } from '../../reference/registry';
+import { entityPredicate } from '../assistant/tools/data/helpers';
 
 export interface SearchHit {
   layerKey: EditableLayerKey | ReferenceLayerKey;
@@ -33,14 +34,13 @@ export const SEARCH_SOURCES: readonly string[] = [
 // (identical logic to the view) for that small candidate set. This is not a
 // rewrite of the business rule, just pushing the same filter below the fence.
 //
-// Rivers carry three levels since the topology ingest. Search means the ENTITY: a level-1
-// row is one river, which is the whole point -- searching "thu" used to return several
-// rows all called Sông Thu Bồn, each an arbitrary OSM way. Reaches (level 2) have no name
-// at all. The filter goes in the candidate CTE too, not only the final select: that CTE
-// is what the trigram index serves, and it would otherwise resolve every matching way.
-const LEVEL_FILTER: Record<string, string> = { rivers: 'AND feature_level = 1' };
-
-function layerCtes(key: string): string {
+// Rivers carry three levels since the topology ingest. Search means the ENTITY
+// (entityPredicate): a level-1 row is one river, which is the whole point -- searching
+// "thu" used to return several rows all called Sông Thu Bồn, each an arbitrary OSM way.
+// Reaches (level 2) have no name at all. The predicate goes in the candidate CTE too, not
+// only the final select: that CTE is what the trigram index serves, and it would
+// otherwise resolve every matching way.
+function layerCtes(key: EditableLayerKey): string {
   return `
     active_${key} AS (
       SELECT id FROM app.dataset_versions WHERE layer_key = '${key}' AND is_active
@@ -53,7 +53,7 @@ function layerCtes(key: string): string {
         FROM app.dataset_versions p JOIN chain_${key} c ON p.id = c.parent_version_id
     ),
     candidates_${key} AS (
-      SELECT DISTINCT external_id FROM water.${key} WHERE name % $1 ${LEVEL_FILTER[key] ?? ''}
+      SELECT DISTINCT external_id FROM water.${key} WHERE name % $1 AND ${entityPredicate(key)}
     ),
     resolved_${key} AS (
       SELECT DISTINCT ON (t.external_id) t.*
@@ -64,14 +64,14 @@ function layerCtes(key: string): string {
     )`;
 }
 
-function layerSelect(key: string): string {
+function layerSelect(key: EditableLayerKey): string {
   return `
       SELECT '${key}'::text AS layer_key, 'layer'::text AS source, id::text AS feature_id, name,
              ST_X(ST_PointOnSurface(geom)) AS lon, ST_Y(ST_PointOnSurface(geom)) AS lat,
              similarity(name, $1) AS sim
       FROM resolved_${key}
       WHERE NOT deleted AND geom IS NOT NULL AND name IS NOT NULL AND name % $1
-        ${LEVEL_FILTER[key] ?? ''}`;
+        AND ${entityPredicate(key)}`;
 }
 
 /**
