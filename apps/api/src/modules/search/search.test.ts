@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { REGION_PROVINCE_CODES } from '@webatlas/shared';
 import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
 import { buildReferenceLayer } from '../../db/referenceEntities';
@@ -219,9 +220,38 @@ describe('GET /api/search with the admin source', () => {
     expect(hit).toMatchObject({ source: 'admin', layerKey: 'ward', name: 'Phường Tuy Hoà' });
   });
 
-  it('never returns an admin unit outside the working region', async () => {
+  it('restricts results to the working region only', async () => {
+    // Searching for 'Hà Nội' (outside region) will match 'Hà Nha' (inside region)
+    // via trigram similarity. Verify that all returned admin units are in-region.
     const res = await search('Hà Nội', 'admin');
-    expect((res.json().results as Hit[]).filter((h) => h.source === 'admin')).toEqual([]);
+    const adminHits = (res.json().results as Hit[]).filter((h) => h.source === 'admin');
+
+    // No province from outside the region (e.g., Hà Nội = '01')
+    for (const hit of adminHits) {
+      if (hit.layerKey === 'province') {
+        expect((REGION_PROVINCE_CODES as readonly string[]).includes(hit.featureId)).toBe(true);
+      }
+    }
+
+    // All ward results must have province_code in working region
+    if (adminHits.some((h) => h.layerKey === 'ward')) {
+      const wardCodes = adminHits.filter((h) => h.layerKey === 'ward').map((h) => h.featureId);
+      const { rows } = await getPool().query<{ code: string; province_code: string }>(
+        `SELECT code, province_code FROM admin.wards WHERE code = ANY($1::text[])`,
+        [wardCodes]
+      );
+      for (const row of rows) {
+        expect((REGION_PROVINCE_CODES as readonly string[]).includes(row.province_code)).toBe(true);
+      }
+    }
+  });
+
+  it('finds provinces by partial name', async () => {
+    // 'Đắk' should match 'Tỉnh Đắk Lắk' via trigram similarity
+    const res = await search('Đắk', 'admin');
+    expect(res.statusCode).toBe(200);
+    const hit = (res.json().results as Hit[]).find((h) => h.featureId === '66');
+    expect(hit).toMatchObject({ source: 'admin', layerKey: 'province' });
   });
 
   it('adds no admin hits unless asked', async () => {

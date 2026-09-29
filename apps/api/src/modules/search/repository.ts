@@ -104,6 +104,11 @@ function referenceSelect(keys: ReferenceLayerKey[]): string {
  * Only in-region units, because an ROI outside the region is refused anyway — a hit
  * that cannot be used would only mislead.
  */
+/**
+ * The six working provinces and their 616 wards (spec §10). 622 rows: no index needed.
+ * Only in-region units, because an ROI outside the region is refused anyway — a hit
+ * that cannot be used would only mislead.
+ */
 function adminSelect(): string {
   const codes = REGION_PROVINCE_CODES.map((c) => `'${c}'`).join(',');
   return `
@@ -112,13 +117,13 @@ function adminSelect(): string {
                ST_X(ST_PointOnSurface(geom)) AS lon, ST_Y(ST_PointOnSurface(geom)) AS lat,
                GREATEST(similarity(name, $1), coalesce(similarity(full_name, $1), 0)) AS sim
           FROM admin.provinces
-         WHERE code = ANY(ARRAY[${codes}]) AND GREATEST(similarity(name, $1), coalesce(similarity(full_name, $1), 0)) > 0.5
+         WHERE code = ANY(ARRAY[${codes}]) AND (name % $1 OR full_name % $1)
         UNION ALL
         SELECT 'ward'::text, 'admin'::text, code, coalesce(full_name, name),
                ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom)),
                GREATEST(similarity(name, $1), coalesce(similarity(full_name, $1), 0))
           FROM admin.wards
-         WHERE province_code = ANY(ARRAY[${codes}]) AND GREATEST(similarity(name, $1), coalesce(similarity(full_name, $1), 0)) > 0.5`;
+         WHERE province_code = ANY(ARRAY[${codes}]) AND (name % $1 OR full_name % $1)`;
 }
 
 /** Trigram search across the requested sources, ordered by similarity.
