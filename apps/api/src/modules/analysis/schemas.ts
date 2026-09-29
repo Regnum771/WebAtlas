@@ -1,29 +1,13 @@
 import { z } from 'zod';
-import {
-  EDITABLE_LAYER_KEYS,
-  countVertices,
-  isGeoJsonGeometry,
-  positionsOf,
-  type GeoJsonGeometry,
-} from '@webatlas/shared';
+import { EDITABLE_LAYER_KEYS, type GeoJsonGeometry } from '@webatlas/shared';
 import { inVietnam } from '../../lib/geo';
 import { REFERENCE_LAYER_KEYS } from '../../reference/registry';
+import { MAX_INPUT_VERTICES, geometryInput } from './geometryInput';
 
-export const MAX_INPUT_VERTICES = 5000;
+export { MAX_INPUT_VERTICES };
 
 type GeometryType = GeoJsonGeometry['type'];
 const ALL_TYPES: GeometryType[] = ['Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'];
-
-function geometryInput(types: GeometryType[]) {
-  return z.custom<GeoJsonGeometry>(
-    (v) =>
-      isGeoJsonGeometry(v) &&
-      types.includes(v.type) &&
-      countVertices(v) <= MAX_INPUT_VERTICES &&
-      positionsOf(v).every(([lon, lat]) => inVietnam(lon, lat)),
-    { message: `Hình không hợp lệ: cần ${types.join('/')}, tối đa ${MAX_INPUT_VERTICES} điểm, nằm trong Việt Nam` }
-  );
-}
 
 export const FeatureRef = z.object({
   layerKey: z.enum(EDITABLE_LAYER_KEYS),

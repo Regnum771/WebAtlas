@@ -69,7 +69,7 @@ export const MAX_SOURCE_ENTITY_VERTICES = 10_000;
 export const MAX_SOURCE_ENTITY_PARTS = 300;
 
 /** Union of the six working-region provinces; an ROI is clipped to it. */
-const REGION_SQL = `
+export const REGION_SQL = `
   SELECT ST_Union(geom) AS g FROM admin.provinces
    WHERE code = ANY(ARRAY[${REGION_PROVINCE_CODES.map((c) => `'${c}'`).join(',')}])`;
 
