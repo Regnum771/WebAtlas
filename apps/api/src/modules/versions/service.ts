@@ -2,6 +2,8 @@ import type { Pool, PoolClient } from 'pg';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import { versionsRepository } from './repository';
 import { stampAdminCodes } from '../../db/adminStamp';
+import { buildRiverHierarchy } from '../../db/riverHierarchy';
+import { assertRiverGates, RIVER_BASELINE } from '../../db/riverGates';
 import { ConflictError, NotFoundError } from '../../errors';
 
 export interface IngestVersionArgs {
@@ -50,6 +52,30 @@ export function versionsService(pg: Pool) {
 
     // Atomically make versionId the active version for its layer.
     async activate(client: PoolClient, layerKey: string, versionId: string): Promise<void> {
+      // The river hierarchy is derived data with an owner, and this is that owner: the one
+      // contract every path to "active" passes through -- ingest and edit commit today,
+      // and any rollback path added later must come through here too. Leaving it in the ingest script instead is precisely how
+      // rivers_overview went stale for two days (see the stamping comment below).
+      //
+      // BEFORE stampAdminCodes, not after: the rebuild INSERTS new level-1 rows, and
+      // stampAdminCodes stamps every row of the version in one UPDATE. Reversed, every
+      // rebuilt river ships with empty province_codes and features_in_admin_unit misses it.
+      //
+      // Gates run before the pointer moves, so a version that fails them is never
+      // activated: the caller's transaction rolls back with the version still inactive.
+      // The pinned match-rate floor applies to an ingest only (see assertRiverGates).
+      if (layerKey === 'rivers') {
+        const { rows } = await client.query<{ kind: string }>(
+          `SELECT kind FROM app.dataset_versions WHERE id = $1 AND layer_key = $2`,
+          [versionId, layerKey]
+        );
+        // Checked here as well as at the flip below: building against a version that
+        // does not exist would resolve an empty chain and fail the gates with a
+        // misleading "0 rivers" message instead of a not-found.
+        if (!rows[0]) throw new NotFoundError(`Version ${versionId} not found for layer ${layerKey}`);
+        await buildRiverHierarchy(client, versionId);
+        await assertRiverGates(client, versionId, rows[0].kind === 'ingest' ? RIVER_BASELINE : null);
+      }
       // A version cannot become active without its administrative codes (database
       // architecture doc §9): the refresh obligation lives here, in the one contract every
       // path to "active" passes through, not in each call site that happens to remember it.
@@ -107,8 +133,11 @@ export function versionsService(pg: Pool) {
 
     // Publish the draft: record what it stores, then make it the layer's active version.
     async commitEditDraft(client: PoolClient, layerKey: string, draftId: string): Promise<void> {
+      await svc.activate(client, layerKey, draftId);
       // feature_count for an edit version is the number of rows it stores (the changed
       // features, tombstones included) — not the resolved total, which is inherited.
+      // Counted AFTER activate(): for rivers, activate() writes the rows the hierarchy
+      // rebuild superseded into this same draft, and they are stored rows like any other.
       const { rows } = await client.query(
         `SELECT count(*)::int AS n FROM water.${layerKey} WHERE dataset_version_id = $1`,
         [draftId]
@@ -117,7 +146,6 @@ export function versionsService(pg: Pool) {
         `UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`,
         [rows[0].n, draftId]
       );
-      await svc.activate(client, layerKey, draftId);
     },
 
     // Throw the draft away: its pending rows first (they reference the version row), then

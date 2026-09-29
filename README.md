@@ -220,11 +220,16 @@ node apps/api/scripts/prune-hydrosheds-versions.mjs
 
 ## Regenerating HydroSHEDS seed data
 
-The lakes/reservoirs and rivers seed inputs at `apps/api/src/db/seeds/data/hydrolakes-vn.geojson`
-and `hydrorivers-vn.geojson` are clipped to Vietnam (bbox `102 8 110 24`, lon/lat) from the
-upstream global/regional HydroSHEDS datasets and committed as generated artifacts — you don't
-need to regenerate them to run the app. Regenerate only when refreshing to a newer upstream
-release:
+The lakes/reservoirs seed `apps/api/src/db/seeds/data/hydrolakes-vn.geojson` (clipped to the
+Vietnam bbox `102 8 110 24`, lon/lat) and the river-reach seed `hydrorivers-region.geojson`
+(whole reaches intersecting the six working provinces) are derived from the upstream
+HydroSHEDS datasets and committed as generated artifacts — you don't need to regenerate them
+to run the app. Regenerate only when refreshing to a newer upstream release.
+
+`hydrorivers-vn.geojson`, next to them, is **superseded**: it has no `NEXT_DOWN`, so it cannot
+carry the river network's topology, and nothing loads it. It is kept in git for history only.
+
+To regenerate:
 
 1. Download the upstream shapefiles:
    - **HydroLAKES v1.0 polygons** — https://www.hydrosheds.org/products/hydrolakes
@@ -240,9 +245,16 @@ release:
    ```bash
    apps/api/scripts/prep-hydrosheds.sh /path/to/HydroLAKES_polys_v10.shp /path/to/HydroRIVERS_v10_as.shp
    ```
-   This writes both clipped GeoJSON files into `apps/api/src/db/seeds/data/`. Lakes carry
-   `Hylak_id, Lake_name, Lake_type, Lake_area, Vol_total, Shore_len`; rivers carry
-   `HYRIV_ID, ORD_STRA, LENGTH_KM` and are filtered to `ORD_STRA >= 3` to keep the file small.
+   This writes `hydrolakes-vn.geojson` and `hydrorivers-region.geojson` into
+   `apps/api/src/db/seeds/data/`. Lakes carry `Hylak_id, Lake_name, Lake_type, Lake_area,
+   Vol_total, Shore_len`. Reaches carry `HYRIV_ID, NEXT_DOWN, MAIN_RIV, ORD_STRA, LENGTH_KM`,
+   at every stream order (13,045 reaches, 3.4 MB with coordinates rounded to 5 decimals):
+   `NEXT_DOWN` is the downstream link the river hierarchy is built on, so no order may be
+   filtered out without cutting the network. Then change `HYDRORIVERS_SOURCE` in
+   `apps/api/src/db/seeds/ingestRivers.ts` and run `npm run ingest:rivers -w @webatlas/api`,
+   which loads the reaches and rebuilds the hierarchy. The source string is the ingest's
+   idempotency key: left unchanged, the ingest re-activates the existing version instead of
+   loading the new file.
 
 ## Project status
 

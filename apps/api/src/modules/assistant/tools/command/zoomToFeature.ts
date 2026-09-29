@@ -1,7 +1,7 @@
 // Xem zoomToRegion.ts: 'zod/v4' là bắt buộc do betaZodTool.
 import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { EDITABLE_LAYER_KEYS, isMapCommand } from '@webatlas/shared';
+import { EDITABLE_LAYER_KEYS, isMapCommand, type HighlightPoint } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
 import { inVietnam } from '../../../../lib/geo';
 
@@ -9,7 +9,7 @@ export const zoomToFeatureTool: ToolFactory = (ctx) =>
   betaZodTool({
     name: 'zoom_to_feature',
     description:
-      'Move the map to a single feature. Use the coordinates returned by a data tool; never invent them.',
+      'Move the map to and highlight a single feature. Use the coordinates returned by a data tool; never invent them.',
     inputSchema: z.object({
       layerKey: z.enum(EDITABLE_LAYER_KEYS).describe('Layer the feature belongs to'),
       featureId: z.string().describe('Feature id as returned by a data tool'),
@@ -28,6 +28,10 @@ export const zoomToFeatureTool: ToolFactory = (ctx) =>
       };
       if (!isMapCommand(command)) return 'Không phóng to được tới đối tượng này.';
       ctx.collect(command);
-      return 'Đã phóng to tới đối tượng.';
+      const highlight: HighlightPoint = { lonLat: [input.lon, input.lat] };
+      const highlightCommand = { kind: 'highlightFeatures' as const, points: [highlight] };
+      if (!isMapCommand(highlightCommand)) return 'Đã phóng to tới đối tượng nhưng không đánh dấu được.';
+      ctx.collect(highlightCommand);
+      return 'Đã phóng to và đánh dấu đối tượng.';
     },
   });

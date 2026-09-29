@@ -9,6 +9,7 @@
     "migrate:down": "node-pg-migrate down -m src/db/migrations",
     "seed": "tsx src/db/seeds/run.ts",
     "ingest:rivers": "tsx src/db/seeds/ingestRivers.ts",
+    "rivers:hierarchy": "tsx src/scripts/buildRiverHierarchy.ts",
     "reference:build": "tsx src/scripts/buildReference.ts",
     "contours:generate": "tsx src/scripts/generateContours.ts",
     "publish:geoserver": "tsx src/geoserver/publish.ts",

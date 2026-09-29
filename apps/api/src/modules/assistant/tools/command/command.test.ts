@@ -60,14 +60,16 @@ describe('command tools', () => {
     expect(text).toContain('không thuộc vùng công tác');
   });
 
-  it('zoomToFeature collects coordinates the data tools produced', async () => {
+  it('zoomToFeature zooms to and highlights coordinates the data tools produced', async () => {
     const { ctx, collected } = makeCtx();
     await run(zoomToFeatureTool(ctx), {
       layerKey: 'dams', featureId: 'abc', lon: 108.1, lat: 12.7,
     });
     expect(collected).toEqual([
       { kind: 'zoomToFeature', layerKey: 'dams', featureId: 'abc', lonLat: [108.1, 12.7] },
+      { kind: 'highlightFeatures', points: [{ lonLat: [108.1, 12.7] }] },
     ]);
+    expect(collected.every(isMapCommand)).toBe(true);
   });
 
   it('zoomToFeature refuses coordinates outside Vietnam', async () => {

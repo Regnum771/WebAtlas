@@ -47,8 +47,19 @@ describe.skipIf(!GS)('WFS publication', () => {
       expect(res.status, `featuretype ${l} should be published`).toBe(200);
       const json = (await res.json()) as { featureType: { name: string; nativeName: string } };
       expect(json.featureType.name, `${l} public layer name`).toBe(l);
-      expect(json.featureType.nativeName, `${l} backing relation`).toBe(`${l}_active`);
+      expect(json.featureType.nativeName, `${l} backing relation`).toBe(nativeNameFor(l));
     }
+  });
+
+  it('draws each river once: webatlas:rivers serves only the OSM ways', async () => {
+    // rivers_active returns all three levels; a featuretype backed by it would draw every
+    // river as its ways, its reaches and its level-1 entity, stacked.
+    const url =
+      `${GS}/ows?service=WFS&version=2.0.0&request=GetFeature` +
+      `&typeNames=webatlas:rivers&outputFormat=application/json&resultType=hits`;
+    const res = await fetch(url);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toMatch(/numberMatched="9486"/);
   });
 });
 
@@ -62,7 +73,10 @@ describe('nativeNameFor', () => {
   });
 
   it('keeps the _active mapping for versioned layers', () => {
-    expect(nativeNameFor('rivers')).toBe('rivers_active');
     expect(nativeNameFor('dams')).toBe('dams_active');
+  });
+
+  it('backs rivers with the level-3 view, not the all-levels one', () => {
+    expect(nativeNameFor('rivers')).toBe('rivers_detail');
   });
 });

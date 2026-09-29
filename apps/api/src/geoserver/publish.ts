@@ -17,8 +17,16 @@ const TABLES = [
  * đi tìm `rivers_overview_active` rồi trả 500 rất khó lần ra nguyên nhân.
  */
 const DERIVED_TABLES = new Set(['rivers_overview']);
+/**
+ * `rivers` trỏ tới rivers_detail (chỉ cấp 3, đường OSM): water.rivers giờ chứa cả ba
+ * cấp, nên rivers_active sẽ vẽ mỗi con sông nhiều lần — đường OSM, đoạn HydroRIVERS và
+ * thực thể sông chồng lên nhau.
+ */
+const EXPLICIT_NATIVE_NAME = new Map([['rivers', 'rivers_detail']]);
 
 export function nativeNameFor(table: string): string {
+  const explicit = EXPLICIT_NATIVE_NAME.get(table);
+  if (explicit) return explicit;
   return DERIVED_TABLES.has(table) ? table : `${table}_active`;
 }
 
@@ -98,6 +106,12 @@ export async function publishAll(): Promise<void> {
     // eslint-disable-next-line no-console
     console.log(`published layer ${WS}:${t}`);
   }
+  // Repointing a featuretype, or replacing the relation behind it (rivers_overview went
+  // from a materialised view to a plain one), does not invalidate GeoServer's cached
+  // attribute schema: it keeps advertising the old columns and types until the catalog
+  // is reset.
+  const reset = await gsRequest('POST', '/reset');
+  if (!reset.ok) throw new Error(`catalog reset failed: ${reset.status} ${await reset.text()}`);
 }
 
 // Run when invoked directly (npm run publish:geoserver), not when imported.

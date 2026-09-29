@@ -405,17 +405,37 @@ suite stays fast and fully CI-runnable even though the real data is not availabl
 
 ## §7 Migration path
 
+**Revised 2026-09-23 — the order below supersedes the original one, which is kept at the
+end of this section with the reason it changed.**
+
 Six independently shippable steps. The repository works after each one, and the existing
-runbook steps remain valid in parallel until step 5, so nobody is blocked mid-migration.
+runbook steps remain valid in parallel until step 4, so nobody is blocked mid-migration.
 
 | # | Step | Why this order |
 |---|---|---|
-| 1 | Create `packages/atlas-data`; registry, runner, lineage tables land there — **zero datasets migrated**, proven on one trivial dataset | Foundation lands and is testable before anything depends on it; the workspace exists before code needs a home, so nothing moves twice |
-| 2 | Migrate the seven `SEED_LAYERS` datasets, relocating their data files into the new workspace | They already fit `load-geojson` almost exactly — best effort-to-value ratio. Migrating dams also resolves the `apps/web/public` violation |
-| 3 | Migrate rivers | Proves `dependsOn` and the `sql` derive stage against `rivers_overview` |
-| 4 | Wrap basemap, DEM, contours as `run` stages with promotion deadlines; move `apps/api/scripts` into the workspace | No behaviour change; brings them into the graph and under governance, and leaves `apps/api` holding only the server |
-| 5 | `atlas:up` becomes the documented onboarding path | All eight runbook steps, step 1 included, collapse into one command |
-| 6 | Promote `run` stages to built-ins as deadlines fall due | The raster ones are sub-project C |
+| 1 | Create `packages/atlas-data`; registry, runner, lineage tables land there — **zero datasets migrated**, proven on one trivial dataset | Foundation lands and is testable before anything depends on it; the workspace exists before code needs a home, so nothing moves twice. **Shipped.** |
+| 2 | Implement the `run` and `publish-geoserver` stages only, and fix review findings I3 and I4 first | Entity-track phase 3 registers `descriptors/hydrorivers.ts` as a `run` stage against a runner that throws on it, so `atlas:build` reports that dataset failed from the moment phase 3 merges, against a `promoteBy` clock. I3 (invalidation tracks config, not execution) and I4 (process steps do not record what ran) must land before real datasets write permanent lineage |
+| 3 | Wrap basemap, DEM, contours, `reference:build` and the two river build steps as `run` stages with promotion deadlines; move `apps/api/scripts` into the workspace | No behaviour change; brings every step that blocks a fresh clone into the graph and under governance, and leaves `apps/api` holding only the server |
+| 4 | `atlas:up` becomes the documented onboarding path | **The step a new developer can first feel.** Every runbook step, step 1 included, collapses into one command |
+| 5 | Migrate the seven `SEED_LAYERS` datasets and rivers to `load-geojson`, relocating their data files into the new workspace | Deferred to here deliberately: these steps already run from a bare checkout, so migrating them improves the architecture and changes nothing about onboarding. Migrating dams also resolves the `apps/web/public` violation, and rivers proves `dependsOn` against `rivers_overview` |
+| 6 | Promote the remaining `run` stages to built-ins as deadlines fall due | The raster ones are sub-project C |
+
+### Why the order changed
+
+The original order (below) put the seed-layer and river migrations at steps 2–3 and
+`atlas:up` at step 5, on an effort-to-value argument. That argument optimised for the
+wrong value once the goal was stated as onboarding: runbook steps 1–4 already work
+offline from a checkout, so migrating them moves a new developer no closer to a working
+box. The steps that actually block one — the basemap rebuild, the DEM, contours — were
+scheduled last.
+
+Reordering is safe because the pulled-forward work touches basemap, DEM and contours,
+which no entity-track phase touches, and the deferred work touches the seed ingest, which
+entity-track phase 3 is actively rewriting. The new order therefore also avoids building
+the rivers descriptor twice.
+
+Original order, superseded: 1 foundation → 2 seed layers → 3 rivers → 4 wrap
+basemap/DEM/contours → 5 `atlas:up` → 6 promote.
 
 ## YAGNI — not doing
 

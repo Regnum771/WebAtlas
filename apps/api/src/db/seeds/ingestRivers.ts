@@ -1,26 +1,31 @@
 import { fileURLToPath } from 'node:url';
-import { refreshRiverOverview } from '../riverOverview';
 import { resolve as resolvePath } from 'node:path';
 import { getPool, closePool } from '../pool';
 import { versionsService } from '../../modules/versions/service';
 import { loadLayerFeatures } from './run';
 import type { SeedLayer } from './registry';
+import { REACHES_LAYER } from './ingestReaches';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 // Đổi chuỗi này mỗi khi nội dung file seed đổi: hàm ingest dưới đây idempotent
 // THEO SOURCE, nên giữ nguyên chuỗi sẽ khiến nó kích hoạt lại version cũ thay vì
-// nạp dữ liệu mới.
-const HYDRORIVERS_SOURCE = 'OSM waterways';
+// nạp dữ liệu mới. Đổi lần này vì version giờ chứa CẢ đoạn sông HydroRIVERS (cấp 2),
+// không chỉ đường OSM (cấp 3).
+const HYDRORIVERS_SOURCE = 'OSM waterways + HydroRIVERS v10';
 
 // OSM waterways → các cột `rivers` sẵn có. Khác HydroRIVERS: OSM CÓ tên sông,
 // và `stream_order` giờ là hạng theo loại chứ không phải bậc Strahler.
-const RIVERS_HYDRO_LAYER: SeedLayer = {
+//
+// Exported so the column map is unit-testable without a database: the 'osm:' prefix is
+// a contract other sources depend on, not an implementation detail.
+export const RIVERS_HYDRO_LAYER: SeedLayer = {
   table: 'rivers',
   file: resolvePath(here, 'data/osm-rivers-region.geojson'),
   source: HYDRORIVERS_SOURCE,
   multiLine: true,
   columns: (p) => ({
-    external_id: p.osmId,
+    // 'osm:' so an OSM way id can never be mistaken for a HYRIV_ID (migration 18).
+    external_id: `osm:${String(p.osmId)}`,
     code: p.waterway,
     name: p.name,
     stream_order: p.streamOrder,
@@ -30,9 +35,13 @@ const RIVERS_HYDRO_LAYER: SeedLayer = {
 };
 
 /**
- * Ingest HydroRIVERS as a new active `rivers` version, off the versioning foundation.
- * Idempotent: if a HydroRIVERS ingest version already exists, return it without
- * creating a duplicate (so re-running is safe).
+ * Ingest OSM waterways (level 3) and HydroRIVERS reaches (level 2) into ONE new active
+ * `rivers` version, off the versioning foundation. An ingest version has no parent (the
+ * kind/parent_version_id check constraint in migration 1000000000004), so rivers_active
+ * resolves its chain to that version alone -- loading the two levels into separate
+ * versions would make one level invisible to every reader. Idempotent: if a version for
+ * this source already exists, return it without creating a duplicate (so re-running is
+ * safe).
  */
 export async function ingestHydroRivers(): Promise<{ versionId: string; count: number }> {
   const pool = getPool();
@@ -72,14 +81,27 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
       layerKey: 'rivers',
       source: HYDRORIVERS_SOURCE,
     });
-    const count = await loadLayerFeatures(client, RIVERS_HYDRO_LAYER, versionId);
+    // One ingest version is one COMPLETE snapshot of the layer: app.dataset_versions'
+    // kind/parent constraint gives an ingest version no parent, so rivers_active
+    // resolves its chain to this version alone. Loading the reaches into a separate
+    // ingest version would make every OSM way vanish from the map.
+    await loadLayerFeatures(client, RIVERS_HYDRO_LAYER, versionId);
+    await loadLayerFeatures(client, REACHES_LAYER, versionId);
+    // Dựng phân cấp sông, chạy cổng kích hoạt và đóng dấu mã hành chính đều là nghĩa vụ
+    // của svc.activate() (xem versions/service.ts), không gọi tường minh ở đây. Vẫn cùng
+    // giao dịch ingest, nên cổng thất bại thì ROLLBACK xoá sạch cả version.
+    await svc.activate(client, 'rivers', versionId);
+    // feature_count tính SAU activate(): phần dựng phân cấp chèn thêm các dòng sông cấp 1
+    // vào chính version này, nên ways + reaches không còn đúng nữa.
+    const { rows: fc } = await client.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM water.rivers WHERE dataset_version_id = $1`,
+      [versionId]
+    );
+    const count = Number(fc[0].n);
     await client.query(
       `UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`,
       [count, versionId]
     );
-    // Đóng dấu mã hành chính giờ là nghĩa vụ của svc.activate() (xem versions/service.ts):
-    // không còn gọi tường minh ở đây.
-    await svc.activate(client, 'rivers', versionId);
     await client.query('COMMIT');
     result = { versionId, count };
   } catch (e) {
@@ -88,17 +110,8 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
   } finally {
     client.release();
   }
-
-  // Làm mới ảnh chụp ngay tại đây, không để cho người gọi. Trước đây việc này nằm
-  // trong khối isMainModule bên dưới, nên chỉ `npm run ingest:rivers` mới làm —
-  // còn ai gọi thẳng ingestHydroRivers() thì kích hoạt một phiên bản 'rivers' mới
-  // và bỏ lại water.rivers_overview là ảnh chụp của phiên bản CŨ. Không báo lỗi ở
-  // đâu cả: bản đồ ở mức thu nhỏ lặng lẽ vẽ mạng lưới cũ.
-  //
-  // Sau COMMIT và ngoài giao dịch, vì REFRESH MATERIALIZED VIEW CONCURRENTLY không
-  // chạy được bên trong một khối giao dịch. Dùng `pool` chứ không phải `client`, vì
-  // client đã được trả lại ở khối finally ngay trên.
-  await refreshRiverOverview(pool);
+  // water.rivers_overview giờ là view thường trên các sông cấp 1 (migration 20), nên
+  // không còn ảnh chụp nào phải làm mới sau khi kích hoạt.
   return result;
 }
 
@@ -108,9 +121,6 @@ if (isMainModule) {
   ingestHydroRivers()
     .then(async (r) => {
       console.log(`rivers HydroRIVERS version ${r.versionId}: ${r.count} features`);
-      // Không làm mới ở đây nữa: ingestHydroRivers() tự lo, nên mọi người gọi đều
-      // được, không riêng đường chạy từ dòng lệnh này.
-      console.log('refreshed water.rivers_overview');
       return closePool();
     })
     .catch((err) => { console.error(err); process.exitCode = 1; return closePool(); });
