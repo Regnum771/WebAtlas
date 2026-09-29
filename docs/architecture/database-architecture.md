@@ -1,9 +1,10 @@
 # WebATLAS Database Architecture
 
 **Document status:** Living document. Revise when the schema changes.
-**Revision:** 1.2 — 22 September 2026
+**Revision:** 1.3 — 29 September 2026
 Phase 1 (administrative boundaries and stamping) implemented; see docs/superpowers/plans/2026-09-18-plan-1-admin-boundaries-and-stamping.md.
 Phase 2 (reference layers, named entities and search) implemented; see docs/superpowers/plans/2026-09-22-plan-2-reference-layers-and-entities.md.
+Phase 3 (river topology and the three-level hierarchy) implemented; see docs/superpowers/plans/2026-09-22-plan-3-river-topology-and-hierarchy.md.
 **Prepared for:** Engineers, data stewards and technical reviewers of the WebATLAS water-resources information system.
 
 ---
@@ -110,34 +111,81 @@ lifecycle, because that lifecycle destroys indexes.
 
 ### 4.1 Problem addressed
 
-In the implemented schema, a watercourse is stored as an arbitrary number of rows derived from OpenStreetMap ways. Of
-9,486 rows, 1,327 carry a name and those names resolve to 466 distinct values. A search for a river therefore returns
-several results describing the same watercourse, and selecting one yields a fragment of it. Road data exhibits the same
-property at greater scale: 527,215 segments, of which a single national highway may comprise several hundred.
+Before revision 1.3, a watercourse was stored as an arbitrary number of rows derived from OpenStreetMap ways. Of 9,486
+rows, 1,327 carried a name and those names resolved to 466 distinct values. A search for a river therefore returned
+several results describing the same watercourse, and selecting one yielded a fragment of it.
+Road data exhibits the same property at greater scale: 527,215 segments, of which a single national highway may comprise
+several hundred.
 
 The stored unit is a consequence of how the source data was produced, not a property of the thing itself. The schema
-must therefore distinguish the entity from its storage units.
+must therefore distinguish the entity from its storage units. For watercourses it now does (§4.2); for roads, the
+entity is provided by reference-data aggregation instead (§10.2).
 
-### 4.2 Three-level hierarchy (designed)
+### 4.2 Three-level hierarchy (implemented)
 
-Watercourses are modelled in a single table with a self-referential composition relationship and an explicit level
-attribute.
+Watercourses are modelled in a single table, `water.rivers`, with an explicit `feature_level` attribute and
+self-referential links (§4.3). One `rivers` dataset version holds all three levels.
 
-| Level | Entity | Geometry | Origin |
-|---|---|---|---|
-| 1 | Named river | Derived; the union of its member reaches | Names from OpenStreetMap; grouping from the network |
-| 2 | Reach | As imported | HydroRIVERS, including the downstream link |
-| 3 | Way | As imported | OpenStreetMap watercourses |
+| Level | Entity | Rows | Geometry | Origin |
+|---|---|---|---|---|
+| 1 | Named river | 588 | Derived from its member OpenStreetMap ways | Built on activation (§9) |
+| 2 | Reach | 13,045 | As imported | HydroRIVERS v1.0, whole reaches intersecting the six working provinces, with the downstream link |
+| 3 | Way | 9,486 | As imported | OpenStreetMap watercourses |
 
 A single table is used, rather than one table per level, so that identity, authorisation, versioning and the audit
 trail apply uniformly, and so that a query may select entities at any level without a union of dissimilar relations.
+The consequence is that `water.rivers_active` returns all three levels (23,119 rows), and **filtering by level is each
+consumer's responsibility**. There are three consumers, and each says which level it means:
+
+- `water.rivers_detail` — level 3 only. It backs the map-server layer `webatlas:rivers`, so the detailed map draws each
+  watercourse once rather than as its ways, reaches and entity stacked.
+- `water.rivers_overview` — the far-zoom layer: level-1 rivers that include at least one OpenStreetMap
+  `waterway=river` way (324 of 588), simplified at 0.01°. The restriction matches what the detailed layer's style
+  draws at the same scales; with all 588, every named stream drew as a trunk river at far zoom and vanished on zooming
+  in. It was a materialised view until revision 1.3 and is now a plain view (§9).
+- Search (`GET /api/search`) — level 1 only, filtered before version resolution as §5.3 requires. "Thu Bồn" returns one
+  result.
+
+**How a reach gets a name.** HydroRIVERS carries topology but no names; OpenStreetMap carries names but no topology. Each
+reach is sampled at five points along its length, each sample takes the nearest named way within about 1.1 km, and the
+name is accepted only on a strict majority (at least three of five) with a median sample distance of at most 500 m. The
+accepted match records a confidence in [0.3, 1.0]: the share of agreeing samples, scaled down by median distance. Of
+13,045 reaches, 4,716 are named this way, carrying 439 of the 466 distinct names. A refused match is recorded as no
+match, never as a low-confidence one.
+
+**How reaches become rivers — and four departures from the design specification.** Each is a measured correction; the
+plan records the measurements in full.
+
+1. *A river is one name plus one connected group of reaches, not one connected component.* The specification grouped by
+   connected component. A component is a basin: the largest carries 134 distinct names (Sê San, Srêpốk, Krông Ana, Đăk
+   Bla and some 120 named streams), and one river per component would have discarded 133 of them. Same-named groups that
+   are not connected become separate rivers — `Sông Cái`, literally "main river", yields 12. Each group's canonical
+   member is its most downstream reach, which is unique because the downstream link is a tree.
+2. *A reach with no confident name belongs to no river.* The specification gave such reaches a nameless river. 8,291
+   reaches remain unnamed; a nameless entity for each would flood search and region-of-interest selection with
+   unselectable rows. They remain level-2 rows, fully walkable through the downstream link.
+3. *Level-1 geometry derives from member ways, not member reaches.* Per river, way length and reach length agree to a
+   median ratio of 1.11 (Sông Ba: 349 km of way against 352 km of reach), so the difference is vertex detail, not
+   extent. Ways give finer geometry, the same shape the detailed layer draws, and independence from the vote: a bad
+   match cannot deform a river. Geometry source does not decide which rivers exist — the 27 names with ways but no
+   matched reach have no river.
+4. *Single-reach gaps are bridged.* A reach with no voted name whose downstream reach and at least one upstream reach
+   carry the same voted name takes that name, with confidence 0.2. That is below the vote's floor of 0.3, so a
+   confidence under 0.3 identifies a bridged reach. The pass runs once against the vote's result and never cascades.
+   Without it one unnamed reach severed Sông Thu Bồn from its own outlet. 38 reaches are bridged, merging 631 groups
+   into 588 rivers.
 
 ### 4.3 Relationships
 
 Two relationships are represented, in separate columns:
 
-- `parent_external_id` expresses **composition**: a way belongs to a reach; a reach belongs to a river.
-- `flows_into_external_id` expresses **hydrology**: water leaves this reach for that one; this river joins that one.
+- `parent_external_id` expresses **composition**: a reach belongs to a river, and a way belongs to a river. A way is
+  not a member of a reach: the two are independent digitisations of the same water, and what connects them is the
+  name vote, not containment. Each named way joins the same-named river whose reaches lie nearest to it.
+- `flows_into_external_id` expresses **hydrology**. On a reach it is HydroRIVERS' `NEXT_DOWN`: 184 reaches are
+  terminal, and 53 flow out of the working region, so their link legitimately leaves the table. On a river it is
+  derived: river A flows into river B when A's outlet reach flows into a reach of B. 423 of the 588 rivers have such
+  a link.
 
 A single overloaded relationship was considered and rejected: its meaning would then depend upon the level of the row
 being examined, and every query would require that knowledge to interpret the result correctly.
@@ -148,15 +196,32 @@ Relationships reference `external_id`, the stable business key, and never the pr
 edit does not modify a row but writes a new row, bearing a new primary key, in a new dataset version (§5). A reference
 to a primary key would therefore address a superseded row as soon as its target were edited, while appearing valid.
 
-Because three sources — OpenStreetMap, HydroRIVERS and derived river entities — will share one identity space, and
-because HydroRIVERS identifiers may collide numerically with OpenStreetMap way identifiers, the key is namespaced by
-source: `osm:12207485`, `hyriv:40315120`, `river:0012`.
+Because three sources share one identity space, and because HydroRIVERS identifiers may collide numerically with
+OpenStreetMap way identifiers, the key is text namespaced by source:
 
-### 4.5 Editing rules
+| Prefix | Meaning | Example |
+|---|---|---|
+| `osm:` | OpenStreetMap way | `osm:12207485` |
+| `hyriv:` | HydroRIVERS reach | `hyriv:41295432` |
+| `river:` | Derived river; the suffix is the identifier of its outlet reach | `river:41295269` (Sông Thu Bồn) |
+| `edit:` | A feature a steward created, which has no upstream identifier | `edit:<uuid>` |
 
-Geometry may be edited at level 3 only. Level 2 originates from ingest; level 1 geometry is derived and has a
-maintenance owner (§9). Attributes, notably the name, remain editable at level 1. Deletion of a parent is refused while
-live children reference it.
+A river's identifier is derived, not sequential, so that rebuilding the hierarchy on every activation (§9) reproduces
+the same identifiers: a river keeps its key for as long as its outlet reach keeps its name.
+
+Converting `external_id` from integer to text was refused while any view depended on the column, so the migration drops
+and recreates the resolution view and everything built on it. A recreated view starts with no privileges, so the
+assistant's read role (§12.2) must be re-granted explicitly each time; migrations 16, 18, 19 and 20 each carry that
+grant, and 16 and 18 were written after the loss was discovered.
+
+### 4.5 Editing rules (implemented)
+
+Only level-3 ways are edited by hand; an update or deletion of a level-1 or level-2 row is refused with a conflict. The
+specification kept level-1 attributes, notably the name, editable. That was reversed on 29 September 2026, by decision:
+the rebuild on activation (§9) derives a river's name and geometry from its ways, so a direct edit would be silently
+reverted in the commit that made it. A steward renames or reshapes a river by editing its ways. Level 2 is ingested
+topology. Because only ways, which have no children, can be deleted, the rule that a parent may not be deleted while
+live children reference it holds without a separate check.
 
 ---
 
@@ -244,7 +309,7 @@ required, are to be introduced as a registered dataset rather than by editing th
 
 | Network | Structure | Representation | Status |
 |---|---|---|---|
-| Watercourses | Directed tree | The reach row is the edge; the downstream link is its adjacency | **Designed** |
+| Watercourses | Directed tree | The reach row is the edge; the downstream link is its adjacency | Implemented |
 | Roads, railways | Undirected graph | Deferred; see §7.3 | Deferred |
 
 Land use, settlements and water bodies are not networks; they are areas and points.
@@ -254,6 +319,14 @@ Land use, settlements and water bodies are not networks; they are areas and poin
 Upstream and downstream queries are recursive traversals of the downstream link, evaluated after version resolution
 (§5.2). No additional structure is required: a reach has exactly one downstream neighbour, so the adjacency is a single
 column, and the resulting walk is bounded by the size of the basin.
+
+The data supports the walk today: the activation gates (§9) walk the whole network of 13,045 reaches on every
+activation. The upstream and downstream operations themselves are not yet exposed; they belong with the analysis tools
+that will consume them (§14).
+
+The resolution view is an optimiser fence (§5.3), and it applies here with force: joining reaches to named ways through
+`water.rivers_active` did not finish within 120 s, and the same join over a materialised copy of the resolved rows took
+10.9 s. Every builder over the network therefore materialises its resolved input into indexed temporary tables first.
 
 ### 7.3 Deferred road topology
 
@@ -299,13 +372,18 @@ entity — and, if it is a line or point, a radius — and the operation buffers
 the limits in §11. The object model that would let that same buffered result be labelled, retained and passed on to
 a further operation irrespective of its origin remains designed.
 
+Since revision 1.3 a named river is also a usable target: it is one level-1 row (§4.2), which the search returns and
+which the existing `feature` input to an analysis operation accepts by identifier, buffered like any other line and
+subject to the same limits (§11). Before,
+the same input could name only an arbitrary fragment of the river.
+
 ---
 
 ## 9. Derived values and their maintenance
 
 The schema contains values that are computed from other values: the geometry of a level-1 river, administrative code
-arrays, and computed relationships (§10.1). Each such value has exactly one designated maintenance point — the commit of
-an editing session, and the corresponding stage of the ingest pipeline.
+arrays, and computed relationships (§10.1). Each such value has exactly one designated maintenance point: the
+activation of a dataset version, through which both an ingest and the commit of an editing session pass.
 
 This rule exists because of a defect observed in the implemented system. A materialised view of trunk watercourses was
 refreshed by a function invoked from a single call site. A programmatic caller that did not traverse that site ingested
@@ -313,9 +391,40 @@ refreshed by a function invoked from a single call site. A programmatic caller t
 persisted for two days and presented differently depending on execution order.
 
 The lesson recorded here is not that materialised views are unsuitable, but that **a derived value whose refresh
-obligation resides in a call site rather than in a contract will eventually be stale**. Derived geometry for level-1
-rivers is accordingly rebuilt by the same commit path that writes the change, and the materialised view of trunk
-watercourses is withdrawn once the level model supersedes it.
+obligation resides in a call site rather than in a contract will eventually be stale**.
+
+**The contract is activation.** Every path by which a version becomes the active one — today an ingest or the commit
+of an editing session; any future rollback path must use it too — passes through one function,
+`versionsService.activate()`, and that function owns both implemented derived values. For the `rivers` layer it runs,
+in this order:
+
+1. **Rebuild the hierarchy** (`buildRiverHierarchy`): name the reaches, bridge gaps, group rivers, derive their geometry
+   and links (§4.2, §4.3).
+2. **Assert the activation gates** (`assertRiverGates`): no cycle in the downstream link; Strahler order never decreases
+   downstream; every river has at least one reach; no link points at a missing river. An ingest version must also meet
+   the match-rate baseline pinned from the measured build of 23 September 2026 — 4,754 named reaches, 439 names, 588
+   rivers — so that a re-ingest cannot silently regress; raising it is a deliberate act. An editing session is held to the structural gates only: a steward who deletes a
+   named way lowers the counts legitimately.
+3. **Stamp administrative codes** (§6.3), for every layer.
+4. **Move the active pointer.**
+
+A failure at step 1 or 2 aborts the caller's transaction, so the version is never activated and the previous one stays
+live. The order of steps 1 and 3 is load-bearing: the rebuild inserts new level-1 rows, and stamping updates every row
+of the version in one statement, so with the order reversed every rebuilt river would carry empty code arrays and be invisible to any query
+by province or ward.
+
+**The rebuild writes only differences.** Every read goes through the resolved version chain, and the result is compared
+with what that chain already holds; a row is written into the version being activated only where a derived value
+changed, and a river that has lost its last named reach is written as a deletion. An editing session that changes
+nothing writes nothing, and one that moves a way writes rows only for what that move changed. A wholesale rewrite would have been
+simpler, but would have added every reach, way and river, and one level of version chain, on every commit. Because the
+rebuild reads only source data — geometry, names and the HydroRIVERS link — and never a value it derived earlier,
+repeating it over an already-built version writes nothing. It costs roughly ten seconds per activation, and the gates
+roughly fifteen, measured on the development machine.
+
+**The materialised view is withdrawn.** `water.rivers_overview` is now a plain view over level-1 rivers (§4.2), and the
+function that refreshed its predecessor has been deleted. A plain view has no refresh obligation to forget, so the
+defect described above cannot recur in that form.
 
 ---
 
@@ -429,6 +538,7 @@ after the basemap load, not as an independent, skippable step.
 | Index on dataset version | Version-chain resolution |
 | Trigram index on name columns | Fuzzy search by name |
 | GIN indexes on administrative code arrays | Containment queries by province or ward |
+| B-tree indexes on `feature_level`, `parent_external_id` and `flows_into_external_id` (watercourses) | Level filtering, composition lookups and network walks |
 
 Two measured observations inform the strategy.
 
@@ -473,8 +583,8 @@ for changes originating from the assistant-mediated workflow — the source docu
 ### 12.2 Least privilege for generated queries
 
 The conversational assistant may execute generated read-only statements. These execute under a dedicated role holding
-select privileges on the eight resolution views and nothing else: no access to the application schema, and none to
-reference data. A defect in statement validation therefore cannot expose credentials or audit history, because the
+select privileges on the eight resolution views and the two per-level watercourse views (§4.2), and nothing else: no
+access to the application schema, and none to reference data. A defect in statement validation therefore cannot expose credentials or audit history, because the
 privilege boundary, not the parser, is the control.
 
 ### 12.3 Connection isolation
@@ -493,7 +603,9 @@ cannot exhaust the connections required for authentication and ordinary reads.
 | Administrative boundaries simplified to approximately 11 m | Attribution near a boundary may be incorrect; unsuitable for statutory use |
 | No routable road topology | Shortest-path and accessibility analysis unavailable |
 | No hydraulic model | Flood extent cannot be derived; exposure analysis requires an externally supplied extent |
-| Watercourse names originate from OpenStreetMap | Name coverage is partial (1,327 of 9,486 records) and association to reaches carries a confidence value |
+| Watercourse names originate from OpenStreetMap | 4,716 of 13,045 reaches are named by vote and 38 more by bridging; the other 8,291 are walkable but belong to no named river, and every association carries a confidence value |
+| Watercourse topology covers the six working provinces | 53 reaches flow out of the region, so a downstream walk from them ends at the regional boundary |
+| The dataset registry cannot yet execute the river ingest | `hydrorivers` is registered as a dated escape hatch (§14); a full `atlas:build` reports it failed until the runner implements it |
 | Elevation model is bare-earth at 30 m | Values represent ground level; not suitable for canopy or structure heights |
 
 ---
@@ -505,9 +617,15 @@ dependency order, lineage and licence of each dataset are recorded with it. The 
 migrations create structure, and the pipeline populates it.
 
 Administrative boundaries and stamping shipped first, in revision 1.1 (§6.2, §6.3). Reference-layer access and
-aggregation shipped second, in this revision (§10.2). The remaining designed elements are introduced in the following
-order, each independently useful: watercourse topology and the entity hierarchy; the region-of-interest model as a
-first-class object; and the assistant operations that consume them.
+aggregation shipped second, in revision 1.2 (§10.2). Watercourse topology and the entity hierarchy shipped third, in
+this revision (§4, §7, §9). The remaining designed elements are introduced in the following order, each independently
+useful: the region-of-interest model as a first-class object (§8); cross-entity relationships (§10.1); and the
+assistant operations that consume them, including the upstream and downstream walks (§7.2).
+
+The river ingest departs from the second half of the rule above. The design called for it to be declared as a registry
+dataset that loads its GeoJSON, but the registry's runner implements only SQL stages today. It is therefore registered as
+`hydrorivers`, with a `run` stage naming the ingest script and a promotion deadline of 31 December 2026; the registry's
+own test fails the build once that date passes, so the escape hatch cannot quietly become permanent.
 
 ---
 

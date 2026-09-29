@@ -2597,3 +2597,48 @@ So a reviewer can tell deferred from missed. Of §10's six verification items, t
 - The far-zoom map draws each river once, and nothing refreshes a snapshot to keep it true.
 - A steward cannot edit derived geometry, and cannot delete a parent out from under its children.
 - A re-ingest that matches fewer rivers than the pinned baseline does not activate.
+
+## Execution Notes — Tasks 7 to 9 (2026-09-29)
+
+Recorded here because the steps above ask for a ledger, and because each item departs from, or measures, what those
+steps wrote.
+
+**Task 7 (`3e91ea2`).**
+- `resetDerived` (added in Task 6 review) was removed rather than kept: the diff builder reads only source data
+  (geometry, names, `NEXT_DOWN`), never a column it derived, so a rebuild is idempotent by construction. Rebuilding the
+  active version writes 0 rows, and re-activating no longer deletes and re-creates 588 river rows under new uuids.
+- The gates read the resolved chain (`materialiseResolved`), not the version's own rows: an edit draft holds only its
+  changes, so the Task 6 gates would have refused every edit.
+- `RIVER_BASELINE` is enforced for `kind = 'ingest'` only; edits get the structural gates. Spec §2's stated purpose is a
+  re-ingest regression; a steward deleting a named way lowers the counts legitimately. User-approved.
+- Level-1 `flows_into` is computed into the temp table and diffed with the other columns, rather than set by an UPDATE
+  after the supersede (the plan's version would have left an unchanged river's stale outflow inherited).
+- The vote's confidence is cast to `real` with `$1::int`: left untyped, 237 confidences came out 1 ulp from what Task 6
+  stored and every rebuild superseded them.
+- The first rebuild over the Task 6 build wrote 33 rows (22 river geometries, 11 way links): the determinism fixes of
+  `6460a22` postdated that ingest. Re-ingested from scratch through the hook: `588 rivers from 439 names over 4716
+  named reaches (38 bridged)`, 0 rows would change, 588/588 rivers stamped.
+- Mutation checks: hook disabled → first hook test fails on the stale version id, tombstone test fails; diff predicates
+  dropped → the empty edit writes **23,119** rows instead of 0; stamping moved before the rebuild → the rebuilt river
+  has no province codes.
+
+**Task 8 (`52945e7`).**
+- Editing rules, user decision: only level 3 is hand-editable; update or delete of level 1/2 → 409. The plan kept
+  level-1 attributes editable, but since Task 7 the rebuild re-derives the name on the same commit. The guard also
+  closes a copy-on-write defect: `upsertChangeInVersion` copies only registry attribute columns, so a copied level-1/2
+  row lost `feature_level` (defaulting to 3) and `flows_into_external_id`.
+- `rivers_overview` payload: 5.4 MB over WFS unsimplified, far over the ~600 kB threshold, so it is simplified at 0.01°.
+  Viewed in the browser, all 588 rivers at far zoom drew every named suối as a trunk river, which then vanished past the
+  8.5 handoff; the view is restricted to rivers with at least one `waterway=river` way (324 of 588, 278 names — the old
+  matview's set). Final payload 127 kB; far zoom and the detailed layer now agree at the handoff.
+- Mutation checks: level filter removed → "Thu Bồn" returns **8** hits and level-3 ids appear; edit guard removed →
+  level-1 update and level-1/2 delete succeed.
+- Not verified: "clicking a river selects one feature" (Step 8, third bullet) — pixel clicks are unreliable in the
+  headless driver because admin polygons intercept them.
+
+**Task 9.**
+- The `hydrorivers` descriptor's licence is `ODbL-1.0`, not the sketch's `CC-BY-4.0`: the combined product derives from
+  OSM, and ODbL's share-alike binds derived databases. The per-source licences are unchanged.
+- `runner.ts` does not execute `run` stages yet, so a bare `npm run atlas:build` now reports `hydrorivers` failed.
+  `atlas:build` is not invoked by CI or any runbook; use `--except hydrorivers` until the registry track implements
+  `run`.

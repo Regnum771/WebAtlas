@@ -95,6 +95,10 @@ step 3 finishes: it can point at `osm_id`s that no longer exist and miss ones th
 to styles/publish, and every time step 3 is re-run. See `docs/architecture/database-architecture.md` §10.2 for why
 the search index lives on this derived table rather than on `roads_region` and friends.
 
+The river hierarchy (`water.rivers`, built by `npm run ingest:rivers`) is independent of all of this: it reads only
+the committed OSM waterways and HydroRIVERS seeds, never a `basemap` table, so reloading the basemap or rebuilding
+the reference entities neither requires nor invalidates a river re-ingest, and the two orderings do not interact.
+
 ### 4. Upload styles, then publish
 
 ```bash

@@ -53,8 +53,8 @@ export function versionsService(pg: Pool) {
     // Atomically make versionId the active version for its layer.
     async activate(client: PoolClient, layerKey: string, versionId: string): Promise<void> {
       // The river hierarchy is derived data with an owner, and this is that owner: the one
-      // contract every path to "active" passes through -- ingest, edit commit and a
-      // timeline rollback alike. Leaving it in the ingest script instead is precisely how
+      // contract every path to "active" passes through -- ingest and edit commit today,
+      // and any rollback path added later must come through here too. Leaving it in the ingest script instead is precisely how
       // rivers_overview went stale for two days (see the stamping comment below).
       //
       // BEFORE stampAdminCodes, not after: the rebuild INSERTS new level-1 rows, and

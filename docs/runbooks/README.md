@@ -40,9 +40,32 @@ dev box or optional (unlocks one feature, safe to skip and do later).
    -w @webatlas/api` and `npm run ingest:rivers -w @webatlas/api` again after migrating; otherwise
    `GET /api/layers/<layer>/features?province=…` and the assistant's `features_in_admin_unit` tool return `200`
    with an empty result, silently, rather than an error that would flag the staleness.
+
+   **Upgrading past migration `1000000000020_rivers-level-views`:** it replaces the far-zoom
+   `rivers_overview` materialised view with a plain view and adds `rivers_detail`. Re-run step 4
+   (a `rivers` version ingested before migration 19 has no reaches or rivers at all) and then
+   step 9: `publish:geoserver` repoints `webatlas:rivers` at `rivers_detail` and resets
+   GeoServer's cached attribute schema. Skip step 9 and the detailed map draws every river as
+   its ways, reaches and river entity stacked on top of each other.
 4. **Load the river network** into the `rivers` table — also seed data checked into git,
    run separately from step 3 because it has its own ingest path
-   ([`ingestRivers.ts`](../../apps/api/src/db/seeds/ingestRivers.ts)).
+   ([`ingestRivers.ts`](../../apps/api/src/db/seeds/ingestRivers.ts)). One version holds
+   all three levels: 9,486 OSM ways, 13,045 HydroRIVERS reaches, and the 588 named rivers
+   built from them.
+
+   Activating that version also **builds the river hierarchy and runs its activation gates**
+   (see `docs/architecture/database-architecture.md` §9), so this step takes about a minute
+   and prints nothing about the hierarchy itself. Check the result with the read-only
+   `npm run rivers:hierarchy -w @webatlas/api`, which should report `588 rivers from 439
+   names over 4716 named reaches (38 bridged)` and `0 rows would change`. If a gate fails,
+   the ingest throws and **the version is not activated** — the previous `rivers` version
+   is still the live one, so the map keeps working; read the gate message, don't retry
+   blindly.
+
+   **Must run after step 3.** Activation stamps administrative codes onto the new rows
+   (including the 588 rivers it just built), and the boundaries it stamps against are
+   loaded by `seed`. Run in the other order and every river reads as belonging to no
+   province or ward.
 5. **Rebuild the street basemap** from an OpenStreetMap extract. Not in git — CARTO and
    Esri tiles cannot be re-hosted under their terms, so this is the one basemap tier the
    project builds itself. Skipping this step leaves the street tier broken (a grey
