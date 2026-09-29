@@ -268,6 +268,7 @@ export class MapModel {
     const riversOverviewLayer = new VectorLayer({
       source: createRiverOverviewSource(),
       style: riversStyle,
+      visible: false,
       properties: { id: 'layer_rivers_overview' },
     });
     this.riversOverviewLayer = riversOverviewLayer;
@@ -396,11 +397,6 @@ export class MapModel {
       if (zoom !== undefined) {
         this.waterGate?.(zoom);
         this.wardsGate?.(zoom);
-        // Lớp tổng quan chỉ vẽ DƯỚI ngưỡng của lớp đầy đủ, và đi theo đúng công
-        // tắc 'Mạng lưới sông ngòi' của người dùng — không có mục bật/tắt riêng.
-        const riversOn = this.layerStates.find((l) => l.id === 'layer_rivers')?.visible ?? true;
-        this.riversOverviewLayer?.setVisible(riverOverviewVisibleAt(zoom) && riversOn);
-
         // Chỉ đổi source khi khoảng cao đều thật sự đổi: đặt lại source đồng nghĩa vứt bỏ
         // toàn bộ tile đã tải, nên gọi mỗi lần di chuyển bản đồ sẽ nháy liên tục.
         // contourFixedInterval do người dùng chọn cứng (setContourSettings, Nhiệm vụ 6)
@@ -491,6 +487,12 @@ export class MapModel {
         context.setOpacity(state.opacity);
       }
     });
+
+    // The overview and full river layers are alternate representations. Keep
+    // their handoff in the same visibility pass so layer-state changes cannot
+    // leave both representations drawing at once.
+    const riversOn = this.layerStates.find((l) => l.id === 'layer_rivers')?.visible ?? true;
+    this.riversOverviewLayer?.setVisible(riverOverviewVisibleAt(currentZoom) && riversOn);
   }
 
   getMap(): Map | null {

@@ -20,4 +20,9 @@ describe('riverOverviewVisibleAt', () => {
     expect(riverOverviewVisibleAt(8.5)).toBe(false);
     expect(riverOverviewVisibleAt(12)).toBe(false);
   });
+
+  it('does not overlap the full river layer at the handoff', () => {
+    expect(riverOverviewVisibleAt(8.49)).toBe(true);
+    expect(riverOverviewVisibleAt(8.5)).toBe(false);
+  });
 });
