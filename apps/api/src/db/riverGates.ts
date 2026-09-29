@@ -76,25 +76,33 @@ export async function assertRiverGates(
   if (Number(r.orphaned) > 0) {
     failures.push(`${r.orphaned} rows point at a parent that is not a level-1 river`);
   }
-  // Cycles: a walk bounded by the longest possible chain. A cycle makes the walk exceed
-  // it, which is cheaper to detect than carrying a visited-array through the recursion.
-  const cyc = await client.query<{ deepest: string }>(
+  // Cycles: walk UPSTREAM from every outlet (a reach whose flows_into is NULL or leaves
+  // the version) and count the reaches never reached. flows_into gives each reach at most
+  // one outgoing link, so each reach is reached at most once, along its unique downstream
+  // path -- the walk is O(reaches), always terminates, and never enters a cycle, because
+  // no member of a cycle (or anything draining into one) has a path to an outlet. So the
+  // unreached count is exactly the reaches on or upstream of a cycle; 0 means acyclic.
+  // (The previous version walked downstream from every reach with a 20,000-hop bound,
+  // which on cyclic input meant up to 20,000 hops per reach before it could report.)
+  const cyc = await client.query<{ stuck: string }>(
     `WITH RECURSIVE v AS (
        SELECT external_id, flows_into_external_id FROM water.rivers
         WHERE dataset_version_id = $1 AND feature_level = 2 AND NOT deleted
      ),
-     walk AS (
-       SELECT external_id AS start_id, flows_into_external_id AS nxt, 1 AS depth FROM v
+     reached AS (
+       SELECT o.external_id FROM v o
+        WHERE o.flows_into_external_id IS NULL
+           OR NOT EXISTS (SELECT 1 FROM v d WHERE d.external_id = o.flows_into_external_id)
        UNION ALL
-       SELECT w.start_id, n.flows_into_external_id, w.depth + 1
-         FROM walk w JOIN v n ON n.external_id = w.nxt
-        WHERE w.depth < 20000
+       SELECT u.external_id FROM reached r JOIN v u ON u.flows_into_external_id = r.external_id
      )
-     SELECT coalesce(max(depth), 0)::text AS deepest FROM walk`,
+     SELECT ((SELECT count(*) FROM v) - (SELECT count(*) FROM reached))::text AS stuck`,
     [versionId]
   );
-  if (Number(cyc.rows[0].deepest) >= 20000) {
-    failures.push('flows_into contains a cycle (walk exceeded 20000 hops)');
+  if (Number(cyc.rows[0].stuck) > 0) {
+    failures.push(
+      `flows_into contains a cycle (${cyc.rows[0].stuck} reaches lie on or drain into it)`
+    );
   }
   if (Number(r.reaches) < baseline.reaches) {
     failures.push(`match rate regressed: ${r.reaches} named reaches, baseline ${baseline.reaches}`);

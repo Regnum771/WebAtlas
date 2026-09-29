@@ -273,4 +273,88 @@ describe('activation gates', () => {
     // cycle/Strahler walk (~15 s on its own), so this runs well past the 30 s default
     // when it follows the other gate tests. Measured 12 s in isolation.
   }, 120_000);
+
+  it('refuses a flows_into cycle quickly, and the build terminates on it', async () => {
+    const { assertRiverGates, RIVER_BASELINE } = await import('./riverGates');
+    const { buildRiverHierarchy } = await import('./riverHierarchy');
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM app.dataset_versions WHERE layer_key = 'rivers' AND is_active`
+      );
+      const versionId = rows[0].id;
+      // Close a two-reach loop INSIDE one named river (A flows into B; point B back at A),
+      // so the builder's same-name walk -- not just the gate's -- runs into it. Total
+      // order on the pick so the test is the same on every machine.
+      const { rows: pair } = await client.query<{ a: string; b: string }>(
+        `SELECT u.external_id AS a, d.external_id AS b
+           FROM water.rivers u
+           JOIN water.rivers d ON d.dataset_version_id = u.dataset_version_id
+                              AND d.external_id = u.flows_into_external_id
+          WHERE u.dataset_version_id = $1 AND u.feature_level = 2 AND d.feature_level = 2
+            AND u.match_confidence >= 0.3 AND d.match_confidence >= 0.3
+            AND u.parent_external_id = d.parent_external_id
+          ORDER BY u.external_id LIMIT 1`,
+        [versionId]
+      );
+      expect(pair).toHaveLength(1);
+      await client.query(
+        `UPDATE water.rivers SET flows_into_external_id = $3
+          WHERE dataset_version_id = $1 AND external_id = $2`,
+        [versionId, pair[0].b, pair[0].a]
+      );
+
+      const started = Date.now();
+      await expect(assertRiverGates(client, versionId, RIVER_BASELINE)).rejects.toThrow(/cycle/);
+      // The old 20,000-hop bounded walk could not report this in any practical time.
+      expect(Date.now() - started).toBeLessThan(30_000);
+
+      // Without CYCLE protection the builder's same-name walk recursed forever here.
+      await buildRiverHierarchy(client, versionId);
+      await expect(assertRiverGates(client, versionId, RIVER_BASELINE)).rejects.toThrow(/cycle/);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  }, 180_000);
+});
+
+describe('rebuild over an already-built version', () => {
+  it('reproduces the committed hierarchy exactly (the builder is idempotent)', async () => {
+    // Regression for the review finding of 2026-09-23: rebuilding the ACTIVE version
+    // (whose level-2/3 rows already carry river ids from the committed build) used to
+    // yield 669 rivers, 0 bridged, and level-1 rivers literally named 'river:<id>' -- and
+    // every gate passed. The builder now clears its own derived output first.
+    const { buildRiverHierarchy } = await import('./riverHierarchy');
+    const { assertRiverGates, RIVER_BASELINE } = await import('./riverGates');
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM app.dataset_versions WHERE layer_key = 'rivers' AND is_active`
+      );
+      const versionId = rows[0].id;
+      const built = await buildRiverHierarchy(client, versionId);
+      expect(built).toEqual({ matched: 4716, names: 439, rivers: 588, bridged: 38 });
+      await assertRiverGates(client, versionId, RIVER_BASELINE);
+
+      const { rows: l1 } = await client.query<{
+        rivers: string; thuBon: string; idLike: string; bridged: string;
+      }>(
+        `SELECT count(*) FILTER (WHERE feature_level = 1)::text AS rivers,
+                count(*) FILTER (WHERE feature_level = 1 AND name = 'Sông Thu Bồn')::text AS "thuBon",
+                count(*) FILTER (WHERE feature_level = 1
+                                   AND name ~ '^(river|hyriv|osm):')::text AS "idLike",
+                count(*) FILTER (WHERE feature_level = 2 AND match_confidence = $2)::text AS bridged
+           FROM water.rivers WHERE dataset_version_id = $1`,
+        [versionId, BRIDGED_CONFIDENCE]
+      );
+      expect(l1[0]).toEqual({ rivers: '588', thuBon: '1', idLike: '0', bridged: '38' });
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+    // The build alone is ~25 s against the real data.
+  }, 180_000);
 });

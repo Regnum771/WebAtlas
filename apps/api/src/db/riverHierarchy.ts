@@ -204,11 +204,13 @@ export const BRIDGED_CONFIDENCE = 0.2;
 /**
  * Bridge single-reach same-name gaps (2026-09-23 decision, reversing the plan's original
  * Deviation 4). A gap is a level-2 reach with no voted name whose downstream reach and at
- * least one upstream reach both carry the SAME voted name -- the reach's own vote found
- * that name too, just not strongly enough to clear MATCH_MAX_MEDIAN_M (see
- * assignReachNames), and one such reach otherwise severs a river connectivity-wise even
- * though the network is physically continuous through it. Measured case: hyriv:41295432,
- * between the 38-reach Sông Thu Bồn group and its own terminal outlet.
+ * least one upstream reach both carry the SAME voted name. The rule is purely
+ * topological: the gap reach's own vote is NOT consulted (it may have found that name,
+ * another name, or nothing at all) -- same name on both sides is the whole justification,
+ * by the user's decision. Without it, one unnamed reach severs a river connectivity-wise
+ * even though the network is physically continuous through it. Measured case:
+ * hyriv:41295432, between the 38-reach Sông Thu Bồn group and its own terminal outlet
+ * (its vote happened to find Thu Bồn at 3 of 5 samples but failed the median cutoff).
  *
  * Single pass against a SNAPSHOT of the vote result: `vote_snapshot` is materialised once,
  * right after assignReachNames and before any bridging write, so every gap is evaluated
@@ -220,14 +222,15 @@ export const BRIDGED_CONFIDENCE = 0.2;
  * (flows_into is one outgoing edge per reach) and the upstream requirement is an EXISTS,
  * not a pick.
  *
- * Reads `water.rivers` directly, not `res_rivers`: like buildLevelOne below, the version's
- * level-2 rows (and the name assignReachNames just wrote) were inserted/updated inside
- * THIS transaction, after res_rivers was snapshotted, so res_rivers has no rows for a
- * brand-new ingest version and is stale for parent_external_id on an edit-draft version
- * either way. vote_snapshot is this function's own ANALYZEd temp table for exactly that
- * reason -- see the perf comment on the flows_into UPDATE in buildLevelOne for what
- * joining a raw, freshly-written table with no planner statistics costs (~7.5 minutes,
- * measured on the real ingest).
+ * Reads `water.rivers` directly, not `res_rivers`: res_rivers holds every row of the
+ * version (materialiseResolved runs after the load), but it was snapshotted BEFORE
+ * assignReachNames wrote the voted names, so its parent_external_id column is stale --
+ * and that column is exactly what this step reads. vote_snapshot is this function's own
+ * ANALYZEd temp table, so the joins below never plan against raw water.rivers, whose
+ * statistics predate this transaction and know nothing about the new version id -- see
+ * the perf comment on the flows_into UPDATE in buildLevelOne for what that misestimate
+ * cost (~7.5 minutes, measured on the real ingest). Rows marked `deleted` are left out,
+ * matching the activation gates.
  */
 async function bridgeGaps(client: PoolClient, versionId: string): Promise<number> {
   await client.query(`DROP TABLE IF EXISTS vote_snapshot`);
@@ -235,7 +238,7 @@ async function bridgeGaps(client: PoolClient, versionId: string): Promise<number
     `CREATE TEMP TABLE vote_snapshot AS
      SELECT external_id, parent_external_id AS name, flows_into_external_id
        FROM water.rivers
-      WHERE dataset_version_id = $1 AND feature_level = 2`,
+      WHERE dataset_version_id = $1 AND feature_level = 2 AND NOT deleted`,
     [versionId]
   );
   await client.query(`CREATE UNIQUE INDEX ON vote_snapshot (external_id)`);
@@ -292,19 +295,37 @@ async function bridgeGaps(client: PoolClient, versionId: string): Promise<number
  * an ingest version has no parent chain to inherit rows from.
  */
 async function buildLevelOne(client: PoolClient, versionId: string): Promise<number> {
+  // The version's named reaches (voted + bridged), as an indexed, ANALYZEd temp table
+  // rather than a CTE over raw water.rivers. The table does have statistics, but they
+  // predate this transaction and know nothing about the new version id, so the planner
+  // would misestimate every join against it -- the same hazard as the flows_into UPDATE
+  // below. Rows marked `deleted` are left out, matching the activation gates.
+  await client.query(`DROP TABLE IF EXISTS named_reach`);
+  await client.query(
+    `CREATE TEMP TABLE named_reach AS
+     SELECT external_id, parent_external_id AS name, flows_into_external_id AS nd
+       FROM water.rivers
+      WHERE dataset_version_id = $1 AND feature_level = 2 AND NOT deleted
+        AND parent_external_id IS NOT NULL`,
+    [versionId]
+  );
+  await client.query(`CREATE UNIQUE INDEX ON named_reach (external_id)`);
+  await client.query(`ANALYZE named_reach`);
+
   // Reach -> (name, root reach). Roots are computed over the version's own level-2 rows.
+  //
+  // CYCLE guards the walk against a same-name cycle in flows_into, which would otherwise
+  // recurse forever and hang the build before the cycle gate ever ran. A reach on (or
+  // walking into) a cycle never reaches a row with nxt IS NULL, so it gets no reach_river
+  // row: its parent_external_id keeps the parked name, and assertRiverGates then refuses
+  // the version (cycle check, plus the orphaned-parent check).
   await client.query(`DROP TABLE IF EXISTS reach_river`);
   await client.query(
     `CREATE TEMP TABLE reach_river AS
-     WITH RECURSIVE named AS (
-       SELECT external_id, parent_external_id AS name, flows_into_external_id AS nd
-         FROM water.rivers
-        WHERE dataset_version_id = $1 AND feature_level = 2 AND parent_external_id IS NOT NULL
-     ),
-     edges AS (
+     WITH RECURSIVE edges AS (
        SELECT n.external_id, n.name,
               d.external_id AS same_name_down
-         FROM named n LEFT JOIN named d ON d.external_id = n.nd AND d.name = n.name
+         FROM named_reach n LEFT JOIN named_reach d ON d.external_id = n.nd AND d.name = n.name
      ),
      walk AS (
        SELECT external_id AS start_id, name, external_id AS cur, same_name_down AS nxt, 0 AS d
@@ -312,13 +333,12 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
        UNION ALL
        SELECT w.start_id, w.name, e.external_id, e.same_name_down, w.d + 1
          FROM walk w JOIN edges e ON e.external_id = w.nxt
-     )
+     ) CYCLE cur SET is_cycle USING path
      SELECT DISTINCT ON (start_id)
             start_id AS reach_external_id, name,
             'river:' || substring(cur from 7) AS river_external_id
-       FROM walk WHERE nxt IS NULL
-      ORDER BY start_id, d DESC`,
-    [versionId]
+       FROM walk WHERE nxt IS NULL AND NOT is_cycle
+      ORDER BY start_id, d DESC`
   );
   await client.query(`CREATE INDEX ON reach_river (reach_external_id)`);
   await client.query(`CREATE INDEX ON reach_river (river_external_id)`);
@@ -329,7 +349,16 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
   await client.query(`ANALYZE reach_river`);
 
   // Each named way joins the same-name river whose reaches lie nearest to it. A name with
-  // several disjoint rivers (Sông Cái has 15) must not give all its ways to one of them.
+  // several disjoint rivers (Sông Cái has 12) must not give all its ways to one of them.
+  //
+  // river_external_id is the final sort key: two different same-name rivers can sit at
+  // the exact same distance from a way (typically 0, both touching it), and distance
+  // alone would then leave the pick -- and so the level-1 geometry and length_m -- to
+  // scan order. Unlike the vote's KNN, this ORDER BY does not ride a GiST KNN path (the
+  // name filter goes through the reach_river join first, then sorts the few candidates),
+  // so the extra key does not change the plan; see the Task 6 report for the timing.
+  // No distance cap: a same-name way attaches to its nearest same-name river however
+  // far away (measured 2026-09-23: 4 ways sit more than 5 km from their river).
   await client.query(`DROP TABLE IF EXISTS way_river`);
   await client.query(
     `CREATE TEMP TABLE way_river AS
@@ -339,7 +368,7 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
          SELECT rr.river_external_id
            FROM reach_river rr JOIN res_rivers r ON r.external_id = rr.reach_external_id
           WHERE rr.name = w.name
-          ORDER BY r.geom <-> w.geom
+          ORDER BY r.geom <-> w.geom, rr.river_external_id
           LIMIT 1
        ) best`
   );
@@ -361,17 +390,22 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
   // fed a Multi* type it just nests. ST_Dump first, so ST_Collect aggregates plain
   // LineStrings and genuinely returns a MultiLineString. Documented deviation from the
   // plan's example, which collects the undumped geometry directly.
+  //
+  // Both ST_Collects carry an aggregate ORDER BY (member external_id, then dump path --
+  // unique per collected part), so the collected geometry's bytes do not depend on the
+  // order rows happen to arrive in.
   const { rows } = await client.query<{ n: string }>(
     `WITH ways AS (
        SELECT wr.river_external_id,
-              ST_Collect(d.geom) AS geom
+              ST_Collect(d.geom ORDER BY wr.way_external_id, d.path) AS geom
          FROM way_river wr JOIN res_rivers r ON r.external_id = wr.way_external_id,
               ST_Dump(r.geom) AS d
         GROUP BY wr.river_external_id
      ),
      reaches AS (
        SELECT rr.river_external_id, min(rr.name) AS name,
-              max(r.stream_order) AS max_order, ST_Collect(d.geom) AS geom
+              max(r.stream_order) AS max_order,
+              ST_Collect(d.geom ORDER BY rr.reach_external_id, d.path) AS geom
          FROM reach_river rr JOIN res_rivers r ON r.external_id = rr.reach_external_id,
               ST_Dump(r.geom) AS d
         GROUP BY rr.river_external_id
@@ -455,14 +489,52 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
 }
 
 /**
+ * Clear everything buildRiverHierarchy derives for `versionId`'s OWN rows, so the build
+ * starts from the same state whatever ran before: the level-1 rivers, the level-2 name /
+ * river link and its confidence, and the level-3 river link.
+ *
+ * Without this a rebuild over an already-built version was silently wrong (found in
+ * review, 2026-09-23): assignReachNames only writes the reaches it ACCEPTS, so a reach
+ * bridged last time kept `parent_external_id = 'river:...'`, the bridging snapshot saw it
+ * as already named, and it came out as a level-1 river literally NAMED 'river:...' --
+ * 669 rivers instead of 588, with every gate passing. Stale level-3 links survived the
+ * same way for any way not reassigned.
+ *
+ * Only derived columns are touched; flows_into_external_id on levels 2/3 is source data.
+ * A fresh ingest version has nothing to clear, so this is a no-op there.
+ */
+async function resetDerived(client: PoolClient, versionId: string): Promise<void> {
+  await client.query(
+    `DELETE FROM water.rivers WHERE dataset_version_id = $1 AND feature_level = 1`,
+    [versionId]
+  );
+  await client.query(
+    `UPDATE water.rivers SET parent_external_id = NULL, match_confidence = NULL
+      WHERE dataset_version_id = $1 AND feature_level = 2
+        AND (parent_external_id IS NOT NULL OR match_confidence IS NOT NULL)`,
+    [versionId]
+  );
+  await client.query(
+    `UPDATE water.rivers SET parent_external_id = NULL
+      WHERE dataset_version_id = $1 AND feature_level = 3 AND parent_external_id IS NOT NULL`,
+    [versionId]
+  );
+}
+
+/**
  * The single writer of the derived river hierarchy. Runs inside the caller's
  * transaction, BEFORE the version is activated, so a failed gate rolls the version away
  * entirely -- which is what spec §2's "failure means the version is not activated" means.
+ *
+ * Idempotent for any starting state of `versionId`'s rows: resetDerived clears the
+ * previous build's output first (and runs before materialiseResolved, so res_rivers never
+ * snapshots a stale link either).
  */
 export async function buildRiverHierarchy(
   client: PoolClient,
   versionId: string
 ): Promise<{ matched: number; names: number; rivers: number; bridged: number }> {
+  await resetDerived(client, versionId);
   await materialiseResolved(client, versionId);
   const named = await assignReachNames(client, versionId);
   const bridged = await bridgeGaps(client, versionId);
