@@ -6,8 +6,6 @@ import { versionsService } from '../../modules/versions/service';
 import { loadLayerFeatures } from './run';
 import type { SeedLayer } from './registry';
 import { REACHES_LAYER } from './ingestReaches';
-import { buildRiverHierarchy } from '../riverHierarchy';
-import { assertRiverGates, RIVER_BASELINE } from '../riverGates';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 // Đổi chuỗi này mỗi khi nội dung file seed đổi: hàm ingest dưới đây idempotent
@@ -88,21 +86,14 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
     // kind/parent constraint gives an ingest version no parent, so rivers_active
     // resolves its chain to this version alone. Loading the reaches into a separate
     // ingest version would make every OSM way vanish from the map.
-    const ways = await loadLayerFeatures(client, RIVERS_HYDRO_LAYER, versionId);
-    const reaches = await loadLayerFeatures(client, REACHES_LAYER, versionId);
-    // Dựng toàn bộ phân cấp sông (cấp 2 gán tên, cấp 1 dựng theo tên + liên thông) trước
-    // activate(): chạy trong cùng giao dịch ingest để ROLLBACK khi lỗi xoá sạch cả
-    // version, đúng như spec "failure means the version is not activated" (xem
-    // riverHierarchy.ts). Cổng kích hoạt chạy ngay sau, cũng trước activate(): một
-    // version dưới ngưỡng bị từ chối kích hoạt hoàn toàn, không chỉ thiếu vài dòng.
-    const built = await buildRiverHierarchy(client, versionId);
-    await assertRiverGates(client, versionId, RIVER_BASELINE);
-    console.log(
-      `  ${built.rivers} rivers from ${built.names} names over ${built.matched} named reaches` +
-        ` (${built.bridged} bridged)`
-    );
-    // feature_count phải tính LẠI sau khi dựng phân cấp: builder chèn thêm các dòng
-    // sông cấp 1, nên ways + reaches không còn đúng nữa.
+    await loadLayerFeatures(client, RIVERS_HYDRO_LAYER, versionId);
+    await loadLayerFeatures(client, REACHES_LAYER, versionId);
+    // Dựng phân cấp sông, chạy cổng kích hoạt và đóng dấu mã hành chính đều là nghĩa vụ
+    // của svc.activate() (xem versions/service.ts), không gọi tường minh ở đây. Vẫn cùng
+    // giao dịch ingest, nên cổng thất bại thì ROLLBACK xoá sạch cả version.
+    await svc.activate(client, 'rivers', versionId);
+    // feature_count tính SAU activate(): phần dựng phân cấp chèn thêm các dòng sông cấp 1
+    // vào chính version này, nên ways + reaches không còn đúng nữa.
     const { rows: fc } = await client.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM water.rivers WHERE dataset_version_id = $1`,
       [versionId]
@@ -112,9 +103,6 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
       `UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`,
       [count, versionId]
     );
-    // Đóng dấu mã hành chính giờ là nghĩa vụ của svc.activate() (xem versions/service.ts):
-    // không còn gọi tường minh ở đây.
-    await svc.activate(client, 'rivers', versionId);
     await client.query('COMMIT');
     result = { versionId, count };
   } catch (e) {

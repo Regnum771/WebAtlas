@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { materialiseResolved } from './riverHierarchy';
 
 /**
  * Pinned per spec §2 so a later re-ingest cannot silently regress. Re-measured 2026-09-23
@@ -9,7 +10,7 @@ import type { PoolClient } from 'pg';
  *
  * `reaches` counts every level-2 reach that ends up with a river -- voted (4,716) PLUS
  * bridged (38) = 4,754 -- because that is exactly what assertRiverGates's own `reaches`
- * check counts (`parent_external_id IS NOT NULL` on a level-2 row, read AFTER buildLevelOne
+ * check counts (`parent_external_id IS NOT NULL` on a level-2 row, read AFTER the build
  * has rewritten it from name to river id; a bridged reach gets a river id here exactly the
  * same way a voted one does). `names` (439) is unchanged by bridging: bridging never
  * invents a new name, only extends an existing one across a gap. `rivers` DROPS from the
@@ -28,8 +29,20 @@ export const RIVER_BASELINE = { reaches: 4754, names: 439, rivers: 588 } as cons
 export type RiverBaseline = typeof RIVER_BASELINE;
 
 /**
- * Spec §2's activation gates, as assertions over ONE version's own rows. Called from
- * inside the ingest transaction before activate(), so throwing aborts the version.
+ * Spec §2's activation gates, as assertions over `versionId`'s RESOLVED rows (its whole
+ * ancestor chain, as rivers_active would show it once active). Called from
+ * versionsService.activate() before the pointer moves, so throwing aborts the version.
+ * The resolved set, not the version's own rows: an edit draft holds only what changed,
+ * so reading by version would see a handful of rows and refuse every edit.
+ *
+ * `baseline` is the pinned match-rate floor, which spec §2 exists "so a later re-ingest
+ * cannot silently regress". activate() passes it for an ingest version only. An edit
+ * that deletes or moves a named way legitimately lowers the match counts -- that is the
+ * steward's decision, not an algorithm or data regression -- so edits get the structural
+ * gates alone (`baseline = null`).
+ *
+ * Rebuilds the res_rivers temp table (materialiseResolved), so call it after the build,
+ * never in the middle of one.
  *
  * "No reach with two parents" is structural rather than checked: parent_external_id is a
  * single column, so a reach cannot hold two composition parents, and NEXT_DOWN gives one
@@ -39,10 +52,11 @@ export type RiverBaseline = typeof RIVER_BASELINE;
 export async function assertRiverGates(
   client: PoolClient,
   versionId: string,
-  baseline: RiverBaseline
+  baseline: RiverBaseline | null
 ): Promise<void> {
+  await materialiseResolved(client, versionId);
   const { rows } = await client.query<Record<string, string>>(
-    `WITH v AS (SELECT * FROM water.rivers WHERE dataset_version_id = $1 AND NOT deleted)
+    `WITH v AS (SELECT * FROM res_rivers)
      SELECT
        (SELECT count(*) FROM v WHERE feature_level = 2 AND parent_external_id IS NOT NULL)::text AS reaches,
        (SELECT count(DISTINCT name) FROM v WHERE feature_level = 1)::text AS names,
@@ -56,8 +70,7 @@ export async function assertRiverGates(
        (SELECT count(*) FROM v c WHERE c.parent_external_id IS NOT NULL AND c.feature_level IN (2, 3)
           AND NOT EXISTS (SELECT 1 FROM v p
                            WHERE p.external_id = c.parent_external_id AND p.feature_level = 1))::text AS orphaned
-      `,
-    [versionId]
+      `
   );
   const r = rows[0];
   // Collect every violation and throw ONCE, rather than stopping at the first: a single
@@ -77,7 +90,7 @@ export async function assertRiverGates(
     failures.push(`${r.orphaned} rows point at a parent that is not a level-1 river`);
   }
   // Cycles: walk UPSTREAM from every outlet (a reach whose flows_into is NULL or leaves
-  // the version) and count the reaches never reached. flows_into gives each reach at most
+  // the resolved set) and count the reaches never reached. flows_into gives each reach at most
   // one outgoing link, so each reach is reached at most once, along its unique downstream
   // path -- the walk is O(reaches), always terminates, and never enters a cycle, because
   // no member of a cycle (or anything draining into one) has a path to an outlet. So the
@@ -86,8 +99,7 @@ export async function assertRiverGates(
   // which on cyclic input meant up to 20,000 hops per reach before it could report.)
   const cyc = await client.query<{ stuck: string }>(
     `WITH RECURSIVE v AS (
-       SELECT external_id, flows_into_external_id FROM water.rivers
-        WHERE dataset_version_id = $1 AND feature_level = 2 AND NOT deleted
+       SELECT external_id, flows_into_external_id FROM res_rivers WHERE feature_level = 2
      ),
      reached AS (
        SELECT o.external_id FROM v o
@@ -96,21 +108,20 @@ export async function assertRiverGates(
        UNION ALL
        SELECT u.external_id FROM reached r JOIN v u ON u.flows_into_external_id = r.external_id
      )
-     SELECT ((SELECT count(*) FROM v) - (SELECT count(*) FROM reached))::text AS stuck`,
-    [versionId]
+     SELECT ((SELECT count(*) FROM v) - (SELECT count(*) FROM reached))::text AS stuck`
   );
   if (Number(cyc.rows[0].stuck) > 0) {
     failures.push(
       `flows_into contains a cycle (${cyc.rows[0].stuck} reaches lie on or drain into it)`
     );
   }
-  if (Number(r.reaches) < baseline.reaches) {
+  if (baseline && Number(r.reaches) < baseline.reaches) {
     failures.push(`match rate regressed: ${r.reaches} named reaches, baseline ${baseline.reaches}`);
   }
-  if (Number(r.names) < baseline.names) {
+  if (baseline && Number(r.names) < baseline.names) {
     failures.push(`match rate regressed: ${r.names} distinct river names, baseline ${baseline.names}`);
   }
-  if (Number(r.rivers) < baseline.rivers) {
+  if (baseline && Number(r.rivers) < baseline.rivers) {
     failures.push(`match rate regressed: ${r.rivers} level-1 rivers, baseline ${baseline.rivers}`);
   }
 

@@ -325,7 +325,9 @@ describe('rebuild over an already-built version', () => {
     // Regression for the review finding of 2026-09-23: rebuilding the ACTIVE version
     // (whose level-2/3 rows already carry river ids from the committed build) used to
     // yield 669 rivers, 0 bridged, and level-1 rivers literally named 'river:<id>' -- and
-    // every gate passed. The builder now clears its own derived output first.
+    // every gate passed, because bridging read the previous build's parent_external_id.
+    // The builder now reads only source data and writes only differences, so rebuilding
+    // an unchanged version must reproduce the same figures AND write nothing at all.
     const { buildRiverHierarchy } = await import('./riverHierarchy');
     const { assertRiverGates, RIVER_BASELINE } = await import('./riverGates');
     const client = await getPool().connect();
@@ -336,7 +338,12 @@ describe('rebuild over an already-built version', () => {
       );
       const versionId = rows[0].id;
       const built = await buildRiverHierarchy(client, versionId);
-      expect(built).toEqual({ matched: 4716, names: 439, rivers: 588, bridged: 38 });
+      expect(built).toMatchObject({ matched: 4716, names: 439, rivers: 588, bridged: 38 });
+      // The FIRST rebuild may legitimately write: the committed hierarchy is whatever the
+      // code of its ingest produced, and a later determinism fix (tie-break order, ordered
+      // ST_Collect) changes some bytes. The second must write nothing, whatever the first did.
+      const again = await buildRiverHierarchy(client, versionId);
+      expect(again).toEqual({ ...built, superseded: 0 });
       await assertRiverGates(client, versionId, RIVER_BASELINE);
 
       const { rows: l1 } = await client.query<{
@@ -355,6 +362,6 @@ describe('rebuild over an already-built version', () => {
       await client.query('ROLLBACK');
       client.release();
     }
-    // The build alone is ~25 s against the real data.
+    // One build is ~9 s against the real data.
   }, 180_000);
 });

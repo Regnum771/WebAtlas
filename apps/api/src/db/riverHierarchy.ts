@@ -75,76 +75,100 @@ export async function materialiseResolved(client: PoolClient, versionId: string)
 }
 
 /**
- * Give each level-2 reach the name of the nearest named OSM way, by majority vote.
+ * Give each level-2 reach the name of the nearest named OSM way, by majority vote, and
+ * leave the result in temp table `new_reach_name(external_id, name, confidence)`. Writes
+ * nothing to water.rivers -- supersedeChangedRows applies the outcome, as a diff.
  *
- * parent_external_id temporarily holds the NAME. Task 6 replaces it with the id of the
- * level-1 river that name resolves to, once connectivity has split same-name groups.
- * The intermediate state never reaches an active version: the whole build runs inside
- * the ingest transaction, before activate().
+ * Reads res_rivers/res_named_ways, so it sees the RESOLVED picture and is correct for an
+ * ingest version and an edit draft alike. It reads only source data (reach geometry, way
+ * names and geometry), never a derived column, so a previous build's output cannot leak
+ * into this one -- that leak is what made a rebuild over an already-built version come
+ * out as 669 rivers, some literally named 'river:<id>' (found in review, 2026-09-23).
  *
  * Confidence is the share of agreeing samples scaled by median distance (spec §2):
  *   (votes / MATCH_SAMPLES) * (1 - 0.5 * min(median, MAX) / MAX)
  * so an accepted match lands in [0.3, 1.0] -- a unanimous vote on top of the way scores
  * 1.0, a bare majority at the distance limit scores 0.3. Never 0, because a match that
- * was accepted is not no-confidence; a refused match stores NULL instead.
+ * was accepted is not no-confidence; a refused match stores NULL instead. Cast to real
+ * here, the column's own type, so the diff compares like with like: comparing a freshly
+ * computed double against the stored real would see a difference on every reach. `$1::int`
+ * is load-bearing for the same reason: left untyped, the parameter is inferred as real
+ * and 237 confidences come out 1 ulp away from what the Task 6 build stored (measured).
+ *
+ * Returns the vote's own counts, before bridging.
  */
-export async function assignReachNames(
-  client: PoolClient,
-  versionId: string
-): Promise<{ matched: number; names: number }> {
-  const { rows } = await client.query<{ matched: string; names: string; saturated: string }>(
-    `WITH samples AS (
+async function voteReachNames(client: PoolClient): Promise<{ matched: number; names: number }> {
+  await client.query(`DROP TABLE IF EXISTS vote_nearest, new_reach_name`);
+  await client.query(
+    `CREATE TEMP TABLE vote_nearest AS
+     WITH samples AS (
        SELECT r.external_id,
-              ST_LineInterpolatePoint(ST_LineMerge(r.geom), (s.i * 2 - 1)::float / ($2 * 2)) AS pt
-         FROM res_rivers r, generate_series(1, $2) AS s(i)
+              ST_LineInterpolatePoint(ST_LineMerge(r.geom), (s.i * 2 - 1)::float / ($1 * 2)) AS pt
+         FROM res_rivers r, generate_series(1, $1) AS s(i)
         WHERE r.feature_level = 2 AND r.geom IS NOT NULL
           AND ST_GeometryType(ST_LineMerge(r.geom)) = 'ST_LineString'
-     ),
-     nearest AS (
-       SELECT s.external_id, w.name, w.saturated,
-              ST_Distance(w.geom::geography, s.pt::geography) AS dist_m
-         FROM samples s
-         CROSS JOIN LATERAL (
-           -- external_id tie-breaks two equidistant ways: without it, the KNN
-           -- distance alone is not a total order and PostgreSQL may return
-           -- either row depending on scan order, which differs across machines
-           -- and would make a pinned baseline count unstable.
-           --
-           -- The tie-break can't just be appended to the outer ORDER BY
-           -- (<-> s.pt, external_id): that extra key stops the planner from using
-           -- the GiST index's native KNN traversal for the LIMIT, and it falls
-           -- back to fetching and sorting every way inside the tolerance
-           -- radius per sample point -- measured 2026-09-23: the whole build
-           -- went from ~10s to >120s (cancelled) with 65k+ sample points.
-           -- Instead, take a small window of the nearest candidates via the
-           -- still-fast KNN path (an exact tie is always among the closest
-           -- few, since it's tied for minimum distance by definition), and
-           -- break the tie only within that tiny window.
-           WITH knn AS (
-             SELECT n.name, n.geom, n.external_id, n.geom <-> s.pt AS d
-               FROM res_named_ways n
-              WHERE ST_DWithin(n.geom, s.pt, $3)
-              ORDER BY n.geom <-> s.pt
-              LIMIT $6
-           ),
-           top AS (
-             SELECT name, geom FROM knn ORDER BY d, external_id LIMIT 1
-           )
-           -- The window rows are already materialised here, so checking whether the
-           -- window saturated (every one of its $6 rows sits at the same distance as
-           -- the closest) costs nothing extra -- unlike a standalone measurement pass
-           -- over the whole table, which is prohibitively expensive at this scale.
-           -- Saturation means a tie group may extend past the window, so the pick
-           -- above is no longer provably scan-order-independent.
-           SELECT top.name, top.geom,
-                  (SELECT count(*) = $6 AND max(d) = min(d) FROM knn) AS saturated
-             FROM top
-         ) w
-     ),
-     voted AS (
+     )
+     SELECT s.external_id, w.name, w.saturated,
+            ST_Distance(w.geom::geography, s.pt::geography) AS dist_m
+       FROM samples s
+       CROSS JOIN LATERAL (
+         -- external_id tie-breaks two equidistant ways: without it, the KNN
+         -- distance alone is not a total order and PostgreSQL may return
+         -- either row depending on scan order, which differs across machines
+         -- and would make a pinned baseline count unstable.
+         --
+         -- The tie-break can't just be appended to the outer ORDER BY
+         -- (<-> s.pt, external_id): that extra key stops the planner from using
+         -- the GiST index's native KNN traversal for the LIMIT, and it falls
+         -- back to fetching and sorting every way inside the tolerance
+         -- radius per sample point -- measured 2026-09-23: the whole build
+         -- went from ~10s to >120s (cancelled) with 65k+ sample points.
+         -- Instead, take a small window of the nearest candidates via the
+         -- still-fast KNN path (an exact tie is always among the closest
+         -- few, since it's tied for minimum distance by definition), and
+         -- break the tie only within that tiny window.
+         WITH knn AS (
+           SELECT n.name, n.geom, n.external_id, n.geom <-> s.pt AS d
+             FROM res_named_ways n
+            WHERE ST_DWithin(n.geom, s.pt, $2)
+            ORDER BY n.geom <-> s.pt
+            LIMIT $3
+         ),
+         top AS (
+           SELECT name, geom FROM knn ORDER BY d, external_id LIMIT 1
+         )
+         -- The window rows are already materialised here, so checking whether the
+         -- window saturated (every one of its $3 rows sits at the same distance as
+         -- the closest) costs nothing extra -- unlike a standalone measurement pass
+         -- over the whole table, which is prohibitively expensive at this scale.
+         -- Saturation means a tie group may extend past the window, so the pick
+         -- above is no longer provably scan-order-independent.
+         SELECT top.name, top.geom,
+                (SELECT count(*) = $3 AND max(d) = min(d) FROM knn) AS saturated
+           FROM top
+       ) w`,
+    [MATCH_SAMPLES, MATCH_TOLERANCE_DEG, MATCH_KNN_WINDOW]
+  );
+  const { rows: sat } = await client.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM vote_nearest WHERE saturated`
+  );
+  const saturated = Number(sat[0].n);
+  if (saturated > 0) {
+    throw new Error(
+      `voteReachNames: ${saturated} sample point(s) saturated the KNN tie-break window ` +
+        `(MATCH_KNN_WINDOW=${MATCH_KNN_WINDOW} in riverHierarchy.ts) -- every candidate in the ` +
+        `window sat at the same distance, so a tie group may extend past it and the nearest-way ` +
+        `pick for those points is no longer provably deterministic across machines. Widen ` +
+        `MATCH_KNN_WINDOW and re-run.`
+    );
+  }
+
+  await client.query(
+    `CREATE TEMP TABLE new_reach_name AS
+     WITH voted AS (
        SELECT external_id, name, count(*) AS votes,
               percentile_cont(0.5) WITHIN GROUP (ORDER BY dist_m) AS med_m
-         FROM nearest GROUP BY external_id, name
+         FROM vote_nearest GROUP BY external_id, name
      ),
      best AS (
        -- Ties break on the closer candidate, so the outcome does not depend on scan order.
@@ -153,48 +177,23 @@ export async function assignReachNames(
        -- would pick an arbitrary one per machine, again breaking the pinned baseline.
        SELECT DISTINCT ON (external_id) external_id, name, votes, med_m
          FROM voted ORDER BY external_id, votes DESC, med_m ASC, name ASC
-     ),
-     accepted AS (
-       SELECT external_id, name,
-              (votes::real / $2) * (1 - 0.5 * least(med_m, $4) / $4) AS confidence
-         FROM best WHERE votes >= $5 AND med_m <= $4
-     ),
-     applied AS (
-       UPDATE water.rivers t
-          SET parent_external_id = a.name, match_confidence = a.confidence
-         FROM accepted a
-        WHERE t.dataset_version_id = $1 AND t.external_id = a.external_id
-        RETURNING t.parent_external_id
-     ),
-     applied_counts AS (
-       SELECT count(*) AS matched, count(DISTINCT parent_external_id) AS names FROM applied
-     ),
-     saturation AS (
-       SELECT count(*) AS n FROM nearest WHERE saturated
      )
-     SELECT applied_counts.matched::text AS matched,
-            applied_counts.names::text AS names,
-            saturation.n::text AS saturated
-       FROM applied_counts, saturation`,
-    [versionId, MATCH_SAMPLES, MATCH_TOLERANCE_DEG, MATCH_MAX_MEDIAN_M, MATCH_MIN_VOTES, MATCH_KNN_WINDOW]
+     SELECT external_id, name,
+            ((votes::real / $1::int) * (1 - 0.5 * least(med_m, $2) / $2))::real AS confidence
+       FROM best WHERE votes >= $3 AND med_m <= $2`,
+    [MATCH_SAMPLES, MATCH_MAX_MEDIAN_M, MATCH_MIN_VOTES]
   );
-  const saturated = Number(rows[0].saturated);
-  if (saturated > 0) {
-    throw new Error(
-      `assignReachNames: ${saturated} sample point(s) saturated the KNN tie-break window ` +
-        `(MATCH_KNN_WINDOW=${MATCH_KNN_WINDOW} in riverHierarchy.ts) -- every candidate in the ` +
-        `window sat at the same distance, so a tie group may extend past it and the nearest-way ` +
-        `pick for those points is no longer provably deterministic across machines. Widen ` +
-        `MATCH_KNN_WINDOW and re-run.`
-    );
-  }
+  await client.query(`CREATE UNIQUE INDEX ON new_reach_name (external_id)`);
+  const { rows } = await client.query<{ matched: string; names: string }>(
+    `SELECT count(*)::text AS matched, count(DISTINCT name)::text AS names FROM new_reach_name`
+  );
   return { matched: Number(rows[0].matched), names: Number(rows[0].names) };
 }
 
 /**
  * Confidence written for a bridged gap reach (see `bridgeGaps`). Deliberately below the
- * vote's documented floor of 0.3 (assignReachNames's `accepted` CTE never produces less),
- * so `match_confidence < 0.3` is true if and only if a reach was bridged rather than
+ * vote's documented floor of 0.3 (voteReachNames never produces less), so
+ * `match_confidence < 0.3` is true if and only if a reach was bridged rather than
  * voted -- a cheap, permanent way to tell the two apart later (see the confidence-range
  * test in riverHierarchy.test.ts and the "reaches" count in riverGates.ts, which counts
  * both). Never 0 and never NULL: a bridged reach IS named, just not by the spatial vote.
@@ -203,76 +202,59 @@ export const BRIDGED_CONFIDENCE = 0.2;
 
 /**
  * Bridge single-reach same-name gaps (2026-09-23 decision, reversing the plan's original
- * Deviation 4). A gap is a level-2 reach with no voted name whose downstream reach and at
- * least one upstream reach both carry the SAME voted name. The rule is purely
- * topological: the gap reach's own vote is NOT consulted (it may have found that name,
- * another name, or nothing at all) -- same name on both sides is the whole justification,
- * by the user's decision. Without it, one unnamed reach severs a river connectivity-wise
- * even though the network is physically continuous through it. Measured case:
- * hyriv:41295432, between the 38-reach Sông Thu Bồn group and its own terminal outlet
- * (its vote happened to find Thu Bồn at 3 of 5 samples but failed the median cutoff).
+ * Deviation 4), by adding rows to `new_reach_name`. A gap is a level-2 reach with no voted
+ * name whose downstream reach and at least one upstream reach both carry the SAME voted
+ * name. The rule is purely topological: the gap reach's own vote is NOT consulted (it may
+ * have found that name, another name, or nothing at all) -- same name on both sides is
+ * the whole justification, by the user's decision. Without it, one unnamed reach severs a
+ * river connectivity-wise even though the network is physically continuous through it.
+ * Measured case: hyriv:41295432, between the 38-reach Sông Thu Bồn group and its own
+ * terminal outlet (its vote happened to find Thu Bồn at 3 of 5 samples but failed the
+ * median cutoff).
  *
  * Single pass against a SNAPSHOT of the vote result: `vote_snapshot` is materialised once,
- * right after assignReachNames and before any bridging write, so every gap is evaluated
- * against the vote as it left it -- never against a name this same pass just bridged. That
- * makes two consecutive unnamed reaches never bridge each other (the "downstream" or
- * "upstream" required to justify a bridge must be a voted name, which by construction a
- * gap does not have in the snapshot), and makes the result independent of row order: no
- * ORDER BY or DISTINCT ON is needed at all, because each gap's downstream reach is unique
- * (flows_into is one outgoing edge per reach) and the upstream requirement is an EXISTS,
- * not a pick.
+ * before any bridge is added, so every gap is evaluated against the vote as it left it --
+ * never against a name this same pass just bridged. That makes two consecutive unnamed
+ * reaches never bridge each other (the "downstream" or "upstream" required to justify a
+ * bridge must be a voted name, which by construction a gap does not have in the
+ * snapshot), and makes the result independent of row order: no ORDER BY or DISTINCT ON is
+ * needed at all, because each gap's downstream reach is unique (flows_into is one
+ * outgoing edge per reach) and the upstream requirement is an EXISTS, not a pick.
  *
- * Reads `water.rivers` directly, not `res_rivers`: res_rivers holds every row of the
- * version (materialiseResolved runs after the load), but it was snapshotted BEFORE
- * assignReachNames wrote the voted names, so its parent_external_id column is stale --
- * and that column is exactly what this step reads. vote_snapshot is this function's own
- * ANALYZEd temp table, so the joins below never plan against raw water.rivers, whose
- * statistics predate this transaction and know nothing about the new version id -- see
- * the perf comment on the flows_into UPDATE in buildLevelOne for what that misestimate
- * cost (~7.5 minutes, measured on the real ingest). Rows marked `deleted` are left out,
- * matching the activation gates.
+ * Runs over the resolved reach set, so an edit draft gets the same bridges an ingest does.
  */
-async function bridgeGaps(client: PoolClient, versionId: string): Promise<number> {
+async function bridgeGaps(client: PoolClient): Promise<number> {
   await client.query(`DROP TABLE IF EXISTS vote_snapshot`);
   await client.query(
     `CREATE TEMP TABLE vote_snapshot AS
-     SELECT external_id, parent_external_id AS name, flows_into_external_id
-       FROM water.rivers
-      WHERE dataset_version_id = $1 AND feature_level = 2 AND NOT deleted`,
-    [versionId]
+     SELECT r.external_id, n.name, r.flows_into_external_id
+       FROM res_rivers r LEFT JOIN new_reach_name n ON n.external_id = r.external_id
+      WHERE r.feature_level = 2`
   );
   await client.query(`CREATE UNIQUE INDEX ON vote_snapshot (external_id)`);
   await client.query(`CREATE INDEX ON vote_snapshot (flows_into_external_id)`);
   await client.query(`ANALYZE vote_snapshot`);
 
-  const { rows } = await client.query<{ n: string }>(
-    `WITH gaps AS (
-       SELECT g.external_id AS gap_id, d.name AS bridge_name
-         FROM vote_snapshot g
-         JOIN vote_snapshot d ON d.external_id = g.flows_into_external_id
-        WHERE g.name IS NULL AND d.name IS NOT NULL
-          AND EXISTS (
-            SELECT 1 FROM vote_snapshot u
-             WHERE u.flows_into_external_id = g.external_id AND u.name = d.name
-          )
-     ),
-     applied AS (
-       UPDATE water.rivers t
-          SET parent_external_id = gaps.bridge_name, match_confidence = $2
-         FROM gaps
-        WHERE t.dataset_version_id = $1 AND t.feature_level = 2
-          AND t.external_id = gaps.gap_id
-        RETURNING 1
-     )
-     SELECT count(*)::text AS n FROM applied`,
-    [versionId, BRIDGED_CONFIDENCE]
+  const bridged = await client.query(
+    `INSERT INTO new_reach_name (external_id, name, confidence)
+     SELECT g.external_id, d.name, $1::real
+       FROM vote_snapshot g
+       JOIN vote_snapshot d ON d.external_id = g.flows_into_external_id
+      WHERE g.name IS NULL AND d.name IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM vote_snapshot u
+           WHERE u.flows_into_external_id = g.external_id AND u.name = d.name
+        )`,
+    [BRIDGED_CONFIDENCE]
   );
-  return Number(rows[0].n);
+  await client.query(`ANALYZE new_reach_name`);
+  return bridged.rowCount ?? 0;
 }
 
 /**
- * Build the level-1 rivers for `versionId`, and rewrite the level-2 link that
- * assignReachNames parked as a bare name into the id of the river it resolves to.
+ * Group the named reaches into rivers: temp tables `reach_river(reach_external_id, name,
+ * river_external_id)` and `way_river(way_external_id, river_external_id)`. No writes to
+ * water.rivers.
  *
  * A river is ONE NAME PLUS ONE CONNECTED GROUP, not one connected component. Spec §2
  * says one river per connected reach set, but a component is a BASIN: measured, the
@@ -286,40 +268,27 @@ async function bridgeGaps(client: PoolClient, versionId: string): Promise<number
  * same name. flows_into is a tree (one outgoing link per reach), so a maximal connected
  * same-name subgraph is a subtree with exactly one most-downstream member -- which makes
  * that member a canonical, stable component id with no union-find needed.
- *
- * Reads `water.rivers` directly (scoped to `dataset_version_id = versionId`), not the
- * res_rivers temp table materialiseResolved built: assignReachNames just wrote the voted
- * name into parent_external_id on the live table, after res_rivers was snapshotted, so
- * res_rivers is stale for exactly that column. For an ingest version (buildRiverHierarchy's
- * only caller today) that scope already equals the version's full resolved row set, since
- * an ingest version has no parent chain to inherit rows from.
  */
-async function buildLevelOne(client: PoolClient, versionId: string): Promise<number> {
-  // The version's named reaches (voted + bridged), as an indexed, ANALYZEd temp table
-  // rather than a CTE over raw water.rivers. The table does have statistics, but they
-  // predate this transaction and know nothing about the new version id, so the planner
-  // would misestimate every join against it -- the same hazard as the flows_into UPDATE
-  // below. Rows marked `deleted` are left out, matching the activation gates.
-  await client.query(`DROP TABLE IF EXISTS named_reach`);
+async function computeRiverGrouping(client: PoolClient): Promise<void> {
+  // The named reaches (voted + bridged) over the RESOLVED reach set, as an indexed,
+  // ANALYZEd temp table: an edit draft holds no reaches of its own, so reading by version
+  // would yield zero rivers.
+  await client.query(`DROP TABLE IF EXISTS named_reach, reach_river, way_river`);
   await client.query(
     `CREATE TEMP TABLE named_reach AS
-     SELECT external_id, parent_external_id AS name, flows_into_external_id AS nd
-       FROM water.rivers
-      WHERE dataset_version_id = $1 AND feature_level = 2 AND NOT deleted
-        AND parent_external_id IS NOT NULL`,
-    [versionId]
+     SELECT r.external_id, n.name, r.flows_into_external_id AS nd
+       FROM res_rivers r JOIN new_reach_name n ON n.external_id = r.external_id
+      WHERE r.feature_level = 2`
   );
   await client.query(`CREATE UNIQUE INDEX ON named_reach (external_id)`);
   await client.query(`ANALYZE named_reach`);
 
-  // Reach -> (name, root reach). Roots are computed over the version's own level-2 rows.
+  // Reach -> (name, root reach).
   //
   // CYCLE guards the walk against a same-name cycle in flows_into, which would otherwise
   // recurse forever and hang the build before the cycle gate ever ran. A reach on (or
   // walking into) a cycle never reaches a row with nxt IS NULL, so it gets no reach_river
-  // row: its parent_external_id keeps the parked name, and assertRiverGates then refuses
-  // the version (cycle check, plus the orphaned-parent check).
-  await client.query(`DROP TABLE IF EXISTS reach_river`);
+  // row and so no river: assertRiverGates then refuses the version on the cycle itself.
   await client.query(
     `CREATE TEMP TABLE reach_river AS
      WITH RECURSIVE edges AS (
@@ -342,10 +311,10 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
   );
   await client.query(`CREATE INDEX ON reach_river (reach_external_id)`);
   await client.query(`CREATE INDEX ON reach_river (river_external_id)`);
-  // Every later join against reach_river (way_river, the ways/reaches CTEs below, and the
-  // flows_into UPDATE) needs real row-count and distribution estimates: a freshly created
-  // temp table starts with none, so the planner falls back to defaults that are wildly
-  // wrong at this size. See the flows_into UPDATE's comment for the failure this caused.
+  // Every later join against reach_river needs real row-count and distribution estimates:
+  // a freshly created temp table starts with none, so the planner falls back to defaults
+  // that are wildly wrong at this size. See buildLevelOneGeometry's flows_into step for
+  // the failure this caused.
   await client.query(`ANALYZE reach_river`);
 
   // Each named way joins the same-name river whose reaches lie nearest to it. A name with
@@ -359,7 +328,6 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
   // so the extra key does not change the plan; see the Task 6 report for the timing.
   // No distance cap: a same-name way attaches to its nearest same-name river however
   // far away (measured 2026-09-23: 4 ways sit more than 5 km from their river).
-  await client.query(`DROP TABLE IF EXISTS way_river`);
   await client.query(
     `CREATE TEMP TABLE way_river AS
      SELECT w.external_id AS way_external_id, best.river_external_id
@@ -372,16 +340,24 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
           LIMIT 1
        ) best`
   );
+  await client.query(`CREATE INDEX ON way_river (way_external_id)`);
   await client.query(`CREATE INDEX ON way_river (river_external_id)`);
+  await client.query(`ANALYZE way_river`);
+}
 
-  // The level-1 rows. Geometry derives from the member OSM WAYS, not the member reaches:
-  // measured, the two agree to a median length ratio of 1.11 (Sông Ba 349 km of way vs
-  // 352 km of reach), so ways cost nothing in extent while giving finer geometry, the
-  // same shape the detailed layer already draws, and independence from the spatial vote --
-  // a bad match cannot deform a river. Reaches keep their real job: topology and order.
-  // COALESCE to the reach geometry because water.rivers.geom is NOT NULL and a river with
-  // no surviving member way would otherwise fail the insert.
-  //
+/**
+ * The level-1 rivers as they should now be: temp table `new_river(external_id, name,
+ * max_order, geom, length_m, flows_into)`. No writes to water.rivers. Returns its count.
+ *
+ * Geometry derives from the member OSM WAYS, not the member reaches: measured, the two
+ * agree to a median length ratio of 1.11 (Sông Ba 349 km of way vs 352 km of reach), so
+ * ways cost nothing in extent while giving finer geometry, the same shape the detailed
+ * layer already draws, and independence from the spatial vote -- a bad match cannot
+ * deform a river. Reaches keep their real job: topology and order. COALESCE to the reach
+ * geometry because water.rivers.geom is NOT NULL and a river with no surviving member way
+ * would otherwise fail the insert.
+ */
+async function buildLevelOneGeometry(client: PoolClient): Promise<number> {
   // ST_Collect over rows that are ALREADY MultiLineString (every geom in water.rivers is)
   // does not flatten them into one MultiLineString -- measured: it returns a
   // GeometryCollection, which the water.rivers.geom column then refuses at INSERT time
@@ -393,9 +369,13 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
   //
   // Both ST_Collects carry an aggregate ORDER BY (member external_id, then dump path --
   // unique per collected part), so the collected geometry's bytes do not depend on the
-  // order rows happen to arrive in.
-  const { rows } = await client.query<{ n: string }>(
-    `WITH ways AS (
+  // order rows happen to arrive in. That is load-bearing for the diff: a rebuild of an
+  // unchanged network must produce byte-identical geometry, or every river is superseded
+  // on every commit.
+  await client.query(`DROP TABLE IF EXISTS new_river, river_root`);
+  await client.query(
+    `CREATE TEMP TABLE new_river AS
+     WITH ways AS (
        SELECT wr.river_external_id,
               ST_Collect(d.geom ORDER BY wr.way_external_id, d.path) AS geom
          FROM way_river wr JOIN res_rivers r ON r.external_id = wr.way_external_id,
@@ -414,40 +394,17 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
        SELECT c.river_external_id, c.name, c.max_order,
               ST_Multi(ST_LineMerge(COALESCE(w.geom, c.geom))) AS geom
          FROM reaches c LEFT JOIN ways w ON w.river_external_id = c.river_external_id
-     ),
-     inserted AS (
-       INSERT INTO water.rivers
-         (external_id, feature_level, name, stream_order, length_m, geom, dataset_version_id)
-       SELECT b.river_external_id, 1, b.name, b.max_order,
-              ST_Length(b.geom::geography), b.geom, $1
-         FROM built b
-       RETURNING 1
      )
-     SELECT count(*)::text AS n FROM inserted`,
-    [versionId]
+     SELECT river_external_id AS external_id, name, max_order, geom,
+            ST_Length(geom::geography) AS length_m, NULL::text AS flows_into
+       FROM built`
   );
-
-  // Replace the parked NAME with the river id, on both levels.
-  await client.query(
-    `UPDATE water.rivers t SET parent_external_id = rr.river_external_id
-       FROM reach_river rr
-      WHERE t.dataset_version_id = $1 AND t.feature_level = 2
-        AND t.external_id = rr.reach_external_id`,
-    [versionId]
-  );
-  await client.query(
-    `UPDATE water.rivers t SET parent_external_id = wr.river_external_id
-       FROM way_river wr
-      WHERE t.dataset_version_id = $1 AND t.feature_level = 3
-        AND t.external_id = wr.way_external_id`,
-    [versionId]
-  );
+  await client.query(`CREATE UNIQUE INDEX ON new_river (external_id)`);
 
   // One row per RIVER (not per member reach): the id of its own outlet/root reach. The
   // filter picks out, from every named reach's reach_river row, exactly the one row whose
   // reach IS that river's root (river_external_id was built FROM that reach's id in the
   // first place), so this is 588 rows (post-bridging), never 4,754.
-  await client.query(`DROP TABLE IF EXISTS river_root`);
   await client.query(
     `CREATE TEMP TABLE river_root AS
      SELECT river_external_id, reach_external_id AS root_reach_external_id
@@ -460,17 +417,12 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
   // River A flows into river B when A's outlet reach's NEXT_DOWN lands in B (spec §2).
   // The outlet reach IS the component root, which is encoded in the river's own id.
   //
-  // MUST NOT join the raw water.rivers table here: it was just written to by this very
-  // transaction (the level-2 UPDATEs above, and the ~23k-row ingest before that), so it
-  // carries no planner statistics inside the transaction, and the old version of this
-  // query joined it through a computed string expression ('hyriv:' || substring(...))
-  // rather than a plain indexed equality, on top of an un-ANALYZEd reach_river. Measured
-  // in the real ingest: ~7.5 minutes. river_root and res_rivers are both ANALYZEd temp
-  // tables (materialiseResolved ANALYZEs res_rivers; see above for river_root and
-  // reach_river), and river_root is one row per river rather than one per member reach,
-  // so the join the planner sees here is small, indexed, and estimable on both sides.
+  // Every table joined here is an ANALYZEd temp table. The Task 6 version of this step
+  // joined raw water.rivers -- freshly written in the same transaction, so without
+  // planner statistics for the new version -- through a computed string expression, on
+  // top of an un-ANALYZEd reach_river. Measured in the real ingest: ~7.5 minutes.
   await client.query(
-    `UPDATE water.rivers t SET flows_into_external_id = down.river_external_id
+    `UPDATE new_river t SET flows_into = down.river_external_id
        FROM (
          SELECT rv.river_external_id AS river,
                 drr.river_external_id
@@ -480,64 +432,136 @@ async function buildLevelOne(client: PoolClient, versionId: string): Promise<num
            JOIN reach_river drr ON drr.reach_external_id = root.flows_into_external_id
           WHERE drr.river_external_id <> rv.river_external_id
        ) down
-      WHERE t.dataset_version_id = $1 AND t.feature_level = 1
-        AND t.external_id = down.river`,
-    [versionId]
+      WHERE t.external_id = down.river`
   );
+  await client.query(`ANALYZE new_river`);
 
+  const { rows } = await client.query<{ n: string }>(`SELECT count(*)::text AS n FROM new_river`);
   return Number(rows[0].n);
 }
 
 /**
- * Clear everything buildRiverHierarchy derives for `versionId`'s OWN rows, so the build
- * starts from the same state whatever ran before: the level-1 rivers, the level-2 name /
- * river link and its confidence, and the level-3 river link.
+ * Write a superseding row into `versionId` for each derived value that actually changed,
+ * and return how many rows that wrote. Compares the build's temp tables against
+ * res_rivers, the resolved state as of before this build.
  *
- * Without this a rebuild over an already-built version was silently wrong (found in
- * review, 2026-09-23): assignReachNames only writes the reaches it ACCEPTS, so a reach
- * bridged last time kept `parent_external_id = 'river:...'`, the bridging snapshot saw it
- * as already named, and it came out as a level-1 river literally NAMED 'river:...' --
- * 669 rivers instead of 588, with every gate passing. Stale level-3 links survived the
- * same way for any way not reassigned.
- *
- * Only derived columns are touched; flows_into_external_id on levels 2/3 is source data.
- * A fresh ingest version has nothing to clear, so this is a no-op there.
+ * A row that already belongs to `versionId` (every row of an ingest version; a way the
+ * steward edited in this draft) conflicts on (dataset_version_id, external_id) and is
+ * updated in place instead -- it is this version's own row, not an ancestor's. Nothing in
+ * an ancestor version is ever touched.
  */
-async function resetDerived(client: PoolClient, versionId: string): Promise<void> {
-  await client.query(
-    `DELETE FROM water.rivers WHERE dataset_version_id = $1 AND feature_level = 1`,
+async function supersedeChangedRows(client: PoolClient, versionId: string): Promise<number> {
+  const COLS = `external_id, feature_level, name, code, stream_order, length_m,
+                parent_external_id, flows_into_external_id, match_confidence, geom,
+                dataset_version_id`;
+  let n = 0;
+
+  // 1. Level-2 reaches whose river link or confidence moved. `IS DISTINCT FROM` and not
+  //    `<>`, so a NULL on either side counts as a difference -- a reach that just lost its
+  //    match must be superseded too, and `<>` would return NULL and skip it. The name is
+  //    joined THROUGH the river link, so a named reach that got no river (it sits on a
+  //    cycle) carries no confidence either: the two always travel together.
+  const reaches = await client.query(
+    `INSERT INTO water.rivers (${COLS})
+     SELECT r.external_id, r.feature_level, r.name, r.code, r.stream_order, r.length_m,
+            rr.river_external_id, r.flows_into_external_id, nn.confidence, r.geom, $1
+       FROM res_rivers r
+       LEFT JOIN reach_river rr ON rr.reach_external_id = r.external_id
+       LEFT JOIN new_reach_name nn ON nn.external_id = rr.reach_external_id
+      WHERE r.feature_level = 2
+        AND (r.parent_external_id IS DISTINCT FROM rr.river_external_id
+             OR r.match_confidence IS DISTINCT FROM nn.confidence)
+     ON CONFLICT (dataset_version_id, external_id) DO UPDATE
+        SET parent_external_id = EXCLUDED.parent_external_id,
+            match_confidence   = EXCLUDED.match_confidence`,
     [versionId]
   );
-  await client.query(
-    `UPDATE water.rivers SET parent_external_id = NULL, match_confidence = NULL
-      WHERE dataset_version_id = $1 AND feature_level = 2
-        AND (parent_external_id IS NOT NULL OR match_confidence IS NOT NULL)`,
+  n += reaches.rowCount ?? 0;
+
+  // 2. Level-3 ways whose river link moved. Geometry and attributes are copied from the
+  //    resolved row, so a way edited in this very draft keeps the steward's new geometry.
+  const ways = await client.query(
+    `INSERT INTO water.rivers (${COLS})
+     SELECT r.external_id, r.feature_level, r.name, r.code, r.stream_order, r.length_m,
+            w.river_external_id, r.flows_into_external_id, r.match_confidence, r.geom, $1
+       FROM res_rivers r LEFT JOIN way_river w ON w.way_external_id = r.external_id
+      WHERE r.feature_level = 3
+        AND r.parent_external_id IS DISTINCT FROM w.river_external_id
+     ON CONFLICT (dataset_version_id, external_id) DO UPDATE
+        SET parent_external_id = EXCLUDED.parent_external_id`,
     [versionId]
   );
-  await client.query(
-    `UPDATE water.rivers SET parent_external_id = NULL
-      WHERE dataset_version_id = $1 AND feature_level = 3 AND parent_external_id IS NOT NULL`,
+  n += ways.rowCount ?? 0;
+
+  // 3. Level-1 rivers that are new, or whose name/order/outflow/geometry changed.
+  //    ST_OrderingEquals is exact, vertex-for-vertex equality -- the right test, since the
+  //    build is deterministic down to the vertex order (see buildLevelOneGeometry) -- and
+  //    cheap, unlike ST_Equals, which computes a full topological relate per river.
+  //    `deleted = false` on conflict: a river this version had tombstoned may come back.
+  const rivers = await client.query(
+    `INSERT INTO water.rivers (${COLS})
+     SELECT b.external_id, 1, b.name, NULL, b.max_order, b.length_m,
+            NULL, b.flows_into, NULL, b.geom, $1
+       FROM new_river b LEFT JOIN res_rivers r
+            ON r.external_id = b.external_id AND r.feature_level = 1
+      WHERE r.external_id IS NULL
+         OR r.name IS DISTINCT FROM b.name
+         OR r.stream_order IS DISTINCT FROM b.max_order
+         OR r.flows_into_external_id IS DISTINCT FROM b.flows_into
+         OR NOT ST_OrderingEquals(r.geom, b.geom)
+     ON CONFLICT (dataset_version_id, external_id) DO UPDATE
+        SET name = EXCLUDED.name, stream_order = EXCLUDED.stream_order,
+            length_m = EXCLUDED.length_m, geom = EXCLUDED.geom,
+            flows_into_external_id = EXCLUDED.flows_into_external_id, deleted = false`,
     [versionId]
   );
+  n += rivers.rowCount ?? 0;
+
+  // 4. Tombstone a river whose last named reach is gone. Without this it keeps resolving
+  //    from the ancestor version -- a river that no longer exists, still searchable.
+  const gone = await client.query(
+    `INSERT INTO water.rivers (${COLS}, deleted)
+     SELECT r.external_id, 1, r.name, NULL, r.stream_order, r.length_m,
+            NULL, NULL, NULL, r.geom, $1, true
+       FROM res_rivers r
+      WHERE r.feature_level = 1
+        AND NOT EXISTS (SELECT 1 FROM new_river b WHERE b.external_id = r.external_id)
+     ON CONFLICT (dataset_version_id, external_id) DO UPDATE SET deleted = true`,
+    [versionId]
+  );
+  n += gone.rowCount ?? 0;
+
+  return n;
 }
 
 /**
- * The single writer of the derived river hierarchy. Runs inside the caller's
- * transaction, BEFORE the version is activated, so a failed gate rolls the version away
- * entirely -- which is what spec §2's "failure means the version is not activated" means.
+ * THE single writer of the derived river hierarchy, for ANY version. Called from
+ * versionsService.activate(), inside the caller's transaction and BEFORE the version is
+ * activated, so a failed gate rolls the version away entirely -- which is what spec §2's
+ * "failure means the version is not activated" means.
  *
- * Idempotent for any starting state of `versionId`'s rows: resetDerived clears the
- * previous build's output first (and runs before materialiseResolved, so res_rivers never
- * snapshots a stale link either).
+ * Correct on an ingest version (which holds every row) and on an edit draft (which holds
+ * only the edited ones), because every read goes through the resolved temp tables and
+ * every write is an INSERT of a superseding row into versionId -- the same mechanism an
+ * ordinary edit uses.
+ *
+ * Only DIFFERENCES are written. A wholesale rewrite would be simpler and always correct,
+ * but it would add every reach, way and river plus one chain level per commit, and
+ * rivers_active resolves that chain on every read. It also makes the build idempotent:
+ * every input is source data, never a derived column, so re-running it over an
+ * already-built version writes nothing (`superseded: 0`).
+ *
+ * `matched`/`names` are the spatial vote's own counts; `bridged` is counted separately.
  */
 export async function buildRiverHierarchy(
   client: PoolClient,
   versionId: string
-): Promise<{ matched: number; names: number; rivers: number; bridged: number }> {
-  await resetDerived(client, versionId);
+): Promise<{ matched: number; names: number; rivers: number; bridged: number; superseded: number }> {
   await materialiseResolved(client, versionId);
-  const named = await assignReachNames(client, versionId);
-  const bridged = await bridgeGaps(client, versionId);
-  const rivers = await buildLevelOne(client, versionId);
-  return { ...named, rivers, bridged };
+  const voted = await voteReachNames(client);
+  const bridged = await bridgeGaps(client);
+  await computeRiverGrouping(client);
+  const rivers = await buildLevelOneGeometry(client);
+  const superseded = await supersedeChangedRows(client, versionId);
+  return { ...voted, rivers, bridged, superseded };
 }
