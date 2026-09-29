@@ -23,10 +23,11 @@ describe('analysis tool rules', () => {
   });
 
   it('builds the request body each route expects', () => {
+    const drawn = (g: GeoJsonGeometry) => ({ source: 'drawn', geometry: g });
     expect(buildInput('buffer', DEFAULT_PARAMS, point)).toEqual({ geometry: point, radiusKm: 5 });
-    expect(buildInput('select_within', DEFAULT_PARAMS, poly)).toEqual({ geometry: poly, layerKeys: ['dams'] });
-    expect(buildInput('nearest', DEFAULT_PARAMS, point)).toEqual({ lon: 108.05, lat: 12.68, layerKey: 'dams', k: 5 });
-    expect(buildInput('elevation_profile', DEFAULT_PARAMS, line)).toEqual({ geometry: line, samples: 100 });
-    expect(buildInput('zonal_elevation', DEFAULT_PARAMS, poly)).toEqual({ geometry: poly });
+    expect(buildInput('select_within', DEFAULT_PARAMS, poly)).toEqual({ roi: drawn(poly), layerKeys: ['dams'] });
+    expect(buildInput('nearest', DEFAULT_PARAMS, point)).toEqual({ roi: drawn(point), layerKey: 'dams', k: 5 });
+    expect(buildInput('elevation_profile', DEFAULT_PARAMS, line)).toEqual({ roi: drawn(line), samples: 100 });
+    expect(buildInput('zonal_elevation', DEFAULT_PARAMS, poly)).toEqual({ roi: drawn(poly) });
   });
 });

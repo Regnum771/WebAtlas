@@ -45,14 +45,14 @@ export function acceptsShape(op: AnalysisOp, params: AnalysisParams, g: GeoJsonG
 }
 
 export function buildInput(op: AnalysisOp, params: AnalysisParams, g: GeoJsonGeometry): object {
+  // Until the ROI chip lands (Task 10), the toolbar still draws per tool; it sends that
+  // drawing as a drawn ROI. buffer keeps its own body (spec C-9).
+  const roi = { source: 'drawn' as const, geometry: g };
   switch (op) {
     case 'buffer': return { geometry: g, radiusKm: params.radiusKm };
-    case 'select_within': return { geometry: g, layerKeys: params.layerKeys };
-    case 'nearest': {
-      const [lon, lat] = (g as { coordinates: number[] }).coordinates;
-      return { lon, lat, layerKey: params.layerKey, k: params.k };
-    }
-    case 'elevation_profile': return { geometry: g, samples: params.samples };
-    case 'zonal_elevation': return { geometry: g };
+    case 'select_within': return { roi, layerKeys: params.layerKeys };
+    case 'nearest': return { roi, layerKey: params.layerKey, k: params.k };
+    case 'elevation_profile': return { roi, samples: params.samples };
+    case 'zonal_elevation': return { roi };
   }
 }

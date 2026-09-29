@@ -4,6 +4,7 @@ import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
 import { selectWithinOp } from '../../../analysis/ops/selectWithin';
+import { roiFromParts } from '../../../roi/fromParts';
 import { runAnalysisTool } from './analysisTool';
 
 export const selectWithinTool: ToolFactory = (ctx) =>
@@ -22,8 +23,7 @@ export const selectWithinTool: ToolFactory = (ctx) =>
     run: (input) =>
       runAnalysisTool(ctx, 'select_within', input.layerKeys.length === 1 ? input.layerKeys[0] : null, (db) =>
         selectWithinOp(db, {
-          feature: { layerKey: input.area.layerKey, featureId: input.area.featureId },
-          ...(input.area.radiusKm !== undefined ? { bufferKm: input.area.radiusKm } : {}),
+          roi: roiFromParts({ feature: { layerKey: input.area.layerKey, featureId: input.area.featureId } }, input.area.radiusKm),
           layerKeys: input.layerKeys,
         })
       ),

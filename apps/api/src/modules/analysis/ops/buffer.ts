@@ -1,14 +1,18 @@
 import { capResultItems, type AnalysisResult, type GeoJsonGeometry, type ResultGeometry } from '@webatlas/shared';
 import { simplifiedGeoJsonSql } from '../../../lib/resultGeometry';
 import type { Queryable } from '../../assistant/tools/data/helpers';
-import { inputGeometry } from '../area';
+import { roiFromParts } from '../../roi/fromParts';
+import { resolveRoi } from '../../roi/resolve';
 import type { BufferInput } from '../schemas';
 
 const GEOM = 'ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)';
 
 /** Geodesic buffer (::geography), so a 10 km radius is 10 km at any latitude. */
 export async function bufferOp(db: Queryable, input: BufferInput): Promise<AnalysisResult> {
-  const src = await inputGeometry(db, input);
+  // The source goes through resolveRoi like every input (spec §10); the buffer itself is
+  // this op's own work. Its body keeps the pre-ROI shape — only buffer_feature calls it.
+  const { geojson, resolved } = await resolveRoi(db, roiFromParts(input));
+  const src = { geojson, label: resolved.label };
   const { rows } = await db.query<{ input: GeoJsonGeometry; result: GeoJsonGeometry; areaKm2: number }>(
     `WITH b AS (SELECT ${GEOM} AS src, ST_Buffer(${GEOM}::geography, $2)::geometry AS buf)
      SELECT ${simplifiedGeoJsonSql('src')} AS input,

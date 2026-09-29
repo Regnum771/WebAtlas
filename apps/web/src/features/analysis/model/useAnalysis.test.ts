@@ -36,7 +36,7 @@ describe('useAnalysis', () => {
     expect(hook.result.current.status).toBe('drawing');
     await act(async () => finish(poly));
     expect(stop).toHaveBeenCalled();
-    expect(deps.fetchResult).toHaveBeenCalledWith('select_within', { geometry: poly, layerKeys: ['dams'] });
+    expect(deps.fetchResult).toHaveBeenCalledWith('select_within', { roi: { source: 'drawn', geometry: poly }, layerKeys: ['dams'] });
     expect(deps.run).toHaveBeenCalledWith({ kind: 'showGeometries', items: RESULT.geometries, fit: true });
     expect(hook.result.current.result).toBe(RESULT);
     expect(getAnalysisResult()).toBe(RESULT);
@@ -50,7 +50,7 @@ describe('useAnalysis', () => {
     expect(hook.result.current.error).toBe('Hình vừa vẽ không dùng được cho phép này — hãy vẽ mới.');
     act(() => hook.result.current.open('zonal_elevation'));
     await act(async () => hook.result.current.useLastShape());
-    expect(deps.fetchResult).toHaveBeenCalledWith('zonal_elevation', { geometry: poly });
+    expect(deps.fetchResult).toHaveBeenCalledWith('zonal_elevation', { roi: { source: 'drawn', geometry: poly } });
   });
 
   it('shows the API message on failure and returns to params', async () => {
