@@ -1,14 +1,15 @@
 import type { Pool } from 'pg';
-import type { EditableLayerKey } from '@webatlas/shared';
+import { REGION_PROVINCE_CODES, type AdminLevel, type EditableLayerKey } from '@webatlas/shared';
 import { REFERENCE_LAYER_KEYS, type ReferenceLayerKey } from '../../reference/registry';
 import { entityPredicate } from '../assistant/tools/data/helpers';
 
 export interface SearchHit {
-  layerKey: EditableLayerKey | ReferenceLayerKey;
+  layerKey: EditableLayerKey | ReferenceLayerKey | AdminLevel;
   featureId: string;
   name: string;
-  /** 'layer' = an editable water feature; 'reference' = a dissolved basemap entity. */
-  source: 'layer' | 'reference';
+  /** 'layer' = an editable water feature; 'reference' = a dissolved basemap entity;
+   *  'admin' = a province or ward of the working region (featureId is its code). */
+  source: 'layer' | 'reference' | 'admin';
   lonLat: [number, number];
 }
 
@@ -21,6 +22,7 @@ const REFERENCE_PREFIX = 'ref:';
 export const SEARCH_SOURCES: readonly string[] = [
   ...SEARCHABLE,
   ...REFERENCE_LAYER_KEYS.map((k) => `${REFERENCE_PREFIX}${k}`),
+  'admin',
 ];
 
 // The water.<layer>_active views resolve the active dataset-version chain via a
@@ -97,6 +99,28 @@ function referenceSelect(keys: ReferenceLayerKey[]): string {
         AND (name % $1 OR ref % $1)`;
 }
 
+/**
+ * The six working provinces and their 616 wards (spec §10). 622 rows: no index needed.
+ * Only in-region units, because an ROI outside the region is refused anyway — a hit
+ * that cannot be used would only mislead.
+ */
+function adminSelect(): string {
+  const codes = REGION_PROVINCE_CODES.map((c) => `'${c}'`).join(',');
+  return `
+        SELECT 'province'::text AS layer_key, 'admin'::text AS source, code AS feature_id,
+               coalesce(full_name, name) AS name,
+               ST_X(ST_PointOnSurface(geom)) AS lon, ST_Y(ST_PointOnSurface(geom)) AS lat,
+               GREATEST(similarity(name, $1), coalesce(similarity(full_name, $1), 0)) AS sim
+          FROM admin.provinces
+         WHERE code = ANY(ARRAY[${codes}]) AND GREATEST(similarity(name, $1), coalesce(similarity(full_name, $1), 0)) > 0.5
+        UNION ALL
+        SELECT 'ward'::text, 'admin'::text, code, coalesce(full_name, name),
+               ST_X(ST_PointOnSurface(geom)), ST_Y(ST_PointOnSurface(geom)),
+               GREATEST(similarity(name, $1), coalesce(similarity(full_name, $1), 0))
+          FROM admin.wards
+         WHERE province_code = ANY(ARRAY[${codes}]) AND GREATEST(similarity(name, $1), coalesce(similarity(full_name, $1), 0)) > 0.5`;
+}
+
 /** Trigram search across the requested sources, ordered by similarity.
  *  ST_PointOnSurface keeps line/polygon results navigable. */
 export async function searchByName(
@@ -114,7 +138,8 @@ export async function searchByName(
   // Also drops anything outside the allowlist for the same reason.
   const unique = [...new Set(sources)].filter((s) => SEARCH_SOURCES.includes(s));
 
-  const layerKeys = unique.filter((s) => !s.startsWith(REFERENCE_PREFIX)) as EditableLayerKey[];
+  const wantAdmin = unique.includes('admin');
+  const layerKeys = unique.filter((s) => !s.startsWith(REFERENCE_PREFIX) && s !== 'admin') as EditableLayerKey[];
   const referenceKeys = unique
     .filter((s) => s.startsWith(REFERENCE_PREFIX))
     .map((s) => s.slice(REFERENCE_PREFIX.length)) as ReferenceLayerKey[];
@@ -125,6 +150,7 @@ export async function searchByName(
     selects.push(layerSelect(key));
   }
   if (referenceKeys.length) selects.push(referenceSelect(referenceKeys));
+  if (wantAdmin) selects.push(adminSelect());
 
   if (!selects.length) return [];
 
@@ -135,10 +161,10 @@ export async function searchByName(
   );
 
   return rows.map((r) => ({
-    layerKey: r.layer_key as EditableLayerKey | ReferenceLayerKey,
+    layerKey: r.layer_key as SearchHit['layerKey'],
     featureId: r.feature_id,
     name: r.name,
-    source: r.source as 'layer' | 'reference',
+    source: r.source as SearchHit['source'],
     lonLat: [Number(r.lon), Number(r.lat)],
   }));
 }

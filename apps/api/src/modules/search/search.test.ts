@@ -196,3 +196,36 @@ describe('GET /api/search with sources', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe('GET /api/search with the admin source', () => {
+  const search = (q: string, sources?: string) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/search?q=${encodeURIComponent(q)}${sources ? `&sources=${sources}` : ''}`,
+    });
+  type Hit = { source: string; layerKey: string; featureId: string; name: string; lonLat: number[] };
+
+  it('finds a working-region province by name', async () => {
+    const res = await search('Đắk Lắk', 'admin');
+    expect(res.statusCode).toBe(200);
+    const hit = (res.json().results as Hit[]).find((h) => h.featureId === '66');
+    expect(hit).toMatchObject({ source: 'admin', layerKey: 'province', name: 'Tỉnh Đắk Lắk' });
+    expect(hit!.lonLat).toHaveLength(2);
+  });
+
+  it('finds a ward', async () => {
+    const res = await search('Tuy Hoà', 'admin');
+    const hit = (res.json().results as Hit[]).find((h) => h.featureId === '22015');
+    expect(hit).toMatchObject({ source: 'admin', layerKey: 'ward', name: 'Phường Tuy Hoà' });
+  });
+
+  it('never returns an admin unit outside the working region', async () => {
+    const res = await search('Hà Nội', 'admin');
+    expect((res.json().results as Hit[]).filter((h) => h.source === 'admin')).toEqual([]);
+  });
+
+  it('adds no admin hits unless asked', async () => {
+    const res = await search('Đắk Lắk');
+    expect((res.json().results as Hit[]).some((h) => h.source === 'admin')).toBe(false);
+  });
+});
