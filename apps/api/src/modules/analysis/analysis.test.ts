@@ -6,6 +6,9 @@ import { withAnalysisTimeout } from './db';
 import { demAvailable } from './dem';
 import { getAnalysisPool, closeAnalysisPool } from './pool';
 import { MAX_SOURCE_ENTITY_VERTICES, MAX_SOURCE_ENTITY_PARTS } from './area';
+import { featuresInAdminUnitTool } from '../assistant/tools/data/featuresInAdminUnit';
+import type { ToolContext } from '../assistant/tools/types';
+import { LAYER_LABELS } from '../assistant/tools/data/helpers';
 
 let app: ReturnType<typeof buildApp>;
 let dam: { id: string; lon: number; lat: number };
@@ -86,6 +89,49 @@ describe('POST /api/analysis/select_within', () => {
     expect(res.statusCode).toBe(400);
     const lineNoBuffer = await post('select_within', { roi: { source: 'feature', layerKey: 'rivers', featureId: riverId }, layerKeys: ['dams'] });
     expect(lineNoBuffer.statusCode).toBe(400);
+  });
+});
+
+describe('POST /api/analysis/select_within over an admin unit', () => {
+  const inProvince = (code: string, layerKeys: string[]) =>
+    post('select_within', { roi: { source: 'admin', level: 'province', code }, layerKeys });
+
+  it('counts by the stamped codes: the same answer as the assistant, and says so', async () => {
+    const ctx = {
+      pool: getPool(), collect: () => undefined, provenance: () => undefined, role: 'viewer',
+      mapContext: { bbox: [106.5, 10.5, 110, 16.5], zoom: 8, visibleLayerStateIds: [], basemap: 'street' },
+    } as unknown as ToolContext;
+    const tool = featuresInAdminUnitTool(ctx) as unknown as { run: (i: unknown) => Promise<string> };
+    for (const layerKey of ['dams', 'rivers', 'lakes'] as const) {
+      const res = await inProvince('66', [layerKey]);
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.summary['Cách đếm']).toBe('Theo mã hành chính đã gán');
+      const { count } = JSON.parse(await tool.run({ layerKey, code: '66' })) as { count: number };
+      expect(body.summary[LAYER_LABELS[layerKey]]).toBe(count);
+    }
+  }, 60_000);
+
+  it('stays inside the budget over the largest province, all four layers', async () => {
+    const started = Date.now();
+    const res = await inProvince('68', ['dams', 'rivers', 'lakes', 'stations']);
+    expect(res.statusCode).toBe(200);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('stays inside the budget over the longest river + 10 km, geometrically', async () => {
+    const { rows: [river] } = await getPool().query<{ id: string }>(
+      `SELECT id::text FROM water.rivers_active WHERE feature_level = 1
+        ORDER BY ST_Length(geom::geography) DESC LIMIT 1`
+    );
+    const started = Date.now();
+    const res = await post('select_within', {
+      roi: { source: 'feature', layerKey: 'rivers', featureId: river.id, radiusKm: 10 },
+      layerKeys: ['dams', 'rivers', 'lakes', 'stations'],
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().summary['Cách đếm']).toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 });
 

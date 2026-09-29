@@ -24,11 +24,19 @@ const GEOM = 'ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)';
  * counts are full even when drawing is capped.
  */
 export async function selectWithinOp(db: Queryable, input: SelectWithinInput): Promise<AnalysisResult> {
-  const { resolved, geojson } = await resolveRoi(db, input.roi as Roi);
+  const { resolved, geojson, facts } = await resolveRoi(db, input.roi as Roi);
   requireArea(resolved, 'Chọn trong vùng');
 
-  // The area test as SQL over one layer's rows ($1), and its parameter.
-  const inArea = { sql: `geom && ${GEOM} AND ST_Intersects(geom, ${GEOM})`, param: geojson as string };
+  // An admin unit is counted by the codes stamped on every feature (D11, FR-17): the
+  // same method as the assistant's features_in_admin_unit, so the two answers agree
+  // (NFR-7), and served by the GIN index — the geometric path over Lâm Đồng took 5.2 s
+  // cold. The column name comes from the resolver's facts, never from request input.
+  const inArea = facts.admin
+    ? {
+        sql: `${facts.admin.level === 'province' ? 'province_codes' : 'ward_codes'} && ARRAY[$1]::text[]`,
+        param: facts.admin.code,
+      }
+    : { sql: `geom && ${GEOM} AND ST_Intersects(geom, ${GEOM})`, param: geojson as string };
 
   const summary: Record<string, number | string> = { 'Tổng số': 0 };
   const rows: AnalysisRow[] = [];
@@ -67,6 +75,7 @@ export async function selectWithinOp(db: Queryable, input: SelectWithinInput): P
 
   summary['Tổng số'] = total;
   summary['Diện tích vùng (km²)'] = (resolved.measure as { areaKm2: number }).areaKm2;
+  if (facts.admin) summary['Cách đếm'] = 'Theo mã hành chính đã gán';
   const capped = capResultItems([
     { geometry: resolved.display, role: 'input', label: resolved.label },
     ...highlights,
