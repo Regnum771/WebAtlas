@@ -2,7 +2,31 @@ import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { LayerDef } from '../../layers/registry';
 import { geomInsertSql } from './geometry';
-import { NotFoundError } from '../../errors';
+import { ConflictError, NotFoundError } from '../../errors';
+
+/**
+ * Only level-3 rivers (OSM ways) are edited by hand (user decision 2026-09-29). Level 1 is
+ * derived: activate() rebuilds each river's name and geometry from its ways on every
+ * commit, so a direct edit would be silently reverted in the same commit. Level 2 is
+ * ingested HydroRIVERS topology. To change a river, a steward edits its ways.
+ *
+ * Also why copy-on-write below may copy only the registry's attribute columns: a level-3
+ * way carries no hierarchy source data (its parent link is recomputed on commit), whereas
+ * a copied level-1/2 row would lose feature_level and flows_into -- which is exactly what
+ * happened before this guard existed.
+ */
+async function assertHandEditable(client: PoolClient, def: LayerDef, id: string): Promise<void> {
+  if (def.key !== 'rivers') return;
+  const { rows } = await client.query<{ feature_level: number }>(
+    `SELECT feature_level FROM ${def.table} WHERE id = $1`, [id]
+  );
+  if (rows[0] && rows[0].feature_level !== 3) {
+    throw new ConflictError(
+      'Chỉ sửa hoặc xoá được đường sông OSM (cấp 3). Sông cấp 1 được dựng lại từ các đường ' +
+        'của nó mỗi lần lưu, còn đoạn cấp 2 là dữ liệu HydroRIVERS nhập vào.'
+    );
+  }
+}
 
 // Steward-created features have no upstream id, but the §4 resolver keys on
 // external_id with DISTINCT ON — which collapses every NULL-external_id row into a
@@ -175,6 +199,7 @@ export function featuresRepository(pg: Pool) {
       sourceId: string,
       input: { attrs: Record<string, unknown>; geometryJson?: string | null; actorId?: string }
     ): Promise<FeatureRow> {
+      await assertHandEditable(client, def, sourceId);
       const src = await client.query(
         `SELECT external_id, dataset_version_id FROM ${def.table} WHERE id = $1`, [sourceId]
       );
@@ -208,6 +233,7 @@ export function featuresRepository(pg: Pool) {
     // resolver drops a feature whose nearest row is a tombstone, so the parent
     // version keeps its row and still shows the feature when viewed directly.
     async tombstoneInVersion(client: PoolClient, def: LayerDef, versionId: string, sourceId: string): Promise<void> {
+      await assertHandEditable(client, def, sourceId);
       const src = await client.query(
         `SELECT external_id, dataset_version_id FROM ${def.table} WHERE id = $1`, [sourceId]
       );

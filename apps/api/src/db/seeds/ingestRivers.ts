@@ -1,5 +1,4 @@
 import { fileURLToPath } from 'node:url';
-import { refreshRiverOverview } from '../riverOverview';
 import { resolve as resolvePath } from 'node:path';
 import { getPool, closePool } from '../pool';
 import { versionsService } from '../../modules/versions/service';
@@ -111,17 +110,8 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
   } finally {
     client.release();
   }
-
-  // Làm mới ảnh chụp ngay tại đây, không để cho người gọi. Trước đây việc này nằm
-  // trong khối isMainModule bên dưới, nên chỉ `npm run ingest:rivers` mới làm —
-  // còn ai gọi thẳng ingestHydroRivers() thì kích hoạt một phiên bản 'rivers' mới
-  // và bỏ lại water.rivers_overview là ảnh chụp của phiên bản CŨ. Không báo lỗi ở
-  // đâu cả: bản đồ ở mức thu nhỏ lặng lẽ vẽ mạng lưới cũ.
-  //
-  // Sau COMMIT và ngoài giao dịch, vì REFRESH MATERIALIZED VIEW CONCURRENTLY không
-  // chạy được bên trong một khối giao dịch. Dùng `pool` chứ không phải `client`, vì
-  // client đã được trả lại ở khối finally ngay trên.
-  await refreshRiverOverview(pool);
+  // water.rivers_overview giờ là view thường trên các sông cấp 1 (migration 20), nên
+  // không còn ảnh chụp nào phải làm mới sau khi kích hoạt.
   return result;
 }
 
@@ -131,9 +121,6 @@ if (isMainModule) {
   ingestHydroRivers()
     .then(async (r) => {
       console.log(`rivers HydroRIVERS version ${r.versionId}: ${r.count} features`);
-      // Không làm mới ở đây nữa: ingestHydroRivers() tự lo, nên mọi người gọi đều
-      // được, không riêng đường chạy từ dòng lệnh này.
-      console.log('refreshed water.rivers_overview');
       return closePool();
     })
     .catch((err) => { console.error(err); process.exitCode = 1; return closePool(); });

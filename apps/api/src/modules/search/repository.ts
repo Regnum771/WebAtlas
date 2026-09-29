@@ -32,6 +32,14 @@ export const SEARCH_SOURCES: readonly string[] = [
 // trigram GIN index *can* serve — and only resolves the active-version chain
 // (identical logic to the view) for that small candidate set. This is not a
 // rewrite of the business rule, just pushing the same filter below the fence.
+//
+// Rivers carry three levels since the topology ingest. Search means the ENTITY: a level-1
+// row is one river, which is the whole point -- searching "thu" used to return several
+// rows all called Sông Thu Bồn, each an arbitrary OSM way. Reaches (level 2) have no name
+// at all. The filter goes in the candidate CTE too, not only the final select: that CTE
+// is what the trigram index serves, and it would otherwise resolve every matching way.
+const LEVEL_FILTER: Record<string, string> = { rivers: 'AND feature_level = 1' };
+
 function layerCtes(key: string): string {
   return `
     active_${key} AS (
@@ -45,7 +53,7 @@ function layerCtes(key: string): string {
         FROM app.dataset_versions p JOIN chain_${key} c ON p.id = c.parent_version_id
     ),
     candidates_${key} AS (
-      SELECT DISTINCT external_id FROM water.${key} WHERE name % $1
+      SELECT DISTINCT external_id FROM water.${key} WHERE name % $1 ${LEVEL_FILTER[key] ?? ''}
     ),
     resolved_${key} AS (
       SELECT DISTINCT ON (t.external_id) t.*
@@ -62,7 +70,8 @@ function layerSelect(key: string): string {
              ST_X(ST_PointOnSurface(geom)) AS lon, ST_Y(ST_PointOnSurface(geom)) AS lat,
              similarity(name, $1) AS sim
       FROM resolved_${key}
-      WHERE NOT deleted AND geom IS NOT NULL AND name IS NOT NULL AND name % $1`;
+      WHERE NOT deleted AND geom IS NOT NULL AND name IS NOT NULL AND name % $1
+        ${LEVEL_FILTER[key] ?? ''}`;
 }
 
 /**

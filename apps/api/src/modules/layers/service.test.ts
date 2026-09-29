@@ -332,4 +332,48 @@ describe('featuresService edit sessions (§7)', () => {
     ).rejects.toBeInstanceOf(NotFoundError);
     await s.discard();
   });
+
+  // Rivers: only level-3 OSM ways are edited by hand (user decision 2026-09-29). Every
+  // case below discards its session -- a rivers commit runs the whole hierarchy rebuild.
+  async function riverRowAt(level: number): Promise<{ id: string; geometry: unknown }> {
+    const { rows } = await getPool().query<{ id: string; geometry: unknown }>(
+      `SELECT id, ST_AsGeoJSON(geom)::jsonb AS geometry FROM water.rivers_active
+        WHERE feature_level = $1 AND name IS NOT NULL ORDER BY external_id LIMIT 1`,
+      [level]
+    );
+    return rows[0];
+  }
+
+  it('refuses any edit to a level-1 river, attribute-only included', async () => {
+    // A level-1 river's name and geometry are rebuilt from its ways on every commit, so
+    // an edit here would be silently reverted in the same commit.
+    const river = await riverRowAt(1);
+    const s = await svc().editSession('rivers');
+    await expect(s.update(river.id, { properties: { name: 'Sông Đổi Tên' } }))
+      .rejects.toBeInstanceOf(ConflictError);
+    await s.discard();
+  });
+
+  it('refuses deleting a level-1 river or a level-2 reach', async () => {
+    for (const level of [1, 2]) {
+      const row = level === 2
+        ? (await getPool().query<{ id: string }>(
+            `SELECT id FROM water.rivers_active WHERE feature_level = 2 ORDER BY external_id LIMIT 1`
+          )).rows[0]
+        : await riverRowAt(1);
+      const s = await svc().editSession('rivers');
+      await expect(s.remove(row.id), `level ${level}`).rejects.toBeInstanceOf(ConflictError);
+      await s.discard();
+    }
+  });
+
+  it('still lets a steward edit a level-3 way', async () => {
+    const way = await riverRowAt(3);
+    const s = await svc().editSession('rivers');
+    const after = await s.update(way.id, {
+      geometry: way.geometry as never, properties: { name: 'Sông Đổi Tên' },
+    });
+    expect(after.properties.name).toBe('Sông Đổi Tên');
+    await s.discard();
+  });
 });

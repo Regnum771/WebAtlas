@@ -62,6 +62,36 @@ describe('GET /api/search', () => {
     // just whichever 3 rows a broken/unordered query happened to return first.
     expect(body.results[0].name).toBe('An Điềm');
   });
+
+  it('returns one hit per named river, not one per fragment', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/search?q=${encodeURIComponent('Thu Bồn')}&sources=rivers`,
+    });
+    expect(res.statusCode).toBe(200);
+    const riverHits = (res.json().results as Array<{ layerKey: string; name: string }>)
+      .filter((h) => h.layerKey === 'rivers' && h.name === 'Sông Thu Bồn');
+    // The defect this whole phase exists to kill: several hits all called Sông Thu Bồn,
+    // each an arbitrary OSM way.
+    expect(riverHits).toHaveLength(1);
+  });
+
+  it('returns rivers as level-1 entities only', async () => {
+    // 'Sông', not 'song': trigram matching is accent-sensitive, and 'song' finds nothing.
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/search?q=${encodeURIComponent('Sông')}&sources=rivers&limit=50`,
+    });
+    expect(res.statusCode).toBe(200);
+    const ids = (res.json().results as Array<{ featureId: string }>).map((h) => h.featureId);
+    expect(ids.length).toBeGreaterThan(0);
+    const { rows } = await getPool().query<{ feature_level: number }>(
+      `SELECT DISTINCT feature_level FROM water.rivers WHERE id = ANY($1::uuid[])`,
+      [ids]
+    );
+    // A level-3 hit is one OSM way of a river; a level-2 hit is a nameless reach.
+    expect(rows.map((r) => r.feature_level)).toEqual([1]);
+  });
 });
 
 describe('GET /api/search with sources', () => {
