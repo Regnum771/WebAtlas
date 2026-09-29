@@ -45,18 +45,29 @@ export function resetRoiStore(): void { seq++; resolver = resolveRoi; publish(EM
 export async function setRoi(roi: Roi, opts: { fit: RoiFit }): Promise<void> {
   const mine = ++seq;
   const kept = { roi: state.roi, resolved: state.resolved };
-  update({ status: 'resolving', error: null, hint: null, drawKind: null });
+  const isDrawing = state.status === 'drawing';
+  update({ status: isDrawing ? 'drawing' : 'resolving', error: null, hint: null, ...(isDrawing ? {} : { drawKind: null }) });
   try {
     const resolved = await resolver(roi);
     if (mine !== seq) return;
-    update({ roi, resolved, status: 'ready', fit: opts.fit });
+    if (state.status === 'drawing') {
+      update({ roi, resolved, fit: opts.fit });
+    } else {
+      update({ roi, resolved, status: 'ready', fit: opts.fit, drawKind: null });
+    }
   } catch (e) {
     if (mine !== seq) return;
-    update({
-      ...kept,
-      status: kept.resolved ? 'ready' : 'empty',
-      error: e instanceof ApiError ? e.message : 'Không xác định được vùng phân tích.',
-    });
+    if (state.status === 'drawing') {
+      update({
+        error: e instanceof ApiError ? e.message : 'Không xác định được vùng phân tích.',
+      });
+    } else {
+      update({
+        ...kept,
+        status: kept.resolved ? 'ready' : 'empty',
+        error: e instanceof ApiError ? e.message : 'Không xác định được vùng phân tích.',
+      });
+    }
   }
 }
 
@@ -68,7 +79,10 @@ export function setRadius(radiusKm: number | null): Promise<void> {
 
 export function clearRoi(): void { seq++; publish(EMPTY); }
 export function startDrawing(kind: RoiDrawKind): void { update({ status: 'drawing', drawKind: kind, error: null, hint: null }); }
-export function stopDrawing(): void { update({ status: state.resolved ? 'ready' : 'empty', drawKind: null }); }
+export function stopDrawing(): void {
+  if (state.status !== 'drawing') { update({ drawKind: null }); return; }
+  update({ status: state.resolved ? 'ready' : 'empty', drawKind: null });
+}
 export function setRoiHint(hint: string | null): void { update({ hint }); }
 export function dismissRoiMessage(): void { update({ error: null, hint: null }); }
 
