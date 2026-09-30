@@ -40,7 +40,7 @@ apps/api/.env
 packages/atlas-data/tools/.osm-cache/
 # Bytecode Python từ các script chuẩn bị dữ liệu
 __pycache__/
-# DEM Copernicus GLO-30: hàng trăm MB, mỗi máy tự tải bằng scripts/prep_dem.py.
+# DEM Copernicus GLO-30: hàng trăm MB, mỗi máy tự tải bằng packages/atlas-data/tools/prep_dem.py.
 # Đây là bộ dữ liệu ĐẦU TIÊN không đi kèm bản checkout — xem docs/runbooks/elevation-dem.md.
 apps/api/src/db/seeds/data/dem/
 # Visual brainstorming companion scratch (not source)

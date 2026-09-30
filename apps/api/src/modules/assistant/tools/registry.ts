@@ -47,7 +47,7 @@ const FACTORIES: ToolFactory[] = [
   // Appended, never inserted: the order above is the cached prefix.
   //
   // Registered unconditionally, unlike runSqlTool below, even though the DEM it
-  // reads is absent on a box that has not run scripts/load-dem.sh — so on such a
+  // reads is absent on a box that has not run packages/atlas-data/tools/load-dem.sh — so on such a
   // box this definition is prefix cost for a tool that can only answer "không có
   // dữ liệu". Accepted deliberately for now: the alternative is an async
   // capability probe (buildTools is synchronous) or an env flag that silently

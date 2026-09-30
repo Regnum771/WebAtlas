@@ -148,7 +148,7 @@ LABELLED = PLAIN.replace("<Name>contours_plain</Name>", "<Name>contours_labelled
 def write(name: str, body: str) -> None:
     """Write the SLD next to this script so the artifact can be committed and asserted on.
 
-    Same precedent as scripts/basemap/styles.py, which writes each `<name>.sld` so that
+    Same precedent as tools/basemap/styles.py, which writes each `<name>.sld` so that
     packages/atlas-data/tools/basemap/styles.test.ts can assert against committed artifacts
     without needing Python or a live GeoServer in the test run.
 

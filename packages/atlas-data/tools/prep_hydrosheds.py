@@ -38,7 +38,7 @@ RIVER_FIELDS = ["HYRIV_ID", "NEXT_DOWN", "MAIN_RIV", "ORD_STRA", "LENGTH_KM"]
 
 # Keep in step with REGION_PROVINCE_CODES in packages/shared/src/region.ts. Python
 # cannot import the TypeScript source of truth, so reachSeed.test.ts guards the
-# duplication. Same arrangement as scripts/clip-to-region.mjs.
+# duplication. Same arrangement as tools/clip-to-region.mjs.
 REGION_PROVINCE_CODES = {"48", "51", "52", "56", "66", "68"}
 
 # packages/atlas-data/tools -> repo root is three levels up.
