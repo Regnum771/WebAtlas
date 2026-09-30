@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   handler: null as null | ((e: unknown) => void),
   info: [] as Array<{ resolve: (v: unknown) => void }>,
   members: [] as Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }>,
+  target: null as null | HTMLElement,
 }));
 
 vi.mock('../features/map/model/drawingState', () => ({ isDrawing: () => false, drawingJustEnded: () => false }));
@@ -28,7 +29,7 @@ vi.mock('../app/providers/MapProvider', () => {
     getSize: () => [100, 100],
     getView: () => ({ calculateExtent: () => [0, 0, 1, 1], getZoom: () => 12, animate: () => {} }),
     getPixelFromCoordinate: () => [10, 10],
-    getTargetElement: () => document.createElement('div'),
+    getTargetElement: () => (h.target ??= document.createElement('div')),
     hasFeatureAtPixel: () => false,
   };
   return { useMapContext: () => ({ map, reservoirFilter: 'all', setReservoirFilter: () => {} }) };
@@ -74,5 +75,21 @@ describe('DynamicPopup ROI candidates vs. stale lookups', () => {
     expect(screen.getByText('Đường A')).toBeInTheDocument();
     expect(screen.getByText('Tỉnh Đắk Lắk')).toBeInTheDocument(); // base candidates stay
     expect(screen.queryByText('Tuyến A')).not.toBeInTheDocument();
+  });
+});
+
+describe('DynamicPopup placement', () => {
+  beforeEach(() => { h.handler = null; h.info.length = 0; h.members.length = 0; h.target = null; });
+
+  // The map is docked right of the rail and the open flyout (0a5f166), but the popup is
+  // positioned in the full-window app container: a map pixel alone put it 368 px left of
+  // the click, behind the layers panel.
+  it('sits beside the click when the map does not start at the window edge', async () => {
+    h.target = document.createElement('div');
+    h.target.getBoundingClientRect = () => ({ left: 368, top: 0, right: 1440, bottom: 900, width: 1072, height: 900, x: 368, y: 0, toJSON: () => ({}) });
+    const { container } = render(<DynamicPopup />);
+    await click(1);
+    const popup = container.querySelector('.dynamic-popup') as HTMLElement;
+    expect(popup.style.left).toBe(`${368 + 10 + 15}px`); // getPixelFromCoordinate → [10, 10]
   });
 });
