@@ -25,6 +25,8 @@ dist-ssr
 
 # Exclude data directory
 /data/
+# Registry downloads and intermediates (spec §7)
+packages/atlas-data/data/cache/
 sapnhapbando_geojson/
 geojson_11Mar2026/
 
