@@ -2192,11 +2192,11 @@ npm test -w @webatlas/api -- src/geoserver/publish.test.ts   # the old publish p
 Task 7 (earlier tasks' deviations are in their own commits and reports under `.superpowers/sdd/`).
 
 - **Deviations (Task 7):** none from the brief's code. The database architecture doc (`docs/architecture/database-architecture.md`, §13 limitations table and §14) was updated to say `rivers` is a dated `run` escape hatch that the runner now executes, followed by a publish stage.
-- **Mutation checks:** none run for Task 7; the new registry tests were not run red-first against the old code.
+- **Mutation checks (Task 7; each restored from a file copy, then green again, 14/14 in `registry.test.ts` + `env.test.ts`):** (1) disabling the `hasExecutor` check in `registry.ts` made `rejects a stage type with no executor at load time` fail; (2) removing the `publish-geoserver` stage from `rivers.ts` made `rivers ingests on the host and then publishes rivers_detail` fail; (3) removing the early `DATABASE_URL` return in `env.ts` made `does nothing when DATABASE_URL is already set` fail. The first `env.test.ts` case now also asserts `DATABASE_URL` becomes `postgres://x/y`.
 - **Step 7 (fresh shell, no exported variables, so `loadDevEnv` was proven):**
   - First `atlas:build -- --only rivers`: 1 m 14 s, exit 0; printed `(environment from …\apps\api\.env)`, `[rivers]` lines with heartbeats at 30 s and 60 s, `rivers HydroRIVERS version 0e950c38-…: 23119 features`, then `built rivers/0:run` and `built rivers/1:publish-geoserver`.
   - `atlas:status`: `rivers  0:run: ok  1:publish-geoserver: ok`.
   - Repeat build: `executed 0, skipped 2`, 2.5 s.
   - `--force rivers`: 1 m 12 s, both stages executed, exit 0.
   - Lineage steps recorded as expected (`stage 0:run · 4d0172e1b022 · run ingest:rivers -w @webatlas/api`, `stage 1:publish-geoserver · bddfd823dfe4 · webatlas:rivers → rivers_detail (unchanged)`); WFS `webatlas:rivers` returns a FeatureCollection with one feature.
-- **Final `atlas-data` tests (env exported):** 21 files, 176 tests, 0 skipped. The first full run had 2 failures, both 30 s timeouts in `publishGeoserver.live.test.ts` (GeoServer catalog reset slow under load); two later runs passed cleanly.
+- **Final `atlas-data` tests (env exported):** 21 files, 176 tests, 0 skipped. The first full run had 2 failures, both 30 s timeouts in `publishGeoserver.live.test.ts`. The cause was not established: they coincided with heavy concurrent load on the same GeoServer and database, and did not reproduce in five later full-suite runs (4-8 s each; a measured `POST /rest/reset` takes 0.04-0.4 s).

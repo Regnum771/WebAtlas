@@ -22,6 +22,7 @@ describe('loadDevEnv', () => {
     await writeFile(file, `${KEY}=from-file\nDATABASE_URL=postgres://x/y\n`);
     expect(loadDevEnv(file)).toBe(file);
     expect(process.env[KEY]).toBe('from-file');
+    expect(process.env.DATABASE_URL).toBe('postgres://x/y');
   });
 
   it('does nothing when DATABASE_URL is already set — an explicit environment wins', async () => {
