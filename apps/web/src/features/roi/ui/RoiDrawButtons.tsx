@@ -2,9 +2,10 @@ import { useEffect, type ReactNode } from 'react';
 import { Pentagon, RectangleHorizontal, Spline, MapPin } from 'lucide-react';
 import type { DrawnRoiGeometry } from '@webatlas/shared';
 import { useMapContext } from '../../../app/providers/MapProvider';
-import { claimDrawing, releaseDrawing, useDrawFeedback } from '../../map/model/drawingState';
+import { claimDrawing, releaseDrawing, setDrawFeedback, useDrawFeedback } from '../../map/model/drawingState';
+import { attachDrawAids, closeTolerancePx, validateShape } from '../../map/model/drawAids';
 import { startRoiDraw } from '../../map/model/roiDraw';
-import { setRoi, startDrawing, stopDrawing, useRoi, type RoiDrawKind } from '../model/roi.store';
+import { setRoi, setRoiHint, startDrawing, stopDrawing, useRoi, type RoiDrawKind } from '../model/roi.store';
 
 const KINDS: { kind: RoiDrawKind; label: string; icon: ReactNode }[] = [
   { kind: 'Polygon', label: 'Vẽ đa giác', icon: <Pentagon size={18} /> },
@@ -43,13 +44,23 @@ export default function RoiDrawButtons() {
   useEffect(() => {
     if (!map || !drawing) return;
     claimDrawing('roi');
-    const stop = startRoiDraw(map, drawing, (geometry) => {
-      void setRoi({ source: 'drawn', geometry: geometry as DrawnRoiGeometry }, { fit: false });
-    });
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') stopDrawing(); };
-    document.addEventListener('keydown', onKey);
+    const coarse = window.matchMedia?.('(pointer: coarse)').matches === true;
+    const stop = startRoiDraw(
+      map,
+      drawing,
+      (geometry) => { void setRoi({ source: 'drawn', geometry: geometry as DrawnRoiGeometry }, { fit: false }); },
+      {
+        snapTolerancePx: closeTolerancePx(coarse),
+        onDrawCreated: (draw) => attachDrawAids(map, draw, {
+          onHint: (hint) => setDrawFeedback({ hint }),
+          onMeasure: (measure) => setDrawFeedback({ measure }),
+          onCancel: stopDrawing,
+        }),
+        validate: validateShape,
+        onInvalid: (message) => setRoiHint(message),
+      }
+    );
     return () => {
-      document.removeEventListener('keydown', onKey);
       stop();
       releaseDrawing('roi');
     };

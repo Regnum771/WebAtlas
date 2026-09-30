@@ -7,14 +7,22 @@ const h = vi.hoisted(() => ({
   onDones: [] as ((g: unknown) => void)[],
   kinds: [] as string[],
   ctx: { map: {} },
+  cancels: [] as (() => void)[],
 }));
 vi.mock('../../../app/providers/MapProvider', () => ({ useMapContext: () => h.ctx }));
 vi.mock('../../map/model/roiDraw', () => ({
-  startRoiDraw: (_map: unknown, kind: string, onDone: (g: unknown) => void) => {
-    const stop = vi.fn();
+  startRoiDraw: (_map: unknown, kind: string, onDone: (g: unknown) => void, hooks?: { onDrawCreated?: (d: unknown) => () => void }) => {
+    const detach = hooks?.onDrawCreated?.({});
+    const stop = vi.fn(() => detach?.());
     h.stops.push(stop); h.onDones.push(onDone); h.kinds.push(kind);
     return stop;
   },
+}));
+
+// Esc belongs to the drawing aids (Task 12); here they only hand back their cancel callback.
+vi.mock('../../map/model/drawAids', async (orig) => ({
+  ...(await orig<typeof import('../../map/model/drawAids')>()),
+  attachDrawAids: (_m: unknown, _d: unknown, cb: { onCancel: () => void }) => { h.cancels.push(cb.onCancel); return () => {}; },
 }));
 
 import RoiDrawButtons, { RoiDrawButtonsView } from './RoiDrawButtons';
@@ -41,7 +49,7 @@ describe('RoiDrawButtonsView', () => {
 
 describe('RoiDrawButtons container', () => {
   beforeEach(() => {
-    h.stops.length = 0; h.onDones.length = 0; h.kinds.length = 0;
+    h.stops.length = 0; h.onDones.length = 0; h.kinds.length = 0; h.cancels.length = 0;
     resetRoiStore(); resetDrawing();
   });
 
@@ -72,10 +80,10 @@ describe('RoiDrawButtons container', () => {
     expect(getDrawFeedback().owner).toBe('roi');
   });
 
-  it('Esc cancels the drawing', async () => {
+  it('cancelling from the drawing aids (Esc) stops the drawing', async () => {
     render(<RoiDrawButtons />);
     await userEvent.click(screen.getByRole('button', { name: 'Vẽ đa giác' }));
-    await userEvent.keyboard('{Escape}');
+    act(() => h.cancels[0]());
     expect(h.stops[0]).toHaveBeenCalled();
     expect(getRoiState().status).not.toBe('drawing');
     expect(getDrawFeedback().owner).toBeNull();

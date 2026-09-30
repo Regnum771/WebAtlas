@@ -6,6 +6,7 @@ import VectorLayer from 'ol/layer/Vector';
 import { getLength, getArea } from 'ol/sphere';
 import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
+import { attachDrawAids, closeTolerancePx, validateShape } from './drawAids';
 import { claimDrawing, releaseDrawing, useDrawFeedback } from './drawingState';
 
 export type MeasureMode = 'none' | 'length' | 'area';
@@ -46,6 +47,7 @@ export function useMeasure(): UseMeasureResult {
     map.addLayer(vector);
 
     let draw: Draw | null = null;
+    let detachAids = () => {};
 
     if (mode !== 'none') {
       claimDrawing('ruler');
@@ -53,6 +55,7 @@ export function useMeasure(): UseMeasureResult {
       draw = new Draw({
         source: source,
         type: type,
+        snapTolerance: closeTolerancePx(window.matchMedia?.('(pointer: coarse)').matches === true),
       });
 
       draw.on('drawstart', () => {
@@ -63,6 +66,8 @@ export function useMeasure(): UseMeasureResult {
       draw.on('drawend', (e) => {
         const geom = e.feature.getGeometry();
         if (!geom) return;
+        const problem = validateShape(geom);
+        if (problem) { setValue(problem); return; }
 
         if (geom instanceof LineString) {
           const length = getLength(geom);
@@ -76,9 +81,15 @@ export function useMeasure(): UseMeasureResult {
       });
 
       map.addInteraction(draw);
+      detachAids = attachDrawAids(map, draw, {
+        onHint: () => {},
+        onMeasure: (m) => setValue(m ? `Đang đo: ${m}` : null),
+        onCancel: () => { setMode('none'); setValue(null); },
+      });
     }
 
     return () => {
+      detachAids();
       releaseDrawing('ruler');
       map.removeLayer(vector);
       if (draw) {
