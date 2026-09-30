@@ -1,8 +1,8 @@
 import type { Pool } from 'pg';
 import type { Dataset } from './types';
-import { topologicalOrder } from './graph';
+import { topologicalOrder, transitiveDependents } from './graph';
 import { upsertLineage, appendProcessStep, processStep } from './lineage';
-import { stageKey, stageHashPlan, readStageState, writeStageState } from './state';
+import { stageKey, stageHashPlan, readStageState, writeStageState, invalidateStageState } from './state';
 import { executeStage } from './stages/index';
 
 export interface BuildReport {
@@ -19,9 +19,9 @@ function errorMessage(err: unknown): string {
 }
 
 export interface BuildOptions {
-  /** Datasets whose state a stage's execution may invalidate. Defaults to `datasets` (Task 3). */
+  /** The whole registry: datasets whose state a stage's execution may invalidate. Defaults to `datasets`. */
   universe?: Dataset[];
-  /** Dataset ids whose every stage executes regardless of the skip rule (Task 3). */
+  /** Dataset ids whose every stage executes regardless of the skip rule. */
   force?: string[];
   /** Where stage output goes. Defaults to console.log. */
   log?: (line: string) => void;
@@ -39,6 +39,14 @@ export interface BuildOptions {
  *
  * Stages are dispatched through the executor table in stages/index.ts; each returns a
  * one-line summary of what it did, which becomes the ISO 19115 process step (I4).
+ *
+ * Invalidation before execute (I3): just before a stage runs, the recorded state of that
+ * dataset's later stages and of every transitive dependent (computed over `options.universe`,
+ * the whole registry) is deleted. If that deletion fails the stage does not run. A skip
+ * invalidates nothing.
+ *
+ * `options.force` names datasets whose every stage runs regardless of the skip rule; the
+ * cascade then applies as for any execution.
  */
 export async function runBuild(
   pool: Pool,
@@ -46,6 +54,10 @@ export async function runBuild(
   options: BuildOptions = {}
 ): Promise<BuildReport> {
   const log = options.log ?? ((line: string) => console.log(line));
+  // The universe is the whole registry, not the selected set (spec §8): a dependent excluded
+  // by --except is still invalidated, so atlas:status reports it missing until built.
+  const universe = options.universe ?? datasets;
+  const force = new Set(options.force ?? []);
   const report: BuildReport = { executed: [], skipped: [], failed: [], blocked: [], errors: {} };
   const ordered = topologicalOrder(datasets);
   const plan = stageHashPlan(ordered);
@@ -63,6 +75,8 @@ export async function runBuild(
     }
 
     const hashes = plan.get(d.id)!;
+    const forced = force.has(d.id);
+    const dependents = transitiveDependents(universe, d.id);
     let current = `${d.id}/lineage`;
     let currentIndex = -1;
     let failedAt = -1;
@@ -79,14 +93,18 @@ export async function runBuild(
         const key = stageKey(i, stage);
 
         const prior = await readStageState(pool, d.id, key);
-        if (prior?.status === 'ok' && prior.input_hash === hash) {
+        if (!forced && prior?.status === 'ok' && prior.input_hash === hash) {
           report.skipped.push(current);
           continue;
         }
 
         let summary = '';
         try {
-          ({ summary } = await executeStage(pool, stage, { datasetId: d.id, forced: false, log }));
+          // I3: invalidate downstream BEFORE executing. If this throws, the stage never runs:
+          // an upstream must not execute while its dependents still look current.
+          const later = d.stages.slice(i + 1).map((s, j) => stageKey(i + 1 + j, s));
+          await invalidateStageState(pool, d.id, later, dependents);
+          ({ summary } = await executeStage(pool, stage, { datasetId: d.id, forced, log }));
           stageExecuted = true;
         } catch (err) {
           report.failed.push(current);

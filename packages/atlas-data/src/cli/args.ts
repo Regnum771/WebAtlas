@@ -1,9 +1,10 @@
 export interface BuildArgs {
   only: string[];
   except: string[];
+  force: string[];
 }
 
-const FLAGS = ['--only', '--except'] as const;
+const FLAGS = ['--only', '--except', '--force'] as const;
 type Flag = (typeof FLAGS)[number];
 
 function splitIds(flag: Flag, raw: string): string[] {
@@ -52,5 +53,6 @@ export function parseBuildArgs(argv: string[]): BuildArgs {
   return {
     only: values['--only'] !== undefined ? splitIds('--only', values['--only']) : [],
     except: values['--except'] !== undefined ? splitIds('--except', values['--except']) : [],
+    force: values['--force'] !== undefined ? splitIds('--force', values['--force']) : [],
   };
 }

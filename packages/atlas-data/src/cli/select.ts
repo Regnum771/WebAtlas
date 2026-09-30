@@ -55,3 +55,19 @@ export function selectDatasets(
 
   return { selected, excluded };
 }
+
+/**
+ * --force must name datasets that are both registered and selected. Forcing a dataset that
+ * --only/--except removed is a contradiction, reported as a usage error rather than
+ * silently doing nothing.
+ */
+export function assertForceSelected(force: string[], all: Dataset[], selected: Dataset[]): void {
+  const known = new Set(all.map((d) => d.id));
+  const chosen = new Set(selected.map((d) => d.id));
+  for (const id of force) {
+    if (!known.has(id)) throw new Error(`atlas:build: --force names unknown dataset "${id}"`);
+    if (!chosen.has(id)) {
+      throw new Error(`atlas:build: --force ${id} is not in the selected set (removed by --only/--except)`);
+    }
+  }
+}
