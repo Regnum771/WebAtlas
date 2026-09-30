@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { ROI_MAX_RADIUS_KM, type Roi } from '@webatlas/shared';
 import { KIND_LABELS, formatMeasure } from '../model/format';
 import type { RoiDrawKind, RoiState } from '../model/roi.store';
@@ -29,6 +29,7 @@ export interface RoiChipViewProps {
 /** The ROI chip above the toolbar: its five states (U-3) and the radius editor (U-4). */
 export function RoiChipView({ state, drawHint, liveMeasure, onRadius, onClear, onDismiss }: RoiChipViewProps) {
   const [editing, setEditing] = useState(false);
+  useEffect(() => { setEditing(false); }, [state.resolved]);
   const current = radiusOf(state.roi);
   const [draft, setDraft] = useState(String(current ?? 5));
   const r = state.resolved;

@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { useMapContext } from '../../../app/providers/MapProvider';
 import { useMapCommands } from '../../map/model/useMapCommands';
 import { clearRoi, dismissRoiMessage, setRadius, useRoi } from '../model/roi.store';
 import { RoiChipView } from './RoiChip.view';
@@ -7,13 +8,18 @@ import { RoiChipView } from './RoiChip.view';
 export default function RoiChip({ drawHint, liveMeasure }: { drawHint?: string | null; liveMeasure?: string | null }) {
   const state = useRoi();
   const run = useMapCommands();
+  const { map } = useMapContext();
+  const runRef = useRef(run);
+  runRef.current = run;
   const { resolved, fit } = state;
+  // Redraws on a new resolution or when the map appears — not when the executor is rebuilt
+  // (every layer toggle), which would re-fit the view. `fit` travels with the resolution.
   useEffect(() => {
-    if (resolved) run({ kind: 'showRoi', geometry: resolved.display, label: resolved.label, fit });
-    else run({ kind: 'clearRoi' });
-    // Only a new resolution redraws; `fit` travels with it.
+    if (!map) return;
+    if (resolved) runRef.current({ kind: 'showRoi', geometry: resolved.display, label: resolved.label, fit });
+    else runRef.current({ kind: 'clearRoi' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolved, run]);
+  }, [resolved, map]);
   return (
     <RoiChipView
       state={state} drawHint={drawHint} liveMeasure={liveMeasure}
