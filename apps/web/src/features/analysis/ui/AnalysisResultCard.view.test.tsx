@@ -32,4 +32,9 @@ describe('AnalysisResultCardView', () => {
     expect(onExport).toHaveBeenCalled();
     expect(onClear).toHaveBeenCalled();
   });
+
+  it('names the ROI the result was computed for (FR-10)', () => {
+    render(<AnalysisResultCardView result={R} roiLabel="Sông Thu Bồn + 5 km" onRow={vi.fn()} onExport={vi.fn()} onClear={vi.fn()} />);
+    expect(screen.getByText('Kết quả cho: Sông Thu Bồn + 5 km')).toBeInTheDocument();
+  });
 });

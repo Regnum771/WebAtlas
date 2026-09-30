@@ -1,99 +1,83 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AnalysisOp, AnalysisResult, GeoJsonGeometry, MapCommand } from '@webatlas/shared';
+import { useCallback, useState } from 'react';
+import type { AnalysisResult, MapCommand } from '@webatlas/shared';
 import { ApiError } from '../../../shared/api/apiClient';
-import type { DrawKind } from '../../map/model/analysisDraw';
-import { setLastShape } from '../../map/model/lastShape';
+import { getRoiState, setRoiHint, type RoiState } from '../../roi/model/roi.store';
+import { toolAvailability, type RoiTool } from '../../roi/model/toolAvailability';
 import { runAnalysis } from '../api/analysis.api';
-import { DEFAULT_PARAMS, acceptsShape, buildInput, drawKindFor, ANALYSIS_TOOL_LABELS, type AnalysisParams } from './tools';
+import { ANALYSIS_TOOL_LABELS, DEFAULT_PARAMS, buildInput, type AnalysisParams } from './tools';
 import { downloadCsv } from './csv';
 import { setAnalysisResult } from './analysisResult.store';
 
 export interface UseAnalysisDeps {
-  startDraw: (kind: DrawKind, onDone: (g: GeoJsonGeometry) => void) => () => void;
   run: (cmd: MapCommand) => unknown;
-  getLastShape: () => GeoJsonGeometry | null;
   fetchResult?: typeof runAnalysis;
+  getRoi?: () => Pick<RoiState, 'roi' | 'resolved'>;
+  /** Where a disabled tool's reason goes when it is pressed (U-2): the chip. */
+  onUnavailable?: (reason: string) => void;
 }
 
-export type AnalysisStatus = 'idle' | 'params' | 'drawing' | 'running';
+export type AnalysisStatus = 'idle' | 'params' | 'running';
 
-export function useAnalysis({ startDraw, run, getLastShape, fetchResult = runAnalysis }: UseAnalysisDeps) {
-  const [active, setActive] = useState<AnalysisOp | null>(null);
+export function useAnalysis({
+  run, fetchResult = runAnalysis, getRoi = getRoiState, onUnavailable = setRoiHint,
+}: UseAnalysisDeps) {
+  const [active, setActive] = useState<RoiTool | null>(null);
   const [params, setParamsState] = useState<AnalysisParams>(DEFAULT_PARAMS);
   const [status, setStatus] = useState<AnalysisStatus>('idle');
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [resultRoiLabel, setResultRoiLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const stopDraw = useRef<(() => void) | null>(null);
 
-  const endDraw = useCallback(() => {
-    stopDraw.current?.();
-    stopDraw.current = null;
-  }, []);
-  useEffect(() => endDraw, [endDraw]);
-
-  const execute = useCallback(
-    async (op: AnalysisOp, p: AnalysisParams, g: GeoJsonGeometry) => {
-      setStatus('running');
-      setError(null);
-      setLastShape(g);
-      try {
-        const r = await fetchResult(op, buildInput(op, p, g));
-        if (r.geometries.length > 0) run({ kind: 'showGeometries', items: r.geometries, fit: true });
-        setResult(r);
-        setAnalysisResult(r);
-        setStatus('idle');
-        setActive(null);
-      } catch (e) {
-        setError(e instanceof ApiError ? e.message : 'Không chạy được phép phân tích.');
-        setStatus('params');
-      }
-    },
-    [fetchResult, run]
-  );
-
-  const open = useCallback((op: AnalysisOp) => {
-    endDraw();
-    setActive(op);
+  const open = useCallback((tool: RoiTool) => {
+    const availability = toolAvailability(tool, getRoi().resolved);
+    if (!availability.enabled) {
+      onUnavailable(availability.reason);
+      return;
+    }
+    setActive(tool);
     setError(null);
     setStatus('params');
-  }, [endDraw]);
+  }, [getRoi, onUnavailable]);
 
   const setParams = useCallback((patch: Partial<AnalysisParams>) => {
     setParamsState((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  const draw = useCallback(() => {
-    if (!active) return;
-    endDraw();
-    const op = active;
-    const p = params;
-    setStatus('drawing');
-    stopDraw.current = startDraw(drawKindFor(op, p), (g) => {
-      endDraw();
-      void execute(op, p, g);
-    });
-  }, [active, params, startDraw, endDraw, execute]);
-
-  const useLastShape = useCallback(async () => {
-    if (!active) return;
-    const g = getLastShape();
-    if (!g || !acceptsShape(active, params, g)) {
-      setError('Hình vừa vẽ không dùng được cho phép này — hãy vẽ mới.');
+  const execute = useCallback(async () => {
+    const { roi, resolved } = getRoi();
+    if (!active || !roi || !resolved) return;
+    // The ROI may have changed since the panel opened.
+    const availability = toolAvailability(active, resolved);
+    if (!availability.enabled) {
+      setError(availability.reason);
       return;
     }
-    await execute(active, params, g);
-  }, [active, params, getLastShape, execute]);
+    setStatus('running');
+    setError(null);
+    try {
+      const r = await fetchResult(active, buildInput(active, params, roi));
+      if (r.geometries.length > 0) run({ kind: 'showGeometries', items: r.geometries, fit: true });
+      setResult(r);
+      setResultRoiLabel(resolved.label);
+      setAnalysisResult(r);
+      setStatus('idle');
+      setActive(null);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Không chạy được phép phân tích.');
+      setStatus('params');
+    }
+  }, [active, params, getRoi, fetchResult, run]);
 
   const cancel = useCallback(() => {
-    endDraw();
     setActive(null);
     setStatus('idle');
     setError(null);
-  }, [endDraw]);
+  }, []);
 
   const clear = useCallback(() => {
     run({ kind: 'clearHighlights' });
     setResult(null);
+    setResultRoiLabel(null);
     setAnalysisResult(null);
   }, [run]);
 
@@ -101,5 +85,5 @@ export function useAnalysis({ startDraw, run, getLastShape, fetchResult = runAna
     if (result) downloadCsv(result, `phan-tich-${ANALYSIS_TOOL_LABELS[result.op]}.csv`);
   }, [result]);
 
-  return { active, params, status, result, error, open, setParams, draw, useLastShape, cancel, clear, exportCsv };
+  return { active, params, status, result, resultRoiLabel, error, open, setParams, execute, cancel, clear, exportCsv };
 }

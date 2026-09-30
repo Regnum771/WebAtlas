@@ -79,6 +79,12 @@ export function MapToolbarView({
           >
             <MousePointer2 size={18} />
           </button>
+        </div>
+
+        <div className="control-divider" />
+
+        <div className="control-group" role="group" aria-label="Đo nhanh">
+          <span className="control-group-label" aria-hidden="true">Đo nhanh</span>
           <button
             className={`control-btn ${measureMode === 'length' ? 'active' : ''}`}
             aria-pressed={measureMode === 'length'}

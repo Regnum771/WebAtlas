@@ -1,42 +1,34 @@
-import { useCallback, useMemo, type ReactNode } from 'react';
-import { useMapContext } from '../../app/providers/MapProvider';
-import { createCommandExecutor } from '../map/model/mapCommands';
-import { startAnalysisDraw } from '../map/model/analysisDraw';
-import { getLastShape } from '../map/model/lastShape';
+import type { ReactNode } from 'react';
+import { useMapCommands } from '../map/model/useMapCommands';
+import { useRoi } from '../roi/model/roi.store';
+import { ROI_TOOLS, toolAvailability, type Availability, type RoiTool } from '../roi/model/toolAvailability';
 import { useAnalysis } from './model/useAnalysis';
 import { AnalysisButtonsView } from './ui/AnalysisButtons.view';
 import { AnalysisParamsView } from './ui/AnalysisParams.view';
 import { AnalysisResultCardView } from './ui/AnalysisResultCard.view';
 
 /**
- * Returns the toolbar buttons and the panel above the toolbar as two nodes sharing
- * one presenter — the toolbar renders them in different places.
+ * Returns the toolbar buttons and the panel above the toolbar as two nodes sharing one
+ * presenter — the toolbar renders them in different places.
  */
 export function useAnalysisTools(): { buttons: ReactNode; panel: ReactNode } {
-  const { map, setBasemap, toggleLayerVisibility, setLayerOpacity, layersState } = useMapContext();
-  const run = useMemo(
-    () => createCommandExecutor({
-      map, setBasemap, toggleLayerVisibility, setLayerOpacity,
-      getLayerVisible: (id) => layersState.find((l) => l.id === id)?.visible ?? false,
-      layerExists: (id) => layersState.some((l) => l.id === id),
-    }),
-    [map, setBasemap, toggleLayerVisibility, setLayerOpacity, layersState]
-  );
-  const startDraw = useCallback<Parameters<typeof useAnalysis>[0]['startDraw']>(
-    (kind, onDone) => (map ? startAnalysisDraw(map, kind, onDone) : () => {}),
-    [map]
-  );
-  const a = useAnalysis({ startDraw, run, getLastShape });
+  const run = useMapCommands();
+  const roi = useRoi();
+  const a = useAnalysis({ run });
+  const availability = Object.fromEntries(
+    ROI_TOOLS.map((tool) => [tool, toolAvailability(tool, roi.resolved)])
+  ) as Record<RoiTool, Availability>;
 
-  const buttons = <AnalysisButtonsView active={a.active} onOpen={a.open} />;
+  const buttons = <AnalysisButtonsView active={a.active} availability={availability} onOpen={a.open} />;
   const panel = a.active ? (
     <AnalysisParamsView
-      op={a.active} params={a.params} status={a.status} error={a.error}
-      onParams={a.setParams} onDraw={a.draw} onUseLast={a.useLastShape} onCancel={a.cancel}
+      tool={a.active} roiLabel={roi.resolved?.label ?? null} params={a.params} status={a.status} error={a.error}
+      onParams={a.setParams} onRun={() => void a.execute()} onCancel={a.cancel}
     />
   ) : a.result ? (
     <AnalysisResultCardView
       result={a.result}
+      roiLabel={a.resultRoiLabel}
       onRow={(row) => {
         if (row.layerKey && row.featureId && row.lon !== undefined && row.lat !== undefined) {
           run({ kind: 'zoomToFeature', layerKey: row.layerKey, featureId: row.featureId, lonLat: [row.lon, row.lat] });

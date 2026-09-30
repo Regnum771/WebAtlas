@@ -1,33 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import type { GeoJsonGeometry } from '@webatlas/shared';
-import { DEFAULT_PARAMS, acceptsShape, buildInput, drawKindFor } from './tools';
+import type { Roi } from '@webatlas/shared';
+import { DEFAULT_PARAMS, buildInput } from './tools';
 
-const point: GeoJsonGeometry = { type: 'Point', coordinates: [108.05, 12.68] };
-const line: GeoJsonGeometry = { type: 'LineString', coordinates: [[108, 12], [108.1, 12.1]] };
-const poly: GeoJsonGeometry = { type: 'Polygon', coordinates: [[[108, 12], [108.1, 12], [108.1, 12.1], [108, 12]]] };
+const roi: Roi = { source: 'admin', level: 'province', code: '66' };
 
-describe('analysis tool rules', () => {
-  it('picks the draw kind per operation', () => {
-    expect(drawKindFor('buffer', { ...DEFAULT_PARAMS, shape: 'LineString' })).toBe('LineString');
-    expect(drawKindFor('select_within', DEFAULT_PARAMS)).toBe('Polygon');
-    expect(drawKindFor('nearest', DEFAULT_PARAMS)).toBe('Point');
-    expect(drawKindFor('elevation_profile', DEFAULT_PARAMS)).toBe('LineString');
-    expect(drawKindFor('zonal_elevation', DEFAULT_PARAMS)).toBe('Polygon');
-  });
-
-  it('accepts a reused shape only when it fits the operation', () => {
-    expect(acceptsShape('buffer', DEFAULT_PARAMS, line)).toBe(true);
-    expect(acceptsShape('select_within', DEFAULT_PARAMS, line)).toBe(false);
-    expect(acceptsShape('zonal_elevation', DEFAULT_PARAMS, poly)).toBe(true);
-    expect(acceptsShape('nearest', DEFAULT_PARAMS, poly)).toBe(false);
-  });
-
-  it('builds the request body each route expects', () => {
-    const drawn = (g: GeoJsonGeometry) => ({ source: 'drawn', geometry: g });
-    expect(buildInput('buffer', DEFAULT_PARAMS, point)).toEqual({ geometry: point, radiusKm: 5 });
-    expect(buildInput('select_within', DEFAULT_PARAMS, poly)).toEqual({ roi: drawn(poly), layerKeys: ['dams'] });
-    expect(buildInput('nearest', DEFAULT_PARAMS, point)).toEqual({ roi: drawn(point), layerKey: 'dams', k: 5 });
-    expect(buildInput('elevation_profile', DEFAULT_PARAMS, line)).toEqual({ roi: drawn(line), samples: 100 });
-    expect(buildInput('zonal_elevation', DEFAULT_PARAMS, poly)).toEqual({ roi: drawn(poly) });
+describe('buildInput', () => {
+  it('sends the ROI as it is, with each tool’s own parameters', () => {
+    expect(buildInput('select_within', DEFAULT_PARAMS, roi)).toEqual({ roi, layerKeys: ['dams'] });
+    expect(buildInput('nearest', DEFAULT_PARAMS, roi)).toEqual({ roi, layerKey: 'dams', k: 5 });
+    expect(buildInput('elevation_profile', DEFAULT_PARAMS, roi)).toEqual({ roi, samples: 100 });
+    expect(buildInput('zonal_elevation', DEFAULT_PARAMS, roi)).toEqual({ roi });
   });
 });

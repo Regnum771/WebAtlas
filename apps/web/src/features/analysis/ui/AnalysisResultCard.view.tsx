@@ -4,15 +4,17 @@ import { ProfileChartView } from './ProfileChart.view';
 
 export interface AnalysisResultCardViewProps {
   result: AnalysisResult;
+  roiLabel?: string | null;
   onRow: (row: AnalysisRow) => void;
   onExport: () => void;
   onClear: () => void;
 }
 
-export function AnalysisResultCardView({ result, onRow, onExport, onClear }: AnalysisResultCardViewProps) {
+export function AnalysisResultCardView({ result, roiLabel, onRow, onExport, onClear }: AnalysisResultCardViewProps) {
   return (
     <section className="analysis-card glass-panel" aria-label="Kết quả phân tích">
       <h3 className="analysis-card-title">{ANALYSIS_TOOL_LABELS[result.op]}</h3>
+      {roiLabel && <p className="analysis-note">Kết quả cho: {roiLabel}</p>}
       <table className="analysis-summary">
         <tbody>
           {Object.entries(result.summary).map(([k, v]) => (
