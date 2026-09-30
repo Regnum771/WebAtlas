@@ -99,10 +99,25 @@ describe('fetch-http into (spec §8: downloads stay inside data/cache)', () => {
     expect(() => defineDataset(fetchStage('basemap/vietnam.zip'))).not.toThrow();
   });
 
-  it.each(['../escape.zip', 'a/../../escape.zip', '/abs/path.zip', 'C:\\abs\\path.zip', 'a\\..\\..\\x'])(
+  it.each(['../escape.zip', 'a/../../escape.zip', '/abs/path.zip', 'C:\\abs\\path.zip', 'a\\..\\..\\x', 'D:evil.zip', 'C:'])(
     'rejects %s',
     (into) => {
       expect(() => defineDataset(fetchStage(into))).toThrow();
     }
   );
+});
+
+describe('publish-geoserver nativeName', () => {
+  const pub = (nativeName: string) => ({
+    ...valid,
+    stages: [{ type: 'publish-geoserver' as const, layer: 'rivers', nativeName }],
+  });
+
+  it('rejects an empty nativeName', () => {
+    expect(() => defineDataset(pub(''))).toThrow();
+  });
+
+  it('accepts a non-empty nativeName', () => {
+    expect(() => defineDataset(pub('rivers_detail'))).not.toThrow();
+  });
 });

@@ -11,7 +11,11 @@ const cacheRelativePath = z
   .string()
   .min(1)
   .refine(
-    (p) => !posix.isAbsolute(p) && !win32.isAbsolute(p) && !p.split(/[\\/]/).includes('..'),
+    (p) =>
+      !posix.isAbsolute(p) &&
+      !win32.isAbsolute(p) &&
+      // Drive-relative forms (`D:evil.zip`, `C:`) are not absolute to win32 but still leave the cache.
+      !/^[a-zA-Z]:/.test(p) && !p.split(/[\\/]/).includes('..'),
     'must be a relative path inside data/cache, with no ".." segment'
   );
 
