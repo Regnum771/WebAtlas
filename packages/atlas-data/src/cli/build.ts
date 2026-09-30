@@ -2,6 +2,7 @@ import pg from 'pg';
 import { loadDevEnv } from './env';
 import { ALL_DATASETS, validateRegistry } from '../registry';
 import { runBuild } from '../runner';
+import { printBuildReport } from './report';
 import { parseBuildArgs } from './args';
 import { selectDatasets, assertForceSelected, type ExclusionReason } from './select';
 
@@ -40,15 +41,7 @@ async function main(): Promise<void> {
 
   try {
     const report = await runBuild(pool, datasets, { universe: ALL_DATASETS, force });
-    console.log(`executed ${report.executed.length}, skipped ${report.skipped.length}`);
-    for (const s of report.executed) console.log(`  built   ${s}`);
-    // D2 deviation from the brief: BuildReport now carries `errors` (label -> message)
-    // and `blocked` may hold either a failed dataset's dependents or the later stages of
-    // a dataset whose earlier stage failed. Print the message and say "(not run)" instead
-    // of guessing "upstream failed", which is wrong for the same-dataset case.
-    for (const s of report.failed) console.log(`  FAILED  ${s}: ${report.errors[s]}`);
-    for (const s of report.blocked) console.log(`  blocked ${s} (not run)`);
-    if (report.failed.length > 0 || report.blocked.length > 0) process.exitCode = 1;
+    printBuildReport(report);
   } finally {
     await pool.end();
   }
