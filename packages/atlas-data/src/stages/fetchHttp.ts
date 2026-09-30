@@ -15,6 +15,18 @@ const PROGRESS_EVERY = 64 * 1024 * 1024;
 /** Abort a download that has produced no data for this long. */
 const IDLE_MS = 60_000;
 
+/** `message (cause) (cause's cause)` — the chain undici hides behind "fetch failed". */
+function describeError(err: unknown): string {
+  const parts: string[] = [];
+  let e: unknown = err;
+  for (let depth = 0; e !== undefined && e !== null && depth < 4; depth++) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg && !parts.includes(msg)) parts.push(msg);
+    e = e instanceof Error ? e.cause : undefined;
+  }
+  return parts.length ? parts[0] + parts.slice(1).map((p) => ` (${p})`).join('') : 'unknown error';
+}
+
 async function sha256File(path: string): Promise<string> {
   const hash = createHash('sha256');
   await pipeline(createReadStream(path), hash);
@@ -122,7 +134,11 @@ export async function executeFetchHttp(
     return { summary: `sha256:${got} ${stage.url}` };
   } catch (err) {
     if (idled) throw idleError();
-    throw err;
+    if (err instanceof Error && err.message.startsWith('fetch-http:')) throw err;
+    // undici reports every network failure as a bare "fetch failed" and keeps the reason in
+    // `cause`. Task 12 met exactly that: Geofabrik's `latest` URLs 301-looping, shown as
+    // "fetch failed" with no URL.
+    throw new Error(`fetch-http: GET ${stage.url} failed: ${describeError(err)}`, { cause: err });
   } finally {
     clearTimeout(idleTimer);
     await rm(part, { force: true });

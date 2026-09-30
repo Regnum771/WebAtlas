@@ -17,7 +17,7 @@ let server: Server;
 let base: string;
 let cache: string;
 let hits: number;
-let mode: 'ok' | 'cut' | 'missing' | 'stall';
+let mode: 'ok' | 'cut' | 'missing' | 'stall' | 'loop';
 
 beforeEach(async () => {
   hits = 0;
@@ -26,6 +26,13 @@ beforeEach(async () => {
   server = createServer((req, res) => {
     hits++;
     if (mode === 'missing') { res.writeHead(404).end('no'); return; }
+    // What download.geofabrik.de answered for every *-latest* file on 2026-09-30 (Task 12): a 301 to
+    // the same path plus a slash, which 301s to itself again.
+    if (mode === 'loop') {
+      const path = req.url!.endsWith('/') ? req.url! : `${req.url}/`;
+      res.writeHead(301, { Location: path }).end();
+      return;
+    }
     res.writeHead(200, { 'Content-Length': String(BODY.length) });
     if (mode === 'stall') {
       res.write(BODY.subarray(0, 1000)); // headers + a few bytes, then silence
@@ -137,6 +144,13 @@ describe('fetch-http', () => {
   it('fails on a non-2xx response', async () => {
     mode = 'missing';
     await expect(executeFetchHttp(pool, stage(), ctx(), cache)).rejects.toThrow(/404/);
+  });
+
+  it('a network failure names the URL and the underlying cause, not just "fetch failed"', async () => {
+    mode = 'loop';
+    const err = await executeFetchHttp(pool, stage(), ctx(), cache).then(() => null, (e: unknown) => e as Error);
+    expect(err?.message).toBe(`fetch-http: GET ${base}/a.zip failed: fetch failed (redirect count exceeded)`);
+    expect(await readdir(join(cache, 'basemap'))).toEqual([]);
   });
 
   it('refuses a path that escapes the cache even if validation was bypassed', async () => {
