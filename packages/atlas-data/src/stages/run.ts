@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { Pool } from 'pg';
 import type { Stage } from '../types';
 import type { StageContext, StageResult } from './index';
@@ -16,7 +16,9 @@ type RunStage = Extract<Stage, { type: 'run' }>;
  */
 export function npmCli(env: NodeJS.ProcessEnv = process.env, execPath: string = process.execPath): string {
   const fromNpm = env.npm_execpath;
-  if (fromNpm && /npm-cli\.js$/.test(fromNpm)) return fromNpm;
+  // Only npm's own script that really exists: under yarn/pnpm npm_execpath names their CLI,
+  // and a stale value would otherwise make every host stage fail obscurely.
+  if (fromNpm && basename(fromNpm) === 'npm-cli.js' && existsSync(fromNpm)) return fromNpm;
   const dir = dirname(execPath);
   const candidates = [
     join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),

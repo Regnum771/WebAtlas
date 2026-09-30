@@ -11,9 +11,19 @@ const stage = (over: Partial<RunStage>): RunStage => ({
 const pool = {} as Pool;
 
 describe('npmCli', () => {
-  it("prefers npm_execpath when it is npm's own CLI script", () => {
-    expect(npmCli({ npm_execpath: '/x/npm/bin/npm-cli.js' }, '/usr/bin/node')).toBe('/x/npm/bin/npm-cli.js');
+  const realCli = npmCli({}, process.execPath);
+
+  it("prefers npm_execpath when it is npm's own CLI script and exists", () => {
+    expect(npmCli({ npm_execpath: realCli }, '/nowhere/node')).toBe(realCli);
   });
+
+  it.each(['/x/yarn.js', '/x/pnpm-cli.js', '/x/npm/bin/npm-cli.js'])(
+    'ignores npm_execpath=%s (not npm, or missing) and falls through to the lookup beside node',
+    (p) => {
+      expect(npmCli({ npm_execpath: p }, process.execPath)).toBe(realCli);
+      expect(() => npmCli({ npm_execpath: p }, '/nowhere/node')).toThrow(/cannot locate npm-cli\.js/);
+    }
+  );
 
   it('otherwise finds npm-cli.js beside the running node', () => {
     const found = npmCli({}, process.execPath);

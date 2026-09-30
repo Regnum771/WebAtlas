@@ -42,6 +42,16 @@ describe('runProcess', () => {
   });
 
   it('rejects when the executable cannot be started', async () => {
-    await expect(runProcess('definitely-not-a-real-binary-xyz', [], { label: 't', log: () => {} })).rejects.toThrow();
+    const run = runProcess('definitely-not-a-real-binary-xyz', ['--flag'], { label: 'rivers', log: () => {} });
+    await expect(run).rejects.toThrow(/\[rivers\] cannot start definitely-not-a-real-binary-xyz: /);
+    await expect(run).rejects.toThrow(/--flag/);
+  });
+
+  it('truncates each tail line to 500 characters with an ellipsis', async () => {
+    const out = await runProcess(node, ['-e', 'console.log("y".repeat(2000)); console.log("short")'], {
+      label: 't', log: () => {},
+    });
+    expect(out.tail[0]).toBe('y'.repeat(500) + '…');
+    expect(out.tail[1]).toBe('short');
   });
 });

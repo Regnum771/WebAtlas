@@ -33,8 +33,23 @@ export function geoserverEnv(env: NodeJS.ProcessEnv = process.env): GeoServerEnv
 
 type Method = 'GET' | 'POST' | 'PUT';
 
+/** Every REST call is bounded: a hung GeoServer must fail the stage, not the whole build. */
+const REQUEST_TIMEOUT_MS = 60_000;
+
 async function gsRequest(gs: GeoServerEnv, f: typeof fetch, method: Method, path: string, body?: unknown): Promise<Response> {
+  try {
+    return await gsFetch(gs, f, method, path, body);
+  } catch (err) {
+    if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw new Error(`GeoServer ${method} ${path} timed out after ${REQUEST_TIMEOUT_MS / 1000} s`, { cause: err });
+    }
+    throw err;
+  }
+}
+
+function gsFetch(gs: GeoServerEnv, f: typeof fetch, method: Method, path: string, body?: unknown): Promise<Response> {
   return f(`${gs.url}/rest${path}`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     method,
     headers: {
       Authorization: 'Basic ' + Buffer.from(`${gs.user}:${gs.password}`).toString('base64'),
@@ -49,6 +64,7 @@ async function gsRequest(gs: GeoServerEnv, f: typeof fetch, method: Method, path
 /** Any non-2xx fails the stage (spec §8), with the status, the path, and GeoServer's own text. */
 async function expectOk(res: Response, what: string): Promise<void> {
   if (!res.ok) throw new Error(`GeoServer ${what} failed: ${res.status} ${await res.text()}`);
+  await res.body?.cancel(); // success bodies are unused; release the connection
 }
 
 export function defaultNativeName(layer: string): string {
@@ -59,8 +75,18 @@ export function defaultNativeName(layer: string): string {
 async function exists(gs: GeoServerEnv, f: typeof fetch, path: string, what: string): Promise<Response | null> {
   const res = await gsRequest(gs, f, 'GET', path);
   if (res.status === 200) return res;
-  if (res.status === 404) return null;
+  if (res.status === 404) {
+    await res.body?.cancel(); // unused body: release the connection
+    return null;
+  }
   throw new Error(`GeoServer check ${what} failed: ${res.status} ${await res.text()}`);
+}
+
+/** Existence probe whose 200 body is not needed: cancel it. */
+async function isPresent(gs: GeoServerEnv, f: typeof fetch, path: string, what: string): Promise<boolean> {
+  const res = await exists(gs, f, path, what);
+  await res?.body?.cancel();
+  return res !== null;
 }
 
 export async function publishLayer(
@@ -72,10 +98,10 @@ export async function publishLayer(
   const store = `${ws}_water`;
   const native = spec.nativeName ?? defaultNativeName(spec.layer);
 
-  if (!(await exists(gs, f, `/workspaces/${ws}`, `workspace ${ws}`))) {
+  if (!(await isPresent(gs, f, `/workspaces/${ws}`, `workspace ${ws}`))) {
     await expectOk(await gsRequest(gs, f, 'POST', '/workspaces', { workspace: { name: ws } }), `create workspace ${ws}`);
   }
-  if (!(await exists(gs, f, `/workspaces/${ws}/datastores/${store}`, `datastore ${store}`))) {
+  if (!(await isPresent(gs, f, `/workspaces/${ws}/datastores/${store}`, `datastore ${store}`))) {
     const entry = [
       { '@key': 'dbtype', $: 'postgis' },
       { '@key': 'host', $: gs.db.host },

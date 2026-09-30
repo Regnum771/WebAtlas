@@ -1,6 +1,9 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
+/** Each stored tail line is capped at this many characters. */
+const TAIL_LINE_MAX = 500;
+
 export interface RunProcessOptions {
   /** Prefix for every line, usually the dataset id: `[label] …`. */
   label: string;
@@ -48,7 +51,8 @@ export function runProcess(file: string, args: string[], opts: RunProcessOptions
     timer = setTimeout(beat, heartbeatMs);
 
     const onLine = (line: string): void => {
-      tail.push(line);
+      // One pathological line (a progress bar, minified JSON) must not bloat the failure message.
+      tail.push(line.length > TAIL_LINE_MAX ? `${line.slice(0, TAIL_LINE_MAX)}…` : line);
       if (tail.length > tailMax) tail.shift();
       opts.log(`[${opts.label}] ${line}`);
       clearTimeout(timer);
@@ -59,7 +63,7 @@ export function runProcess(file: string, args: string[], opts: RunProcessOptions
 
     child.on('error', (err) => {
       clearTimeout(timer);
-      reject(err);
+      reject(new Error(`[${opts.label}] cannot start ${file}: ${err.message} (argv: ${JSON.stringify(args)})`, { cause: err }));
     });
     child.on('close', (code, signal) => {
       clearTimeout(timer);

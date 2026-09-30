@@ -17,7 +17,7 @@ let server: Server;
 let base: string;
 let cache: string;
 let hits: number;
-let mode: 'ok' | 'cut' | 'missing';
+let mode: 'ok' | 'cut' | 'missing' | 'stall';
 
 beforeEach(async () => {
   hits = 0;
@@ -27,6 +27,10 @@ beforeEach(async () => {
     hits++;
     if (mode === 'missing') { res.writeHead(404).end('no'); return; }
     res.writeHead(200, { 'Content-Length': String(BODY.length) });
+    if (mode === 'stall') {
+      res.write(BODY.subarray(0, 1000)); // headers + a few bytes, then silence
+      return;
+    }
     if (mode === 'cut') {
       res.write(BODY.subarray(0, 1000));
       setTimeout(() => req.socket.destroy(), 20); // die mid-body
@@ -41,6 +45,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  server.closeAllConnections();
   await new Promise<void>((r) => server.close(() => r()));
   await rm(cache, { recursive: true, force: true });
 });
@@ -58,6 +63,15 @@ describe('fetch-http', () => {
   it('an interrupted download leaves neither the target nor a .part file', async () => {
     mode = 'cut';
     await expect(executeFetchHttp(pool, stage(), ctx(), cache)).rejects.toThrow();
+    expect(existsSync(join(cache, 'basemap/a.zip'))).toBe(false);
+    expect(await readdir(join(cache, 'basemap'))).toEqual([]);
+  });
+
+  it('aborts a stalled download after the idle timeout, leaving no target and no .part', async () => {
+    mode = 'stall';
+    await expect(executeFetchHttp(pool, stage(), ctx(), cache, 200)).rejects.toThrow(
+      /fetch-http: no data from .*\/a\.zip for \d+ s — aborted/
+    );
     expect(existsSync(join(cache, 'basemap/a.zip'))).toBe(false);
     expect(await readdir(join(cache, 'basemap'))).toEqual([]);
   });

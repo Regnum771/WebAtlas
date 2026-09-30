@@ -12,6 +12,8 @@ import { DATA_CACHE } from '../paths';
 
 type FetchStage = Extract<Stage, { type: 'fetch-http' }>;
 const PROGRESS_EVERY = 64 * 1024 * 1024;
+/** Abort a download that has produced no data for this long. */
+const IDLE_MS = 60_000;
 
 async function sha256File(path: string): Promise<string> {
   const hash = createHash('sha256');
@@ -23,6 +25,8 @@ async function sha256File(path: string): Promise<string> {
  * Download `stage.url` into `<cache>/<stage.into>` (spec §8).
  * - Written to `<target>.part` and renamed on completion: an interrupted download can never be
  *   taken for a finished one, and the .part is removed on any failure.
+ * - A download that receives no data for `idleMs` is aborted (a stalled server must not hang the
+ *   build forever); the .part is removed as for any other failure.
  * - A declared sha256 is checked BEFORE the rename, so a mismatch leaves the previous file intact.
  * - An existing file is reused (no request) only when it satisfies the pin (or there is none),
  *   its `<target>.source` sidecar names exactly `stage.url`, and the dataset is not forced. The
@@ -34,7 +38,8 @@ export async function executeFetchHttp(
   _pool: Pool,
   stage: FetchStage,
   ctx: StageContext,
-  cacheDir: string = DATA_CACHE
+  cacheDir: string = DATA_CACHE,
+  idleMs: number = IDLE_MS
 ): Promise<StageResult> {
   const root = resolve(cacheDir);
   const target = resolve(root, stage.into);
@@ -57,25 +62,47 @@ export async function executeFetchHttp(
   }
 
   const part = `${target}.part`;
+  const abort = new AbortController();
+  let idled = false;
+  let idleTimer: NodeJS.Timeout | undefined;
+  const arm = (): void => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      idled = true;
+      abort.abort();
+    }, idleMs);
+  };
+  const idleError = (): Error =>
+    new Error(`fetch-http: no data from ${stage.url} for ${Math.round(idleMs / 1000)} s — aborted`);
   try {
-    const res = await fetch(stage.url);
+    arm();
+    const res = await fetch(stage.url, { signal: abort.signal });
     if (!res.ok || !res.body) throw new Error(`fetch-http: GET ${stage.url} returned ${res.status}`);
 
+    const total = Number(res.headers.get('content-length')) || 0;
     const hash = createHash('sha256');
     let bytes = 0;
     let nextReport = PROGRESS_EVERY;
     const meter = new Transform({
       transform(chunk: Buffer, _enc, cb) {
+        arm();
         hash.update(chunk);
         bytes += chunk.length;
         if (bytes >= nextReport) {
-          ctx.log(`[${ctx.datasetId}] downloaded ${Math.round(bytes / 1024 / 1024)} MB`);
+          const mb = Math.round(bytes / 1024 / 1024);
+          const pct = total ? ` (${Math.min(100, Math.round((bytes / total) * 100))}%)` : '';
+          ctx.log(`[${ctx.datasetId}] downloaded ${mb} MB${pct}`);
           nextReport += PROGRESS_EVERY;
         }
         cb(null, chunk);
       },
     });
-    await pipeline(Readable.fromWeb(res.body as unknown as WebReadableStream), meter, createWriteStream(part));
+    await pipeline(
+      Readable.fromWeb(res.body as unknown as WebReadableStream),
+      meter,
+      createWriteStream(part),
+      { signal: abort.signal }
+    );
 
     const got = hash.digest('hex');
     if (stage.sha256 && got !== stage.sha256) {
@@ -84,7 +111,11 @@ export async function executeFetchHttp(
     await rename(part, target);
     await writeFile(sidecar, stage.url, 'utf8');
     return { summary: `sha256:${got} ${stage.url}` };
+  } catch (err) {
+    if (idled) throw idleError();
+    throw err;
   } finally {
+    clearTimeout(idleTimer);
     await rm(part, { force: true });
   }
 }
