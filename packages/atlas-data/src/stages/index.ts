@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type { Stage } from '../types';
 import { executeSql } from './sql';
+import { executeRun } from './run';
 
 /** What a stage needs to know besides its own configuration. */
 export interface StageContext {
@@ -29,6 +30,7 @@ type Executor<T extends Stage['type']> = (
  */
 const EXECUTORS: { [K in Stage['type']]?: Executor<K> } = {
   sql: executeSql,
+  run: executeRun,
 };
 
 export function hasExecutor(type: Stage['type']): boolean {
