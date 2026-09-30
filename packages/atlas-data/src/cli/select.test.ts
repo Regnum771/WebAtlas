@@ -22,11 +22,11 @@ describe('selectDatasets (I2)', () => {
     expect(excluded).toEqual([]);
   });
 
-  it('--except reports the named root AND its dependent, both reasoned "--except"', () => {
+  it('--except reports the named root AND its dependent, root reasoned "--except", dependent "depends on dem"', () => {
     const { selected, excluded } = selectDatasets(graph, { only: [], except: ['dem'] });
     expect(selected.map((d) => d.id).sort()).toEqual(['rivers', 'rivers_overview']);
     expect(excluded.sort((a, b) => a.id.localeCompare(b.id))).toEqual([
-      { id: 'contours', reason: '--except' },
+      { id: 'contours', reason: 'depends on dem' },
       { id: 'dem', reason: '--except' },
     ]);
   });
