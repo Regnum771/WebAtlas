@@ -147,13 +147,13 @@ describe('GET /api/search with sources', () => {
     // feature exists to serve, and the web always requests ref:roads. Picked
     // dynamically, not hardcoded, so this survives a basemap reload.
     await buildReferenceLayer(getPool(), 'roads');
-    const { rows } = await getPool().query<{ ref: string }>(
-      `SELECT ref FROM basemap.reference_entities
+    const { rows } = await getPool().query<{ ref: string; entityId: string }>(
+      `SELECT ref, entity_id AS "entityId" FROM basemap.reference_entities
         WHERE layer_key = 'roads' AND name IS NULL AND ref IS NOT NULL
         LIMIT 1`
     );
     expect(rows.length).toBeGreaterThan(0);
-    const ref = rows[0].ref;
+    const { ref, entityId } = rows[0];
 
     const res = await app.inject({
       method: 'GET',
@@ -161,7 +161,10 @@ describe('GET /api/search with sources', () => {
     });
     expect(res.statusCode).toBe(200);
     const results = res.json().results as Array<{ name: string; layerKey: string }>;
-    const hit = results.find((h) => h.layerKey === 'roads');
+    // By id, not the first roads hit: a NAMED road can carry the same ref ("3 Tháng 2"
+    // is also QL29), match it equally well and sort first by name.
+    const hit = (results as Array<{ name: string; layerKey: string; featureId: string }>)
+      .find((h) => h.featureId === entityId);
     expect(hit).toBeDefined();
     // The whole point: coalesce(name, ref) means a ref-only entity is still
     // searchable and never surfaces a null name to the client.
