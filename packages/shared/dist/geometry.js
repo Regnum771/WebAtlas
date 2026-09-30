@@ -9,7 +9,12 @@ function isLine(v) {
     return Array.isArray(v) && v.length >= 2 && v.every(isPosition);
 }
 function isRing(v) {
-    return Array.isArray(v) && v.length >= 4 && v.every(isPosition);
+    if (!Array.isArray(v) || v.length < 4 || !v.every(isPosition))
+        return false;
+    // GeoJSON rings are closed; PostGIS raises (a 500) on an unclosed one.
+    const first = v[0];
+    const last = v[v.length - 1];
+    return first.length === last.length && first.every((n, i) => n === last[i]);
 }
 function isPolygonCoords(v) {
     return Array.isArray(v) && v.length >= 1 && v.every(isRing);

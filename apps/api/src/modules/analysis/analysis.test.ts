@@ -376,7 +376,7 @@ describe('analysis with a reference-entity ROI', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it('produces a real elevation profile for a line-kind reference entity (finding 3 fix: reference on elevation_profile used to 500)', async () => {
+  it('produces a real elevation profile for a line-kind reference entity (a reference on elevation_profile once 500ed)', async () => {
     // Selected dynamically by point count, not reused from roadEntityId above
     // (which was picked for the buffer-guard tests): only needs to resolve, after
     // clipping to the working region, to something safely under MAX_INPUT_VERTICES
@@ -579,5 +579,14 @@ describe('analysis with a reference-entity ROI', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('400s a malformed drawn shape on an operation instead of 500 (self-crossing, unclosed ring)', async () => {
+    const bowtie = { type: 'Polygon', coordinates: [[[109.0, 12.0], [109.6, 12.5], [109.6, 12.0], [109.0, 12.5], [109.0, 12.0]]] };
+    const unclosed = { type: 'Polygon', coordinates: [[[108.0, 12.0], [108.1, 12.0], [108.1, 12.1], [108.0, 12.1]]] };
+    const a = await post('select_within', { roi: { source: 'drawn', geometry: bowtie }, layerKeys: ['dams'] });
+    expect(a.statusCode).toBe(400);
+    expect(a.json().error.message).toBe('Vùng tự cắt nhau — hãy vẽ lại');
+    expect((await post('select_within', { roi: { source: 'drawn', geometry: unclosed }, layerKeys: ['dams'] })).statusCode).toBe(400);
   });
 });

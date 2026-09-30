@@ -38,8 +38,8 @@ interface Source {
   facts: RoiFacts;
   /**
    * False for admin units: they are selected by code from the six working provinces,
-   * so they are inside the region by construction, and Khánh Hoà alone (5,195 vertices,
-   * 164 parts) would trip the resulting-vertex cap. No operation feeds an admin unit's
+   * so they are inside the region by construction, and Khánh Hoà alone (5,195 vertices
+   * stored, 5,031 as resolved, in 164 parts) would trip the resulting-vertex cap. No operation feeds an admin unit's
    * full geometry to an expensive geometric step: Chọn trong vùng counts it by stamped
    * codes, elevation statistics refuses every province on area, the largest ward is
    * 2,253 vertices, and Gần nhất uses the centroid.
@@ -109,10 +109,30 @@ async function adminSource(db: Queryable, level: AdminLevel, code: string): Prom
   return { geojson: u.geojson, label: u.name, facts: { admin: { level, code } }, bounded: false };
 }
 
+/**
+ * A drawn shape comes from the browser, so PostGIS is asked whether it is valid before any
+ * overlay runs: a self-intersecting polygon crossing the region edge otherwise raises a
+ * GEOS TopologyException, which surfaces as a 500 on a public endpoint.
+ */
+async function drawnSource(db: Queryable, geometry: GeoJsonGeometry): Promise<Source> {
+  const geojson = JSON.stringify(geometry);
+  const { rows: [v] } = await db.query<{ ok: boolean }>(
+    `SELECT ST_IsValid(ST_GeomFromGeoJSON($1)) AS ok`, [geojson]
+  );
+  if (!v.ok) {
+    throw new ValidationError(
+      geometry.type === 'Polygon' || geometry.type === 'MultiPolygon'
+        ? 'Vùng tự cắt nhau — hãy vẽ lại'
+        : 'Hình vẽ không hợp lệ — hãy vẽ lại'
+    );
+  }
+  return { geojson, label: 'Hình vẽ', facts: {}, bounded: true };
+}
+
 function sourceOf(db: Queryable, roi: Roi): Promise<Source> {
   switch (roi.source) {
     case 'drawn':
-      return Promise.resolve({ geojson: JSON.stringify(roi.geometry), label: 'Hình vẽ', facts: {}, bounded: true });
+      return drawnSource(db, roi.geometry);
     case 'feature':
       return roi.whole ? wholeRiverSource(db, roi.featureId) : featureSource(db, roi.layerKey, roi.featureId);
     case 'reference':
@@ -138,6 +158,9 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000;
  * Turn an ROI into geometry (spec §10). The ONLY place this happens: every analysis
  * operation calls it first, and POST /api/roi/resolve exposes it to the browser, so the
  * chip never shows an ROI a tool would then refuse (NFR-2).
+ *
+ * The source-vertex and part limits apply when a radius is given (they guard ST_Buffer);
+ * without one the source is only bound by the resulting-vertex ceiling.
  *
  * Order of the checks matters, and matches the old area.ts: the source-complexity guard
  * runs INSIDE the SQL (a CASE that never evaluates ST_Buffer for an oversized source —

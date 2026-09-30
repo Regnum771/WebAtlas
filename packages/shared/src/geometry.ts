@@ -26,7 +26,10 @@ function isLine(v: unknown): v is number[][] {
 }
 
 function isRing(v: unknown): v is number[][] {
-  return Array.isArray(v) && v.length >= 4 && v.every(isPosition);
+  if (!Array.isArray(v) || v.length < 4 || !v.every(isPosition)) return false;
+  // GeoJSON rings are closed; PostGIS raises (a 500) on an unclosed one.
+  const first = v[0] as number[]; const last = v[v.length - 1] as number[];
+  return first.length === last.length && first.every((n, i) => n === last[i]);
 }
 
 function isPolygonCoords(v: unknown): v is number[][][] {

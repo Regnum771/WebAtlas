@@ -11,6 +11,11 @@ describe('isGeoJsonGeometry', () => {
     expect(isGeoJsonGeometry({ type: 'MultiPolygon', coordinates: [[[[108, 12], [108.1, 12], [108.1, 12.1], [108, 12]]]] })).toBe(true);
   });
 
+  it('rejects an unclosed polygon ring', () => {
+    expect(isGeoJsonGeometry({ type: 'Polygon', coordinates: [[[108, 12], [108.1, 12], [108.1, 12.1], [108, 12.1]]] })).toBe(false);
+    expect(isGeoJsonGeometry({ type: 'MultiPolygon', coordinates: [[[[108, 12], [108.1, 12], [108.1, 12.1], [108, 12.1]]]] })).toBe(false);
+  });
+
   it('rejects wrong nesting, non-finite and out-of-range coordinates', () => {
     expect(isGeoJsonGeometry({ type: 'Point', coordinates: [[108, 12]] })).toBe(false);
     expect(isGeoJsonGeometry({ type: 'LineString', coordinates: [[108, 12]] })).toBe(false);

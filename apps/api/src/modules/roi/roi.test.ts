@@ -49,4 +49,13 @@ describe('POST /api/roi/resolve', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error.message).toMatch(/diện tích/);
   });
+
+  it('400s a self-intersecting polygon crossing the region edge, and an unclosed ring (was 500)', async () => {
+    const bowtie = { type: 'Polygon', coordinates: [[[109.0, 12.0], [109.6, 12.5], [109.6, 12.0], [109.0, 12.5], [109.0, 12.0]]] };
+    const unclosed = { type: 'Polygon', coordinates: [[[108.0, 12.0], [108.1, 12.0], [108.1, 12.1], [108.0, 12.1]]] };
+    const a = await post({ roi: { source: 'drawn', geometry: bowtie } });
+    expect(a.statusCode).toBe(400);
+    expect(a.json().error.message).toBe('Vùng tự cắt nhau — hãy vẽ lại');
+    expect((await post({ roi: { source: 'drawn', geometry: unclosed } })).statusCode).toBe(400);
+  });
 });

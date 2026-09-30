@@ -154,7 +154,7 @@ describe('resolveRoi — admin', () => {
     expect(r.facts.admin).toEqual({ level: 'province', code: '66' });
   });
 
-  it('resolves Khánh Hoà, whose 5,195 vertices are over the resulting-vertex cap', async () => {
+  it('resolves Khánh Hoà, whose 5,195 stored / 5,031 resolved vertices are over the resulting-vertex cap', async () => {
     const r = await resolve({ source: 'admin', level: 'province', code: '56' });
     expect(r.resolved.kind).toBe('area');
   });
