@@ -67,7 +67,7 @@ export function useMeasure(): UseMeasureResult {
         const geom = e.feature.getGeometry();
         if (!geom) return;
         const problem = validateShape(geom);
-        if (problem) { setValue(problem); return; }
+        if (problem) { setValue(problem); setTimeout(() => source.clear()); return; }
 
         if (geom instanceof LineString) {
           const length = getLength(geom);
@@ -83,7 +83,8 @@ export function useMeasure(): UseMeasureResult {
       map.addInteraction(draw);
       detachAids = attachDrawAids(map, draw, {
         onHint: () => {},
-        onMeasure: (m) => setValue(m ? `Đang đo: ${m}` : null),
+        // Live value only: the end-of-draw null must not wipe the final reading.
+        onMeasure: (m) => { if (m) setValue(`Đang đo: ${m}`); },
         onCancel: () => { setMode('none'); setValue(null); },
       });
     }

@@ -50,6 +50,15 @@ export function closeTolerancePx(coarsePointer: boolean): number {
   return coarsePointer ? 20 : 12;
 }
 
+/** Typing fields and focused controls keep their own keys (Enter presses a button). */
+export function keyBelongsToTarget(t: EventTarget | null, key: string): boolean {
+  const el = t as HTMLElement | null;
+  if (!el || !el.tagName) return false;
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return true;
+  // Esc still cancels while a draw tool button holds focus (the user just clicked it).
+  return key !== 'Escape' && (el.tagName === 'BUTTON' || el.tagName === 'SELECT' || el.tagName === 'A');
+}
+
 export type DrawKeyAction = 'undo' | 'finish' | 'cancel' | null;
 type DrawLike = Pick<Draw, 'removeLastPoint' | 'finishDrawing' | 'abortDrawing'>;
 
@@ -60,7 +69,11 @@ export function handleDrawKey(key: string, draw: DrawLike, vertexCount: number):
     draw.abortDrawing();
     return 'cancel';
   }
-  if (key === 'Enter') { draw.finishDrawing(); return 'finish'; }
+  if (key === 'Enter') {
+    if (vertexCount < 1) return null; // nothing to finish
+    draw.finishDrawing();
+    return 'finish';
+  }
   if (key === 'Escape') { draw.abortDrawing(); return 'cancel'; }
   return null;
 }
@@ -150,11 +163,11 @@ export function attachDrawAids(map: Map, draw: Draw, cb: DrawAidsCallbacks): () 
   map.on('pointermove', onPointerMove);
 
   const onKeyDown = (e: KeyboardEvent) => {
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (keyBelongsToTarget(e.target, e.key)) return;
     if (e.key === 'Alt') { setSnapping(false); return; }
-    if (handleDrawKey(e.key, draw, vertexCount) === 'cancel') cb.onCancel();
-    if (e.key === 'Backspace') e.preventDefault(); // not "browser back"
+    const action = handleDrawKey(e.key, draw, vertexCount);
+    if (action === 'cancel') cb.onCancel();
+    if (action && e.key === 'Backspace') e.preventDefault(); // not "browser back"
   };
   const onKeyUp = (e: KeyboardEvent) => { if (e.key === 'Alt') setSnapping(true); };
   document.addEventListener('keydown', onKeyDown);
