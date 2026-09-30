@@ -9,6 +9,10 @@ we are not just swapping in Esri World_Street_Map.
 Scale denominators (EPSG:3857, 96 DPI, approx):
     z6 ~ 1:4,300,000   z8 ~ 1:1,100,000   z10 ~ 1:270,000
     z12 ~ 1:68,000     z14 ~ 1:17,000
+
+Usage: GEOSERVER_ADMIN_PASSWORD=... python styles.py   (write .sld and upload; exits non-zero on non-2xx)
+       python styles.py --write-only                   (regenerate the .sld files only, no upload)
+Env: GEOSERVER_URL, GEOSERVER_ADMIN_USER (default admin), GEOSERVER_ADMIN_PASSWORD (required to upload)
 """
 import os
 import pathlib
@@ -18,6 +22,8 @@ import sys
 
 GS = os.environ.get("GEOSERVER_URL", "http://localhost:8080/geoserver") + "/rest"
 WS = os.environ.get("GEOSERVER_WORKSPACE", "webatlas")
+USER = os.environ.get("GEOSERVER_ADMIN_USER", "admin")
+SLD_DIR = pathlib.Path(__file__).resolve().parent
 
 # --- palette ------------------------------------------------------------
 # READ from packages/shared/src/layer-palette.ts — the SAME values the legend
@@ -256,10 +262,9 @@ STYLES["basemap_places_region"] = HEAD.format(name="basemap_places_region", rule
 
 
 def upload(name, xml, pw):
-    auth = f"admin:{pw}"
-    path = f"{name}.sld"
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(xml)
+    auth = f"{USER}:{pw}"
+    path = SLD_DIR / f"{name}.sld"
+    path.write_text(xml, encoding="utf-8")
     # create (ignore 500/409 if exists), then PUT the body
     subprocess.run(["curl", "-s", "-o", os.devnull, "-u", auth, "-XPOST",
                     "-H", "Content-Type: application/json", f"{GS}/workspaces/{WS}/styles",
@@ -272,7 +277,7 @@ def upload(name, xml, pw):
 
 
 def assign(layer, style, pw):
-    r = subprocess.run(["curl", "-s", "-o", os.devnull, "-w", "%{http_code}", "-u", f"admin:{pw}",
+    r = subprocess.run(["curl", "-s", "-o", os.devnull, "-w", "%{http_code}", "-u", f"{USER}:{pw}",
                         "-XPUT", "-H", "Content-Type: application/json",
                         f"{GS}/layers/{WS}:{layer}",
                         "-d", f'{{"layer":{{"defaultStyle":{{"name":"{WS}:{style}"}}}}}}'],
@@ -291,9 +296,26 @@ PAIRS = [
 ]
 
 if __name__ == "__main__":
-    pw = sys.argv[1]
+    if len(sys.argv) > 1 and sys.argv[1] == "--write-only":
+        for name, xml in STYLES.items():
+            (SLD_DIR / f"{name}.sld").write_text(xml, encoding="utf-8")
+        sys.exit(0)
+    # From the environment, never argv: a registry `run` stage's argv is written to lineage
+    # (append-only) and shows in process listings.
+    pw = os.environ.get("GEOSERVER_ADMIN_PASSWORD")
+    if not pw:
+        raise SystemExit("GEOSERVER_ADMIN_PASSWORD is not set (the password is read from the environment)")
+    failed = []
     for name, xml in STYLES.items():
-        print(f"style {name:<24} upload {upload(name, xml, pw)}")
+        code = upload(name, xml, pw)
+        print(f"style {name:<24} upload {code}")
+        if not code.startswith("2"):
+            failed.append(f"style {name}: {code}")
     print()
     for layer, style in PAIRS:
-        print(f"assign {layer:<18} -> {style:<24} {assign(layer, style, pw)}")
+        code = assign(layer, style, pw)
+        print(f"assign {layer:<18} -> {style:<24} {code}")
+        if not code.startswith("2"):
+            failed.append(f"assign {layer}: {code}")
+    if failed:
+        raise SystemExit("GeoServer rejected: " + "; ".join(failed))

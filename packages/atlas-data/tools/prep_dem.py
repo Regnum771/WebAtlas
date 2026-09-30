@@ -84,7 +84,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 REGION_PROVINCE_CODES = {"48", "51", "52", "56", "66", "68"}
 
 PROVINCES = ROOT / "apps/web/public/provinces-34.geojson"
-DEFAULT_OUT = ROOT / "apps/api/src/db/seeds/data/dem"
+DEFAULT_OUT = ROOT / "packages/atlas-data/data/cache/dem"
 
 VERSION = "V1-2"
 # Per-tile COGs. Path shape: .../resolve/tiles/<10deg block>/<1deg tile>.tif
@@ -314,7 +314,7 @@ def main() -> None:
     total = sum(p.stat().st_size for p in clipped.glob("*.tif"))
     print(f"\n{len(kept)} clipped tiles in {clipped} ({total / 1e6:.0f} MB)")
     print("Raw tiles kept in ./raw for re-clipping; delete them once satisfied.")
-    print("Next: packages/atlas-data/tools/load-dem.sh")
+    print("Next: bash packages/atlas-data/tools/load-dem.sh packages/atlas-data/data/cache/dem/clipped (inside the atlas-tools container)")
 
 
 if __name__ == "__main__":

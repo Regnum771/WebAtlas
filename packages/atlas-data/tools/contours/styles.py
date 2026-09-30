@@ -20,12 +20,13 @@ without needing Python or a live GeoServer in the test run.
 Changing anything here does NOT invalidate cached tiles. Truncate GWC for the contour layers
 afterwards or you will keep looking at the old render.
 
-Usage: python styles.py <geoserver-admin-password>
+Usage: GEOSERVER_ADMIN_PASSWORD=... python styles.py   (write .sld and upload)\n"
        python styles.py --write-only        (regenerate the .sld artifacts only, no upload)
        python styles.py --print-intervals   (no password needed; used by publish-contours.sh)
 Env:
   GEOSERVER_URL         default http://localhost:8080/geoserver
   GEOSERVER_ADMIN_USER  default admin
+  GEOSERVER_ADMIN_PASSWORD  required to upload (environment only, never argv)\n"
 """
 import os
 import pathlib
@@ -213,16 +214,15 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--write-only":
         sys.exit(0)
 
-    # Say what is missing rather than dying on IndexError. The runbook shipped this command
-    # without its password argument once already (e06e805); the next person to do it should
-    # be told, not handed a traceback.
-    if len(sys.argv) < 2:
+    # Say what is missing rather than dying on a traceback. The password comes from the
+    # environment: a registry `run` stage's argv is written to lineage and shows in process listings.
+    password = os.environ.get("GEOSERVER_ADMIN_PASSWORD")
+    if not password:
         raise SystemExit(
-            "usage: python styles.py <geoserver-admin-password>\n"
-            "       python styles.py --write-only        (regenerate .sld only, no upload)\n"
+            "GEOSERVER_ADMIN_PASSWORD is not set (read from the environment, never argv)\n"
+            "usage: python styles.py                    (write .sld and upload)\n"
+            "       python styles.py --write-only       (regenerate .sld only, no upload)\n"
             "       python styles.py --print-intervals"
         )
-
-    password = sys.argv[1]
     upload("contours_plain", PLAIN, password)
     upload("contours_labelled", LABELLED, password)

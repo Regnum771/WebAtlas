@@ -25,7 +25,9 @@ from sqlalchemy import create_engine, text
 # Repo root is four levels up: packages/atlas-data/tools/basemap/load_basemap.py
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 
-ZIP = os.environ.get("BASEMAP_ZIP", "vietnam-free.shp.zip")
+# The registry passes the downloaded extract as argv[1] (a path, never a secret); BASEMAP_ZIP stays
+# for running the script by hand.
+ZIP = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("BASEMAP_ZIP", "vietnam-free.shp.zip")
 DB = os.environ.get(
     "BASEMAP_DB_URL",
     "postgresql+psycopg2://webatlas:change_me_dev@localhost:5432/webatlas",

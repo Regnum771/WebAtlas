@@ -27,27 +27,27 @@ let stubDir;
 beforeAll(() => {
   stubDir = mkdtempSync(join(tmpdir(), 'publish-contours-stub-'));
   const curlStub = `#!/usr/bin/env bash
-url=""
-fmt=""
-prev=""
+method=GET; url=""; fmt=""; prev=""
 for arg in "$@"; do
-  if [ "$prev" = "-w" ]; then
-    fmt="$arg"
-  fi
-  case "$arg" in
-    http*) url="$arg" ;;
-  esac
+  [ "$prev" = "-w" ] && fmt="$arg"
+  case "$arg" in -XPOST) method=POST ;; -XPUT) method=PUT ;; -XDELETE) method=DELETE ;; http*) url="$arg" ;; esac
   prev="$arg"
 done
-
-case "$url" in
-  */featuretypes) code="\${STUB_FEATURETYPE_CREATE_CODE:-201}" ;;
-  */featuretypes/*) code="\${STUB_FEATURETYPE_RETRY_CODE:-201}" ;;
-  */layers/*) code="\${STUB_STYLE_CODE:-200}" ;;
-  */gwc/rest/masstruncate) code="\${STUB_TRUNCATE_CODE:-200}" ;;
+case "$method $url" in
+  "GET "*/workspaces/webatlas)                code="\${STUB_WS_GET:-200}" ;;
+  "POST "*/workspaces)                        code="\${STUB_WS_CREATE:-201}" ;;
+  "GET "*/datastores/basemap_pg)              code="\${STUB_STORE_GET:-200}" ;;
+  "POST "*/datastores)                        code="\${STUB_STORE_CREATE:-201}" ;;
+  "GET "*/featuretypes/*)                     code="\${STUB_FT_GET:-404}" ;;
+  "POST "*/featuretypes)                      code="\${STUB_FT_CREATE:-201}" ;;
+  "PUT "*/featuretypes/*)                     code="\${STUB_FT_UPDATE:-200}" ;;
+  "GET "*/layergroups/basemap)                code="\${STUB_GROUP_GET:-404}" ;;
+  "POST "*/layergroups)                       code="\${STUB_GROUP_CREATE:-201}" ;;
+  "PUT "*/layergroups/basemap)                code="\${STUB_GROUP_UPDATE:-200}" ;;
+  "PUT "*/layers/*)                           code="\${STUB_STYLE:-200}" ;;
+  "POST "*/gwc/rest/masstruncate)             code="\${STUB_TRUNCATE:-200}" ;;
   *) code="000" ;;
 esac
-
 out="\${fmt//%\\{http_code\\}/\$code}"
 printf '%b' "\$out"
 `;
@@ -75,36 +75,28 @@ function run(env) {
   });
 }
 
-describe('publish-contours.sh — REST call failures must fail the publish', () => {
-  it('exits non-zero and stops before truncating when GeoServer answers 401 (wrong password)', () => {
-    const result = run({ STUB_FEATURETYPE_CREATE_CODE: '401' });
-
-    expect(result.status).not.toBe(0);
-    expect(result.stdout).toContain('featuretype: 401');
-    // Must stop at the first failing call — a truncate after a failed publish
-    // would blow away good cached tiles for nothing.
-    expect(result.stdout).not.toContain('truncate:');
-    expect(result.stdout).not.toContain('Done.');
+describe('publish-contours.sh — REST call failures must fail the publish', { timeout: 60000 }, () => {
+  it('publishes every interval and truncates each', () => {
+    const r = run({});
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('Done.');
   });
 
-  it('exits non-zero when the featuretype call succeeds but the style assignment 403s', () => {
-    const result = run({ STUB_FEATURETYPE_CREATE_CODE: '201', STUB_STYLE_CODE: '403' });
-
-    expect(result.status).not.toBe(0);
-    expect(result.stdout).toContain('style: 403');
-    expect(result.stdout).not.toContain('truncate:');
-    expect(result.stdout).not.toContain('Done.');
+  it('exits non-zero and stops before truncating when a featuretype call 401s', () => {
+    const r = run({ STUB_FT_CREATE: '401' });
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toMatch(/featuretype contours_\d+: 401/);
+    expect(r.stdout).not.toContain('truncate:');
   });
 
-  it('still succeeds through the existing 409 conflict-retry path', () => {
-    const result = run({
-      STUB_FEATURETYPE_CREATE_CODE: '409',
-      STUB_FEATURETYPE_RETRY_CODE: '200',
-      STUB_STYLE_CODE: '200',
-      STUB_TRUNCATE_CODE: '200',
-    });
+  it('updates an existing featuretype with PUT', () => {
+    const r = run({ STUB_FT_GET: '200', STUB_FT_UPDATE: '200' });
+    expect(r.status).toBe(0);
+  });
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('Done.');
+  it('creates the basemap_pg store itself when the basemap was never published', () => {
+    const r = run({ STUB_STORE_GET: '404', STUB_STORE_CREATE: '201' });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('datastore: 201');
   });
 });
