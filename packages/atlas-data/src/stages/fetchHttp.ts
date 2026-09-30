@@ -41,11 +41,13 @@ async function sha256File(path: string): Promise<string> {
  *   build forever); the .part is removed as for any other failure.
  * - A declared sha256 is checked BEFORE the rename, so a mismatch leaves the previous file intact.
  * - An existing file is reused (no request) only when it satisfies the pin (or there is none),
- *   its `<target>.source` sidecar names exactly `stage.url`, and the dataset is not forced. The
- *   sidecar guarantees the recorded `<hash> <url>` pair is one that was really fetched: a changed
- *   URL with the same `into` downloads again rather than pairing the new URL with an old file's
- *   hash. An unpinned source is refreshed only with --force; a pinned one (the basemap, spec C-10)
- *   by changing its url and sha256 in the descriptor.
+ *   its `<target>.source` sidecar names exactly `stage.url`, and — for an UNPINNED source — the
+ *   dataset is not forced. A file matching its declared sha256 is reused even when forced: it
+ *   cannot be stale, so forcing re-runs only the later stages. The sidecar guarantees the recorded
+ *   `<hash> <url>` pair is one that was really fetched: a changed URL with the same `into`
+ *   downloads again rather than pairing the new URL with an old file's hash. An unpinned source
+ *   is refreshed with --force; a pinned one (the basemap, spec C-10) by changing its url and
+ *   sha256 in the descriptor.
  */
 export async function executeFetchHttp(
   _pool: Pool,
@@ -60,14 +62,21 @@ export async function executeFetchHttp(
   await mkdir(dirname(target), { recursive: true });
 
   const sidecar = `${target}.source`;
-  if (!ctx.forced && existsSync(target)) {
+  // Forcing re-downloads only an unpinned source. A file that matches its declared sha256 cannot
+  // be stale, so a forced dataset reuses it and only its later stages re-run (Task 12: forcing
+  // the pinned basemap re-downloaded 720 MB that was already in the cache).
+  if (existsSync(target) && !(ctx.forced && !stage.sha256)) {
     const source = existsSync(sidecar) ? (await readFile(sidecar, 'utf8')).trim() : null;
     if (source !== stage.url) {
       ctx.log(`[${ctx.datasetId}] ${stage.into} was not fetched from this URL; downloading again`);
     } else {
       const have = await sha256File(target);
       if (!stage.sha256 || have === stage.sha256) {
-        ctx.log(`[${ctx.datasetId}] ${stage.into} already present (sha256 ${have.slice(0, 12)})`);
+        ctx.log(
+          ctx.forced
+            ? `[${ctx.datasetId}] ${stage.into} matches its pin; reused although forced`
+            : `[${ctx.datasetId}] ${stage.into} already present (sha256 ${have.slice(0, 12)})`
+        );
         return { summary: `sha256:${have} ${stage.url} (reused)` };
       }
       ctx.log(`[${ctx.datasetId}] ${stage.into} does not match its pin; downloading again`);

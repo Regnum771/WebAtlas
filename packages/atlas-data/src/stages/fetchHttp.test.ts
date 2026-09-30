@@ -96,13 +96,24 @@ describe('fetch-http', () => {
     expect(await readFile(join(cache, 'basemap/a.zip'), 'utf8')).toBe('previous');
   });
 
-  it('an existing file is reused without a request, unless forced', async () => {
+  it('an existing unpinned file is reused without a request, unless forced', async () => {
     await executeFetchHttp(pool, stage(), ctx(), cache);
     expect(hits).toBe(1);
     await executeFetchHttp(pool, stage(), ctx(), cache);
     expect(hits).toBe(1);
     await executeFetchHttp(pool, stage(), ctx(true), cache);
     expect(hits).toBe(2);
+  });
+
+  it('an existing file that matches its pin is reused even when forced: it cannot be stale', async () => {
+    const pinned = stage({ sha256: SHA });
+    await executeFetchHttp(pool, pinned, ctx(), cache);
+    expect(hits).toBe(1);
+    const logged: string[] = [];
+    const r = await executeFetchHttp(pool, pinned, { datasetId: 'basemap', forced: true, log: (l: string) => logged.push(l) }, cache);
+    expect(hits).toBe(1);
+    expect(r.summary).toBe(`sha256:${SHA} ${base}/a.zip (reused)`);
+    expect(logged).toEqual(['[basemap] basemap/a.zip matches its pin; reused although forced']);
   });
 
   it('records the source URL in a sidecar after a successful download', async () => {
