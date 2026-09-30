@@ -50,18 +50,19 @@ export async function queryNearest(
   );
   if (fastRows.length >= q.limit) return fastRows;
 
-  // The over-fetch came back short. That's a legitimate answer if the
-  // layer genuinely has fewer than `limit` active features — but if it
-  // has enough, the candidate step must have missed some (starved by
-  // many edit-versions spreading the same external_ids across more
-  // physical rows than the over-fetch pulled). Rather than silently
-  // return a short answer, fall back to the exact query.
+  // The over-fetch came back short. That's a legitimate answer only if it
+  // already holds every active feature of a layer smaller than `limit`.
+  // Otherwise the candidate step missed some (starved by many edit-versions
+  // spreading the same external_ids across more physical rows than the
+  // over-fetch pulled) — even in a small layer, one feature's versions can
+  // fill the whole over-fetch. Rather than silently return a short answer,
+  // fall back to the exact query.
   const view = layerView(q.layerKey);
   const { rows: countRows } = await db.query<{ n: string }>(
     `SELECT count(*)::text AS n FROM ${view} WHERE ${entity} AND ($1::uuid IS NULL OR id <> $1::uuid)`,
     [q.excludeId ?? null]
   );
-  if (Number(countRows[0].n) < q.limit) return fastRows;
+  if (fastRows.length >= Number(countRows[0].n)) return fastRows;
   const { rows: exactRows } = await db.query<NearestRow>(
     `SELECT id::text AS "featureId", name, ${POINT_SQL},
             round((${distanceExpr} / 1000)::numeric, 2)::float8 AS "distanceKm"
