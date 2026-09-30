@@ -4764,3 +4764,142 @@ Expected: every command exits 0; `grep -rn "inputGeometry\|areaGeometry\|referen
 - "Sông Thu Bồn + 5 km → đập trong vùng → trạm gần đập lớn nhất" works end to end in the browser.
 - Counting dams in Đắk Lắk gives the same number in the toolbar and from the assistant.
 - The ruler measures without touching the ROI.
+
+---
+
+## Execution Notes (2026-09-30)
+
+Recorded here because Task 14 Step 3 asks for them. Summarised from the progress ledger and the per-task reports
+(`.superpowers/sdd/progress.md`, `task-N-report.md`). Where a report gives no result, these notes say so.
+
+### Deviations
+
+- **Task 2 (`e1f47b3..93178b6`).** GEOS 3.9.0's `ST_Intersection` returns EMPTY for an exactly horizontal or vertical
+  line lying wholly inside the region. The clip therefore keeps a shape that is already `ST_CoveredBy` the region as it
+  is, and intersects only otherwise (`93178b6`). A boundary-crossing horizontal line was measured correct, and a
+  vertical-line test was added. The resolved Khánh Hoà geometry has **5,031** vertices after `ST_AsGeoJSON(…, 7)`, not
+  the stored 5,195 that Step 5's expected message names. The comment and the test title still say 5,195.
+- **Task 4 (`ddfd312..38f8c2f`).** `riverEntities.test.ts` was not in the task's file list. It called `selectWithinOp`
+  with the old `{ geometry }` body, and was moved to `{ roi }` with the same assertions.
+- **Task 5 (`38f8c2f..73f7b07`).** Step 5's mutation could not fail as written, because the `'Cách đếm'` row was set
+  from `facts.admin` whichever path was taken. Fixed in `73f7b07` by tying the row to `inArea.method`.
+- **Task 6 (`73f7b07..fe0676e`).** The planned "Hà Nội → no admin hits" test was wrong: Xã Hà Nha is in the region and
+  matches. It was replaced by region-membership and non-empty assertions, plus a partial-name test. The trigram `%`
+  operator was kept, and an implementer's `similarity > 0.5` was reverted.
+- **Task 8 (`58b83cd..3ce51e6`).** The store was made safe when a drawing and a resolve overlap. `setRoi` always enters
+  `resolving`, so a drawn shape ends its drawing. Only a drawing started after the pick survives it, and `stopDrawing`
+  does nothing unless a drawing is in progress.
+- **Task 9 (`3ce51e6..b1c712c`).** The chip test's regex `/nhấp đúp để kết thúc/` contradicted the planned hint "nhấp
+  đúp hoặc Enter để kết thúc". The coordinator kept the hint and changed the regex. Review fix `b1c712c`: the chip
+  re-drew and re-fitted the ROI on every layer toggle. The executor now lives in a ref, and the effect depends on
+  `[resolved, map]`.
+- **Task 11 (`aae6ef1..03ebf50`).** `RoiChip` also needed `useDrawFeedback()`. Review fix `03ebf50`: the click that
+  finishes a drawing opened the popup, because OpenLayers fires `singleclick` about 250 ms late. `drawingJustEnded()`
+  now gives a 300 ms grace period.
+- **Task 12 (`03ebf50..3cd6e56`).**
+  - `MapBrowserEvent<PointerEvent>` became `MapBrowserEvent` (tsc TS2769).
+  - Esc is owned by `attachDrawAids` alone; the document listener in `RoiDrawButtons` was removed.
+  - `keyBelongsToTarget` skips inputs, buttons, selects and links for every key except Esc. Esc must still cancel while
+    the draw button just pressed holds focus.
+  - Tests and implementation were written together, so the module-missing failure was not observed separately.
+  - Review fix `3cd6e56`: the aids' `drawend` `onMeasure(null)` wiped the ruler's final value, and Enter hijacked a
+    focused button.
+- **Task 13 (`3cd6e56..db85a02`).** The existing search tests' button-name regexes were anchored with `/^(?!Dùng ).*/`,
+  because the new button's name contains the hit's name. Review fix `db85a02`: the popup's asynchronous lookups raced
+  across clicks and could offer the previous click's region. A click-sequence guard, candidate clearing and
+  `DynamicPopup.test.tsx` were added.
+- **Tasks 1, 3, 7, 10.** No deviations reported.
+- **Task 14.** Step 1 found two bugs, both fixed before the documentation (see below). Two of Step 1's expectations did
+  not match the data; they are recorded with the browser pass.
+
+### Measurements
+
+- **NFR-1 (Task 5, budget tests against the development database).** All inside the 5 s budget.
+
+  | Query | Time | Re-run after restoring the mutation |
+  |---|---|---|
+  | `select_within` over Lâm Đồng (province `68`), four layers, by stamped codes | **1,725 ms** | 1,826 ms |
+  | Geometric path, the longest river + 10 km, four layers | **2,459 ms** | 2,158 ms |
+  | Assistant/toolbar parity test, three layers | 1,310 ms | — |
+
+  Before the stamped-code path, the geometric path over Lâm Đồng measured 5.2 s cold (Measured Baselines).
+- **Task 2.** Khánh Hoà resolves to 5,031 vertices (see above). Without the admin exemption, that is still over the
+  5,000 cap.
+
+### Mutation checks
+
+| Task | Mutation | Result |
+|---|---|---|
+| 2 | `bounded: false` → `true` in `adminSource` | "resolves Khánh Hoà" fails with "Vùng phân tích quá phức tạp: 5.031 điểm vượt giới hạn 5.000 điểm". Restored, 16/16 pass |
+| 4 | `excludeId` spread removed from `nearestOp` | "excludes the ROI itself…" fails (1 failed, 38 passed). Restored |
+| 4 | `const fromCentroid = false` | "measures from the centroid…" fails (1 of 38). Restored, analysis green |
+| 5 | `const inArea = false ? …` | Passed at first, because the plan's check could not fail. After `73f7b07` the parity test fails on `'Cách đếm'` (undefined). Restored, green |
+| 12 | `useMeasure` wiring reverted (fix `3cd6e56`) | The two new `useMeasure` tests fail. Restored from a file copy |
+| 13 | The two `isCurrent` guards removed (fix `db85a02`) | The two race tests fail; the failure-fallback test passes, as expected. Restored from a file copy, 3/3 pass |
+| 14 | `queryNearest`'s old fallback condition (fix `8bdcf7f`) | Both new tests fail: 1 of 2 stations returned, both with the fake DB and on the live DB. Fixed, 3/3 pass |
+| 14 | Popup placed by the map pixel alone (fix `c340abf`) | The new placement test fails (`25px`, expected `393px`). Fixed, 4/4 pass |
+
+The plan gave Tasks 1, 3, 6, 7, 8, 9, 10 and 11 no mutation check, and their reports record none. Their new tests were
+seen failing before the code existed (RED), except in Task 12 (see above). Task 7's report also records the migration
+21 round trip.
+
+### Browser pass (Task 14 Step 1)
+
+The pass drove headless system Chrome through `puppeteer-core` at 1440×900, against the API on :3001 and Vite on :5173.
+Each screenshot was taken after tile traffic had been quiet for 3 s. The layers panel is open by default, so the map
+starts at x = 368.
+
+1. **Tools start disabled — pass.**
+   - All four tools carry `aria-disabled="true"`.
+   - The tooltip of "Trắc diện độ cao" reads "Trắc diện độ cao — Chưa có vùng phân tích".
+   - Pressing it opens no panel, and adds "Chưa có vùng phân tích" to the chip under the placeholder.
+2. **Search → ROI — pass.**
+   - "Thu Bồn" returns two hits named "Sông Thu Bồn": the river (badge "Sông") and a basemap water polygon (badge "Nền
+     bản đồ"). Their "Dùng" buttons share the accessible name "Dùng Sông Thu Bồn làm vùng phân tích", so the driver
+     picked the river's button by its badge.
+   - The chip reads "Vùng phân tích: Sông Thu Bồn · đường · 95 km", the map frames the river (1:215.000), and "Trắc
+     diện độ cao" enables.
+   - The profile card reads "Kết quả cho: Sông Thu Bồn", with 100/100 samples from 3 to 16.5 m, over **57.04 km**. The
+     merged river has three disjoint parts totalling 95.6 km, and the profile follows the longest part. That behaviour
+     is documented in `elevationProfile.ts` and this plan did not change it.
+3. **Radius — pass, with a data finding.**
+   - "Bán kính" → "5" gives "Sông Thu Bồn + 5 km · vùng · 850 km²" and enables "Chọn trong vùng".
+   - Run on dams, it counts **0**. That is the data, not a bug: the nearest active dam is 5.49 km from the river
+     (`ST_Distance` over `water.dams_active`).
+   - At 10 km, "Sông Thu Bồn + 10 km · vùng · 1.672 km²" counts 1 dam, Sông Tranh 4, and the chain continues from
+     there.
+   - On this data, the Definition of Done's chain "Sông Thu Bồn + 5 km → đập trong vùng → trạm gần đập lớn nhất" works
+     end to end only with 10 km.
+4. **Result row → ROI — pass after fix `8bdcf7f`.**
+   - "Dùng" on Sông Tranh 4 gives "Sông Tranh 4 · điểm".
+   - "Gần nhất" on stations answers "Kết quả cho: Sông Tranh 4", with Trạm Đo Mưa Phú Ninh first at 32.3 km.
+   - Before the fix it listed one station, although the layer has two and k was 5. Each station has 164 versions in the
+     development database, so the 100-row over-fetch held only Phú Ninh's versions. The fallback then returned that
+     short answer whenever the layer had fewer than k features.
+   - After the fix it lists two rows, with An Khê second at 174.69 km.
+5. **Ruler keeps the ROI — pass.** "Đo chiều dài", two clicks and a double-click give "Chiều dài: 47.93 km". The chip
+   reads "Sông Tranh 4 · điểm" before and after.
+6. **Draw with aids — pass.**
+   - "Vẽ đa giác" puts the drawing hint in the chip.
+   - After three clicks, hovering near the first vertex enlarges it, and the chip reads "Nhấp để khép vùng 1.358 km²".
+   - Clicking it gives "Hình vẽ · vùng · 1.351 km²". The live figure had included the hover point.
+7. **Popup admin candidates — pass after fix `c340abf`.**
+   - The driver searched "Buôn Ma Thuột" and zoomed out to the 1:250.000 stop (zoom ≈ 11.15).
+   - Clicking an empty spot lists "Xã Buôn Đôn · xã/phường" and "Tỉnh Đắk Lắk · tỉnh".
+   - The province's "Dùng" gives "Tỉnh Đắk Lắk · vùng · 18.086 km²".
+   - "Thống kê độ cao" is `aria-disabled`, with the tooltip "Thống kê độ cao — Vùng 18.086 km² vượt giới hạn 5.000 km²
+     của thống kê độ cao". Pressing it puts that reason in the chip.
+   - Before the fix, the popup opened 368 px left of the click, half hidden behind the layers panel. It is placed in the
+     full-window `.app-container` by the map-relative pixel, and the map has been docked right of the rail and flyout
+     since `0a5f166` (2026-09-07). The defect therefore predates this plan.
+
+Minor observations, not fixed:
+- The search dropdown stays open after "Dùng" (already in the ledger).
+- The two "Sông Thu Bồn" hits share a button name.
+- The order of equally similar search hits varies between runs.
+
+### Open items
+
+- The chip's draw hint does not mention Shift-drag freehand drawing, although spec §U-11 says the hint names it.
+- Alt-to-unsnap does nothing while a draw button holds focus. `keyBelongsToTarget` skips the Alt key on a button, so
+  Alt works only after the first map click moves focus to the map.
