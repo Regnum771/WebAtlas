@@ -70,10 +70,15 @@ describe('fetch-http', () => {
   it('aborts a stalled download after the idle timeout, leaving no target and no .part', async () => {
     mode = 'stall';
     await expect(executeFetchHttp(pool, stage(), ctx(), cache, 200)).rejects.toThrow(
-      /fetch-http: no data from .*\/a\.zip for \d+ s — aborted/
+      /fetch-http: no data from .*\/a\.zip for [\d.]+ s — aborted/
     );
     expect(existsSync(join(cache, 'basemap/a.zip'))).toBe(false);
     expect(await readdir(join(cache, 'basemap'))).toEqual([]);
+  });
+
+  it('reports sub-second idle timeouts with one decimal, not "0 s"', async () => {
+    mode = 'stall';
+    await expect(executeFetchHttp(pool, stage(), ctx(), cache, 200)).rejects.toThrow(/for 0\.2 s/);
   });
 
   it('a sha256 mismatch fails before the rename and keeps the previous file', async () => {

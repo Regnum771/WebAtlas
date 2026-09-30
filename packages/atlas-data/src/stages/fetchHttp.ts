@@ -72,12 +72,17 @@ export async function executeFetchHttp(
       abort.abort();
     }, idleMs);
   };
-  const idleError = (): Error =>
-    new Error(`fetch-http: no data from ${stage.url} for ${Math.round(idleMs / 1000)} s — aborted`);
+  const idleError = (): Error => {
+    const seconds = idleMs < 10_000 ? (idleMs / 1000).toFixed(1) : String(Math.round(idleMs / 1000));
+    return new Error(`fetch-http: no data from ${stage.url} for ${seconds} s — aborted`);
+  };
   try {
     arm();
     const res = await fetch(stage.url, { signal: abort.signal });
-    if (!res.ok || !res.body) throw new Error(`fetch-http: GET ${stage.url} returned ${res.status}`);
+    if (!res.ok || !res.body) {
+      await res.body?.cancel();
+      throw new Error(`fetch-http: GET ${stage.url} returned ${res.status}`);
+    }
 
     const total = Number(res.headers.get('content-length')) || 0;
     const hash = createHash('sha256');
@@ -108,6 +113,10 @@ export async function executeFetchHttp(
     if (stage.sha256 && got !== stage.sha256) {
       throw new Error(`fetch-http: sha256 mismatch for ${stage.url}: expected ${stage.sha256}, got ${got}`);
     }
+    // A crash between the rename and the sidecar write must never pair the new file with the
+    // OLD url's sidecar (Plan A final review). With the sidecar gone first, a crash there just
+    // means the next run re-downloads.
+    await rm(sidecar, { force: true });
     await rename(part, target);
     await writeFile(sidecar, stage.url, 'utf8');
     return { summary: `sha256:${got} ${stage.url}` };

@@ -38,10 +38,26 @@ const REQUEST_TIMEOUT_MS = 60_000;
 
 async function gsRequest(gs: GeoServerEnv, f: typeof fetch, method: Method, path: string, body?: unknown): Promise<Response> {
   try {
-    return await gsFetch(gs, f, method, path, body);
+    const res = await gsFetch(gs, f, method, path, body);
+    calls.set(res, `${method} ${path}`);
+    return res;
   } catch (err) {
     if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
       throw new Error(`GeoServer ${method} ${path} timed out after ${REQUEST_TIMEOUT_MS / 1000} s`, { cause: err });
+    }
+    throw err;
+  }
+}
+
+/** Body reads share the request timeout signal; name the call when one fires mid-body. */
+const calls = new WeakMap<Response, string>();
+
+async function readBody<T>(res: Response, read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (err) {
+    if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw new Error(`GeoServer ${calls.get(res) ?? 'request'} timed out after ${REQUEST_TIMEOUT_MS / 1000} s`, { cause: err });
     }
     throw err;
   }
@@ -63,7 +79,7 @@ function gsFetch(gs: GeoServerEnv, f: typeof fetch, method: Method, path: string
 
 /** Any non-2xx fails the stage (spec §8), with the status, the path, and GeoServer's own text. */
 async function expectOk(res: Response, what: string): Promise<void> {
-  if (!res.ok) throw new Error(`GeoServer ${what} failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new Error(`GeoServer ${what} failed: ${res.status} ${await readBody(res, () => res.text())}`);
   await res.body?.cancel(); // success bodies are unused; release the connection
 }
 
@@ -79,7 +95,7 @@ async function exists(gs: GeoServerEnv, f: typeof fetch, path: string, what: str
     await res.body?.cancel(); // unused body: release the connection
     return null;
   }
-  throw new Error(`GeoServer check ${what} failed: ${res.status} ${await res.text()}`);
+  throw new Error(`GeoServer check ${what} failed: ${res.status} ${await readBody(res, () => res.text())}`);
 }
 
 /** Existence probe whose 200 body is not needed: cancel it. */
@@ -122,7 +138,7 @@ export async function publishLayer(
   let outcome: 'created' | 'repointed' | 'unchanged';
   const existing = await exists(gs, f, `${ftPath}/${spec.layer}`, `featuretype ${spec.layer}`);
   if (existing) {
-    const current = (await existing.json()) as { featureType?: { nativeName?: string } };
+    const current = (await readBody(existing, () => existing.json())) as { featureType?: { nativeName?: string } };
     if (current.featureType?.nativeName === native) {
       outcome = 'unchanged';
     } else {
