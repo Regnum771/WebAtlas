@@ -2,6 +2,12 @@
 # Publish the self-hosted basemap tables to GeoServer and build the layer group.
 #
 # Run AFTER load_basemap.py has populated the `basemap` schema in PostGIS.
+# Two modes, chosen by one required argument. On a fresh GeoServer neither step can come first in
+# one go: the styles need the feature types, and the layer group needs the styles. The registry runs
+#   publish-basemap.sh featuretypes   ->   styles.py   ->   publish-basemap.sh group
+#   featuretypes  ensure workspace, basemap_pg store and every feature type (no group, no truncate)
+#   group         create or PUT the `basemap` layer group, then truncate the tile cache
+#
 # Idempotent and fail-closed: each resource is checked with a GET and created (POST) or updated
 # (PUT); any status that is not 2xx stops the script, so a registry stage never records a failed
 # publish as a success. The tile cache is truncated only after everything else succeeded.
@@ -11,9 +17,15 @@
 #   GEOSERVER_ADMIN_USER      default admin
 #   GEOSERVER_ADMIN_PASSWORD  required (environment only, never argv)
 #   GEOSERVER_WORKSPACE       default webatlas
-#   GEOSERVER_DB_HOST/PORT/NAME/USER/PASSWORD  how GeoServer reaches PostGIS
+#   GEOSERVER_DB_PASSWORD     required when the store has to be created
+#   GEOSERVER_DB_HOST/PORT/NAME/USER  how GeoServer reaches PostGIS
 #     (inside docker compose that is host=db, NOT localhost)
 set -euo pipefail
+MODE="${1:-}"
+case "$MODE" in
+  featuretypes|group) ;;
+  *) echo "usage: publish-basemap.sh <featuretypes|group>" >&2; exit 2 ;;
+esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../lib/geoserver.sh
 . "$SCRIPT_DIR/../lib/geoserver.sh"
@@ -24,15 +36,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAYERS=(land_vn landuse_region water_region railways_vn roads_region roads_vn)
 STYLES=(basemap_land basemap_landuse basemap_water basemap_railways basemap_roads_region basemap_roads_vn)
 
-echo "== workspace and datastore"
-gs_ensure_workspace
-gs_ensure_basemap_store
+if [ "$MODE" = featuretypes ]; then
+  echo "== workspace and datastore"
+  gs_ensure_workspace
+  gs_ensure_basemap_store
 
-echo "== feature types"
-for t in "${LAYERS[@]}" places_vn places_region; do
-  gs_ensure_featuretype "$BASEMAP_STORE" "$t" \
-    "{\"featureType\":{\"name\":\"$t\",\"nativeName\":\"$t\",\"srs\":\"EPSG:4326\",\"enabled\":true}}"
-done
+  echo "== feature types"
+  for t in "${LAYERS[@]}" places_vn places_region; do
+    gs_ensure_featuretype "$BASEMAP_STORE" "$t" \
+      "{\"featureType\":{\"name\":\"$t\",\"nativeName\":\"$t\",\"srs\":\"EPSG:4326\",\"enabled\":true}}"
+  done
+  echo "Done."
+  exit 0
+fi
 
 published=""; styled=""
 for i in "${!LAYERS[@]}"; do

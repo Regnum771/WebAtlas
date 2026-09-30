@@ -20,13 +20,13 @@ without needing Python or a live GeoServer in the test run.
 Changing anything here does NOT invalidate cached tiles. Truncate GWC for the contour layers
 afterwards or you will keep looking at the old render.
 
-Usage: GEOSERVER_ADMIN_PASSWORD=... python styles.py   (write .sld and upload)\n"
+Usage: GEOSERVER_ADMIN_PASSWORD=... python styles.py   (write .sld and upload)
        python styles.py --write-only        (regenerate the .sld artifacts only, no upload)
        python styles.py --print-intervals   (no password needed; used by publish-contours.sh)
 Env:
   GEOSERVER_URL         default http://localhost:8080/geoserver
   GEOSERVER_ADMIN_USER  default admin
-  GEOSERVER_ADMIN_PASSWORD  required to upload (environment only, never argv)\n"
+  GEOSERVER_ADMIN_PASSWORD  required to upload (environment only, never argv)
 """
 import os
 import pathlib

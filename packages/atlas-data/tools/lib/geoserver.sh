@@ -43,12 +43,15 @@ gs_ensure_workspace() {
 # ensures it rather than one depending on the other having run.
 gs_ensure_basemap_store() {
   if gs_exists "$GS/workspaces/$WS/datastores/$BASEMAP_STORE"; then return 0; fi
+  # Checked here, not inside the request: a blank password would create the store with a 201 and only
+  # fail later as a confusing featuretype 500.
+  local dbpw="${GEOSERVER_DB_PASSWORD:?set GEOSERVER_DB_PASSWORD (the password GeoServer uses to reach PostGIS)}"
   require_2xx datastore "$(gs_curl -XPOST -H "Content-Type: application/json" "$GS/workspaces/$WS/datastores" -d "{
   \"dataStore\":{\"name\":\"$BASEMAP_STORE\",\"connectionParameters\":{\"entry\":[
     {\"@key\":\"dbtype\",\"\$\":\"postgis\"},{\"@key\":\"host\",\"\$\":\"${GEOSERVER_DB_HOST:-db}\"},
     {\"@key\":\"port\",\"\$\":\"${GEOSERVER_DB_PORT:-5432}\"},{\"@key\":\"database\",\"\$\":\"${GEOSERVER_DB_NAME:-webatlas}\"},
     {\"@key\":\"schema\",\"\$\":\"basemap\"},{\"@key\":\"user\",\"\$\":\"${GEOSERVER_DB_USER:-webatlas}\"},
-    {\"@key\":\"passwd\",\"\$\":\"${GEOSERVER_DB_PASSWORD:-}\"},{\"@key\":\"Expose primary keys\",\"\$\":\"true\"},
+    {\"@key\":\"passwd\",\"\$\":\"${dbpw}\"},{\"@key\":\"Expose primary keys\",\"\$\":\"true\"},
     {\"@key\":\"Loose bbox\",\"\$\":\"true\"}]}}}")"
 }
 

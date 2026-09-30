@@ -44,4 +44,16 @@ WITH pts(label, g) AS (VALUES
   ('Da Nang shore    ~7 m', ST_SetSRID(ST_MakePoint(108.2440,16.0600),4326)))
 SELECT p.label, round(ST_Value(d.rast, p.g)::numeric,1) AS elevation_m
   FROM pts p LEFT JOIN $TABLE d ON ST_Intersects(d.rast, p.g);"
+
+# Unattended runs must not record an empty or misplaced load as a success.
+TILES="$(q -tAc "SELECT count(*) FROM $TABLE")"
+BMT="$(q -tAc "SELECT ST_Value(d.rast, ST_SetSRID(ST_MakePoint(108.0447,12.6797),4326)) FROM $TABLE d WHERE ST_Intersects(d.rast, ST_SetSRID(ST_MakePoint(108.0447,12.6797),4326)) LIMIT 1")"
+if [ "${TILES:-0}" -eq 0 ]; then
+  echo "ERROR: $TABLE has 0 tiles after the load" >&2
+  exit 1
+fi
+if [ -z "$BMT" ]; then
+  echo "ERROR: the Buon Ma Thuot sample point has no elevation (NULL) — the DEM does not cover it" >&2
+  exit 1
+fi
 echo "Done."

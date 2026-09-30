@@ -70,6 +70,7 @@ function run(env) {
       GEOSERVER_URL: 'http://fake-geoserver.invalid/geoserver',
       GEOSERVER_ADMIN_USER: 'admin',
       GEOSERVER_ADMIN_PASSWORD: 'wrong-password',
+      GEOSERVER_DB_PASSWORD: 'pw',
       ...env,
     },
   });
@@ -86,6 +87,13 @@ describe('publish-contours.sh — REST call failures must fail the publish', { t
     const r = run({ STUB_FT_CREATE: '401' });
     expect(r.status).not.toBe(0);
     expect(r.stdout).toMatch(/featuretype contours_\d+: 401/);
+    expect(r.stdout).not.toContain('truncate:');
+  });
+
+  it('exits non-zero and stops before truncating when the style assignment 403s', () => {
+    const r = run({ STUB_STYLE: '403' });
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain('style: 403');
     expect(r.stdout).not.toContain('truncate:');
   });
 
