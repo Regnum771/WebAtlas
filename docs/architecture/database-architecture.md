@@ -381,12 +381,12 @@ row, which names that row's feature as a new `feature` region, so nothing needs 
 Every analysis operation calls it first, and the browser reaches it through `POST /api/roi/resolve`, which returns the
 label, the kind after the radius (area, line or point), the length or area, a simplified display geometry, the bounding
 box and the centroid; the full-precision geometry stays on the server. Because the browser's chip and the operations
-share this one resolver, the chip never shows a region that a tool would then refuse without saying why. It applies the
-same limits to every source, in order: the source-complexity limits (§11: 10,000 points, 300 parts), evaluated inside
-the SQL so that `ST_Buffer` never runs on an oversized source; the clip to the six working provinces; the area ceiling
+share this one resolver, the chip never shows a region that a tool would then refuse without saying why. It applies
+these limits, in order: the source-complexity limits (§11: 10,000 points, 300 parts), which apply when a radius is
+given and are evaluated inside the SQL so that `ST_Buffer` never runs on an oversized source; the clip to the six working provinces; the area ceiling
 of 25,000 km²; and the resulting-vertex ceiling of 5,000 points. An admin unit is exempt from the clip and from the
 resulting-vertex ceiling: it is selected by code from the working provinces, so it is inside the region by
-construction, and Khánh Hoà alone — 5,195 vertices in 164 parts, most of them islands — would exceed the ceiling. No
+construction, and Khánh Hoà alone — 5,195 vertices stored (5,031 as resolved) in 164 parts, most of them islands — would exceed the ceiling. No
 operation feeds an admin unit's full geometry to an expensive geometric step: "Chọn trong vùng" counts it by codes,
 elevation statistics refuses every province on area (the largest ward, 4,208 km², fits its 5,000 km² limit), and
 "Gần nhất" uses the centroid.

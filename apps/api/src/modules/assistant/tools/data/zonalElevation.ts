@@ -19,7 +19,6 @@ export const zonalElevationTool: ToolFactory = (ctx) =>
     }),
     run: (input) =>
       runAnalysisTool(ctx, 'zonal_elevation', input.layerKey, (db) =>
-        // areaGeometry reads bufferKm; ZonalInput's HTTP schema simply does not offer it.
         zonalElevationOp(db, {
           roi: roiFromParts({ feature: { layerKey: input.layerKey, featureId: input.featureId } }, input.radiusKm),
         })
