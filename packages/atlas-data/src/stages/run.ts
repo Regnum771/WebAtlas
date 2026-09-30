@@ -5,6 +5,7 @@ import type { Stage } from '../types';
 import type { StageContext, StageResult } from './index';
 import { runProcess } from '../process';
 import { REPO_ROOT } from '../paths';
+import { composeArgs, composeEnv } from '../compose';
 
 type RunStage = Extract<Stage, { type: 'run' }>;
 
@@ -36,12 +37,11 @@ export function commandFor(stage: RunStage, repoRoot: string = REPO_ROOT): { fil
   if (stage.in === 'host') {
     return { file: process.execPath, args: [npmCli(), ...stage.argv], cwd: repoRoot };
   }
+  // -T: stdin is not a TTY (the runner ignores stdin). --no-deps: never start or recreate db/geoserver
+  // from here — atlas:up owns the stack's lifecycle.
   return {
     file: 'docker',
-    args: [
-      'compose', '-f', join(repoRoot, 'infra', 'docker-compose.yml'), '--profile', 'tools',
-      'run', '--rm', 'tools', ...stage.argv,
-    ],
+    args: [...composeArgs(process.env, repoRoot), '--profile', 'tools', 'run', '--rm', '-T', '--no-deps', 'tools', ...stage.argv],
     cwd: repoRoot,
   };
 }
@@ -58,7 +58,13 @@ export async function executeRun(
   resolve: typeof commandFor = commandFor
 ): Promise<StageResult> {
   const { file, args, cwd } = resolve(stage);
-  const outcome = await runProcess(file, args, { label: ctx.datasetId, log: ctx.log, cwd });
+  const outcome = await runProcess(file, args, {
+    label: ctx.datasetId,
+    log: ctx.log,
+    cwd,
+    // Tools stages: let infra/.env govern compose interpolation (see compose.ts).
+    env: stage.in === 'tools' ? composeEnv() : undefined,
+  });
   if (outcome.code !== 0) {
     const why = outcome.signal ? `signal ${outcome.signal}` : `exit ${outcome.code}`;
     throw new Error(

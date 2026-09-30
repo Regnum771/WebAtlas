@@ -1,0 +1,3 @@
+# The build context is only the requirements file; scripts are bind-mounted at run time.
+*
+!requirements.txt
