@@ -19,6 +19,8 @@ dev box or optional (unlocks one feature, safe to skip and do later).
 | 8 | [Terrain contours](terrain-contours.md) | Optional — needs step 7 first | **No** — generated locally |
 | 9 | `npm run publish:geoserver -w @webatlas/api` | Required | Yes (script; publishes to GeoServer, not git) |
 
+For map users: [Vùng phân tích](vung-phan-tich.md) explains choosing an ROI and the analysis tools.
+
 ## Notes on each step
 
 1. **Bring up the stack.** Starts Postgres/PostGIS and GeoServer. No runbook of its own —

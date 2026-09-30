@@ -1,7 +1,8 @@
-import { FABDEM_ATTRIBUTION, type AnalysisResult, type GeoJsonGeometry } from '@webatlas/shared';
+import { FABDEM_ATTRIBUTION, type AnalysisResult, type GeoJsonGeometry, type Roi } from '@webatlas/shared';
 import { simplifiedGeoJsonSql } from '../../../lib/resultGeometry';
 import type { Queryable } from '../../assistant/tools/data/helpers';
-import { inputGeometry } from '../area';
+import { requireLine } from '../../roi/kind';
+import { resolveRoi } from '../../roi/resolve';
 import { DEM_UNAVAILABLE_SUMMARY, demAvailable } from '../dem';
 import type { ProfileInput } from '../schemas';
 
@@ -33,9 +34,11 @@ export function profileStats(elevations: (number | null)[], lengthM: number) {
  * region's extent.
  */
 export async function elevationProfileOp(db: Queryable, input: ProfileInput): Promise<AnalysisResult> {
-  // 'path': for a reference entity, the road/railway's own line geometry, not a
-  // buffered area -- see referencePath's comment in area.ts for why.
-  const src = await inputGeometry(db, input, { want: 'path' });
+  // A line, unbuffered: resolveRoi returns a road, a river or a drawn line as itself,
+  // and requireLine refuses an area (including a line a radius turned into one).
+  const { resolved, geojson } = await resolveRoi(db, input.roi as Roi);
+  requireLine(resolved, input.roi as Roi);
+  const src = { geojson, label: resolved.label };
 
   // Independent of the DEM (pure PostGIS on the input line), so this runs before
   // the demAvailable check below — that way an unloaded DEM still draws the

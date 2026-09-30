@@ -94,6 +94,26 @@ export async function listEntities(
   return rows.map(toEntity);
 }
 
+/**
+ * Every entity of one layer containing this OSM segment. `@>` on the text[] column is
+ * what the GIN index from migration 21 serves. Usually one; two where a segment carries
+ * two routes (e.g. `QL.14;HCM`, see referenceEntities.ts).
+ */
+export async function listEntitiesByMember(
+  pool: Pool,
+  key: ReferenceLayerKey,
+  osmId: string
+): Promise<ReferenceEntity[]> {
+  getReferenceLayer(key);
+  const { rows } = await pool.query<Row>(
+    `SELECT ${BASE_COLUMNS} FROM basemap.reference_entities
+      WHERE layer_key = $1 AND member_ids @> ARRAY[$2]::text[]
+      ORDER BY member_count DESC, entity_id`,
+    [key, osmId]
+  );
+  return rows.map(toEntity);
+}
+
 /** One entity with a display-simplified geometry, or null. */
 export async function getEntity(
   pool: Pool,

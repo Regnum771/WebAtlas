@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { REGION_PROVINCE_CODES } from '@webatlas/shared';
 import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
 import { buildReferenceLayer } from '../../db/referenceEntities';
@@ -146,13 +147,13 @@ describe('GET /api/search with sources', () => {
     // feature exists to serve, and the web always requests ref:roads. Picked
     // dynamically, not hardcoded, so this survives a basemap reload.
     await buildReferenceLayer(getPool(), 'roads');
-    const { rows } = await getPool().query<{ ref: string }>(
-      `SELECT ref FROM basemap.reference_entities
+    const { rows } = await getPool().query<{ ref: string; entityId: string }>(
+      `SELECT ref, entity_id AS "entityId" FROM basemap.reference_entities
         WHERE layer_key = 'roads' AND name IS NULL AND ref IS NOT NULL
         LIMIT 1`
     );
     expect(rows.length).toBeGreaterThan(0);
-    const ref = rows[0].ref;
+    const { ref, entityId } = rows[0];
 
     const res = await app.inject({
       method: 'GET',
@@ -160,7 +161,10 @@ describe('GET /api/search with sources', () => {
     });
     expect(res.statusCode).toBe(200);
     const results = res.json().results as Array<{ name: string; layerKey: string }>;
-    const hit = results.find((h) => h.layerKey === 'roads');
+    // By id, not the first roads hit: a NAMED road can carry the same ref ("3 Tháng 2"
+    // is also QL29), match it equally well and sort first by name.
+    const hit = (results as Array<{ name: string; layerKey: string; featureId: string }>)
+      .find((h) => h.featureId === entityId);
     expect(hit).toBeDefined();
     // The whole point: coalesce(name, ref) means a ref-only entity is still
     // searchable and never surfaces a null name to the client.
@@ -194,5 +198,68 @@ describe('GET /api/search with sources', () => {
   it('rejects an explicitly-supplied but empty/unusable sources list with a 400, not a silent empty success', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/search?q=song&sources=,,,' });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('GET /api/search with the admin source', () => {
+  const search = (q: string, sources?: string) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/search?q=${encodeURIComponent(q)}${sources ? `&sources=${sources}` : ''}`,
+    });
+  type Hit = { source: string; layerKey: string; featureId: string; name: string; lonLat: number[] };
+
+  it('finds a working-region province by name', async () => {
+    const res = await search('Đắk Lắk', 'admin');
+    expect(res.statusCode).toBe(200);
+    const hit = (res.json().results as Hit[]).find((h) => h.featureId === '66');
+    expect(hit).toMatchObject({ source: 'admin', layerKey: 'province', name: 'Tỉnh Đắk Lắk' });
+    expect(hit!.lonLat).toHaveLength(2);
+  });
+
+  it('finds a ward', async () => {
+    const res = await search('Tuy Hoà', 'admin');
+    const hit = (res.json().results as Hit[]).find((h) => h.featureId === '22015');
+    expect(hit).toMatchObject({ source: 'admin', layerKey: 'ward', name: 'Phường Tuy Hoà' });
+  });
+
+  it('restricts results to the working region only', async () => {
+    // Searching for 'Hà Nội' (outside region) will match 'Hà Nha' (inside region)
+    // via trigram similarity. Verify that all returned admin units are in-region.
+    const res = await search('Hà Nội', 'admin');
+    const adminHits = (res.json().results as Hit[]).filter((h) => h.source === 'admin');
+    expect(adminHits.length).toBeGreaterThan(0);
+
+    // No province from outside the region (e.g., Hà Nội = '01')
+    for (const hit of adminHits) {
+      if (hit.layerKey === 'province') {
+        expect((REGION_PROVINCE_CODES as readonly string[]).includes(hit.featureId)).toBe(true);
+      }
+    }
+
+    // All ward results must have province_code in working region
+    const wardCodes = adminHits.filter((h) => h.layerKey === 'ward').map((h) => h.featureId);
+    if (wardCodes.length > 0) {
+      const { rows } = await getPool().query<{ code: string; province_code: string }>(
+        `SELECT code, province_code FROM admin.wards WHERE code = ANY($1::text[])`,
+        [wardCodes]
+      );
+      for (const row of rows) {
+        expect((REGION_PROVINCE_CODES as readonly string[]).includes(row.province_code)).toBe(true);
+      }
+    }
+  });
+
+  it('finds provinces by partial name', async () => {
+    // 'Đắk' should match 'Tỉnh Đắk Lắk' via trigram similarity
+    const res = await search('Đắk', 'admin');
+    expect(res.statusCode).toBe(200);
+    const hit = (res.json().results as Hit[]).find((h) => h.featureId === '66');
+    expect(hit).toMatchObject({ source: 'admin', layerKey: 'province' });
+  });
+
+  it('adds no admin hits unless asked', async () => {
+    const res = await search('Đắk Lắk');
+    expect((res.json().results as Hit[]).some((h) => h.source === 'admin')).toBe(false);
   });
 });

@@ -8,7 +8,7 @@
  */
 import { type EditableLayerKey } from './index.js';
 import { type GeoJsonGeometry } from './geometry.js';
-export declare const MAP_COMMAND_KINDS: readonly ["zoomToRegion", "zoomToFeature", "zoomTo", "resetView", "setLayerVisible", "setLayerOpacity", "setBasemap", "highlightFeatures", "clearHighlights", "showGeometries", "proposeFeatureEdit"];
+export declare const MAP_COMMAND_KINDS: readonly ["zoomToRegion", "zoomToFeature", "zoomTo", "resetView", "setLayerVisible", "setLayerOpacity", "setBasemap", "highlightFeatures", "clearHighlights", "showGeometries", "showRoi", "clearRoi", "proposeFeatureEdit"];
 export type MapCommandKind = (typeof MAP_COMMAND_KINDS)[number];
 export declare const BASEMAP_TYPES: readonly ["street", "satellite", "dem"];
 export type BasemapName = (typeof BASEMAP_TYPES)[number];
@@ -126,6 +126,16 @@ export type MapCommand = {
     kind: 'showGeometries';
     items: ResultGeometry[];
     fit?: boolean;
+}
+/** The active ROI's outline on its own layer (Phase 4). `fit: 'ifOutside'` frames it
+ *  only if it has left the viewport — used after a radius change (U-5). */
+ | {
+    kind: 'showRoi';
+    geometry: GeoJsonGeometry;
+    label: string;
+    fit?: boolean | 'ifOutside';
+} | {
+    kind: 'clearRoi';
 } | FeatureEditProposal;
 /**
  * Runtime guard. The API validates assistant-produced commands with this before

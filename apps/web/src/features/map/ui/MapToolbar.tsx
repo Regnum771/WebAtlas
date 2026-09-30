@@ -32,6 +32,8 @@ export interface MapToolbarViewProps {
   /** Rendered inside the toolbar rail's control group / above the pill — see Task 13. */
   analysisButtons?: ReactNode;
   analysisPanel?: ReactNode;
+  roiChip?: ReactNode;
+  drawButtons?: ReactNode;
 }
 
 /**
@@ -55,6 +57,8 @@ export function MapToolbarView({
   onBasemap,
   analysisButtons,
   analysisPanel,
+  roiChip,
+  drawButtons,
 }: MapToolbarViewProps) {
   const isMinZoom = zoom <= MIN_ZOOM + 0.05;
   const isMaxZoom = zoom >= MAX_ZOOM - 0.05;
@@ -64,6 +68,8 @@ export function MapToolbarView({
       {measureValue && <div className="measure-result glass-panel">{measureValue}</div>}
 
       {analysisPanel}
+
+      {roiChip}
 
       <div className="glass-panel toolbar-rail">
         <div className="control-group">
@@ -75,6 +81,12 @@ export function MapToolbarView({
           >
             <MousePointer2 size={18} />
           </button>
+        </div>
+
+        <div className="control-divider" />
+
+        <div className="control-group" role="group" aria-label="Đo nhanh">
+          <span className="control-group-label" aria-hidden="true">Đo nhanh</span>
           <button
             className={`control-btn ${measureMode === 'length' ? 'active' : ''}`}
             aria-pressed={measureMode === 'length'}
@@ -92,6 +104,13 @@ export function MapToolbarView({
             <Square size={18} />
           </button>
         </div>
+
+        {drawButtons && (
+          <>
+            <div className="control-divider" />
+            {drawButtons}
+          </>
+        )}
 
         {analysisButtons && (
           <>
@@ -172,10 +191,14 @@ export default function MapToolbar({
   flyoutOpen,
   analysisButtons,
   analysisPanel,
+  roiChip,
+  drawButtons,
 }: {
   flyoutOpen: boolean;
   analysisButtons?: ReactNode;
   analysisPanel?: ReactNode;
+  roiChip?: ReactNode;
+  drawButtons?: ReactNode;
 }) {
   const { map, basemap, setBasemap, layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
   const zoom = useMapZoom();
@@ -238,6 +261,8 @@ export default function MapToolbar({
       onBasemap={onBasemap}
       analysisButtons={analysisButtons}
       analysisPanel={analysisPanel}
+      roiChip={roiChip}
+      drawButtons={drawButtons}
     />
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { SearchHit } from '../api/search.api';
 
 const LAYER_BADGE: Record<string, string> = {
@@ -30,10 +30,11 @@ interface Props {
   loading: boolean;
   onQuery: (q: string) => void;
   onSelect: (hit: SearchHit) => void;
+  renderAction?: (hit: SearchHit) => ReactNode;
 }
 
 /** Passive: input + results list. No fetching, no map access. */
-export function SearchBoxView({ query, results, loading, onQuery, onSelect }: Props) {
+export function SearchBoxView({ query, results, loading, onQuery, onSelect, renderAction }: Props) {
   // `results` alone used to decide whether the dropdown shows, so once there
   // were hits nothing could hide it short of emptying the query — a click on
   // the map, tabbing away, or Escape all left it floating over an unrelated
@@ -67,13 +68,16 @@ export function SearchBoxView({ query, results, loading, onQuery, onSelect }: Pr
             // railway, water body, landuse area, place), not one of the editable
             // water layers LAYER_BADGE names — showing the raw OSM layer key
             // ("roads") instead would be both untranslated and misleading.
-            const badge = hit.source === 'reference' ? 'Nền bản đồ' : (LAYER_BADGE[hit.layerKey] ?? hit.layerKey);
+            const badge = hit.source === 'reference' ? 'Nền bản đồ'
+              : hit.source === 'admin' ? (hit.layerKey === 'province' ? 'Tỉnh' : 'Xã/phường')
+                : (LAYER_BADGE[hit.layerKey] ?? hit.layerKey);
             return (
               <li key={`${hit.layerKey}:${hit.featureId}`}>
                 <button type="button" className="search-result" onClick={() => onSelect(hit)}>
                   <span className="search-badge">{badge}</span>{' '}
                   <span>{displayName(hit.name, badge)}</span>
                 </button>
+                {renderAction?.(hit)}
               </li>
             );
           })}

@@ -25,6 +25,8 @@ export const MAP_COMMAND_KINDS = [
   'highlightFeatures',
   'clearHighlights',
   'showGeometries',
+  'showRoi',
+  'clearRoi',
   'proposeFeatureEdit',
 ] as const;
 
@@ -166,6 +168,10 @@ export type MapCommand =
   | { kind: 'highlightFeatures'; points: HighlightPoint[] }
   | { kind: 'clearHighlights' }
   | { kind: 'showGeometries'; items: ResultGeometry[]; fit?: boolean }
+  /** The active ROI's outline on its own layer (Phase 4). `fit: 'ifOutside'` frames it
+   *  only if it has left the viewport — used after a radius change (U-5). */
+  | { kind: 'showRoi'; geometry: GeoJsonGeometry; label: string; fit?: boolean | 'ifOutside' }
+  | { kind: 'clearRoi' }
   | FeatureEditProposal;
 
 function isLonLat(value: unknown): value is [number, number] {
@@ -257,6 +263,15 @@ export function isMapCommand(value: unknown): value is MapCommand {
       const vertices = (c.items as ResultGeometry[]).reduce((n, i) => n + countVertices(i.geometry), 0);
       return vertices <= MAX_RESULT_VERTICES && (c.fit === undefined || typeof c.fit === 'boolean');
     }
+    case 'showRoi':
+      return (
+        isGeoJsonGeometry(c.geometry) &&
+        countVertices(c.geometry) <= MAX_RESULT_VERTICES &&
+        typeof c.label === 'string' &&
+        (c.fit === undefined || typeof c.fit === 'boolean' || c.fit === 'ifOutside')
+      );
+    case 'clearRoi':
+      return true;
     case 'proposeFeatureEdit': {
       if (!isLayerKey(c.layerKey) || typeof c.featureId !== 'string') return false;
       const allowed = editableColumns(c.layerKey);

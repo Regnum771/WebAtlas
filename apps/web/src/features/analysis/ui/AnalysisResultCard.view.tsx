@@ -1,18 +1,22 @@
+import type { ReactNode } from 'react';
 import type { AnalysisResult, AnalysisRow } from '@webatlas/shared';
 import { ANALYSIS_TOOL_LABELS } from '../model/tools';
 import { ProfileChartView } from './ProfileChart.view';
 
 export interface AnalysisResultCardViewProps {
   result: AnalysisResult;
+  roiLabel?: string | null;
   onRow: (row: AnalysisRow) => void;
   onExport: () => void;
   onClear: () => void;
+  renderRowAction?: (row: AnalysisRow) => ReactNode;
 }
 
-export function AnalysisResultCardView({ result, onRow, onExport, onClear }: AnalysisResultCardViewProps) {
+export function AnalysisResultCardView({ result, roiLabel, onRow, onExport, onClear, renderRowAction }: AnalysisResultCardViewProps) {
   return (
     <section className="analysis-card glass-panel" aria-label="Kết quả phân tích">
       <h3 className="analysis-card-title">{ANALYSIS_TOOL_LABELS[result.op]}</h3>
+      {roiLabel && <p className="analysis-note">Kết quả cho: {roiLabel}</p>}
       <table className="analysis-summary">
         <tbody>
           {Object.entries(result.summary).map(([k, v]) => (
@@ -29,6 +33,7 @@ export function AnalysisResultCardView({ result, onRow, onExport, onClear }: Ana
                 {row.name ?? '(không tên)'}
                 {row.distanceKm !== undefined && <span className="analysis-row-meta"> · {row.distanceKm} km</span>}
               </button>
+              {renderRowAction?.(row)}
             </li>
           ))}
         </ul>

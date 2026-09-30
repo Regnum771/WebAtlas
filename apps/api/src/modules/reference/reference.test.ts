@@ -128,3 +128,39 @@ describe('GET /api/reference/:layer/entities/:entityId', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+describe('GET /api/reference/:layer/entities?member=', () => {
+  beforeAll(async () => { await buildReferenceLayer(getPool(), 'roads'); }, 300_000);
+
+  it('finds the entity a clicked segment belongs to', async () => {
+    const { rows: [e] } = await getPool().query<{ entity_id: string; member: string }>(
+      `SELECT entity_id, member_ids[1] AS member FROM basemap.reference_entities
+        WHERE layer_key = 'roads' ORDER BY entity_id LIMIT 1`
+    );
+    const res = await app.inject({ method: 'GET', url: `/api/reference/roads/entities?member=${e.member}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().entities.map((x: { entityId: string }) => x.entityId)).toContain(e.entity_id);
+  });
+
+  it('returns every entity sharing a segment (QL.14;HCM belongs to two routes)', async () => {
+    const { rows: [shared] } = await getPool().query<{ member: string; n: number }>(
+      `SELECT m AS member, count(*)::int AS n
+         FROM basemap.reference_entities, unnest(member_ids) AS m
+        WHERE layer_key = 'roads' GROUP BY m HAVING count(*) > 1 ORDER BY m LIMIT 1`
+    );
+    const res = await app.inject({ method: 'GET', url: `/api/reference/roads/entities?member=${shared.member}` });
+    expect(res.json().entities).toHaveLength(shared.n);
+  });
+
+  it('400s a member that is not an OSM id', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/reference/roads/entities?member=abc' });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('is served by a GIN index created by migration 21', async () => {
+    const { rows } = await getPool().query(
+      `SELECT 1 FROM pg_indexes WHERE schemaname = 'basemap' AND indexname = 'reference_entities_member_ids_gin'`
+    );
+    expect(rows).toHaveLength(1);
+  });
+});

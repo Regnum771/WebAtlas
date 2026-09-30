@@ -36,6 +36,9 @@ export interface BasemapFeature {
   maxspeed?: number;
   bridge?: string;
   tunnel?: string;
+  /** For the ROI lookup (Task 7): the clicked segment and its table. */
+  osmId?: string;
+  table?: string;
 }
 
 /** Các thuộc tính đáng hiện cho người đọc. osm_id và code là định danh nội bộ. */
@@ -70,7 +73,7 @@ export function basemapInfoUrl(
 }
 
 interface RawCollection {
-  features?: Array<{ properties?: Record<string, unknown> }>;
+  features?: Array<{ id?: string; properties?: Record<string, unknown> }>;
 }
 
 export function pickBasemapFeature(data: RawCollection): BasemapFeature | null {
@@ -95,6 +98,10 @@ export function pickBasemapFeature(data: RawCollection): BasemapFeature | null {
     out[key] = value;
   }
   if (!('name' in out) || out.name === undefined) out.name = null;
+  const osmId = props.osm_id;
+  if (typeof osmId === 'string' || typeof osmId === 'number') out.osmId = String(osmId);
+  // GetFeatureInfo ids are "<table>.<fid>", e.g. "roads_region.fid-…".
+  if (typeof chosen.id === 'string' && chosen.id.includes('.')) out.table = chosen.id.split('.')[0];
   return out as unknown as BasemapFeature;
 }
 

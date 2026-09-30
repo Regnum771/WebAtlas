@@ -1,6 +1,6 @@
-import { EDITABLE_LAYER_KEYS, type AnalysisOp, type EditableLayerKey } from '@webatlas/shared';
-import type { AnalysisParams } from '../model/tools';
-import { ANALYSIS_TOOL_LABELS } from '../model/tools';
+import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
+import type { RoiTool } from '../../roi/model/toolAvailability';
+import { ANALYSIS_TOOL_LABELS, type AnalysisParams } from '../model/tools';
 import type { AnalysisStatus } from '../model/useAnalysis';
 
 const LAYER_NAMES: Record<EditableLayerKey, string> = {
@@ -9,46 +9,34 @@ const LAYER_NAMES: Record<EditableLayerKey, string> = {
   flood_generation: 'Vùng sinh lũ',
 };
 
-const HINT: Record<AnalysisOp, string> = {
-  buffer: 'Vẽ hình rồi hệ thống tạo vùng đệm theo bán kính.',
-  select_within: 'Vẽ một vùng để đếm và tô sáng các đối tượng nằm trong.',
-  nearest: 'Chấm một điểm để tìm các đối tượng gần nhất.',
-  elevation_profile: 'Vẽ một tuyến để xem trắc diện độ cao.',
-  zonal_elevation: 'Vẽ một vùng (tối đa 5.000 km²) để thống kê độ cao.',
+const HINT: Record<RoiTool, string> = {
+  select_within: 'Đếm và tô sáng các đối tượng nằm trong vùng phân tích.',
+  zonal_elevation: 'Độ cao thấp nhất, cao nhất và trung bình trong vùng (tối đa 5.000 km²).',
+  elevation_profile: 'Trắc diện độ cao dọc theo tuyến.',
+  nearest: 'Các đối tượng gần nhất, tính từ điểm — hoặc từ trọng tâm nếu vùng phân tích là đường hay vùng.',
 };
 
 export interface AnalysisParamsViewProps {
-  op: AnalysisOp;
+  tool: RoiTool;
+  roiLabel: string | null;
   params: AnalysisParams;
   status: AnalysisStatus;
   error: string | null;
   onParams: (patch: Partial<AnalysisParams>) => void;
-  onDraw: () => void;
-  onUseLast: () => void;
+  onRun: () => void;
   onCancel: () => void;
 }
 
-export function AnalysisParamsView({ op, params, status, error, onParams, onDraw, onUseLast, onCancel }: AnalysisParamsViewProps) {
+/** Only the tool's own parameters: the ROI is already chosen, so there is no draw step. */
+export function AnalysisParamsView({ tool, roiLabel, params, status, error, onParams, onRun, onCancel }: AnalysisParamsViewProps) {
   const busy = status === 'running';
   return (
-    <section className="analysis-card glass-panel" aria-label={ANALYSIS_TOOL_LABELS[op]}>
-      <h3 className="analysis-card-title">{ANALYSIS_TOOL_LABELS[op]}</h3>
-      <p className="analysis-note">{status === 'drawing' ? 'Đang vẽ — nháy đúp để kết thúc.' : HINT[op]}</p>
+    <section className="analysis-card glass-panel" aria-label={ANALYSIS_TOOL_LABELS[tool]}>
+      <h3 className="analysis-card-title">{ANALYSIS_TOOL_LABELS[tool]}</h3>
+      {roiLabel && <p className="analysis-note">Vùng phân tích: {roiLabel}</p>}
+      <p className="analysis-note">{HINT[tool]}</p>
 
-      {op === 'buffer' && (
-        <>
-          <label>Hình vẽ
-            <select value={params.shape} onChange={(e) => onParams({ shape: e.target.value as AnalysisParams['shape'] })}>
-              <option value="Point">Điểm</option><option value="LineString">Đường</option><option value="Polygon">Vùng</option>
-            </select>
-          </label>
-          <label>Bán kính (km)
-            <input type="number" min={0.1} max={100} step={0.1} value={params.radiusKm}
-              onChange={(e) => onParams({ radiusKm: Number(e.target.value) })} />
-          </label>
-        </>
-      )}
-      {op === 'select_within' && (
+      {tool === 'select_within' && (
         <fieldset className="analysis-layers"><legend>Lớp cần chọn</legend>
           {EDITABLE_LAYER_KEYS.map((k) => (
             <label key={k}>
@@ -61,7 +49,7 @@ export function AnalysisParamsView({ op, params, status, error, onParams, onDraw
           ))}
         </fieldset>
       )}
-      {op === 'nearest' && (
+      {tool === 'nearest' && (
         <>
           <label>Lớp
             <select value={params.layerKey} onChange={(e) => onParams({ layerKey: e.target.value as EditableLayerKey })}>
@@ -73,13 +61,18 @@ export function AnalysisParamsView({ op, params, status, error, onParams, onDraw
           </label>
         </>
       )}
+      {tool === 'elevation_profile' && (
+        <label>Số điểm lấy mẫu
+          <input type="number" min={2} max={200} value={params.samples}
+            onChange={(e) => onParams({ samples: Number(e.target.value) })} />
+        </label>
+      )}
 
       {error && <p className="edit-form-error" role="alert">{error}</p>}
       <div className="analysis-actions">
-        <button type="button" onClick={onDraw} disabled={busy || (op === 'select_within' && params.layerKeys.length === 0)}>
-          {busy ? 'Đang tính…' : 'Vẽ trên bản đồ'}
+        <button type="button" onClick={onRun} disabled={busy || (tool === 'select_within' && params.layerKeys.length === 0)}>
+          {busy ? 'Đang tính…' : 'Chạy'}
         </button>
-        <button type="button" onClick={onUseLast} disabled={busy}>Dùng hình vừa vẽ</button>
         <button type="button" onClick={onCancel}>Huỷ</button>
       </div>
     </section>

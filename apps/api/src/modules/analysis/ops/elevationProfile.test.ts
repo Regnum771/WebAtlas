@@ -75,7 +75,7 @@ describe('elevationProfileOp when the DEM is unavailable', () => {
   it('still draws the input line, like zonalElevationOp draws its input area', async () => {
     vi.mocked(demAvailable).mockResolvedValueOnce(false);
     const line = { type: 'LineString' as const, coordinates: [[108.05, 12.68], [108.1052, 12.68]] };
-    const result = await elevationProfileOp(getPool(), { geometry: line, samples: 10 });
+    const result = await elevationProfileOp(getPool(), { roi: { source: 'drawn', geometry: line }, samples: 10 } as never);
 
     expect(result.summary['Trạng thái']).toBe('Chưa nạp dữ liệu độ cao');
     expect(result.geometries).toHaveLength(1);

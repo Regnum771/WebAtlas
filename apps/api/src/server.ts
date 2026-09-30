@@ -12,6 +12,7 @@ import adminUnitsRoutes from './modules/admin-units/routes';
 import referenceRoutes from './modules/reference/routes';
 import elevationRoutes from './modules/elevation/routes';
 import analysisRoutes from './modules/analysis/routes';
+import roiRoutes from './modules/roi/routes';
 import assistantRoutes from './modules/assistant/routes';
 import { closeAssistantPool } from './modules/assistant/sql/pool';
 import { closeAnalysisPool } from './modules/analysis/pool';
@@ -43,6 +44,7 @@ export function buildApp(): FastifyInstance {
   app.register(referenceRoutes, { prefix: '/api' });
   app.register(elevationRoutes, { prefix: '/api' });
   app.register(analysisRoutes, { prefix: '/api' });
+  app.register(roiRoutes, { prefix: '/api' });
   app.register(assistantRoutes, { prefix: '/api' });
 
   // The assistant's read-only pool is a SEPARATE pg.Pool from app.pg (deliberately

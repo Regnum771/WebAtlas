@@ -6,9 +6,8 @@ import VectorLayer from 'ol/layer/Vector';
 import { getLength, getArea } from 'ol/sphere';
 import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
-import { olGeometryTo4326GeoJSON } from './geo';
-import { setLastShape } from './lastShape';
-import type { GeoJsonGeometry } from '@webatlas/shared';
+import { attachDrawAids, closeTolerancePx, drawCondition, validateShape } from './drawAids';
+import { claimDrawing, releaseDrawing, useDrawFeedback } from './drawingState';
 
 export type MeasureMode = 'none' | 'length' | 'area';
 
@@ -48,12 +47,16 @@ export function useMeasure(): UseMeasureResult {
     map.addLayer(vector);
 
     let draw: Draw | null = null;
+    let detachAids = () => {};
 
     if (mode !== 'none') {
+      claimDrawing('ruler');
       const type = mode === 'length' ? 'LineString' : 'Polygon';
       draw = new Draw({
         source: source,
         type: type,
+        condition: drawCondition,
+        snapTolerance: closeTolerancePx(window.matchMedia?.('(pointer: coarse)').matches === true),
       });
 
       draw.on('drawstart', () => {
@@ -64,7 +67,8 @@ export function useMeasure(): UseMeasureResult {
       draw.on('drawend', (e) => {
         const geom = e.feature.getGeometry();
         if (!geom) return;
-        setLastShape(olGeometryTo4326GeoJSON(geom) as unknown as GeoJsonGeometry);
+        const problem = validateShape(geom);
+        if (problem) { setValue(problem); setTimeout(() => source.clear()); return; }
 
         if (geom instanceof LineString) {
           const length = getLength(geom);
@@ -78,15 +82,32 @@ export function useMeasure(): UseMeasureResult {
       });
 
       map.addInteraction(draw);
+      detachAids = attachDrawAids(map, draw, {
+        onHint: () => {},
+        // Live value only: the end-of-draw null must not wipe the final reading.
+        onMeasure: (m) => { if (m) setValue(`Đang đo: ${m}`); },
+        onCancel: () => { setMode('none'); setValue(null); },
+      });
     }
 
     return () => {
+      detachAids();
+      releaseDrawing('ruler');
       map.removeLayer(vector);
       if (draw) {
         map.removeInteraction(draw);
       }
     };
   }, [map, mode]);
+
+  const { owner } = useDrawFeedback();
+  // An ROI drawing took the map's clicks: stop measuring.
+  useEffect(() => {
+    if (owner === 'roi' && mode !== 'none') {
+      setMode('none');
+      setValue(null);
+    }
+  }, [owner, mode]);
 
   const start = (nextMode: 'length' | 'area') => {
     setMode(nextMode);

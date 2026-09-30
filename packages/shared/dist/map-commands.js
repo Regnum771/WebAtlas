@@ -24,6 +24,8 @@ export const MAP_COMMAND_KINDS = [
     'highlightFeatures',
     'clearHighlights',
     'showGeometries',
+    'showRoi',
+    'clearRoi',
     'proposeFeatureEdit',
 ];
 export const BASEMAP_TYPES = ['street', 'satellite', 'dem'];
@@ -179,6 +181,13 @@ export function isMapCommand(value) {
             const vertices = c.items.reduce((n, i) => n + countVertices(i.geometry), 0);
             return vertices <= MAX_RESULT_VERTICES && (c.fit === undefined || typeof c.fit === 'boolean');
         }
+        case 'showRoi':
+            return (isGeoJsonGeometry(c.geometry) &&
+                countVertices(c.geometry) <= MAX_RESULT_VERTICES &&
+                typeof c.label === 'string' &&
+                (c.fit === undefined || typeof c.fit === 'boolean' || c.fit === 'ifOutside'));
+        case 'clearRoi':
+            return true;
         case 'proposeFeatureEdit': {
             if (!isLayerKey(c.layerKey) || typeof c.featureId !== 'string')
                 return false;

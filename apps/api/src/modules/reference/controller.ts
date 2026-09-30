@@ -7,7 +7,7 @@ import {
   listReferenceMetadata,
   type ReferenceLayerKey,
 } from '../../reference/registry';
-import { getEntity, listEntities } from './repository';
+import { getEntity, listEntities, listEntitiesByMember } from './repository';
 
 const LayerParam = z.object({ layer: z.enum(REFERENCE_LAYER_KEYS) });
 const EntityParam = LayerParam.extend({ entityId: z.string().min(1) });
@@ -16,6 +16,7 @@ const ListQuery = z.object({
   q: z.string().min(2, 'Từ khoá phải có ít nhất 2 ký tự').optional(),
   fclass: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
+  member: z.string().regex(/^\d+$/, 'Mã OSM không hợp lệ').optional(),
 });
 
 /** A Zod enum failure on the path means "no such layer", not "bad request". */
@@ -31,7 +32,12 @@ export async function referenceLayers(_req: FastifyRequest, reply: FastifyReply)
 
 export async function referenceEntities(req: FastifyRequest, reply: FastifyReply) {
   const layer = layerOf(req.params);
-  const { q, fclass, limit } = validate(ListQuery, req.query);
+  const { q, fclass, limit, member } = validate(ListQuery, req.query);
+  // A member lookup answers "which entity is this segment part of" and ignores q/fclass.
+  if (member) {
+    reply.send({ entities: await listEntitiesByMember(req.server.pg, layer, member) });
+    return;
+  }
   const entities = await listEntities(req.server.pg, layer, {
     limit,
     ...(q ? { q } : {}),

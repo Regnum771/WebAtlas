@@ -1,10 +1,11 @@
 # WebATLAS Database Architecture
 
 **Document status:** Living document. Revise when the schema changes.
-**Revision:** 1.3 — 29 September 2026
+**Revision:** 1.4 — 30 September 2026
 Phase 1 (administrative boundaries and stamping) implemented; see docs/superpowers/plans/2026-09-18-plan-1-admin-boundaries-and-stamping.md.
 Phase 2 (reference layers, named entities and search) implemented; see docs/superpowers/plans/2026-09-22-plan-2-reference-layers-and-entities.md.
 Phase 3 (river topology and the three-level hierarchy) implemented; see docs/superpowers/plans/2026-09-22-plan-3-river-topology-and-hierarchy.md.
+Phase 4 (the region of interest and the analysis toolbar) implemented; see docs/superpowers/plans/2026-09-30-plan-4-roi-and-analysis-toolbar.md.
 **Prepared for:** Engineers, data stewards and technical reviewers of the WebATLAS water-resources information system.
 
 ---
@@ -353,7 +354,7 @@ reporting structures later be required, they are to be produced as derived datas
 
 ---
 
-## 8. Region-of-interest model (designed)
+## 8. Region-of-interest model (implemented)
 
 A region of interest is a first-class object: a geometry in WGS 84, the source from which it was obtained, and a label.
 Four sources are admitted: a shape drawn by the user; an entity, optionally buffered; an administrative unit; and the
@@ -366,16 +367,43 @@ and it is the reason the region of interest must not be typed as a drawn shape.
 Operations are divided into those that require an area and those that require a path. A point or line entity must be
 buffered before it can serve as an area; the interface requires the radius rather than failing.
 
-Of the four admitted sources, the entity source is implemented, but only as an input accepted directly by each
-analysis operation (§10.2.1), not yet as the general first-class object described above. A caller names a reference
-entity — and, if it is a line or point, a radius — and the operation buffers and clips it before running, subject to
-the limits in §11. The object model that would let that same buffered result be labelled, retained and passed on to
-a further operation irrespective of its origin remains designed.
+As built in revision 1.4, the region of interest is a reference, never geometry, in one of four sources (the `Roi`
+type in `packages/shared/src/roi.ts`). `drawn` carries a point, line or polygon drawn by the user. `feature` names a
+row of an editable layer by identifier; on a river way, `whole: true` means the level-1 river the way belongs to
+(§4.2), resolved server-side through its `parent_external_id` — a way with no matched river is used as itself,
+labelled as a segment. `reference` names a reference entity (§10.2). `admin` names a province or ward of the working
+region by code. The first three may carry a radius (greater than 0, at most 100 km), which turns a line or point into
+an area; an admin unit never carries one, and an area refuses one. The design's fourth source, the result of a
+previous analysis, was dropped: chaining goes through the radius and through a "use as region" action on each result
+row, which names that row's feature as a new `feature` region, so nothing needs to retain a result's geometry.
 
-Since revision 1.3 a named river is also a usable target: it is one level-1 row (§4.2), which the search returns and
-which the existing `feature` input to an analysis operation accepts by identifier, buffered like any other line and
-subject to the same limits (§11). Before,
-the same input could name only an arbitrary fragment of the river.
+`resolveRoi` (`apps/api/src/modules/roi/resolve.ts`) is the only code that turns a region of interest into geometry.
+Every analysis operation calls it first, and the browser reaches it through `POST /api/roi/resolve`, which returns the
+label, the kind after the radius (area, line or point), the length or area, a simplified display geometry, the bounding
+box and the centroid; the full-precision geometry stays on the server. Because the browser's chip and the operations
+share this one resolver, the chip never shows a region that a tool would then refuse without saying why. It applies
+these limits, in order: the source-complexity limits (§11: 10,000 points, 300 parts), which apply when a radius is
+given and are evaluated inside the SQL so that `ST_Buffer` never runs on an oversized source; the clip to the six working provinces; the area ceiling
+of 25,000 km²; and the resulting-vertex ceiling of 5,000 points. An admin unit is exempt from the clip and from the
+resulting-vertex ceiling: it is selected by code from the working provinces, so it is inside the region by
+construction, and Khánh Hoà alone — 5,195 vertices stored (5,031 as resolved) in 164 parts, most of them islands — would exceed the ceiling. No
+operation feeds an admin unit's full geometry to an expensive geometric step: "Chọn trong vùng" counts it by codes,
+elevation statistics refuses every province on area (the largest ward, 4,208 km², fits its 5,000 km² limit), and
+"Gần nhất" uses the centroid.
+
+`select_within` over an admin unit counts features by the stamped `province_codes` or `ward_codes`
+(§6.3), served by their GIN indexes, rather than by polygon intersection. Two measurements decided this. The geometric
+path over Lâm Đồng, the largest province, took 5.2 s on a cold cache (2.2 s warm), which breaks the five-second
+interactive budget; the stamped-code path answers the same four-layer query in about 1.7 s. And it is the method the
+assistant's `features_in_admin_unit` uses, so "how many dams in Đắk Lắk" gets the same number from the toolbar and from
+the assistant, where polygon intersection against a simplified boundary could disagree for features near a border. The
+result names its method ("Theo mã hành chính đã gán"). Every other region is counted
+geometrically.
+
+"Gần nhất" measures from the region's centroid, so it is available for every kind; a point's centroid is the point
+itself. The centroid is drawn on the map and named in the result, because for a curved river or an L-shaped area it can
+fall outside the shape. When the region is itself a feature of the searched layer, that feature is excluded, so the
+dams nearest a dam do not begin with the dam at 0 km.
 
 ---
 
@@ -519,6 +547,26 @@ and `feature`: `{ referenceLayer, entityId, radiusKm? }`. A line or point entity
 area; an already-areal entity (water, landuse) does not. §11 describes the limits this input is subject to before an
 operation is allowed to run on it.
 
+Revision 1.4 (§8) replaced those three inputs with one. The bodies of `select_within`, `nearest`,
+`elevation_profile` and `zonal_elevation` now take `roi` — the region of interest in any of its four sources — beside
+the operation's own parameters. `buffer` keeps the `geometry` / `feature` / `reference` body, because only the
+assistant's `buffer_feature` tool calls it now that the toolbar's radius replaced the buffer tool; its source still goes
+through `resolveRoi`.
+
+`POST /api/roi/resolve` takes `{ roi }` and returns the resolved region (§8) without its full-precision geometry. It is
+public and bounded like the analysis operations — the analysis connection pool, a read-only transaction and the
+five-second statement timeout — with a rate limit of 120 requests a minute, above the analysis operations' 60, because
+every pick and every radius change is one resolve.
+
+`GET /api/search` accepts `admin` among its `sources`: the six working provinces and their 616 wards, matched by
+trigram against the short and full names. A hit's `featureId` is the unit's code and its `layerKey` is `province` or
+`ward`. Units outside the working region are not returned, because a region of interest outside it is refused anyway.
+Like the other tokens it is opt-in; the web application's search includes it.
+
+`GET /api/reference/:layer/entities` accepts `?member=<osm id>`: the entities of that layer whose `member_ids`
+contain the given OSM id, ignoring `q` and `fclass`. It answers "which road is the segment I clicked part of", so that
+the map popup can offer the whole road as a region of interest; the GIN index of §11 serves it.
+
 #### 10.2.2 Rebuild ordering (implemented)
 
 `basemap.reference_entities` is derived from the raw `basemap` tables, and `load_basemap.py` replaces every one of
@@ -539,6 +587,7 @@ after the basemap load, not as an independent, skippable step.
 | Trigram index on name columns | Fuzzy search by name |
 | GIN indexes on administrative code arrays | Containment queries by province or ward |
 | B-tree indexes on `feature_level`, `parent_external_id` and `flows_into_external_id` (watercourses) | Level filtering, composition lookups and network walks |
+| GIN index on `basemap.reference_entities.member_ids` (migration 21, `1000000000021_reference-member-index`) | The entity a clicked basemap segment belongs to (`?member=`, §10.2.1); it survives `reference:build`, which rebuilds the table with `DELETE` and `INSERT` |
 
 Two measured observations inform the strategy.
 
@@ -565,7 +614,8 @@ contributes its own two round end caps and its own disc to the union, so a geome
 vertices and still be expensive to buffer if it is split into enough separate pieces. `MAX_ROI_AREA_KM2` (25,000
 km²) and `MAX_INPUT_VERTICES` (5,000 points) bound the *resulting* region of interest, measured after buffering and
 after clipping to the working region — a distinct concern from the two limits above, which bound the cost of
-producing that result in the first place.
+producing that result in the first place. Since revision 1.4 all four are applied in one place, `resolveRoi`, to every
+source of a region of interest, with the admin-unit exemption from the resulting-vertex limit described in §8.
 
 ---
 
@@ -618,9 +668,10 @@ migrations create structure, and the pipeline populates it.
 
 Administrative boundaries and stamping shipped first, in revision 1.1 (§6.2, §6.3). Reference-layer access and
 aggregation shipped second, in revision 1.2 (§10.2). Watercourse topology and the entity hierarchy shipped third, in
-this revision (§4, §7, §9). The remaining designed elements are introduced in the following order, each independently
-useful: the region-of-interest model as a first-class object (§8); cross-entity relationships (§10.1); and the
-assistant operations that consume them, including the upstream and downstream walks (§7.2).
+revision 1.3 (§4, §7, §9). The region-of-interest model and the analysis toolbar built on it shipped fourth, in this
+revision (§8, §10.2.1). The remaining designed elements are introduced in the following order, each independently
+useful: cross-entity relationships (§10.1); and the assistant operations that consume them, including the upstream and
+downstream walks (§7.2).
 
 The river ingest departs from the second half of the rule above. The design called for it to be declared as a registry
 dataset that loads its GeoJSON, but the registry's runner implements only SQL stages today. It is therefore registered as

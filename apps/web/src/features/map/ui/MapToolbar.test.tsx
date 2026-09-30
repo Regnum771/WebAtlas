@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MapToolbarView } from './MapToolbar';
 import { ZOOM_STOPS } from '../model/zoomScale';
@@ -106,5 +106,11 @@ describe('MapToolbarView', () => {
     render(<MapToolbarView {...baseProps} analysisButtons={<button>Vùng đệm</button>} analysisPanel={<p>panel</p>} />);
     expect(screen.getByRole('button', { name: 'Vùng đệm' })).toBeInTheDocument();
     expect(screen.getByText('panel')).toBeInTheDocument();
+  });
+
+  it('labels the measure buttons as the Đo nhanh group', () => {
+    render(<MapToolbarView {...baseProps} />);
+    const group = screen.getByRole('group', { name: 'Đo nhanh' });
+    expect(within(group).getByRole('button', { name: /Đo chiều dài/ })).toBeInTheDocument();
   });
 });

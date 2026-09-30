@@ -4,7 +4,7 @@ import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
 import { zonalElevationOp } from '../../../analysis/ops/zonalElevation';
-import type { ZonalInput } from '../../../analysis/schemas';
+import { roiFromParts } from '../../../roi/fromParts';
 import { runAnalysisTool } from './analysisTool';
 
 export const zonalElevationTool: ToolFactory = (ctx) =>
@@ -19,10 +19,8 @@ export const zonalElevationTool: ToolFactory = (ctx) =>
     }),
     run: (input) =>
       runAnalysisTool(ctx, 'zonal_elevation', input.layerKey, (db) =>
-        // areaGeometry reads bufferKm; ZonalInput's HTTP schema simply does not offer it.
         zonalElevationOp(db, {
-          feature: { layerKey: input.layerKey, featureId: input.featureId },
-          ...(input.radiusKm !== undefined ? { bufferKm: input.radiusKm } : {}),
-        } as ZonalInput)
+          roi: roiFromParts({ feature: { layerKey: input.layerKey, featureId: input.featureId } }, input.radiusKm),
+        })
       ),
   });

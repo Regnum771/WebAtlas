@@ -18,6 +18,9 @@ export const elevationProfileTool: ToolFactory = (ctx) =>
     }),
     run: (input) =>
       runAnalysisTool(ctx, 'elevation_profile', input.layerKey, (db) =>
-        elevationProfileOp(db, { feature: { layerKey: input.layerKey, featureId: input.featureId }, samples: input.samples })
+        elevationProfileOp(db, {
+          roi: { source: 'feature', layerKey: input.layerKey, featureId: input.featureId },
+          samples: input.samples,
+        })
       ),
   });

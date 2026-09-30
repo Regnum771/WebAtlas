@@ -61,7 +61,7 @@ describe('rivers mean the level-1 entity in every collection query', () => {
     const { rows: [province] } = await pool.query<{ g: unknown }>(
       `SELECT ST_AsGeoJSON(geom, 6)::json AS g FROM admin.provinces WHERE code = '66'`
     );
-    const r = await selectWithinOp(pool, { geometry: province.g, layerKeys: ['rivers'] } as never);
+    const r = await selectWithinOp(pool, { roi: { source: 'drawn', geometry: province.g }, layerKeys: ['rivers'] } as never);
     const { rows: [expected] } = await pool.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM water.rivers_active r, admin.provinces p
         WHERE p.code = '66' AND r.feature_level = 1 AND ST_Intersects(r.geom, p.geom)`
