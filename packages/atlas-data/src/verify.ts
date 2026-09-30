@@ -1,6 +1,8 @@
 import type { Pool } from 'pg';
 import type { Dataset, Probe, ProbeContext, ProbeResult } from './types';
-import { computeStatus } from './status';
+import { topologicalOrder } from './graph';
+import { stageHashPlan } from './state';
+import { computeStatusOne } from './status';
 import { wfsAnswers } from './probes';
 
 export interface VerifyCheck {
@@ -24,34 +26,45 @@ async function safely(probe: Probe, ctx: ProbeContext): Promise<ProbeResult> {
  * suite — a build failing and the code being wrong are read differently.
  */
 export async function verifyAtlas(pool: Pool, datasets: Dataset[], ctx: ProbeContext): Promise<VerifyCheck[]> {
-  const byId = new Map(datasets.map((d) => [d.id, d]));
+  const ordered = topologicalOrder(datasets);
+  const plan = stageHashPlan(ordered);
+  const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
   const checks: VerifyCheck[] = [];
-  for (const s of await computeStatus(pool, datasets)) {
-    const d = byId.get(s.id)!;
-    const unhealthy = s.stages.filter((x) => x.state !== 'ok');
-    checks.push({
-      id: d.id,
-      check: 'stages',
-      ok: unhealthy.length === 0,
-      detail: unhealthy.length ? unhealthy.map((x) => `${x.key} ${x.state}`).join(', ') : `${s.stages.length} stage(s) ok`,
-    });
+  // A database error is a failed check, never an abort: the checks already gathered must still be reported.
+  for (const d of ordered) {
+    try {
+      const s = await computeStatusOne(pool, d, plan.get(d.id)!);
+      const unhealthy = s.stages.filter((x) => x.state !== 'ok');
+      checks.push({
+        id: d.id,
+        check: 'stages',
+        ok: unhealthy.length === 0,
+        detail: unhealthy.length ? unhealthy.map((x) => `${x.key} ${x.state}`).join(', ') : `${s.stages.length} stage(s) ok`,
+      });
+    } catch (err) {
+      checks.push({ id: d.id, check: 'stages', ok: false, detail: message(err) });
+    }
     if (d.probe) checks.push({ id: d.id, check: 'probe', ...(await safely(d.probe, ctx)) });
     for (const stage of d.stages) {
       if (stage.type === 'publish-geoserver') {
         checks.push({ id: d.id, check: 'layer', ...(await safely(wfsAnswers(stage.layer), ctx)) });
       }
     }
-    const { rows } = await pool.query<{ licence: string }>(
-      'SELECT licence FROM app.dataset_lineage WHERE dataset_id = $1',
-      [d.id]
-    );
-    const licence = rows[0]?.licence ?? '';
-    checks.push({
-      id: d.id,
-      check: 'lineage',
-      ok: licence.length > 0,
-      detail: licence ? `licence ${licence}` : 'no lineage row — build or adopt the dataset',
-    });
+    try {
+      const { rows } = await pool.query<{ licence: string }>(
+        'SELECT licence FROM app.dataset_lineage WHERE dataset_id = $1',
+        [d.id]
+      );
+      const licence = rows[0]?.licence ?? '';
+      checks.push({
+        id: d.id,
+        check: 'lineage',
+        ok: licence.length > 0,
+        detail: licence ? `licence ${licence}` : 'no lineage row — build or adopt the dataset',
+      });
+    } catch (err) {
+      checks.push({ id: d.id, check: 'lineage', ok: false, detail: message(err) });
+    }
   }
   return checks;
 }

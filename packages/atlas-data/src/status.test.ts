@@ -58,4 +58,18 @@ describe('computeStatus', () => {
     expect(s.stages.map((st) => st.state)).toEqual(['ok', 'stale', 'failed', 'missing']);
     expect(s.state).toBe('failed');
   });
+
+  it('a failed row wins over a moved hash', async () => {
+    const { vi } = await import('vitest');
+    const { computeStatus } = await import('./status');
+    const d = {
+      id: 'y', kind: 'derived' as const, lineage: { statement: 's', licence: 'CC0-1.0', sources: [] },
+      stages: [{ type: 'sql' as const, statement: 'SELECT 1' }],
+    };
+    const pool = {
+      query: vi.fn(async () => ({ rows: [{ input_hash: 'an older hash', status: 'failed' }] })),
+    } as unknown as import('pg').Pool;
+    const [s] = await computeStatus(pool, [d]);
+    expect(s.stages.map((st) => st.state)).toEqual(['failed']);
+  });
 });

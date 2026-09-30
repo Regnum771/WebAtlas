@@ -46,4 +46,41 @@ describe('verifyAtlas (spec §9)', () => {
     expect(ok).toBe(false);
     expect(lines.at(-1)).toMatch(/^3 of 4 checks failed$/);
   });
+
+  it('turns a lineage query error into a failed lineage check and keeps the rest', async () => {
+    const base = pool({ licence: 'ODbL-1.0' });
+    const failing = {
+      query: vi.fn(async (sql: string, params: unknown[] = []) => {
+        if (sql.includes('FROM app.dataset_lineage')) throw new Error('connection reset');
+        return (base.query as unknown as (s: string, p: unknown[]) => Promise<unknown>)(sql, params);
+      }),
+    } as unknown as Pool;
+    const checks = await verifyAtlas(failing, [d], ctx(1));
+    expect(checks.map((c) => [c.check, c.ok])).toEqual([['stages', true], ['probe', true], ['layer', true], ['lineage', false]]);
+    expect(checks.at(-1)!.detail).toBe('connection reset');
+    const { lines, ok } = formatVerify(checks);
+    expect(ok).toBe(false);
+    expect(lines.at(-1)).toBe('1 of 4 checks failed');
+  });
+
+  it('turns a stage-state query error into a failed stages check and keeps the rest', async () => {
+    const base = pool({ licence: 'ODbL-1.0' });
+    const failing = {
+      query: vi.fn(async (sql: string, params: unknown[] = []) => {
+        if (sql.includes('FROM app.dataset_stage_state')) throw new Error('relation does not exist');
+        return (base.query as unknown as (s: string, p: unknown[]) => Promise<unknown>)(sql, params);
+      }),
+    } as unknown as Pool;
+    const checks = await verifyAtlas(failing, [d], ctx(1));
+    expect(checks.map((c) => [c.check, c.ok])).toEqual([['stages', false], ['probe', true], ['layer', true], ['lineage', true]]);
+    expect(checks[0].detail).toBe('relation does not exist');
+    expect(formatVerify(checks).ok).toBe(false);
+  });
+
+  it('a probe that throws becomes a failed probe check', async () => {
+    const boom: Dataset = { ...d, probe: async () => { throw new Error('probe exploded'); } };
+    const checks = await verifyAtlas(pool({ licence: 'ODbL-1.0' }), [boom], ctx(1));
+    expect(checks.find((c) => c.check === 'probe')).toMatchObject({ ok: false, detail: 'probe exploded' });
+    expect(checks.filter((c) => c.check !== 'probe').every((c) => c.ok)).toBe(true);
+  });
 });

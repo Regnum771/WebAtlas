@@ -14,28 +14,30 @@ export interface DatasetStatus {
 /** Worst first: a dataset is as healthy as its least healthy stage. */
 const ORDER: StageState[] = ['failed', 'missing', 'stale', 'ok'];
 
+/** One dataset's declared state, given the shared hash plan (so a caller can isolate a per-dataset failure). */
+export async function computeStatusOne(pool: Pool, d: Dataset, hashes: string[]): Promise<DatasetStatus> {
+  const stages: DatasetStatus['stages'] = [];
+  for (const [i, stage] of d.stages.entries()) {
+    const key = stageKey(i, stage);
+    const prior = await readStageState(pool, d.id, key);
+    const state: StageState = !prior
+      ? 'missing'
+      : prior.status !== 'ok'
+        ? 'failed'
+        : prior.input_hash !== hashes[i]
+          ? 'stale'
+          : 'ok';
+    stages.push({ key, state });
+  }
+  return { id: d.id, state: ORDER.find((s) => stages.some((st) => st.state === s)) ?? 'ok', stages };
+}
+
 /** Declared state (spec §4): what the registry believes, from the same hash plan the runner uses. */
 export async function computeStatus(pool: Pool, datasets: Dataset[]): Promise<DatasetStatus[]> {
   const ordered = topologicalOrder(datasets);
   const plan = stageHashPlan(ordered);
   const out: DatasetStatus[] = [];
-  for (const d of ordered) {
-    const hashes = plan.get(d.id)!;
-    const stages: DatasetStatus['stages'] = [];
-    for (const [i, stage] of d.stages.entries()) {
-      const key = stageKey(i, stage);
-      const prior = await readStageState(pool, d.id, key);
-      const state: StageState = !prior
-        ? 'missing'
-        : prior.status !== 'ok'
-          ? 'failed'
-          : prior.input_hash !== hashes[i]
-            ? 'stale'
-            : 'ok';
-      stages.push({ key, state });
-    }
-    out.push({ id: d.id, state: ORDER.find((s) => stages.some((st) => st.state === s)) ?? 'ok', stages });
-  }
+  for (const d of ordered) out.push(await computeStatusOne(pool, d, plan.get(d.id)!));
   return out;
 }
 
