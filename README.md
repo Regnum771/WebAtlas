@@ -28,10 +28,12 @@ webatlas/
     api/            # Fastify + TypeScript API (auth, users, layer feature CRUD, migrations, seeds)
   packages/
     shared/         # @webatlas/shared — cross-cutting TS types (layer keys, geometry + attribute maps)
+    atlas-data/     # @webatlas/atlas-data — dataset registry + build pipeline (atlas:build / atlas:status)
   infra/
     docker-compose.yml   # PostGIS + GeoServer
     postgis/init.sql     # extensions (postgis, citext) + app/water schemas
     .env.example         # copy to .env (git-ignored) before running the stack
+  docs/runbooks/    # data setup order + per-dataset runbooks (start at README.md)
   docs/superpowers/
     specs/          # design specs
     plans/          # phased implementation plans
@@ -76,6 +78,11 @@ npm run migrate            # apply DB migrations (app.users, app.audit_log, wate
 npm run seed               # load the 7 thematic layers from the source GeoJSON/mock data
 npm run publish:geoserver  # publish the water.* tables as WFS layers in GeoServer
 ```
+
+These three commands give you the thematic layers only. The full app also needs the river
+network (`ingest:rivers`), the self-hosted basemap, reference layers and, optionally, the DEM
+and contours. About 1 GB of that data lives outside git, and the steps must run in a fixed
+order: follow **[docs/runbooks/README.md](docs/runbooks/README.md)**.
 
 ### 4. Run the API
 
@@ -126,6 +133,12 @@ GET    /api/features/:layerKey/:id/geometry → simplified GeoJSON geometry (pub
 POST   /api/analysis/:op                → buffer | select_within | nearest | elevation_profile | zonal_elevation (public, 60/min)
 GET    /api/admin-units?level=province|ward&province= → administrative units with extents (public)
 GET    /api/layers/:key/features?province=&ward=      → features of the ACTIVE version, filtered   [auth]
+GET    /api/elevation?lon=&lat=         → DEM height at a point (public, 600/min)
+GET    /api/search?q=                   → named entities across layers (public)
+GET    /api/reference/layers            → reference-layer catalog (public)
+GET    /api/reference/:layer/entities[/:entityId] → named reference entities (public)
+POST   /api/roi/resolve                 → resolve the analysis region (ROI) — area, line or point (public, 120/min)
+POST   /api/assistant/messages          → map assistant (LLM) turn               [auth, rate-limited per user]
 ```
 
 Passwords are argon2-hashed; JWTs are signed from `JWT_SECRET` with a short expiry; every
@@ -144,9 +157,14 @@ write is recorded in `app.audit_log`; geometry is validated in PostGIS before wr
 | `npm run seed` | Seed the `water.*` thematic layers |
 | `npm run publish:geoserver` | Publish the WFS layers in GeoServer |
 | `npm run test:api` | Run the API test suite (needs the DB stack up) |
+| `npm run test:api:live` | API tests that call the real LLM (needs an API key) |
+| `npm run test:web` | Run the frontend tests |
+| `npm run atlas:build` | Build registered datasets in dependency order (`--only <id>` for one) |
+| `npm run atlas:status` | Show each registered dataset's stages as ok / stale / failed / missing |
 
 API-workspace scripts (run with `-w @webatlas/api`): `dev`, `start`, `create-admin`,
-`migrate:up`, `migrate:down`. Frontend tests: `npm run test -w @webatlas/web`.
+`migrate:up`, `migrate:down`, `ingest:rivers`, `rivers:hierarchy`, `reference:build`,
+`contours:generate`. Pipeline tests: `npm run test -w @webatlas/atlas-data`.
 
 ## Regenerating administrative boundaries
 
@@ -270,6 +288,10 @@ The build-out is phased. Each plan produces working, testable software on its ow
 - [x] **Vùng công tác + OSM waterways + ranh giới 34 tỉnh** (dữ liệu chuyên đề giới hạn trong 6 tỉnh Nam Trung Bộ & Tây Nguyên; sông/hồ từ OpenStreetMap có tên riêng; ranh giới hành chính sau sáp nhập 01/7/2025).
 - [x] **Plan A — Cải tổ giao diện** (thanh biểu tượng thay bảy panel nổi, bảng lớp/chú giải chạy trên dữ liệu thật, lớp lệnh bản đồ dùng chung `MapCommand`).
 - [x] **Plan B — Trợ lý bản đồ** (LLM phía máy chủ hỏi đáp tiếng Việt, đo đạc bằng PostGIS, điều khiển bản đồ bằng ngôn ngữ tự nhiên). Xem [runbook](docs/runbooks/map-assistant.md). Đã chạy kiểm tra với khoá API thật ngày 14/09/2026: lần đó phát hiện và sửa lỗi mô hình tự bịa toạ độ địa danh (thêm công cụ `locate_place`); chi tiết ở mục "Lần chạy kiểm tra đầu tiên" trong runbook.
+- [x] **Đường đồng mức và DEM** (độ cao theo con trỏ, ô đọc số trên bản đồ, `elevation_profile` / `zonal_elevation`). Xem [runbook DEM](docs/runbooks/elevation-dem.md) và [đường đồng mức](docs/runbooks/terrain-contours.md).
+- [x] **Phản hồi giám sát** (chỉ quản trị viên được ghi, cập nhật dữ liệu qua trợ lý, thao tác phân tích, in ấn, hệ quy chiếu).
+- [x] **Mô hình thực thể, giai đoạn 1–4**: ranh giới hành chính và đóng dấu mã tỉnh/xã lên mọi đối tượng; lớp tham chiếu, thực thể có tên và tìm kiếm; topology sông và phân cấp ba cấp; vùng phân tích (ROI) là đối tượng hạng nhất cùng thanh công cụ phân tích ([hướng dẫn](docs/runbooks/vung-phan-tich.md)). Giai đoạn 5 chưa làm.
+- [x] **Sổ đăng ký dữ liệu — kế hoạch 1 và kế hoạch A** (`packages/atlas-data`: `atlas:build` / `atlas:status`, dựng lại theo chuỗi phụ thuộc, các stage `run` / `fetch-http` / `publish-geoserver`). Kế hoạch B (ảnh Docker công cụ, `atlas:up` dựng mọi thứ từ bản clone mới) đang làm; tới khi xong, dữ liệu vẫn dựng theo [runbook](docs/runbooks/README.md).
 - [ ] **Tài liệu hoá lại kho** ([docs/superpowers/plans/2026-09-07-repo-redocumentation.md](docs/superpowers/plans/2026-09-07-repo-redocumentation.md)) — mốc kế tiếp.
 
 ## Documentation
