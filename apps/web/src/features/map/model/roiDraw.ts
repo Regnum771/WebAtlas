@@ -6,6 +6,7 @@ import type Geometry from 'ol/geom/Geometry';
 import type { GeoJsonGeometry } from '@webatlas/shared';
 import type { RoiDrawKind } from '../../roi/model/roi.store';
 import { olGeometryTo4326GeoJSON } from './geo';
+import { drawCondition } from './drawAids';
 
 export interface RoiDrawHooks {
   /** Pixel distance within which a click on the first vertex closes the polygon (U-11). */
@@ -32,7 +33,7 @@ export function startRoiDraw(
     zIndex: 996,
     style: { 'stroke-color': '#2563eb', 'stroke-width': 2, 'fill-color': 'rgba(37, 99, 235, 0.08)', 'circle-radius': 6, 'circle-fill-color': '#2563eb' },
   });
-  const common = hooks.snapTolerancePx !== undefined ? { snapTolerance: hooks.snapTolerancePx } : {};
+  const common = { condition: drawCondition, ...(hooks.snapTolerancePx !== undefined ? { snapTolerance: hooks.snapTolerancePx } : {}) };
   const draw = kind === 'Box'
     ? new Draw({ source, type: 'Circle', geometryFunction: createBox(), ...common })
     : new Draw({ source, type: kind, ...common });

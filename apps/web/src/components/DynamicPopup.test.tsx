@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   info: [] as Array<{ resolve: (v: unknown) => void }>,
   members: [] as Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }>,
   target: null as null | HTMLElement,
+  overlayOnTop: false,
 }));
 
 vi.mock('../features/map/model/drawingState', () => ({ isDrawing: () => false, drawingJustEnded: () => false }));
@@ -23,6 +24,7 @@ vi.mock('../app/providers/MapProvider', () => {
     on: (ev: string, fn: (e: unknown) => void) => { if (ev === 'singleclick') h.handler = fn; },
     un: () => {},
     forEachFeatureAtPixel: (_px: unknown, cb: (f: unknown, l: unknown) => unknown) => {
+      if (h.overlayOnTop) cb({ getProperties: () => ({ geometry: {}, label: 'Vùng phân tích' }), getId: () => undefined }, { get: () => 'layer_roi' });
       cb({ getProperties: () => ({ code: '66', name: 'Đắk Lắk', fullName: 'Tỉnh Đắk Lắk' }), getId: () => 'p.66' },
         { get: () => 'layer_provinces_2026' });
     },
@@ -91,5 +93,16 @@ describe('DynamicPopup placement', () => {
     await click(1);
     const popup = container.querySelector('.dynamic-popup') as HTMLElement;
     expect(popup.style.left).toBe(`${368 + 10 + 15}px`); // getPixelFromCoordinate → [10, 10]
+  });
+});
+
+describe('DynamicPopup under an ROI overlay', () => {
+  beforeEach(() => { h.handler = null; h.info.length = 0; h.members.length = 0; h.overlayOnTop = true; });
+  it('still shows the province underneath a click that hits the ROI layer first', async () => {
+    const { container } = render(<DynamicPopup />);
+    await click(1);
+    h.overlayOnTop = false;
+    expect(screen.getByText('Tỉnh Đắk Lắk')).toBeInTheDocument(); // candidate from the province layer
+    expect(container.textContent).not.toContain('Đối tượng không tên');
   });
 });

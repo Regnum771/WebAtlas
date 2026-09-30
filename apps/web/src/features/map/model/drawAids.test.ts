@@ -6,8 +6,10 @@ import OlMap from 'ol/Map';
 import Feature from 'ol/Feature';
 import Draw, { DrawEvent } from 'ol/interaction/Draw';
 import VectorSource from 'ol/source/Vector';
+import VectorLayer from 'ol/layer/Vector';
+import { startRoiDraw } from './roiDraw';
 import {
-  attachDrawAids, closeTolerancePx, formatLive, keyBelongsToTarget, handleDrawKey, isSimplePolygon, nearFirstVertex, validateShape,
+  attachDrawAids, closeTolerancePx, drawCondition, snapSourcesOf, formatLive, keyBelongsToTarget, handleDrawKey, isSimplePolygon, nearFirstVertex, validateShape,
 } from './drawAids';
 
 // jsdom does not implement ResizeObserver, but ol/Map's constructor requires it.
@@ -122,6 +124,76 @@ describe('attachDrawAids keyboard', () => {
     press(document.body, 'Enter');
     expect(finish).not.toHaveBeenCalled();
     expect(press(document.body, 'a').defaultPrevented).toBe(false);
+    detach();
+  });
+});
+
+const ev = (mods: Partial<Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>>) =>
+  ({ originalEvent: { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, ...mods } }) as never;
+
+describe('Alt-to-unsnap (I-1)', () => {
+  it('drawCondition accepts a plain and an Alt-only pointer event, rejects ctrl/meta/alt+shift', () => {
+    expect(drawCondition(ev({}))).toBe(true);
+    expect(drawCondition(ev({ altKey: true }))).toBe(true);
+    expect(drawCondition(ev({ ctrlKey: true }))).toBe(false);
+    expect(drawCondition(ev({ metaKey: true }))).toBe(false);
+    expect(drawCondition(ev({ altKey: true, shiftKey: true }))).toBe(false);
+  });
+  it('the ROI Draw interaction uses it', () => {
+    const map = new OlMap({});
+    const stop = startRoiDraw(map, 'Polygon', () => {});
+    const draw = map.getInteractions().getArray().find((i) => i instanceof Draw) as Draw;
+    const cond = (draw as unknown as { condition_: (e: never) => boolean }).condition_;
+    expect(cond(ev({ altKey: true }))).toBe(true);
+    expect(cond(ev({ ctrlKey: true }))).toBe(false);
+    stop();
+  });
+  it('Alt is not swallowed by a focused button', () => {
+    expect(keyBelongsToTarget(document.createElement('button'), 'Alt')).toBe(false);
+    expect(keyBelongsToTarget(document.createElement('input'), 'Alt')).toBe(true);
+  });
+});
+
+describe('snapSourcesOf', () => {
+  it('skips overlays and the admin boundaries, keeps thematic layers and the ROI layer', () => {
+    const map = new OlMap({});
+    const ids = ['layer_provinces_2026', 'layer_wards_2026', 'layer_analysis_results', 'layer_assistant_highlight', 'layer_rivers_overview', 'layer_roi', 'layer_dams'];
+    const sources = ids.map((id) => {
+      const source = new VectorSource();
+      map.addLayer(new VectorLayer({ source, properties: { id } }));
+      return [id, source] as const;
+    });
+    const got = snapSourcesOf(map);
+    expect(got).toHaveLength(2);
+    expect(got).toContain(sources[5][1]);
+    expect(got).toContain(sources[6][1]);
+  });
+});
+
+describe('Enter finishes only a real shape (minor 6)', () => {
+  const d = () => ({ removeLastPoint: vi.fn(), finishDrawing: vi.fn(), abortDrawing: vi.fn() });
+  it('needs 3 vertices for a polygon and 2 for a line', () => {
+    const a = d();
+    expect(handleDrawKey('Enter', a, 2, 3)).toBeNull();
+    expect(a.finishDrawing).not.toHaveBeenCalled();
+    expect(handleDrawKey('Enter', a, 3, 3)).toBe('finish');
+    const b = d();
+    expect(handleDrawKey('Enter', b, 1, 2)).toBeNull();
+    expect(handleDrawKey('Enter', b, 2, 2)).toBe('finish');
+  });
+  it('attachDrawAids: Enter on a 2-vertex polygon does nothing, on 3 it finishes', () => {
+    const map = new OlMap({});
+    const draw = new Draw({ source: new VectorSource(), type: 'Polygon' });
+    const finish = vi.spyOn(draw, 'finishDrawing').mockImplementation(() => null);
+    const detach = attachDrawAids(map, draw, { onHint: vi.fn(), onMeasure: vi.fn(), onCancel: vi.fn() });
+    const poly = new Polygon([[[0, 0], [10, 0], [10, 10], [0, 0]]]); // 2 placed + cursor
+    draw.dispatchEvent(new DrawEvent('drawstart', new Feature(poly)));
+    poly.setCoordinates([[[0, 0], [10, 0], [10, 10], [0, 0]]]);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(finish).not.toHaveBeenCalled();
+    poly.setCoordinates([[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]]);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(finish).toHaveBeenCalledTimes(1);
     detach();
   });
 });

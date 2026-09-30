@@ -6,7 +6,7 @@ import VectorLayer from 'ol/layer/Vector';
 import { getLength, getArea } from 'ol/sphere';
 import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
-import { attachDrawAids, closeTolerancePx, validateShape } from './drawAids';
+import { attachDrawAids, closeTolerancePx, drawCondition, validateShape } from './drawAids';
 import { claimDrawing, releaseDrawing, useDrawFeedback } from './drawingState';
 
 export type MeasureMode = 'none' | 'length' | 'area';
@@ -55,6 +55,7 @@ export function useMeasure(): UseMeasureResult {
       draw = new Draw({
         source: source,
         type: type,
+        condition: drawCondition,
         snapTolerance: closeTolerancePx(window.matchMedia?.('(pointer: coarse)').matches === true),
       });
 

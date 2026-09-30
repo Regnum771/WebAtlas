@@ -1,4 +1,5 @@
 import type { Map, MapBrowserEvent } from 'ol';
+import { altKeyOnly, noModifierKeys } from 'ol/events/condition';
 import type Draw from 'ol/interaction/Draw';
 import Snap from 'ol/interaction/Snap';
 import VectorLayer from 'ol/layer/Vector';
@@ -56,21 +57,28 @@ export function keyBelongsToTarget(t: EventTarget | null, key: string): boolean 
   if (!el || !el.tagName) return false;
   if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return true;
   // Esc still cancels while a draw tool button holds focus (the user just clicked it).
-  return key !== 'Escape' && (el.tagName === 'BUTTON' || el.tagName === 'SELECT' || el.tagName === 'A');
+  return key !== 'Escape' && key !== 'Alt' && (el.tagName === 'BUTTON' || el.tagName === 'SELECT' || el.tagName === 'A');
 }
+
+/**
+ * Draw's own default (`noModifierKeys`) rejects any event with altKey, so holding Alt to
+ * unsnap would also stop clicks placing vertices. Alt alone is allowed; Shift stays the
+ * freehand key and Alt+Shift stays with DragRotate.
+ */
+export const drawCondition = (e: MapBrowserEvent): boolean => noModifierKeys(e) || altKeyOnly(e);
 
 export type DrawKeyAction = 'undo' | 'finish' | 'cancel' | null;
 type DrawLike = Pick<Draw, 'removeLastPoint' | 'finishDrawing' | 'abortDrawing'>;
 
 /** Backspace removes the last vertex (or cancels when none is left); Enter finishes; Esc cancels. */
-export function handleDrawKey(key: string, draw: DrawLike, vertexCount: number): DrawKeyAction {
+export function handleDrawKey(key: string, draw: DrawLike, vertexCount: number, minToFinish = 1): DrawKeyAction {
   if (key === 'Backspace') {
     if (vertexCount > 0) { draw.removeLastPoint(); return 'undo'; }
     draw.abortDrawing();
     return 'cancel';
   }
   if (key === 'Enter') {
-    if (vertexCount < 1) return null; // nothing to finish
+    if (vertexCount < minToFinish) return null; // too few vertices to be a shape
     draw.finishDrawing();
     return 'finish';
   }
@@ -86,7 +94,11 @@ export function formatLive(g: Geometry): string | null {
 }
 
 /** Transient layers are not snap targets: the ROI outline and the data layers are. */
-const NOT_SNAPPABLE = new Set(['layer_rivers_overview', 'layer_assistant_highlight', 'layer_analysis_results']);
+export const NOT_SNAPPABLE = new Set([
+  'layer_rivers_overview', 'layer_assistant_highlight', 'layer_analysis_results',
+  // Whole-country admin boundaries: 58k-323k vertices, and not what a user snaps to.
+  'layer_provinces_2026', 'layer_wards_2026',
+]);
 
 export function snapSourcesOf(map: Map): VectorSource[] {
   return map.getLayers().getArray()
@@ -165,7 +177,7 @@ export function attachDrawAids(map: Map, draw: Draw, cb: DrawAidsCallbacks): () 
   const onKeyDown = (e: KeyboardEvent) => {
     if (keyBelongsToTarget(e.target, e.key)) return;
     if (e.key === 'Alt') { setSnapping(false); return; }
-    const action = handleDrawKey(e.key, draw, vertexCount);
+    const action = handleDrawKey(e.key, draw, vertexCount, sketch instanceof Polygon ? 3 : sketch instanceof LineString ? 2 : 1);
     if (action === 'cancel') cb.onCancel();
     if (action && e.key === 'Backspace') e.preventDefault(); // not "browser back"
   };

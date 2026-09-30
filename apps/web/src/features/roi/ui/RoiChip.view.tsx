@@ -4,9 +4,9 @@ import { KIND_LABELS, formatMeasure } from '../model/format';
 import type { RoiDrawKind, RoiState } from '../model/roi.store';
 
 const DRAW_HINTS: Record<RoiDrawKind, string> = {
-  Polygon: 'Nhấp để vẽ · nhấp đúp hoặc Enter để kết thúc · Backspace xoá điểm · Esc để huỷ',
+  Polygon: 'Nhấp để vẽ · nhấp đúp hoặc Enter để kết thúc · giữ Shift và kéo để vẽ tay · giữ Alt để tắt bắt dính · Backspace xoá điểm · Esc để huỷ',
   Box: 'Nhấp hai góc đối nhau · Esc để huỷ',
-  LineString: 'Nhấp để vẽ · nhấp đúp hoặc Enter để kết thúc · Backspace xoá điểm · Esc để huỷ',
+  LineString: 'Nhấp để vẽ · nhấp đúp hoặc Enter để kết thúc · giữ Shift và kéo để vẽ tay · giữ Alt để tắt bắt dính · Backspace xoá điểm · Esc để huỷ',
   Point: 'Nhấp để chọn điểm · Esc để huỷ',
 };
 const PRESETS = [1, 2, 5, 10];

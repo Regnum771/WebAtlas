@@ -4,7 +4,7 @@ Mọi công cụ phân tích chạy trên **một vùng phân tích** duy nhất
 
 ## Chọn vùng phân tích
 - **Vẽ**: nhóm "Vẽ" có đa giác, hình chữ nhật, đường và điểm. Nhấp đúp hoặc Enter để kết thúc,
-  Backspace xoá điểm vừa đặt, Esc huỷ. Con trỏ bắt dính vào đối tượng trên bản đồ; giữ Alt để vẽ tự do.
+  Backspace xoá điểm vừa đặt, Esc huỷ. Con trỏ bắt dính vào đối tượng trên bản đồ; giữ Alt để tắt bắt dính; giữ Shift và kéo để vẽ tay.
 - **Nhấp bản đồ**: popup có mục "Dùng làm vùng phân tích" — đối tượng vừa nhấp (một đoạn sông có tên
   sẽ lấy cả con sông), cả tuyến đường, xã/phường (phóng tới mức 10) và tỉnh.
 - **Tìm kiếm**: mỗi kết quả có nút "Dùng" — gồm cả tỉnh và xã/phường trong vùng công tác.

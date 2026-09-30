@@ -8,6 +8,7 @@ import { adminCandidates, entityCandidates, referenceLayerOfTable, thematicCandi
 import { fetchEntitiesByMember } from '../features/roi/api/roi.api';
 import { RoiCandidatesView } from '../features/roi/ui/RoiCandidates.view';
 import { setRoi } from '../features/roi/model/roi.store';
+import { OVERLAY_LAYER_IDS } from '../features/map/model/overlayLayers';
 import { useMapEditing } from '../features/map/model/mapEditing';
 
 interface PopupData {
@@ -134,6 +135,9 @@ const DynamicPopup: React.FC = () => {
       let province: any = null;
       let ward: any = null;
       map.forEachFeatureAtPixel(e.pixel, (f, layer) => {
+        // Overlays (ROI outline, results, highlight) sit above the data and are filled: they
+        // must not shadow the ward/province/thematic feature underneath.
+        if (OVERLAY_LAYER_IDS.has(layer?.get('id'))) return undefined;
         const p = f.getProperties();
         if (!feature) feature = f;
         // The normalized props carry `id` for CRUD; fall back to the WFS feature id
