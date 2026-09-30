@@ -53,8 +53,11 @@ npm run atlas:up
 `atlas:up` checks the machine, creates `infra/.env` and `apps/api/.env` from their examples when
 missing (local development defaults), starts PostGIS and GeoServer, builds the tools image, applies
 migrations, builds every dataset and verifies the result. The first run downloads about 1.2 GB
-(the OpenStreetMap Vietnam extract and FABDEM elevation tiles) and took **<measured in Task 12>**
-on the reference machine. Re-running resumes: finished work is skipped. To skip the elevation
+(the OpenStreetMap Vietnam extract and FABDEM elevation tiles) and took **about 19 minutes** from a
+fresh clone on the reference machine, on a line that downloaded at about 55 Mbit/s. That was measured as
+one run plus resumed runs (2026-09-30), with the tools image's system packages already cached by Docker;
+a machine that has never built that image adds a few minutes. The basemap load alone takes about
+5 minutes and needs about 1 GB of memory in Docker. Re-running resumes: finished work is skipped. To skip the elevation
 data: `npm run atlas:up -- --except dem` (contours depend on it and are skipped too).
 
 Then create an administrator (there is no default login) and start the app:
@@ -65,9 +68,12 @@ npm run dev -w @webatlas/api    # API at http://localhost:3001
 npm run dev:web                 # web app at http://localhost:5173
 ```
 
-Where things run: PostgreSQL + PostGIS at `localhost:5432`, GeoServer at `http://localhost:8080/geoserver/`
-(WFS: `/geoserver/ows?service=WFS&request=GetCapabilities`), the API at `http://localhost:3001` (`GET /health` returns
-`{"status":"ok"}`), the web app at `http://localhost:5173`. The administrator password must be at least 8 characters.
+Where things run (default ports; `POSTGRES_PORT` and `GEOSERVER_PORT` in `infra/.env` change the first two, and
+`apps/api/.env` must then point at them): PostgreSQL + PostGIS at `localhost:5432`, GeoServer at
+`http://localhost:8080/geoserver/` (WFS: `/geoserver/ows?service=WFS&request=GetCapabilities`), the API at
+`http://localhost:3001` (`GET /health` returns `{"status":"ok"}`), the web app at `http://localhost:5173`. Use at least
+8 characters for the administrator password: `create-admin` does not check it, but the API enforces that for the users
+it creates.
 
 ### Day-to-day
 

@@ -3383,3 +3383,100 @@ git grep -n "apps/api/scripts" -- ':!docs/superpowers' ':!.superpowers' ':!apps/
    `has-state` was reported for `demo` and `rivers`. No stage executed.
 3. **`atlas:build`** took 57 s: `executed 3, skipped 21`. Only `rivers` re-ran. The ingest re-activated version `0e950c38…` with 23,119 features, and a heartbeat fired at 31 s. `rivers` and `rivers_overview` were `unchanged`. No tools stage ran. The exit code was 0.
 4. **`atlas:verify`** took 11 s: `all 29 checks passed`, exit code 0. `atlas:status` then reported every dataset `ok`, with the suggestion `npm run atlas:verify`.
+
+### Task 12: fresh-clone acceptance (2026-09-30)
+
+A clean clone of `feat/registry-plan-b` (at f3a595b) in the session scratchpad ran on its own compose project (`COMPOSE_PROJECT_NAME=webatlas_accept`) and ports (Postgres 55432, GeoServer 58080). The dev stack (`webatlas-db-1` and `webatlas-geoserver-1`) kept its original start time throughout. `npm install` took 24 s. `atlas:up` was run six times; every rerun resumed, skipping finished stages.
+
+**Measured time: about 19 minutes on a ~55 Mbit/s line** (FABDEM tiles at about 7 MB/s, the Geofabrik extract at about 6.5 MB/s). It was measured as one run plus resumed runs:
+- run 1, everything except the basemap: 708 s;
+- the basemap download from run 3: 110 s for 720 MB;
+- basemap stages 1–4 plus `reference_entities` from run 6: 327 s.
+
+The tools image's apt layer was already in Docker's cache from this machine. A machine that has never built the image adds a few minutes.
+
+| Step (run 1 unless noted) | Time |
+|---|---|
+| preflight | 2 s |
+| stack up, db and GeoServer ready (new network, volumes, containers) | 33 s |
+| atlas-tools image (pip layer rebuilt, see finding 6) | 44 s |
+| migrations (all, on an empty database) | 6 s |
+| seeds (run + 7 publishes) | 23 s |
+| rivers (ingest 23,119 features + 2 publishes) | 73 s |
+| dem (18 FABDEM tiles, clip, 7,242 raster tiles, 406 MB) | 3 min 8 s |
+| contours (generate + styles + publish) | 5 min 17 s |
+| basemap fetch (run 3) | 1 min 50 s |
+| basemap load (run 6; peak RSS 997 MB) | 4 min 50 s |
+| basemap featuretypes + styles + group (run 6) | 23 s |
+| reference_entities (run 6) | 12 s |
+| verify | 6 s |
+
+**Runs:**
+1. 18:48 to 19:00, exit 1. `executed 18, skipped 0`. `basemap/0` failed with a bare `fetch failed`. Verify: 5 of 29 checks failed.
+2. 19:04, exit 1, after commit 3446620. `executed 0, skipped 18`, and the error now named the URL and `redirect count exceeded`.
+3. 19:36 to 20:25, exit 1, after commit f67f25e (the pinned extract). The fetch succeeded, then `basemap/1` was OOM-killed (exit 137) after 47 minutes.
+4. 21:32 to 21:38, exit 1, after commit 340efe4. The load succeeded in 5 min 20 s, then `basemap/2` failed with `featuretype land_vn returned 400`.
+5. Started 21:41 with `--force basemap` after commit b3b24e6. The forced fetch re-downloaded the pinned file at about 0.09 MB/s. The controller stopped it; the `.part` was removed and the verified zip kept.
+6. 22:05 to 22:11, `--force basemap` after commit 47548a0, **exit 0**. Stage 0 logged `matches its pin; reused although forced`, then `executed 6, skipped 18` (basemap 0–4 and reference_entities), and `all 29 checks passed`.
+
+Step 3 in the clone:
+- `atlas:status` reported every dataset `ok`, with the next step `npm run atlas:verify`.
+- `atlas:verify` reported `all 29 checks passed`.
+- The WMS GetMap for `webatlas:basemap` over bbox 108.0,12.5,108.2,12.7 on port 58080 returned `200 image/png` (36 KB, roads and lakes around Buôn Ma Thuột).
+
+**Findings and fixes:**
+1. **Geofabrik `-latest` aliases loop.** Every `*-latest*` URL (Vietnam shp, gpkg and pbf; Thailand; Monaco) answered 301 to itself plus a trailing slash, with `Cache-Status: download-proxy12;fwd=stale`. It was still looping at 19:20.
+   - Dated files served fine. Geofabrik keeps dailies for about a week, first-of-month files for about three months, and 1 January files indefinitely. It publishes `.md5` for monthly files and daily `.osm.pbf`, but not for daily `.shp.zip`.
+   - **Decision (user):** pin the dated extract `vietnam-260929-free.shp.zip` with sha256 `d20f1ea34ab96e1093a2adc45f79302b392d3d33bb9778d1826db01096a9b97d`. The zip tested intact. This amends spec C-10 and UC-6. Refreshing is now a bump of the date and sha256 in `descriptors/basemap.ts` followed by `atlas:build` (runbook and README updated). Commit f67f25e.
+   - fetch-http also hid undici's cause behind `fetch failed`; it now reports `fetch-http: GET <url> failed: fetch failed (redirect count exceeded)`. Commit 3446620.
+2. **The basemap load was OOM-killed in the tools container.** The kernel log showed a global OOM with `python3` at 1.99 GB anon RSS; the Docker VM has 3.71 GiB, shared here with the dev stack.
+   - Plan B moved `load_basemap.py` from the host into Docker, so it had never run under this limit.
+   - Its region clip, `gdf[gdf.intersects(region)]` against the unprepared province union (10,031 vertices, 225 parts), measured 17.6 s per 5,000 roads, about 36 minutes for 616,011 roads.
+   - Now `clip_to_region` uses `sindex.query(region, predicate="intersects")`, which takes 0.7 s and selects the same 527,678 rows. `to_postgis` writes in 50,000-row chunks, and the loader prints its peak memory.
+   - Load: 5 min 20 s at 1,003 MB peak, then 4 min 50 s at 997 MB. Commit 340efe4, with `tools/basemap/test_load_basemap.py` run from the gated tools suite.
+3. **Python output was block-buffered.** `compose run -T` gives Python a pipe, so the 47-minute load logged only heartbeats, and its output died with the process. The tools service now sets `PYTHONUNBUFFERED=1`, with a tools-suite test on `sys.stdout.write_through`. Commit 340efe4.
+4. **`basemap.land_vn` was never produced by committed code.** `publish-basemap.sh`, the probe and the runbook all need it. The dev machine's table came from a manual load of `apps/web/public/provinces-34.geojson`: identical 34 rows, 58,431 vertices, `code`/`name` columns and `idx_land_vn_geometry`. `load_national` now writes it (`national_land()`). Commit b3b24e6.
+   - Stage hashes cover the descriptor, not script content, so the clone's already-`ok` `basemap/1` needed `--force basemap` to pick this up.
+5. **A forced pinned fetch re-downloaded a matching file.** A file matching its declared sha256 is now reused even when forced (`… matches its pin; reused although forced`, summary still `(reused)`); unpinned sources still re-download when forced. Spec §8 and C-10 were updated. Commit 47548a0.
+6. **The tools-image cache missed in the clone.** `requirements.txt` checked out CRLF (`*.txt` was not in `.gitattributes`), so the clone rebuilt the pip layer. `.gitattributes` now forces LF for `packages/atlas-data/tools/**/*.txt` (commit f67f25e).
+   - The compose file pins one image name for both projects, so each build re-tags `webatlas-atlas-tools`. Both builds are 764 MB, and it currently points at the clone's build `d842ac867ebe`.
+
+**Verify output (run 6, and again as Step 3):**
+
+```
+ok   demo                 stages   2 stage(s) ok
+ok   demo                 lineage  licence CC0-1.0
+ok   seeds                stages   8 stage(s) ok
+ok   seeds                probe    admin.provinces: 34; admin.wards: 616; water.dams_active: 151; … water.lakes_active: 3868; webatlas:lakes serves WFS
+ok   seeds                layer    webatlas:{dams,stations,flood_zones,drought_points,saltwater_intrusion,flood_generation,lakes} serves WFS (7 checks)
+ok   seeds                lineage  licence CC-BY-SA-4.0 AND ODbL-1.0
+ok   rivers               stages   3 stage(s) ok
+ok   rivers               probe    level-1 rivers: 588; webatlas:rivers serves WFS
+ok   rivers               layer    webatlas:rivers serves WFS
+ok   rivers               layer    webatlas:rivers_overview serves WFS
+ok   rivers               lineage  licence ODbL-1.0
+ok   basemap              stages   5 stage(s) ok
+ok   basemap              probe    basemap.land_vn: 34; basemap.roads_vn: 62883; basemap.railways_vn: 3762; basemap.places_vn: 1420; basemap.roads_region: 527678; basemap.places_region: 6040; basemap.landuse_region: 12176; basemap.water_region: 5871; webatlas:basemap renders
+ok   basemap              lineage  licence ODbL-1.0
+ok   reference_entities   stages   1 stage(s) ok
+ok   reference_entities   probe    reference roads: 13658; reference railways: 203; reference water: 601; reference landuse: 794; reference places: 5878
+ok   reference_entities   lineage  licence ODbL-1.0
+ok   dem                  stages   2 stage(s) ok
+ok   dem                  probe    Buôn Ma Thuột: 472 m
+ok   dem                  lineage  licence CC-BY-NC-SA-4.0
+ok   contours             stages   3 stage(s) ok
+ok   contours             probe    contours 250 m: 19275; contours 100 m: 50760; contours 50 m: 103672; webatlas:contours_{250,100,50} renders
+ok   contours             lineage  licence CC-BY-NC-SA-4.0
+all 29 checks passed
+```
+
+**Image and disk:**
+- `webatlas-atlas-tools`: 764 MB (763,939,889 bytes).
+- Clone cache: 1.4 GB (basemap 688 MB, dem 680 MB).
+- Volumes: `webatlas_accept_db_data` 1.63 GB, `webatlas_accept_geoserver_data` 156 kB.
+
+**Left for the controller and the user:**
+- The dev machine's `basemap` now reads stale under the pinned descriptor; `atlas:build` was deliberately not run there.
+- The acceptance stack is still running. Cleanup is the user's call:
+  - `docker compose -p webatlas_accept -f <scratchpad>/atlas-accept/infra/docker-compose.yml down -v`
+  - then delete the clone directory.
