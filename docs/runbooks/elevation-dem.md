@@ -2,7 +2,7 @@
 
 **Run this when:** elevation answers come back as "không có dữ liệu" on a machine that should have them, or you are setting up a box from scratch and want the elevation tools to work.
 
-**This is the one dataset that does not arrive with a checkout.** Every other layer in this repo is seeded from a committed GeoJSON. The DEM is a few hundred megabytes, so each machine downloads and loads it once. Until you do, `basemap.dem_region` is empty, `elevation_at_point` answers "không có dữ liệu", and nothing else breaks.
+**This is the one dataset that does not arrive with a checkout.** Every other layer in this repo is seeded from a committed GeoJSON. The DEM is a few hundred megabytes, so each machine downloads and loads it once (`npm run atlas:up` does it; `--except dem` skips it). Until it is loaded, `basemap.dem_region` is empty, `elevation_at_point` answers "không có dữ liệu", and nothing else breaks.
 
 ## Licence — read before you publish anything
 
@@ -28,23 +28,29 @@ The assistant surfaces the source through the provenance chip: `elevation_at_poi
 
 **Distribution is different from Copernicus**, which is why step 1 fetches from a mirror rather than from Bristol — see there for the reasoning and the caveat.
 
-## Prerequisites
+## How to run it
 
 ```bash
-pip install rasterio shapely     # rasterio is NOT needed by the other scripts here
-docker compose -f infra/docker-compose.yml up -d
+npm run atlas:build -- --force dem     # or --only dem on a machine that has never built it
 ```
 
-No system GDAL: `rasterio` bundles its own, the same reasoning as `prep_hydrosheds.py`.
+The `dem` dataset runs two stages, both inside the `atlas-tools` image: `prep_dem.py --mainland` (download and clip), then `load-dem.sh` (load). The image carries `rasterio`, `shapely` and `raster2pgsql`, so nothing is installed on the host. To run one script by hand, for example to debug it:
+
+```bash
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools <argv>
+```
+
+No system GDAL is needed: `rasterio` bundles its own, the same reasoning as `prep_hydrosheds.py`.
 
 ## 1. Download and clip (~5 min)
 
 ```bash
-python packages/atlas-data/tools/prep_dem.py --dry-run --mainland   # list the tiles, install nothing
-python packages/atlas-data/tools/prep_dem.py --mainland             # what you almost certainly want
+# <argv> for the tools image, as above:
+python3 packages/atlas-data/tools/prep_dem.py --dry-run --mainland   # list the tiles, download nothing
+python3 packages/atlas-data/tools/prep_dem.py --mainland --out packages/atlas-data/data/cache/dem   # what the registry runs
 ```
 
-`--dry-run` needs only `shapely`; the rasterio import is lazy, so you can check the tile list before installing anything or downloading a byte.
+`--dry-run` needs only `shapely`; the rasterio import is lazy, so you can check the tile list before downloading a byte.
 
 **Use `--mainland` unless you have a reason not to.** It keeps the contiguous mainland landmass — 18 one-degree tiles — and drops the Hoàng Sa and Trường Sa cells. That is a download-cost decision, not a statement about the region: the archipelagos belong to Đà Nẵng and Khánh Hoà, but nothing the elevation tools are asked about today lives out there. The switch is geometric (largest polygon of the region union), not a longitude cutoff — Trường Sa reaches down to ~7°N while staying *west* of 110°E, so a lon-only rule keeps a lone reef cell.
 
@@ -54,7 +60,7 @@ python packages/atlas-data/tools/prep_dem.py --mainland             # what you a
 >
 > The mirror labels the licence "Non-Commercial Government Licence v2.0" where Bristol says CC BY-NC-SA 4.0. Both are non-commercial; honour the Bristol terms, which are upstream.
 
-Writes `apps/api/src/db/seeds/data/dem/` (gitignored): `raw/` holds the downloaded tiles, `clipped/` the per-province-polygon clips that get loaded. The clip mask is the union of the six working-region provinces from `apps/web/public/provinces-34.geojson`, padded by ~110 m.
+Writes `packages/atlas-data/data/cache/dem/` (gitignored): `raw/` holds the downloaded tiles, `clipped/` the per-province-polygon clips that get loaded. The clip mask is the union of the six working-region provinces from `apps/web/public/provinces-34.geojson`, padded by ~110 m.
 
 **Clipping is by polygon, not bounding box** — not a detail. The region's bbox runs out to lon ~117.8° because of the archipelagos, so a bbox-driven tile list would fetch a hundred-odd cells of open sea. The same trap the basemap runbook documents.
 
@@ -64,9 +70,7 @@ Re-running is cheap — complete tiles are reused, checked by size rather than m
 
 ## 2. Create the table
 
-```bash
-npm run migrate:up -w @webatlas/api
-```
+`atlas:up` applies the migrations before building any dataset. By hand: `npm run migrate`.
 
 Migration `1000000000010_dem-raster` creates the `basemap` schema if missing, enables `postgis_raster`, and creates an empty `basemap.dem_region` with the GiST index on `ST_ConvexHull(rast)`.
 
@@ -74,8 +78,10 @@ Migration `1000000000010_dem-raster` creates the `basemap` schema if missing, en
 
 ## 3. Load
 
+The second stage of the `dem` dataset, run in the container with the clipped tiles directory as its argument:
+
 ```bash
-packages/atlas-data/tools/load-dem.sh
+bash packages/atlas-data/tools/load-dem.sh packages/atlas-data/data/cache/dem/clipped     # <argv> for the tools image
 ```
 
 Truncates, loads every clipped tile at 128×128 blocks, then derives the raster constraints. Idempotent: run it twice and you still have one copy.
@@ -103,8 +109,8 @@ Then ask the assistant: *"Buôn Ma Thuột cao bao nhiêu mét so với mực n�
 
 ## Gotchas
 
-- **`raster2pgsql` is not in the `postgis/postgis:16-3.4` image.** The server-side extension is there, the client binary is not (`find / -name 'raster2pgsql*'` comes back empty). Every raster tutorial's one-liner fails on this stack. `load-dem.sh` works around it with a one-off image built from `packages/atlas-data/tools/raster-tools.Dockerfile` — deliberately *not* by rebuilding the `db` service, which would make every developer build an image to gain a binary used once.
-- **The loader talks to `db` over the compose network**, not `localhost`. If the network is not `webatlas_default` on your machine, set `DEM_NETWORK`.
+- **`raster2pgsql` is not in the `postgis/postgis:16-3.4` image.** The server-side extension is there, the client binary is not (`find / -name 'raster2pgsql*'` comes back empty). Every raster tutorial's one-liner fails on this stack. The `atlas-tools` image supplies it (PGDG `postgis`, `raster2pgsql` 3.6.x — deliberately newer than the 3.4 server, which is fine because it emits plain INSERTs of raster WKB) — deliberately *not* by rebuilding the `db` service, which would make every developer build an image to gain a binary used once.
+- **The loader talks to `db` over the compose network**, not `localhost`: the compose `tools` service sets `PGHOST=db` and the rest of the database environment from `infra/.env`, and `load-dem.sh` refuses to run without `PGHOST`.
 - **`AddRasterConstraints('basemap','dem_region','rast')` fails with "The table 'basemap' does not occur in the search_path".** Three bare string literals resolve to the `(table, column, VARIADIC constraints[])` overload instead of `(schema, table, column)`, so PostGIS reads `basemap` as the table name. Cast them: `'basemap'::name,'dem_region'::name,'rast'::name`. The script does; the error message points nowhere near the cause.
 - **`raster2pgsql -F` needs a `filename` column**, which is why the migration creates one. Without it the very first tile dies with `column "filename" of relation "dem_region" does not exist`.
 - **Constraints are dropped before each load and re-added after.** `AddRasterConstraints` pins the extent from the rows present when it runs, so a second load into a constrained table would be rejected by the constraint the first load added.

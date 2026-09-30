@@ -41,72 +41,57 @@ Uses **npm workspaces**. Requires **Node ≥ 22** and **npm ≥ 10**.
 
 ## Getting started
 
-### 1. Install dependencies (from the repo root)
+**Prerequisites:** Node 22, npm 10, Docker (Desktop on Windows/macOS) with Compose v2, and git.
+Nothing else: the Python geo stack, GDAL and `raster2pgsql` run inside the `atlas-tools` image.
+Allow at least 6 GB free on the drive holding the repository.
 
 ```bash
 npm install
+npm run atlas:up
 ```
 
-This wires all workspaces and builds `@webatlas/shared` automatically (via its `prepare` script).
+`atlas:up` checks the machine, creates `infra/.env` and `apps/api/.env` from their examples when
+missing (local development defaults), starts PostGIS and GeoServer, builds the tools image, applies
+migrations, builds every dataset and verifies the result. The first run downloads about 1.2 GB
+(the OpenStreetMap Vietnam extract and FABDEM elevation tiles) and took **<measured in Task 12>**
+on the reference machine. Re-running resumes: finished work is skipped. To skip the elevation
+data: `npm run atlas:up -- --except dem` (contours depend on it and are skipped too).
 
-### 2. Run the infrastructure stack (PostGIS + GeoServer)
+Then create an administrator (there is no default login) and start the app:
 
 ```bash
-cp infra/.env.example infra/.env          # then edit credentials for anything non-local
-docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
+npm run create-admin -w @webatlas/api -- --email you@example.com --password "…" --name "…"
+npm run dev -w @webatlas/api    # API at http://localhost:3001
+npm run dev:web                 # web app at http://localhost:5173
 ```
 
-- PostgreSQL + PostGIS → `localhost:5432` (schemas `app`, `water` created on first init).
-- GeoServer → `http://localhost:8080/geoserver/` (WFS: `/geoserver/ows?service=WFS&request=GetCapabilities`).
+### Day-to-day
 
-Stop the stack:
+| Command | Does |
+|---|---|
+| `npm run atlas:status` | What is built, stale, missing or failed — and the one command to run next |
+| `npm run atlas:build -- --only <id>` | Build one dataset and its dependencies |
+| `npm run atlas:build -- --force <id>` | Rebuild a dataset on purpose (e.g. `--force basemap` for a newer OSM extract) |
+| `npm run atlas:verify` | Check the atlas actually serves: stages, probes, layers, lineage |
+| `npm run atlas:adopt` | A machine set up before the registry: record what is already built, without re-running it |
 
-```bash
-docker compose -f infra/docker-compose.yml --env-file infra/.env down
-```
+Datasets: `seeds`, `rivers`, `basemap`, `reference_entities`, `dem`, `contours` (plus the synthetic `demo`).
+The runbooks under `docs/runbooks/` describe what each dataset is and where it comes from.
+
+`atlas:up` never recreates or stops a service that is already running, so it is safe to run on a
+machine with a stack up. `npm run atlas:up -- --compose <file>` points it at another compose file, and it
+accepts the build flags `--only`, `--except` and `--force`. To run one script by hand inside the tools image:
+`docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools <argv>`.
+Scripts read the GeoServer password from the environment (`infra/.env`, through the compose service), never from argv.
+
+To stop the stack: `docker compose -f infra/docker-compose.yml --env-file infra/.env down`
+(add `-v` only if you want to delete the database).
 
 > `infra/.env` holds secrets and is git-ignored. Never commit it; only `infra/.env.example` is tracked.
-
-### 3. Set up the database (migrations + seeds)
-
-With the stack up, from the repo root:
-
-```bash
-npm run migrate            # apply DB migrations (app.users, app.audit_log, water.* tables)
-npm run seed               # load the 7 thematic layers from the source GeoJSON/mock data
-npm run publish:geoserver  # publish the water.* tables as WFS layers in GeoServer
-```
-
-### 4. Run the API
-
-The API needs its own env file. Copy `apps/api/.env.example` to `apps/api/.env` and set
-`JWT_SECRET` to any string ≥ 16 characters.
-
-```bash
-npm run dev -w @webatlas/api    # Fastify at http://localhost:3001 (GET /health → {"status":"ok"})
-```
-
-### 5. Create an administrator
-
-There is **no default login and no public sign-up** — admins are provisioned with the
-bootstrap script (password must be ≥ 8 characters):
-
-```bash
-npm run create-admin -w @webatlas/api -- --email you@example.com --password "your-strong-password" --name "Your Name"
-```
-
-### 6. Run the frontend
-
-```bash
-npm run dev:web      # Vite dev server at http://localhost:5173
-npm run build:web    # type-check + production build
-npm run lint:web     # oxlint
-```
-
-The public viewer works with just the frontend + GeoServer. To **log in as an admin**, the
-API (step 4) must also be running — the login modal calls `http://localhost:3001`. The API's
-CORS is locked to the web origin (`http://localhost:5173` by default; set `CORS_ORIGIN` in
-`apps/api/.env` if you change the Vite port).
+> The web app's public viewer works with just the frontend and GeoServer; to **log in as an admin** the API
+> must also be running. The API's CORS is locked to the web origin (`http://localhost:5173` by default; set
+> `CORS_ORIGIN` in `apps/api/.env` if you change the Vite port). `npm run build:web` type-checks and builds the
+> frontend; `npm run lint:web` runs oxlint.
 
 ## API surface
 
@@ -141,8 +126,13 @@ write is recorded in `app.audit_log`; geometry is validated in PostGIS before wr
 | `npm run build:shared` | Build `@webatlas/shared` |
 | `npm run test:shared` | Run `@webatlas/shared` tests (Vitest) |
 | `npm run migrate` | Apply DB migrations |
-| `npm run seed` | Seed the `water.*` thematic layers |
-| `npm run publish:geoserver` | Publish the WFS layers in GeoServer |
+| `npm run atlas:up` | Onboarding: check the machine, start the stack, build the tools image, migrate, build and verify every dataset (accepts `--compose <file>`, `--only`, `--except`, `--force`) |
+| `npm run atlas:status` | Show what is built, stale, missing or failed, and the next command |
+| `npm run atlas:build` | Build datasets (`--only <id>`, `--except <id>`, `--force <id>`) |
+| `npm run atlas:verify` | Check the atlas actually serves |
+| `npm run atlas:adopt` | Record an already-built machine in the registry without re-running it |
+| `npm run seed` | Seed the `water.*` thematic layers — superseded by `atlas:build`; kept until Plan C |
+| `npm run publish:geoserver` | Publish the WFS layers in GeoServer — superseded by `atlas:build`; kept until Plan C |
 | `npm run test:api` | Run the API test suite (needs the DB stack up) |
 
 API-workspace scripts (run with `-w @webatlas/api`): `dev`, `start`, `create-admin`,
@@ -180,6 +170,9 @@ OSM là nguồn `rivers`/`lakes` duy nhất (không còn `thuyhe.geojson` — xe
 "Project status"). `npm run seed` KHÔNG nạp rivers từ OSM; bước đó là
 `ingest:rivers` riêng, **bắt buộc chạy sau `seed`** vì nó tạo và kích hoạt một
 version `rivers` mới đè lên bất kỳ version nào `seed` để lại active.
+
+Từ khi có sổ đăng ký, bước 6–7 dưới đây có thể chạy bằng `npm run atlas:build -- --force seeds` rồi `--force rivers`
+(`rivers` tự phụ thuộc `seeds`); các lệnh `seed` và `ingest:rivers` cũ vẫn chạy được cho đến Plan C.
 
 Toàn bộ pipeline tái tạo dữ liệu OSM, theo đúng thứ tự (có các ràng buộc thứ tự
 bắt buộc — xem danh sách ngay dưới):
@@ -236,11 +229,9 @@ To regenerate:
      (direct: `https://data.hydrosheds.org/file/hydrolakes/HydroLAKES_polys_v10_shp.zip`, ~800 MB)
    - **HydroRIVERS v1.0 (Asia region)** — https://www.hydrosheds.org/products/hydrorivers
      (direct: `https://data.hydrosheds.org/file/HydroRIVERS/HydroRIVERS_v10_as_shp.zip`, ~90 MB)
-2. Unzip both, then install the Python geo toolchain used by the clipper (no system GDAL
-   required):
-   ```bash
-   pip install geopandas shapely pyproj fiona
-   ```
+2. Unzip both. The clipper needs the Python geo toolchain, which lives in the `atlas-tools` image; if you
+   run the script directly on the host instead, install it there first (`pip install geopandas shapely pyproj fiona`,
+   **only for running this maintainer script outside the container**).
 3. Run the prep script against the unzipped `.shp` files:
    ```bash
    packages/atlas-data/tools/prep-hydrosheds.sh /path/to/HydroLAKES_polys_v10.shp /path/to/HydroRIVERS_v10_as.shp
