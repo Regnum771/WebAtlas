@@ -45,9 +45,10 @@ No system GDAL is needed: `rasterio` bundles its own, the same reasoning as `pre
 ## 1. Download and clip (~5 min)
 
 ```bash
-# <argv> for the tools image, as above:
-python3 packages/atlas-data/tools/prep_dem.py --dry-run --mainland   # list the tiles, download nothing
-python3 packages/atlas-data/tools/prep_dem.py --mainland --out packages/atlas-data/data/cache/dem   # what the registry runs
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools \
+  python3 packages/atlas-data/tools/prep_dem.py --dry-run --mainland   # list the tiles, download nothing
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools \
+  python3 packages/atlas-data/tools/prep_dem.py --mainland --out packages/atlas-data/data/cache/dem   # what the registry runs
 ```
 
 `--dry-run` needs only `shapely`; the rasterio import is lazy, so you can check the tile list before downloading a byte.
@@ -81,7 +82,8 @@ Migration `1000000000010_dem-raster` creates the `basemap` schema if missing, en
 The second stage of the `dem` dataset, run in the container with the clipped tiles directory as its argument:
 
 ```bash
-bash packages/atlas-data/tools/load-dem.sh packages/atlas-data/data/cache/dem/clipped     # <argv> for the tools image
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools \
+  bash packages/atlas-data/tools/load-dem.sh packages/atlas-data/data/cache/dem/clipped
 ```
 
 Truncates, loads every clipped tile at 128×128 blocks, then derives the raster constraints. Idempotent: run it twice and you still have one copy.

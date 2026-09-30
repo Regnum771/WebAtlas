@@ -37,7 +37,7 @@ webatlas/
     plans/          # phased implementation plans
 ```
 
-Uses **npm workspaces**. Requires **Node ≥ 22** and **npm ≥ 10**.
+Uses **npm workspaces**. Requires **Node 22** (`>=22 <23`; `atlas:up` rejects any other major) and **npm ≥ 10**.
 
 ## Getting started
 
@@ -65,13 +65,17 @@ npm run dev -w @webatlas/api    # API at http://localhost:3001
 npm run dev:web                 # web app at http://localhost:5173
 ```
 
+Where things run: PostgreSQL + PostGIS at `localhost:5432`, GeoServer at `http://localhost:8080/geoserver/`
+(WFS: `/geoserver/ows?service=WFS&request=GetCapabilities`), the API at `http://localhost:3001` (`GET /health` returns
+`{"status":"ok"}`), the web app at `http://localhost:5173`. The administrator password must be at least 8 characters.
+
 ### Day-to-day
 
 | Command | Does |
 |---|---|
 | `npm run atlas:status` | What is built, stale, missing or failed — and the one command to run next |
 | `npm run atlas:build -- --only <id>` | Build one dataset and its dependencies |
-| `npm run atlas:build -- --force <id>` | Rebuild a dataset on purpose (e.g. `--force basemap` for a newer OSM extract) |
+| `npm run atlas:build -- --force <id>` | Rebuild a dataset on purpose (e.g. `--force basemap` for a newer OSM extract). Forcing invalidates its dependents, which rebuild only if they are in the selection: `--force basemap` alone also rebuilds `reference_entities`, while `--only basemap --force basemap` leaves it `missing` until a full build |
 | `npm run atlas:verify` | Check the atlas actually serves: stages, probes, layers, lineage |
 | `npm run atlas:adopt` | A machine set up before the registry: record what is already built, without re-running it |
 

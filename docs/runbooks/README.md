@@ -25,12 +25,12 @@ The old numbered steps map onto the registry as follows. Each dataset is a row i
 | 6 reference entities | dataset `reference_entities` (depends on `basemap`) | `npm run atlas:build -- --only reference_entities` | Yes (script; rebuilds a derived table) |
 | 7 [Elevation DEM](elevation-dem.md) | dataset `dem` (optional: `--except dem`) | `npm run atlas:build -- --only dem` | **No** — generated locally |
 | 8 [Terrain contours](terrain-contours.md) | dataset `contours` (depends on `dem`) | `npm run atlas:build -- --only contours` | **No** — generated locally |
-| 9 publish to GeoServer | stages of each dataset (`rivers` publishes its layers; `basemap` and `contours` publish inside theirs) | rerun the dataset | Yes (script; publishes to GeoServer, not git) |
+| 9 publish to GeoServer | stages of each dataset (`seeds`, `rivers`, `basemap` and `contours` all publish their layers inside their own stages) | rerun the dataset | Yes (script; publishes to GeoServer, not git) |
 
 `demo` is a synthetic dataset with no runbook. Day to day: `npm run atlas:status` says what is built, stale,
 missing or failed and the one command to run next; `npm run atlas:verify` checks the atlas actually serves;
 `npm run atlas:adopt` records a machine set up before the registry without re-running anything. Use
-`npm run atlas:build -- --force <id>` to rebuild on purpose (forcing a dataset also rebuilds what depends on it).
+`npm run atlas:build -- --force <id>` to rebuild on purpose (forcing a dataset invalidates its dependents, which rebuild only if they are in the selection: `--force basemap` alone also rebuilds `reference_entities`, while `--only basemap --force basemap` leaves it `missing` until a full build).
 `atlas:up` accepts `--compose <file>` and the build flags `--only`, `--except` and `--force`.
 
 The old commands (`npm run seed`, `ingest:rivers`, `publish:geoserver`, `reference:build`, `contours:generate`) still work
@@ -123,8 +123,8 @@ lines are for a manual rerun.
    step 7, and it depends on `dem`, so excluding `dem` excludes it too. Manual rerun:
    `npm run atlas:build -- --only contours`.
 9. **Publishing the feature layers to GeoServer** — creates the `webatlas_water` datastore
-   and the WMS/WFS layers the web app actually renders. Publishing is now a stage of each dataset (for `rivers`, a
-   `publish-geoserver` stage after the ingest), so it follows its data automatically. The standalone
+   and the WMS/WFS layers the web app actually renders. Publishing is now part of each dataset's own stages: `seeds` (seven `publish-geoserver` stages, one per layer),
+   `rivers`, `basemap` and `contours` all publish their layers, so no separate publish step is needed and it follows its data automatically. The standalone
    `npm run publish:geoserver` is superseded by `atlas:build` and kept until Plan C.
 
 ## Why `basemap`, `dem` and `contours` are "not in git"
