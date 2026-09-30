@@ -3,13 +3,14 @@ import { parseBuildArgs } from './args';
 
 describe('parseBuildArgs', () => {
   it('returns empty filters when no arguments are given', () => {
-    expect(parseBuildArgs([])).toEqual({ only: [], except: [] });
+    expect(parseBuildArgs([])).toEqual({ only: [], except: [], force: [] });
   });
 
   it('parses --only with a space-separated value', () => {
     expect(parseBuildArgs(['--only', 'basemap,dem'])).toEqual({
       only: ['basemap', 'dem'],
       except: [],
+      force: [],
     });
   });
 
@@ -17,6 +18,7 @@ describe('parseBuildArgs', () => {
     expect(parseBuildArgs(['--except', 'basemap,dem'])).toEqual({
       only: [],
       except: ['basemap', 'dem'],
+      force: [],
     });
   });
 
@@ -24,6 +26,7 @@ describe('parseBuildArgs', () => {
     expect(parseBuildArgs(['--only=contours'])).toEqual({
       only: ['contours'],
       except: [],
+      force: [],
     });
   });
 
@@ -31,6 +34,7 @@ describe('parseBuildArgs', () => {
     expect(parseBuildArgs(['--except=contours'])).toEqual({
       only: [],
       except: ['contours'],
+      force: [],
     });
   });
 
@@ -38,6 +42,7 @@ describe('parseBuildArgs', () => {
     expect(parseBuildArgs(['--only', ' basemap , dem '])).toEqual({
       only: ['basemap', 'dem'],
       except: [],
+      force: [],
     });
   });
 
@@ -45,6 +50,7 @@ describe('parseBuildArgs', () => {
     expect(parseBuildArgs(['--only', 'basemap', '--except', 'dem'])).toEqual({
       only: ['basemap'],
       except: ['dem'],
+      force: [],
     });
   });
 
@@ -88,5 +94,18 @@ describe('parseBuildArgs', () => {
 
   it('throws on a bare positional argument, naming it', () => {
     expect(() => parseBuildArgs(['demo'])).toThrow(/atlas:build: .*demo/);
+  });
+});
+
+describe('--force', () => {
+  it('parses the space and = forms', () => {
+    expect(parseBuildArgs(['--force', 'dem,contours']).force).toEqual(['dem', 'contours']);
+    expect(parseBuildArgs(['--force=dem']).force).toEqual(['dem']);
+  });
+
+  it('fails closed on a missing value, an empty id, or a repeat', () => {
+    expect(() => parseBuildArgs(['--force'])).toThrow(/--force requires a value/);
+    expect(() => parseBuildArgs(['--force', 'dem,,x'])).toThrow(/empty dataset id/);
+    expect(() => parseBuildArgs(['--force', 'a', '--force', 'b'])).toThrow(/more than once/);
   });
 });

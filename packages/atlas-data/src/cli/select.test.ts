@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectDatasets } from './select';
+import { selectDatasets, assertForceSelected } from './select';
 import type { Dataset } from '../types';
 
 const ds = (id: string, dependsOn?: string[]): Dataset => ({
@@ -50,5 +50,21 @@ describe('selectDatasets (I2)', () => {
     const { excluded } = selectDatasets(graph, { only: ['rivers'], except: ['dem'] });
     const demEntry = excluded.find((e) => e.id === 'dem');
     expect(demEntry).toEqual({ id: 'dem', reason: '--except' });
+  });
+});
+
+describe('assertForceSelected', () => {
+  it('accepts forced ids inside the selection', () => {
+    const { selected } = selectDatasets(graph, { only: [], except: [] });
+    expect(() => assertForceSelected(['dem'], graph, selected)).not.toThrow();
+  });
+
+  it('rejects an unknown id', () => {
+    expect(() => assertForceSelected(['nope'], graph, graph)).toThrow(/unknown dataset "nope"/);
+  });
+
+  it('rejects forcing a dataset that --except removed (a contradiction, not a no-op)', () => {
+    const { selected } = selectDatasets(graph, { only: [], except: ['dem'] });
+    expect(() => assertForceSelected(['dem'], graph, selected)).toThrow(/not in the selected set/);
   });
 });

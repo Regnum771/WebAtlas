@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { readStageState, writeStageState } from './state';
+import { readStageState, writeStageState, invalidateStageState } from './state';
 
 const DB = process.env.DATABASE_URL;
 
@@ -72,5 +72,25 @@ describe.skipIf(!DB)('stage state database writes', () => {
     await expect(writeStageState(pool, id, '0:sql', 'a'.repeat(64), 'ok')).rejects.toMatchObject({
       code: '23503',
     });
+  });
+
+  it('invalidateStageState deletes later stages and every stage of the dependents, nothing else', async () => {
+    const up = '__atlasdata_test__inv-up';
+    const down = '__atlasdata_test__inv-down';
+    const other = '__atlasdata_test__inv-other';
+    for (const id of [up, down, other]) await insertLineage(id);
+    try {
+      for (const [id, st] of [[up, '0:sql'], [up, '1:sql'], [down, '0:sql'], [other, '0:sql']]) {
+        await writeStageState(pool, id, st, 'h', 'ok');
+      }
+      await invalidateStageState(pool, up, ['1:sql'], [down]);
+      expect(await readStageState(pool, up, '0:sql')).not.toBeNull();
+      expect(await readStageState(pool, up, '1:sql')).toBeNull();
+      expect(await readStageState(pool, down, '0:sql')).toBeNull();
+      expect(await readStageState(pool, other, '0:sql')).not.toBeNull();
+    } finally {
+      await pool.query(`DELETE FROM app.dataset_stage_state WHERE dataset_id = ANY($1)`, [[up, down, other]]);
+      for (const id of [up, down, other]) await cleanup(id);
+    }
   });
 });

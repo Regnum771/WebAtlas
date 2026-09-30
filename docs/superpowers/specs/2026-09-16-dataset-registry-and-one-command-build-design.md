@@ -408,6 +408,9 @@ suite stays fast and fully CI-runnable even though the real data is not availabl
 **Revised 2026-09-23 — the order below supersedes the original one, which is kept at the
 end of this section with the reason it changed.**
 
+**Steps 2–5 are designed in [`2026-09-30-registry-steps-2-5-design.md`](2026-09-30-registry-steps-2-5-design.md)**,
+which supersedes the unmerged `2026-09-17-registry-plan-2-design.md`.
+
 Six independently shippable steps. The repository works after each one, and the existing
 runbook steps remain valid in parallel until step 4, so nobody is blocked mid-migration.
 

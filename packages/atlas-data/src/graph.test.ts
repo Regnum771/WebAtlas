@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { topologicalOrder, withDependencies, withoutDependents } from './graph';
+import { topologicalOrder, withDependencies, withoutDependents, transitiveDependents } from './graph';
 import type { Dataset } from './types';
 
 const ds = (id: string, dependsOn?: string[]): Dataset => ({
@@ -51,5 +51,23 @@ describe('withoutDependents (--except)', () => {
   it('throws on an unknown id rather than silently excluding nothing', () => {
     // A typo like --except demm must not quietly build everything, including dem.
     expect(() => withoutDependents(graph, ['demm'])).toThrow(/Unknown dataset "demm"/);
+  });
+});
+
+describe('transitiveDependents', () => {
+  const g = (id: string, dependsOn?: string[]) => ({
+    id, kind: 'derived' as const, dependsOn,
+    lineage: { statement: 's', licence: 'CC0-1.0', sources: [] },
+    stages: [{ type: 'sql' as const, statement: 'SELECT 1' }],
+  });
+  const graph = [g('dem'), g('contours', ['dem']), g('hillshade', ['contours']), g('basemap')];
+
+  it('follows chains of any depth', () => {
+    expect(transitiveDependents(graph, 'dem')).toEqual(['contours', 'hillshade']);
+  });
+
+  it('is empty for a leaf and never includes the dataset itself', () => {
+    expect(transitiveDependents(graph, 'hillshade')).toEqual([]);
+    expect(transitiveDependents(graph, 'basemap')).toEqual([]);
   });
 });

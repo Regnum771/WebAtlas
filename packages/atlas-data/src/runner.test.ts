@@ -21,11 +21,21 @@ const ds = (id: string, statement: string, dependsOn?: string[]): Dataset => ({
  * resolves to a client whose `query` is the SAME handler as the pool's `query`, so SQL
  * routed through the client is recognised identically, with a no-op `release`.
  */
-function memoryPool() {
+function memoryPool(opts: { failDelete?: boolean; failStatement?: string } = {}) {
   const state = new Map<string, { input_hash: string; status: string }>();
   const steps: string[] = [];
   const executed: string[] = [];
   const query = vi.fn(async (sql: string, params?: unknown[]) => {
+    // Must precede the read branch below: the DELETE also contains "FROM app.dataset_stage_state".
+    if (sql.startsWith('DELETE FROM app.dataset_stage_state')) {
+      if (opts.failDelete) throw new Error('invalidation failed');
+      const [id, later, deps] = params as [string, string[], string[]];
+      for (const k of [...state.keys()]) {
+        const [ds, st] = k.split('|');
+        if ((ds === id && later.includes(st)) || deps.includes(ds)) state.delete(k);
+      }
+      return { rows: [] };
+    }
     if (sql.includes('FROM app.dataset_stage_state')) {
       const row = state.get(`${params![0]}|${params![1]}`);
       return { rows: row ? [row] : [] };
@@ -41,14 +51,27 @@ function memoryPool() {
       steps.push(params![0] as string);
       return { rows: [] };
     }
+    if (opts.failStatement && sql === opts.failStatement) throw new Error('boom');
     if (sql.startsWith('SELECT') || sql.startsWith('REFRESH')) executed.push(sql);
     return { rows: [] };
   });
   const connect = vi.fn(async () => ({ query, release: vi.fn() }));
-  return { pool: { query, connect } as unknown as Pool, steps, executed };
+  return { pool: { query, connect } as unknown as Pool, steps, executed, state };
 }
 
 describe('runBuild', () => {
+  it('records the executed statement in the process step, not just "completed" (I4)', async () => {
+    const stepRows: string[] = [];
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('INTO app.dataset_lineage_step')) stepRows.push(params![1] as string);
+      return { rows: [] };
+    });
+    const pool = { query, connect: vi.fn(async () => ({ query, release: vi.fn() })) } as unknown as Pool;
+    await runBuild(pool, [ds('a', 'SELECT 42')]);
+    expect(stepRows).toHaveLength(1);
+    expect(stepRows[0]).toMatch(/^stage 0:sql · [0-9a-f]{12} · SELECT 42$/);
+  });
+
   let ctx: ReturnType<typeof memoryPool>;
   beforeEach(() => { ctx = memoryPool(); });
 
@@ -319,5 +342,53 @@ describe('runBuild', () => {
     const g = ds('g', 'SELECT 4', ['b']);
     const report = await runBuild(pool, [a, b, g]);
     expect(report.blocked).toEqual(expect.arrayContaining(['b/0:sql', 'g/0:sql']));
+  });
+
+  describe('cascade (I3) — shaped like dem → contours', () => {
+    const twoStage = (id: string, a: string, b: string, dependsOn?: string[]): Dataset => ({
+      ...ds(id, a, dependsOn),
+      stages: [{ type: 'sql', statement: a }, { type: 'sql', statement: b }],
+    });
+    const dem = () => twoStage('dem', 'SELECT 1', 'SELECT 2');
+    const contours = () => ds('contours', 'SELECT 3', ['dem']);
+
+    it('forcing the upstream re-runs its later stages and its dependent', async () => {
+      await runBuild(ctx.pool, [dem(), contours()]);
+      const second = await runBuild(ctx.pool, [dem(), contours()], { force: ['dem'] });
+      expect(second.executed).toEqual(['dem/0:sql', 'dem/1:sql', 'contours/0:sql']);
+    });
+
+    it('invalidates a dependent that is excluded from this build, via the universe', async () => {
+      await runBuild(ctx.pool, [dem(), contours()]);
+      await runBuild(ctx.pool, [dem()], { force: ['dem'], universe: [dem(), contours()] });
+      expect(ctx.state.has('contours|0:sql')).toBe(false);
+      expect(ctx.state.get('dem|1:sql')?.status).toBe('ok');
+    });
+
+    it('a skip invalidates nothing', async () => {
+      await runBuild(ctx.pool, [dem(), contours()]);
+      const second = await runBuild(ctx.pool, [dem(), contours()]);
+      expect(second.executed).toEqual([]);
+      expect(ctx.state.get('contours|0:sql')?.status).toBe('ok');
+    });
+
+    it("leaves the dependent's state gone when a forced upstream fails mid-way", async () => {
+      await runBuild(ctx.pool, [dem(), contours()]);
+      const failing = memoryPool({ failStatement: 'SELECT 2' });
+      // Seed the failing pool with the successful state first.
+      for (const [k, v] of ctx.state) failing.state.set(k, v);
+      const report = await runBuild(failing.pool, [dem(), contours()], { force: ['dem'] });
+      expect(report.failed).toEqual(['dem/1:sql']);
+      expect(report.blocked).toContain('contours/0:sql');
+      expect(failing.state.has('contours|0:sql')).toBe(false);
+    });
+
+    it('does not execute a stage whose invalidation failed', async () => {
+      const failing = memoryPool({ failDelete: true });
+      const report = await runBuild(failing.pool, [ds('a', 'SELECT 7')]);
+      expect(failing.executed).toEqual([]);
+      expect(report.failed).toEqual(['a/0:sql']);
+      expect(report.errors['a/0:sql']).toMatch(/invalidation failed/);
+    });
   });
 });

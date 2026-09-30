@@ -1,10 +1,13 @@
 import pg from 'pg';
+import { loadDevEnv } from './env';
 import { ALL_DATASETS, validateRegistry } from '../registry';
 import { runBuild } from '../runner';
 import { parseBuildArgs } from './args';
-import { selectDatasets, type ExclusionReason } from './select';
+import { selectDatasets, assertForceSelected, type ExclusionReason } from './select';
 
 async function main(): Promise<void> {
+  const envFile = loadDevEnv();
+  if (envFile) console.log(`(environment from ${envFile})`);
   validateRegistry();
 
   // Argument and id errors are usage mistakes, not crashes: report just the message
@@ -12,12 +15,15 @@ async function main(): Promise<void> {
   // through to "build everything" against a real database.
   let datasets = ALL_DATASETS;
   let excluded: ExclusionReason[] = [];
+  let force: string[] = [];
   try {
-    const { only, except } = parseBuildArgs(process.argv.slice(2));
+    const { only, except, force: forced } = parseBuildArgs(process.argv.slice(2));
     ({ selected: datasets, excluded } = selectDatasets(ALL_DATASETS, { only, except }));
     if (datasets.length === 0) {
       throw new Error('atlas:build: no datasets selected (--only/--except excluded everything)');
     }
+    assertForceSelected(forced, ALL_DATASETS, datasets);
+    force = forced;
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
@@ -33,7 +39,7 @@ async function main(): Promise<void> {
   const pool = new pg.Pool({ connectionString });
 
   try {
-    const report = await runBuild(pool, datasets);
+    const report = await runBuild(pool, datasets, { universe: ALL_DATASETS, force });
     console.log(`executed ${report.executed.length}, skipped ${report.skipped.length}`);
     for (const s of report.executed) console.log(`  built   ${s}`);
     // D2 deviation from the brief: BuildReport now carries `errors` (label -> message)

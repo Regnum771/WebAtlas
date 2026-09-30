@@ -43,10 +43,32 @@ describe('registry', () => {
       kind: 'derived',
       lineage: { statement: 's', licence: 'CC0-1.0', sources: [] },
       stages: [
-        { type: 'run', command: 'x', produces: 'y', promoteTo: 'sql', promoteBy: '2026-02-30' },
+        { type: 'run', in: 'host', argv: ['x'], produces: 'y', promoteTo: 'sql', promoteBy: '2026-02-30' },
       ],
     } as unknown as Dataset;
     expect(() => validateRegistry([bad])).toThrow(/bad-date/);
+  });
+
+  it('registers the rivers dataset under its layer key, not "hydrorivers" (spec C-9)', () => {
+    const ids = ALL_DATASETS.map((d) => d.id);
+    expect(ids).toContain('rivers');
+    expect(ids).not.toContain('hydrorivers');
+  });
+
+  it('rejects a stage type with no executor at load time, naming the dataset (spec §8)', () => {
+    const bad = {
+      id: 'bad-no-executor',
+      kind: 'vector',
+      lineage: { statement: 's', licence: 'CC0-1.0', sources: [] },
+      stages: [{ type: 'load-geojson', file: 'f.geojson', table: 't', columns: () => ({}) }],
+    } as unknown as Dataset;
+    expect(() => validateRegistry([bad])).toThrow(/bad-no-executor.*load-geojson.*no executor/s);
+  });
+
+  it('rivers ingests on the host and then publishes rivers_detail', () => {
+    const rivers = ALL_DATASETS.find((d) => d.id === 'rivers')!;
+    expect(rivers.stages.map((s) => s.type)).toEqual(['run', 'publish-geoserver']);
+    expect(rivers.stages[1]).toMatchObject({ layer: 'rivers', nativeName: 'rivers_detail' });
   });
 
   it('accepts a well-formed single-dataset list', () => {

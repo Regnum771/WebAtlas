@@ -21,7 +21,7 @@ export function assertNoOverdueEscapeHatches(datasets: Dataset[], today: Date = 
       if (stage.type !== 'run') continue;
       if (stage.promoteBy < todayUtc) {
         overdue.push(
-          `  ${d.id}: run "${stage.command}" had promoteBy ${stage.promoteBy}, ` +
+          `  ${d.id}: run "${stage.argv.join(' ')}" had promoteBy ${stage.promoteBy}, ` +
             `should have been promoted to "${stage.promoteTo}"`
         );
       }

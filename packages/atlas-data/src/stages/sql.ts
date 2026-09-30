@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import type { Stage } from '../types';
+import type { StageContext, StageResult } from './index';
 
 /**
  * Run `stage.statement` against the pool as a single simple-protocol query.
@@ -19,7 +20,9 @@ import type { Stage } from '../types';
  */
 export async function executeSql(
   pool: Pool,
-  stage: Extract<Stage, { type: 'sql' }>
-): Promise<void> {
+  stage: Extract<Stage, { type: 'sql' }>,
+  _ctx: StageContext
+): Promise<StageResult> {
   await pool.query(stage.statement);
+  return { summary: stage.statement };
 }

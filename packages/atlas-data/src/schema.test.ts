@@ -32,7 +32,7 @@ describe('defineDataset', () => {
       defineDataset({
         ...valid,
         // @ts-expect-error deliberately omitting promoteTo
-        stages: [{ type: 'run', command: './x.sh', produces: 'out', promoteBy: '2099-01-01' }],
+        stages: [{ type: 'run', in: 'host', argv: ['./x.sh'], produces: 'out', promoteBy: '2099-01-01' }],
       })
     ).toThrow();
   });
@@ -42,7 +42,7 @@ describe('defineDataset', () => {
       defineDataset({
         ...valid,
         // @ts-expect-error deliberately omitting promoteBy
-        stages: [{ type: 'run', command: './x.sh', produces: 'out', promoteTo: 'fetch-cog' }],
+        stages: [{ type: 'run', in: 'host', argv: ['./x.sh'], produces: 'out', promoteTo: 'fetch-cog' }],
       })
     ).toThrow();
   });
@@ -54,13 +54,93 @@ describe('defineDataset', () => {
         stages: [
           {
             type: 'run',
-            command: './x.sh',
+            in: 'host', argv: ['./x.sh'],
             produces: 'out',
             promoteTo: 'fetch-cog',
             promoteBy: '2026-02-30',
           },
         ],
       })
+    ).toThrow();
+  });
+});
+
+describe('run stage argv (spec §7)', () => {
+  const run = (extra: Record<string, unknown>) => ({
+    ...valid,
+    stages: [{ type: 'run', produces: 'out', promoteTo: 'sql', promoteBy: '2099-01-01', ...extra }],
+  });
+
+  it('accepts in + argv', () => {
+    expect(() => defineDataset(run({ in: 'host', argv: ['run', 'x'] }) as never)).not.toThrow();
+  });
+
+  it('rejects a leftover command string even beside a valid argv (a shell would re-parse it)', () => {
+    // in + argv are valid, so only .strict() can reject this; the Step 8 mutation relies on it.
+    expect(() => defineDataset(run({ in: 'host', argv: ['x'], command: 'npm run x' }) as never)).toThrow();
+  });
+
+  it('rejects an empty argv', () => {
+    expect(() => defineDataset(run({ in: 'tools', argv: [] }) as never)).toThrow();
+  });
+
+  it('rejects an unknown execution place', () => {
+    expect(() => defineDataset(run({ in: 'cloud', argv: ['x'] }) as never)).toThrow();
+  });
+});
+
+describe('fetch-http into (spec §8: downloads stay inside data/cache)', () => {
+  const fetchStage = (into: string) => ({
+    ...valid,
+    stages: [{ type: 'fetch-http' as const, url: 'https://example.org/a.zip', into }],
+  });
+
+  it('accepts a relative path', () => {
+    expect(() => defineDataset(fetchStage('basemap/vietnam.zip'))).not.toThrow();
+  });
+
+  it.each(['../escape.zip', 'a/../../escape.zip', '/abs/path.zip', 'C:\\abs\\path.zip', 'a\\..\\..\\x', 'D:evil.zip', 'C:'])(
+    'rejects %s',
+    (into) => {
+      expect(() => defineDataset(fetchStage(into))).toThrow();
+    }
+  );
+});
+
+describe('publish-geoserver nativeName', () => {
+  const pub = (nativeName: string) => ({
+    ...valid,
+    stages: [{ type: 'publish-geoserver' as const, layer: 'rivers', nativeName }],
+  });
+
+  it('rejects an empty nativeName', () => {
+    expect(() => defineDataset(pub(''))).toThrow();
+  });
+
+  it('accepts a non-empty nativeName', () => {
+    expect(() => defineDataset(pub('rivers_detail'))).not.toThrow();
+  });
+});
+
+describe('stage variants reject unknown keys', () => {
+  const withStage = (stage: Record<string, unknown>) => ({ ...valid, stages: [stage] as never });
+
+  it('a publish stage with a lower-case `nativename` typo is rejected', () => {
+    expect(() =>
+      defineDataset(withStage({ type: 'publish-geoserver', layer: 'rivers', nativename: 'rivers_detail' }))
+    ).toThrow(/nativename/);
+  });
+
+  it('a fetch stage with a `sha265` typo is rejected, not silently unpinned', () => {
+    expect(() =>
+      defineDataset(withStage({ type: 'fetch-http', url: 'https://example.org/a.zip', into: 'a.zip', sha265: 'a'.repeat(64) }))
+    ).toThrow(/sha265/);
+  });
+
+  it('sql and load-geojson stages reject stray keys too', () => {
+    expect(() => defineDataset(withStage({ type: 'sql', statement: 'SELECT 1', stmt: 'x' }))).toThrow();
+    expect(() =>
+      defineDataset(withStage({ type: 'load-geojson', file: 'a.geojson', table: 't', columns: () => ({}), colums: 1 }))
     ).toThrow();
   });
 });

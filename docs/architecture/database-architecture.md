@@ -655,7 +655,7 @@ cannot exhaust the connections required for authentication and ordinary reads.
 | No hydraulic model | Flood extent cannot be derived; exposure analysis requires an externally supplied extent |
 | Watercourse names originate from OpenStreetMap | 4,716 of 13,045 reaches are named by vote and 38 more by bridging; the other 8,291 are walkable but belong to no named river, and every association carries a confidence value |
 | Watercourse topology covers the six working provinces | 53 reaches flow out of the region, so a downstream walk from them ends at the regional boundary |
-| The dataset registry cannot yet execute the river ingest | `hydrorivers` is registered as a dated escape hatch (§14); a full `atlas:build` reports it failed until the runner implements it |
+| The river ingest is not yet a declarative load | `rivers` is registered as a dated escape hatch (§14): a `run` stage executes the ingest script, then a publish stage exposes the layer; it is to be promoted to `load-geojson` |
 | Elevation model is bare-earth at 30 m | Values represent ground level; not suitable for canopy or structure heights |
 
 ---
@@ -674,9 +674,10 @@ useful: cross-entity relationships (§10.1); and the assistant operations that c
 downstream walks (§7.2).
 
 The river ingest departs from the second half of the rule above. The design called for it to be declared as a registry
-dataset that loads its GeoJSON, but the registry's runner implements only SQL stages today. It is therefore registered as
-`hydrorivers`, with a `run` stage naming the ingest script and a promotion deadline of 31 December 2026; the registry's
-own test fails the build once that date passes, so the escape hatch cannot quietly become permanent.
+dataset that loads its GeoJSON, but the registry has no `load-geojson` executor yet. It is therefore registered as
+`rivers`, with a `run` stage naming the ingest script, followed by a `publish-geoserver` stage, and a promotion deadline
+of 31 December 2026 for moving the first stage to `load-geojson`; the runner executes both stages today, and the
+registry's own test fails the build once that date passes, so the escape hatch cannot quietly become permanent.
 
 ---
 

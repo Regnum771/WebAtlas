@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { executeSql } from './sql';
 
+const ctx = { datasetId: 't', forced: false, log: () => {} };
 const DB = process.env.DATABASE_URL;
 
 describe.skipIf(!DB)('executeSql against a real database', () => {
@@ -17,13 +18,13 @@ describe.skipIf(!DB)('executeSql against a real database', () => {
 
   it('lets a lone non-transactional statement run, proving the stage adds no transaction', async () => {
     await expect(
-      executeSql(pool, { type: 'sql', statement: 'VACUUM app.dataset_demo' })
-    ).resolves.toBeUndefined();
+      executeSql(pool, { type: 'sql', statement: 'VACUUM app.dataset_demo' }, ctx)
+    ).resolves.toEqual({ summary: 'VACUUM app.dataset_demo' });
   });
 
   it('rejects a non-transactional statement combined with another one in the same stage', async () => {
     await expect(
-      executeSql(pool, { type: 'sql', statement: 'SELECT 1; VACUUM app.dataset_demo' })
+      executeSql(pool, { type: 'sql', statement: 'SELECT 1; VACUUM app.dataset_demo' }, ctx)
     ).rejects.toThrow(/transaction block/i);
   });
 
@@ -34,7 +35,7 @@ describe.skipIf(!DB)('executeSql against a real database', () => {
           type: 'sql',
           statement:
             "INSERT INTO app.dataset_demo (id, note) VALUES (-424242, 'atlasdata test'); SELECT 1/0",
-        })
+        }, ctx)
       ).rejects.toThrow();
 
       const { rows } = await pool.query(

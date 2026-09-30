@@ -82,3 +82,23 @@ export function withoutDependents(datasets: Dataset[], ids: string[]): Dataset[]
 
   return datasets.filter((d) => !drop.has(d.id));
 }
+
+/**
+ * Every dataset that depends on `id`, directly or through a chain, sorted. Never includes `id`
+ * itself. The runner invalidates these before executing any stage of `id` (I3).
+ */
+export function transitiveDependents(datasets: Dataset[], id: string): string[] {
+  const found = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const d of datasets) {
+      if (d.id === id || found.has(d.id)) continue;
+      if ((d.dependsOn ?? []).some((dep) => dep === id || found.has(dep))) {
+        found.add(d.id);
+        changed = true;
+      }
+    }
+  }
+  return [...found].sort();
+}

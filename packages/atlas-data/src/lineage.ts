@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { Dataset } from './types';
+import type { Dataset, Stage } from './types';
 
 /**
  * Write the descriptor's declared lineage. Idempotent — re-registering replaces.
@@ -89,4 +89,24 @@ export function resolveLicences(datasets: Dataset[], id: string): string[] {
 
   walk(id);
   return [...found].sort();
+}
+
+const STEP_CAP = 200;
+
+/**
+ * The ISO 19115 process step for one executed stage (I4): which stage, the first 12 characters
+ * of the input hash that ties it to the exact descriptor configuration, and what it did.
+ * Rows are append-only and ON DELETE RESTRICT, so this has to be right the first time.
+ */
+export function processStep(
+  key: string,
+  stage: Stage,
+  inputHash: string,
+  summary: string
+): { description: string; tool: string } {
+  const collapsed = summary.replace(/\s+/g, ' ').trim();
+  let description = `stage ${key} · ${inputHash.slice(0, 12)} · ${collapsed}`;
+  if (description.length > STEP_CAP) description = `${description.slice(0, STEP_CAP - 1)}…`;
+  const tool = stage.type === 'run' ? stage.argv.join(' ') : stage.type;
+  return { description, tool };
 }

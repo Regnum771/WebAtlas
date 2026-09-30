@@ -1,9 +1,9 @@
 import type { Pool } from 'pg';
-import type { Dataset, Stage } from './types';
-import { topologicalOrder } from './graph';
-import { upsertLineage, appendProcessStep } from './lineage';
-import { stageKey, stageHashPlan, readStageState, writeStageState } from './state';
-import { executeSql } from './stages/sql';
+import type { Dataset } from './types';
+import { topologicalOrder, transitiveDependents } from './graph';
+import { upsertLineage, appendProcessStep, processStep } from './lineage';
+import { stageKey, stageHashPlan, readStageState, writeStageState, invalidateStageState } from './state';
+import { executeStage } from './stages/index';
 
 export interface BuildReport {
   executed: string[];
@@ -18,6 +18,15 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+export interface BuildOptions {
+  /** The whole registry: datasets whose state a stage's execution may invalidate. Defaults to `datasets`. */
+  universe?: Dataset[];
+  /** Dataset ids whose every stage executes regardless of the skip rule. */
+  force?: string[];
+  /** Where stage output goes. Defaults to console.log. */
+  log?: (line: string) => void;
+}
+
 /**
  * Materialise every dataset, stage by stage, skipping stages whose input hash is
  * unchanged from the last successful run.
@@ -27,8 +36,28 @@ function errorMessage(err: unknown): string {
  * recorded against that dataset — it never rejects the overall build, so independent
  * datasets still run. Only a malformed registry (topologicalOrder / stageHashPlan
  * throwing) rejects, since that is not a per-dataset failure.
+ *
+ * Stages are dispatched through the executor table in stages/index.ts; each returns a
+ * one-line summary of what it did, which becomes the ISO 19115 process step (I4).
+ *
+ * Invalidation before execute (I3): just before a stage runs, the recorded state of that
+ * dataset's later stages and of every transitive dependent (computed over `options.universe`,
+ * the whole registry) is deleted. If that deletion fails the stage does not run. A skip
+ * invalidates nothing.
+ *
+ * `options.force` names datasets whose every stage runs regardless of the skip rule; the
+ * cascade then applies as for any execution.
  */
-export async function runBuild(pool: Pool, datasets: Dataset[]): Promise<BuildReport> {
+export async function runBuild(
+  pool: Pool,
+  datasets: Dataset[],
+  options: BuildOptions = {}
+): Promise<BuildReport> {
+  const log = options.log ?? ((line: string) => console.log(line));
+  // The universe is the whole registry, not the selected set (spec §8): a dependent excluded
+  // by --except is still invalidated, so atlas:status reports it missing until built.
+  const universe = options.universe ?? datasets;
+  const force = new Set(options.force ?? []);
   const report: BuildReport = { executed: [], skipped: [], failed: [], blocked: [], errors: {} };
   const ordered = topologicalOrder(datasets);
   const plan = stageHashPlan(ordered);
@@ -46,6 +75,8 @@ export async function runBuild(pool: Pool, datasets: Dataset[]): Promise<BuildRe
     }
 
     const hashes = plan.get(d.id)!;
+    const forced = force.has(d.id);
+    const dependents = transitiveDependents(universe, d.id);
     let current = `${d.id}/lineage`;
     let currentIndex = -1;
     let failedAt = -1;
@@ -62,13 +93,18 @@ export async function runBuild(pool: Pool, datasets: Dataset[]): Promise<BuildRe
         const key = stageKey(i, stage);
 
         const prior = await readStageState(pool, d.id, key);
-        if (prior?.status === 'ok' && prior.input_hash === hash) {
+        if (!forced && prior?.status === 'ok' && prior.input_hash === hash) {
           report.skipped.push(current);
           continue;
         }
 
+        let summary = '';
         try {
-          await executeStage(pool, stage);
+          // I3: invalidate downstream BEFORE executing. If this throws, the stage never runs:
+          // an upstream must not execute while its dependents still look current.
+          const later = d.stages.slice(i + 1).map((s, j) => stageKey(i + 1 + j, s));
+          await invalidateStageState(pool, d.id, later, dependents);
+          ({ summary } = await executeStage(pool, stage, { datasetId: d.id, forced, log }));
           stageExecuted = true;
         } catch (err) {
           report.failed.push(current);
@@ -86,8 +122,9 @@ export async function runBuild(pool: Pool, datasets: Dataset[]): Promise<BuildRe
         // Recorded before the state write: lineage is written from what actually ran,
         // so it cannot drift (spec §3). If the state write below then fails, the stage
         // reruns and appends a second, accurate step — over-recording a re-execution,
-        // never under-recording one.
-        await appendProcessStep(pool, d.id, `stage ${key} completed`, stage.type);
+        // never under-recording one. The description names what ran (I4).
+        const step = processStep(key, stage, hash, summary);
+        await appendProcessStep(pool, d.id, step.description, step.tool);
         await writeStageState(pool, d.id, key, hash, 'ok');
         report.executed.push(current);
       }
@@ -111,14 +148,4 @@ export async function runBuild(pool: Pool, datasets: Dataset[]): Promise<BuildRe
   }
 
   return report;
-}
-
-async function executeStage(pool: Pool, stage: Stage): Promise<void> {
-  switch (stage.type) {
-    case 'sql':
-      return executeSql(pool, stage);
-    default:
-      // Plan 2 adds fetch-http, load-geojson, publish-geoserver and run.
-      throw new Error(`Stage type "${stage.type}" is not implemented yet`);
-  }
 }
