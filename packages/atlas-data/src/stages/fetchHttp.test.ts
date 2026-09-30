@@ -51,7 +51,7 @@ const stage = (over: Record<string, unknown> = {}) =>
 describe('fetch-http', () => {
   it('downloads into the cache and records the content hash', async () => {
     const r = await executeFetchHttp(pool, stage(), ctx(), cache);
-    expect(r.summary).toBe(`${base}/a.zip sha256:${SHA}`);
+    expect(r.summary).toBe(`sha256:${SHA} ${base}/a.zip`);
     expect(await readFile(join(cache, 'basemap/a.zip'))).toEqual(BODY);
   });
 
@@ -79,8 +79,37 @@ describe('fetch-http', () => {
     expect(hits).toBe(2);
   });
 
+  it('records the source URL in a sidecar after a successful download', async () => {
+    await executeFetchHttp(pool, stage(), ctx(), cache);
+    expect(await readFile(join(cache, 'basemap/a.zip.source'), 'utf8')).toBe(`${base}/a.zip`);
+  });
+
+  it('reuse says so in the summary, hash first', async () => {
+    await executeFetchHttp(pool, stage(), ctx(), cache);
+    const r = await executeFetchHttp(pool, stage(), ctx(), cache);
+    expect(r.summary).toBe(`sha256:${SHA} ${base}/a.zip (reused)`);
+  });
+
+  it('an existing file whose sidecar names a different URL is re-downloaded', async () => {
+    await executeFetchHttp(pool, stage(), ctx(), cache);
+    expect(hits).toBe(1);
+    const moved = stage({ url: `${base}/b.zip` });
+    const r = await executeFetchHttp(pool, moved, ctx(), cache);
+    expect(hits).toBe(2);
+    expect(r.summary).toBe(`sha256:${SHA} ${base}/b.zip`);
+    expect(await readFile(join(cache, 'basemap/a.zip.source'), 'utf8')).toBe(`${base}/b.zip`);
+  });
+
+  it('an existing file with no sidecar is re-downloaded', async () => {
+    await writeFile(join(cache, 'basemap/a.zip'), 'orphan');
+    await executeFetchHttp(pool, stage(), ctx(), cache);
+    expect(hits).toBe(1);
+    expect(await readFile(join(cache, 'basemap/a.zip'))).toEqual(BODY);
+  });
+
   it('an existing file that fails its pin is re-downloaded', async () => {
     await writeFile(join(cache, 'stale.zip'), 'stale');
+    await writeFile(join(cache, 'stale.zip.source'), `${base}/a.zip`);
     await executeFetchHttp(pool, stage({ into: 'stale.zip', sha256: SHA }), ctx(), cache);
     expect(hits).toBe(1);
     expect(await readFile(join(cache, 'stale.zip'))).toEqual(BODY);

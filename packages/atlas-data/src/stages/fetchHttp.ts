@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
-import { mkdir, rename, rm } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -24,9 +24,11 @@ async function sha256File(path: string): Promise<string> {
  * - Written to `<target>.part` and renamed on completion: an interrupted download can never be
  *   taken for a finished one, and the .part is removed on any failure.
  * - A declared sha256 is checked BEFORE the rename, so a mismatch leaves the previous file intact.
- * - An existing file is reused (no request) when it satisfies the pin, or when there is no pin,
- *   unless the dataset is forced. Refreshing an unpinned `latest` source therefore takes --force
- *   (spec C-10); the fetched hash is always recorded so machines' downloads are distinguishable.
+ * - An existing file is reused (no request) only when it satisfies the pin (or there is none),
+ *   its `<target>.source` sidecar names exactly `stage.url`, and the dataset is not forced. The
+ *   sidecar guarantees the recorded `<hash> <url>` pair is one that was really fetched: a changed
+ *   URL with the same `into` downloads again rather than pairing the new URL with an old file's
+ *   hash. Refreshing an unpinned `latest` source still takes --force (spec C-10).
  */
 export async function executeFetchHttp(
   _pool: Pool,
@@ -39,13 +41,19 @@ export async function executeFetchHttp(
   if (!target.startsWith(root + sep)) throw new Error(`fetch-http: "${stage.into}" escapes data/cache`);
   await mkdir(dirname(target), { recursive: true });
 
+  const sidecar = `${target}.source`;
   if (!ctx.forced && existsSync(target)) {
-    const have = await sha256File(target);
-    if (!stage.sha256 || have === stage.sha256) {
-      ctx.log(`[${ctx.datasetId}] ${stage.into} already present (sha256 ${have.slice(0, 12)})`);
-      return { summary: `${stage.url} sha256:${have}` };
+    const source = existsSync(sidecar) ? (await readFile(sidecar, 'utf8')).trim() : null;
+    if (source !== stage.url) {
+      ctx.log(`[${ctx.datasetId}] ${stage.into} was not fetched from this URL; downloading again`);
+    } else {
+      const have = await sha256File(target);
+      if (!stage.sha256 || have === stage.sha256) {
+        ctx.log(`[${ctx.datasetId}] ${stage.into} already present (sha256 ${have.slice(0, 12)})`);
+        return { summary: `sha256:${have} ${stage.url} (reused)` };
+      }
+      ctx.log(`[${ctx.datasetId}] ${stage.into} does not match its pin; downloading again`);
     }
-    ctx.log(`[${ctx.datasetId}] ${stage.into} does not match its pin; downloading again`);
   }
 
   const part = `${target}.part`;
@@ -74,7 +82,8 @@ export async function executeFetchHttp(
       throw new Error(`fetch-http: sha256 mismatch for ${stage.url}: expected ${stage.sha256}, got ${got}`);
     }
     await rename(part, target);
-    return { summary: `${stage.url} sha256:${got}` };
+    await writeFile(sidecar, stage.url, 'utf8');
+    return { summary: `sha256:${got} ${stage.url}` };
   } finally {
     await rm(part, { force: true });
   }
