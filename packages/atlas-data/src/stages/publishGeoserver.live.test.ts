@@ -14,7 +14,7 @@ describe.skipIf(!GS)('publish-geoserver against the running GeoServer', () => {
     );
     expect(res.status).toBe(200);
     expect(((await res.json()) as { features: unknown[] }).features.length).toBe(1);
-  });
+  }, 30_000);
 
   // If GeoServer ever accepts this (it should refuse a feature type with no backing relation),
   // the test fails. Delete the created featuretype by hand and report it: never loosen the assertion.

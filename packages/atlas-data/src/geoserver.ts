@@ -51,6 +51,18 @@ async function expectOk(res: Response, what: string): Promise<void> {
   if (!res.ok) throw new Error(`GeoServer ${what} failed: ${res.status} ${await res.text()}`);
 }
 
+export function defaultNativeName(layer: string): string {
+  return `${layer}_active`;
+}
+
+/** Existence probe: 200 present, 404 missing, anything else fails the stage (spec §8). */
+async function exists(gs: GeoServerEnv, f: typeof fetch, path: string, what: string): Promise<Response | null> {
+  const res = await gsRequest(gs, f, 'GET', path);
+  if (res.status === 200) return res;
+  if (res.status === 404) return null;
+  throw new Error(`GeoServer check ${what} failed: ${res.status} ${await res.text()}`);
+}
+
 export async function publishLayer(
   gs: GeoServerEnv,
   spec: { layer: string; nativeName?: string; style?: string },
@@ -58,12 +70,12 @@ export async function publishLayer(
 ): Promise<'created' | 'repointed' | 'unchanged'> {
   const ws = gs.workspace;
   const store = `${ws}_water`;
-  const native = spec.nativeName ?? `${spec.layer}_active`;
+  const native = spec.nativeName ?? defaultNativeName(spec.layer);
 
-  if ((await gsRequest(gs, f, 'GET', `/workspaces/${ws}`)).status !== 200) {
+  if (!(await exists(gs, f, `/workspaces/${ws}`, `workspace ${ws}`))) {
     await expectOk(await gsRequest(gs, f, 'POST', '/workspaces', { workspace: { name: ws } }), `create workspace ${ws}`);
   }
-  if ((await gsRequest(gs, f, 'GET', `/workspaces/${ws}/datastores/${store}`)).status !== 200) {
+  if (!(await exists(gs, f, `/workspaces/${ws}/datastores/${store}`, `datastore ${store}`))) {
     const entry = [
       { '@key': 'dbtype', $: 'postgis' },
       { '@key': 'host', $: gs.db.host },
@@ -82,8 +94,8 @@ export async function publishLayer(
 
   const ftPath = `/workspaces/${ws}/datastores/${store}/featuretypes`;
   let outcome: 'created' | 'repointed' | 'unchanged';
-  const existing = await gsRequest(gs, f, 'GET', `${ftPath}/${spec.layer}`);
-  if (existing.status === 200) {
+  const existing = await exists(gs, f, `${ftPath}/${spec.layer}`, `featuretype ${spec.layer}`);
+  if (existing) {
     const current = (await existing.json()) as { featureType?: { nativeName?: string } };
     if (current.featureType?.nativeName === native) {
       outcome = 'unchanged';
@@ -112,9 +124,8 @@ export async function publishLayer(
       `style ${spec.layer}`
     );
   }
-  if (outcome === 'repointed') {
-    // Repointing does not refresh GeoServer's cached attribute schema until the catalog resets.
-    await expectOk(await gsRequest(gs, f, 'POST', '/reset'), 'catalog reset');
-  }
+  // Always reset: a relation rebuilt under the same nativeName keeps a stale cached attribute
+  // schema until the catalog resets (as apps/api publishAll does).
+  await expectOk(await gsRequest(gs, f, 'POST', '/reset'), 'catalog reset');
   return outcome;
 }
