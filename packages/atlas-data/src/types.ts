@@ -20,17 +20,38 @@ export interface Lineage {
 }
 
 export type Stage =
-  | { type: 'fetch-http'; url: string; into: string; sha256?: string }
+  | {
+      type: 'fetch-http';
+      url: string;
+      /** A relative path inside packages/atlas-data/data/cache. */
+      into: string;
+      sha256?: string;
+    }
   | { type: 'load-geojson'; file: string; table: string; columns: ColumnMap }
   | { type: 'sql'; statement: string }
-  | { type: 'publish-geoserver'; layer: string; style?: string }
+  | {
+      type: 'publish-geoserver';
+      /** The public layer name, e.g. `rivers` → `webatlas:rivers`. */
+      layer: string;
+      /** The relation behind it. Defaults to `<layer>_active`, the active-version view. */
+      nativeName?: string;
+      /** A default style to assign, by name. */
+      style?: string;
+    }
   | {
       type: 'run';
-      command: string;
+      /**
+       * Where it executes (spec §7):
+       * - 'host': `npm` on this machine, and `argv` is npm's arguments;
+       * - 'tools': inside the atlas-tools container (Plan B), and `argv` is the container command.
+       */
+      in: 'host' | 'tools';
+      /** An argument vector, never a command string: nothing is ever re-parsed by a shell. */
+      argv: string[];
       produces: string;
       /** Which built-in stage should eventually absorb this. */
       promoteTo: string;
-      /** ISO date (YYYY-MM-DD). A past date fails the build — see Task 3. */
+      /** ISO date (YYYY-MM-DD). A past date fails the build. */
       promoteBy: string;
     };
 

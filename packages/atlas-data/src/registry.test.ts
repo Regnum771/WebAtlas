@@ -43,10 +43,16 @@ describe('registry', () => {
       kind: 'derived',
       lineage: { statement: 's', licence: 'CC0-1.0', sources: [] },
       stages: [
-        { type: 'run', command: 'x', produces: 'y', promoteTo: 'sql', promoteBy: '2026-02-30' },
+        { type: 'run', in: 'host', argv: ['x'], produces: 'y', promoteTo: 'sql', promoteBy: '2026-02-30' },
       ],
     } as unknown as Dataset;
     expect(() => validateRegistry([bad])).toThrow(/bad-date/);
+  });
+
+  it('registers the rivers dataset under its layer key, not "hydrorivers" (spec C-9)', () => {
+    const ids = ALL_DATASETS.map((d) => d.id);
+    expect(ids).toContain('rivers');
+    expect(ids).not.toContain('hydrorivers');
   });
 
   it('accepts a well-formed single-dataset list', () => {

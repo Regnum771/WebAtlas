@@ -1,20 +1,17 @@
 import { defineDataset } from '../schema';
 
 /**
- * Đoạn sông HydroRIVERS (cấp 2) cùng đường thuỷ OSM (cấp 3), và phân cấp sông dẫn xuất
- * (cấp 1) mà versionsService.activate() dựng lại khi phiên bản được kích hoạt.
+ * Sông ba cấp trong MỘT phiên bản: đường thuỷ OSM (cấp 3), đoạn HydroRIVERS (cấp 2), và
+ * sông có tên (cấp 1) mà versionsService.activate() dựng lại khi phiên bản được kích hoạt.
  *
- * Khai báo là cửa thoát `run` chứ không phải stage `load-geojson`, vì runner.ts hiện chỉ
- * cài đặt stage `sql` — `load-geojson` mới được khai báo trong types.ts và thuộc về mạch
- * sổ đăng ký dữ liệu. assertNoOverdueEscapeHatches biến promoteBy thành lỗi build, nên
- * cửa thoát này không thể lặng lẽ trở thành vĩnh viễn.
+ * Id là khoá lớp `rivers` chứ không phải `hydrorivers` (spec C-9): hàng trạng thái cũ
+ * dưới id `hydrorivers` chỉ có trên máy dev và vô hại.
  *
- * Hệ quả cần biết: runner cũng CHƯA thực thi stage `run`, nên `npm run atlas:build` không
- * đối số sẽ báo tập này thất bại cho tới khi mạch sổ đăng ký cài đặt nó. Dùng
- * `--except hydrorivers`; bản thân dữ liệu vẫn nạp bằng lệnh ở `command` bên dưới.
+ * Còn là cửa thoát `run` cho tới khi load-geojson có (Plan C, spec §11). Lệnh chạy trên
+ * máy chủ qua npm, không qua shell.
  */
-export const hydrorivers = defineDataset({
-  id: 'hydrorivers',
+export const rivers = defineDataset({
+  id: 'rivers',
   kind: 'vector',
   editable: true,
   lineage: {
@@ -37,7 +34,8 @@ export const hydrorivers = defineDataset({
   stages: [
     {
       type: 'run',
-      command: 'npm run ingest:rivers -w @webatlas/api',
+      in: 'host',
+      argv: ['run', 'ingest:rivers', '-w', '@webatlas/api'],
       produces: 'water.rivers (levels 1-3) + app.dataset_versions row',
       promoteTo: 'load-geojson',
       promoteBy: '2026-12-31',

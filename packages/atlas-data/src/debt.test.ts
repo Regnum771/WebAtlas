@@ -7,13 +7,19 @@ const withRunStage = (promoteBy: string): Dataset => ({
   kind: 'raster',
   lineage: { statement: 's', licence: 'CC-BY-NC-SA-4.0', sources: [] },
   stages: [
-    { type: 'run', command: 'prep_dem.py', produces: 'dem.tif', promoteTo: 'fetch-cog', promoteBy },
+    { type: 'run', in: 'tools', argv: ['prep_dem.py'], produces: 'dem.tif', promoteTo: 'fetch-cog', promoteBy },
   ],
 });
 
 const TODAY = new Date('2026-09-16T00:00:00Z');
 
 describe('assertNoOverdueEscapeHatches', () => {
+  it('names the overdue command by its argv', () => {
+    expect(() => assertNoOverdueEscapeHatches([withRunStage('2026-01-01')], TODAY)).toThrow(
+      /run "prep_dem\.py"/
+    );
+  });
+
   it('passes when the promotion date is still in the future', () => {
     expect(() => assertNoOverdueEscapeHatches([withRunStage('2026-12-31')], TODAY)).not.toThrow();
   });
