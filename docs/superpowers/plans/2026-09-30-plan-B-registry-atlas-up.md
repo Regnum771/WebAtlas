@@ -3365,3 +3365,21 @@ git grep -n "apps/api/scripts" -- ':!docs/superpowers' ':!.superpowers' ':!apps/
 - No password appears in any argv, stage hash or lineage row. The scripts fail on any non-2xx.
 - `apps/api` holds no `scripts/` directory.
 - The old commands still work.
+
+---
+
+## Execution Notes
+
+### Task 10: adopting the dev machine (2026-09-30, run by the controller)
+
+1. **Before.** `atlas:status` showed `demo` ok. `rivers` was stale (0:run, 1:publish) with 2:publish missing, because it now depends on `seeds` and has a third stage. `seeds`, `basemap`, `reference_entities`, `dem` and `contours` were missing.
+2. **`atlas:adopt`** took 11 s. It adopted `seeds`, `basemap`, `reference_entities`, `dem` and `contours`, and each probe detail matched the measured baselines:
+   - `seeds`: provinces 34, wards 616, dams 151, lakes 3,868, and all seven layers serve WFS.
+   - `basemap`: eight tables, with `roads_region` at 527,215, and `webatlas:basemap` renders.
+   - `reference_entities`: roads 13,354, railways 203, water 597, landuse 770, places 5,989.
+   - `dem`: Buôn Ma Thuột at 472 m.
+   - `contours`: 19,275, 50,760 and 103,672 rows, and all three layers render.
+
+   `has-state` was reported for `demo` and `rivers`. No stage executed.
+3. **`atlas:build`** took 57 s: `executed 3, skipped 21`. Only `rivers` re-ran. The ingest re-activated version `0e950c38…` with 23,119 features, and a heartbeat fired at 31 s. `rivers` and `rivers_overview` were `unchanged`. No tools stage ran. The exit code was 0.
+4. **`atlas:verify`** took 11 s: `all 29 checks passed`, exit code 0. `atlas:status` then reported every dataset `ok`, with the suggestion `npm run atlas:verify`.
