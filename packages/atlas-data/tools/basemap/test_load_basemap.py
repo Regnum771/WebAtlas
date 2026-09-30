@@ -54,6 +54,13 @@ check("write plan: replace, then appends, covering every row once",
       lb.write_chunks(120_001, 50_000) == [(0, 50_000, "replace"), (50_000, 100_000, "append"), (100_000, 120_001, "append")])
 check("write plan: nothing for an empty table", lb.write_chunks(0) == [])
 
+land = lb.national_land()
+check("land_vn is the 34 provinces", len(land) == 34)
+check("land_vn keeps code and name, as publish-basemap.sh and the dev table have them",
+      list(land.columns) == ["code", "name", "geometry"])
+check("land_vn is polygons in EPSG:4326",
+      set(land.geom_type) <= {"Polygon", "MultiPolygon"} and land.crs.to_epsg() == 4326)
+
 if failures:
     sys.exit(f"{len(failures)} check(s) failed")
 print("load_basemap checks passed")

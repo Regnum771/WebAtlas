@@ -107,8 +107,21 @@ def write(gdf: gpd.GeoDataFrame, table: str, engine) -> None:
     print(f"   -> basemap.{table}: {len(gdf):,} features")
 
 
+def national_land() -> gpd.GeoDataFrame:
+    """basemap.land_vn: the 34 provinces as the land fill of the national tier.
+
+    publish-basemap.sh publishes it, the basemap probe counts it and the runbook lists it, but
+    until Task 12 no committed step produced it: the dev machine's table came from a manual load
+    of this same file (identical 34 rows, 58,431 vertices, columns code/name), and a fresh clone
+    failed with "featuretype land_vn returned 400"."""
+    land = gpd.read_file(PROVINCES, columns=["code", "name"])
+    return land.set_crs("EPSG:4326", allow_override=True)
+
+
 def load_national(engine) -> None:
     print("NATIONAL (coarse, whole country)")
+
+    write(national_land(), "land_vn", engine)
 
     t = time.time()
     roads = gpd.read_file(
