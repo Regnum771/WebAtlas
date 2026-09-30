@@ -40,5 +40,8 @@ export const rivers = defineDataset({
       promoteTo: 'load-geojson',
       promoteBy: '2026-12-31',
     },
+    // rivers_detail, not rivers_active: water.rivers holds all three levels, so the active view
+    // would draw every river as its ways, reaches and entity stacked together.
+    { type: 'publish-geoserver', layer: 'rivers', nativeName: 'rivers_detail' },
   ],
 });

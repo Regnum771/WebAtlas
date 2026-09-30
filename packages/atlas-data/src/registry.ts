@@ -3,6 +3,7 @@ import { DESCRIPTORS } from './descriptors/index';
 import { datasetSchema } from './schema';
 import { topologicalOrder } from './graph';
 import { assertNoOverdueEscapeHatches } from './debt';
+import { hasExecutor } from './stages/index';
 
 export const ALL_DATASETS: Dataset[] = DESCRIPTORS;
 
@@ -22,6 +23,16 @@ export function validateRegistry(datasets: Dataset[] = ALL_DATASETS, today: Date
         .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
         .join('; ');
       throw new Error(`Dataset "${d.id}" failed schema validation: ${issues}`);
+    }
+  }
+
+  // A stage type with no executor would fail only when reached, after earlier stages had
+  // already run. Reject it here, at load time (spec §8).
+  for (const d of datasets) {
+    for (const s of d.stages) {
+      if (!hasExecutor(s.type)) {
+        throw new Error(`Dataset "${d.id}" uses stage type "${s.type}", which has no executor`);
+      }
     }
   }
 

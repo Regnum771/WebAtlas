@@ -1,9 +1,12 @@
 import pg from 'pg';
+import { loadDevEnv } from './env';
 import { ALL_DATASETS, validateRegistry } from '../registry';
 import { topologicalOrder } from '../graph';
 import { stageKey, stageHashPlan, readStageState } from '../state';
 
 async function main(): Promise<void> {
+  const envFile = loadDevEnv();
+  if (envFile) console.log(`(environment from ${envFile})`);
   validateRegistry();
 
   // atlas:status takes no flags; a stray argument (e.g. a typo'd --only) must be

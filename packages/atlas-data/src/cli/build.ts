@@ -1,10 +1,13 @@
 import pg from 'pg';
+import { loadDevEnv } from './env';
 import { ALL_DATASETS, validateRegistry } from '../registry';
 import { runBuild } from '../runner';
 import { parseBuildArgs } from './args';
 import { selectDatasets, assertForceSelected, type ExclusionReason } from './select';
 
 async function main(): Promise<void> {
+  const envFile = loadDevEnv();
+  if (envFile) console.log(`(environment from ${envFile})`);
   validateRegistry();
 
   // Argument and id errors are usage mistakes, not crashes: report just the message
