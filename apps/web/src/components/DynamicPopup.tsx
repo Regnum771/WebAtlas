@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { drawingJustEnded, isDrawing } from '../features/map/model/drawingState';
 import { useMapContext } from '../app/providers/MapProvider';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
@@ -92,6 +92,8 @@ const DynamicPopup: React.FC = () => {
   const { map, reservoirFilter, setReservoirFilter } = useMapContext();
   const { editing } = useMapEditing();
   const [popupData, setPopupData] = useState<PopupData | null>(null);
+  // Bumped on every handled click; async continuations of an older click must not touch state.
+  const clickSeq = useRef(0);
   const [candidates, setCandidates] = useState<RoiCandidate[]>([]);
   const [pixel, setPixel] = useState<number[]>([0, 0]);
   const [detailedDam, setDetailedDam] = useState<any | null>(null);
@@ -118,6 +120,8 @@ const DynamicPopup: React.FC = () => {
 
     const clickHandler = (e: any) => {
       if (editing || isDrawing() || drawingJustEnded()) return; // editing or drawing owns clicks; no popup
+      const seq = ++clickSeq.current;
+      const isCurrent = () => clickSeq.current === seq;
       // Every feature under the click, not just the first: the thematic feature, and the
       // ward and province boundaries, are all "Dùng làm vùng phân tích" candidates (U-6).
       let feature: any = null;
@@ -165,7 +169,7 @@ const DynamicPopup: React.FC = () => {
           ? { coordinate: e.coordinate, feature: feature.getProperties() }
           : null;
         const size = map.getSize();
-        if (!size) { setPopupData(fallback); return; }
+        if (!size) { setPopupData(fallback); if (!fallback) setCandidates([]); return; }
         // ol khai báo Extent là number[]; basemapInfo cần bộ 4 cố định để không
         // ai truyền nhầm mảng thiếu phần tử.
         const [minX, minY, maxX, maxY] = map.getView().calculateExtent(size);
@@ -173,14 +177,15 @@ const DynamicPopup: React.FC = () => {
         setPopupData(fallback);
         fetchBasemapInfo(extent, [size[0], size[1]], [e.pixel[0], e.pixel[1]])
           .then((found) => {
+            if (!isCurrent()) return;
             // Chỉ thay khi tìm được thứ CÓ TÊN: một đoạn đường không tên thì kém
             // hữu ích hơn tên phường đang hiện sẵn.
-            if (!found?.name) return;
+            if (!found?.name) { if (!fallback) setCandidates([]); return; }
             setPopupData({ coordinate: e.coordinate, feature: { ...found, layerKey: 'basemap' } });
             const layer = found.table ? referenceLayerOfTable(found.table) : null;
             if (layer && found.osmId) {
               fetchEntitiesByMember(layer, found.osmId)
-                .then((entities) => setCandidates([...entityCandidates(layer, entities), ...base]))
+                .then((entities) => isCurrent() && setCandidates([...entityCandidates(layer, entities), ...base]))
                 .catch(() => { /* the admin candidates stay; the lookup is a convenience */ });
             }
           })
@@ -480,7 +485,7 @@ const DynamicPopup: React.FC = () => {
       >
         <button 
           className="close-popup-btn" 
-          onClick={() => setPopupData(null)}
+          onClick={() => { setPopupData(null); setCandidates([]); }}
         >
           <X size={16} />
         </button>
@@ -499,7 +504,7 @@ const DynamicPopup: React.FC = () => {
         </div>
         <RoiCandidatesView
           candidates={candidates}
-          onUse={(roi) => { void setRoi(roi, { fit: true }); setPopupData(null); }}
+          onUse={(roi) => { void setRoi(roi, { fit: true }); setPopupData(null); setCandidates([]); }}
         />
         
         {isDamOrReservoir && (
