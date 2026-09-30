@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Pool } from 'pg';
-import { resolveLicences, upsertLineage } from './lineage';
+import { resolveLicences, upsertLineage, adoptionStep } from './lineage';
 import type { Dataset } from './types';
 
 const ds = (id: string, licence: string, dependsOn?: string[]): Dataset => ({
@@ -124,5 +124,15 @@ describe('processStep (I4: record what ran, not just that it ran)', () => {
     expect(processStep('0:run', stage, hash, 'run ingest:rivers -w @webatlas/api').tool).toBe(
       'run ingest:rivers -w @webatlas/api'
     );
+  });
+});
+
+describe('adoptionStep', () => {
+  it('says the dataset was adopted without executing, with the probe detail, capped at 200', () => {
+    expect(adoptionStep('roads: 527000; webatlas:basemap renders')).toEqual({
+      description: 'adopted without executing · roads: 527000; webatlas:basemap renders',
+      tool: 'atlas:adopt',
+    });
+    expect(adoptionStep('x'.repeat(500)).description).toHaveLength(200);
   });
 });
