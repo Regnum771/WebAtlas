@@ -1,4 +1,5 @@
 import { defineDataset } from '../schema';
+import { allOf, rowCount, wfsAnswers } from '../probes';
 
 /**
  * Sông ba cấp trong MỘT phiên bản: đường thuỷ OSM (cấp 3), đoạn HydroRIVERS (cấp 2), và
@@ -8,12 +9,14 @@ import { defineDataset } from '../schema';
  * dưới id `hydrorivers` chỉ có trên máy dev và vô hại.
  *
  * Còn là cửa thoát `run` cho tới khi load-geojson có (Plan C, spec §11). Lệnh chạy trên
- * máy chủ qua npm, không qua shell.
+ * máy chủ qua npm, không qua shell. Phụ thuộc `seeds`: ingest gán mã hành chính theo ranh giới
+ * tỉnh/xã mà `seeds` nạp.
  */
 export const rivers = defineDataset({
   id: 'rivers',
   kind: 'vector',
   editable: true,
+  dependsOn: ['seeds'],
   lineage: {
     statement:
       'Đoạn sông HydroRIVERS v10 chọn theo sáu tỉnh vùng công tác, nối tên từ đường thuỷ OSM, ' +
@@ -43,5 +46,11 @@ export const rivers = defineDataset({
     // rivers_detail, not rivers_active: water.rivers holds all three levels, so the active view
     // would draw every river as its ways, reaches and entity stacked together.
     { type: 'publish-geoserver', layer: 'rivers', nativeName: 'rivers_detail' },
+    // The far-zoom overview: a plain view over level-1 rivers (entity phase 3). No `_active` suffix.
+    { type: 'publish-geoserver', layer: 'rivers_overview', nativeName: 'rivers_overview' },
   ],
+  probe: allOf(
+    rowCount('level-1 rivers', 'SELECT count(*)::text AS n FROM water.rivers_active WHERE feature_level = 1'),
+    wfsAnswers('rivers')
+  ),
 });
