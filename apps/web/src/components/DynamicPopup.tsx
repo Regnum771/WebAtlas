@@ -4,6 +4,10 @@ import { useMapContext } from '../app/providers/MapProvider';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
 import { fetchBasemapInfo } from '../features/map/model/basemapInfo';
 import { damStatusDisplay, STREAM_ORDER_LABELS } from '@webatlas/shared';
+import { adminCandidates, entityCandidates, referenceLayerOfTable, thematicCandidate, type RoiCandidate } from '../features/roi/model/candidates';
+import { fetchEntitiesByMember } from '../features/roi/api/roi.api';
+import { RoiCandidatesView } from '../features/roi/ui/RoiCandidates.view';
+import { setRoi } from '../features/roi/model/roi.store';
 import { useMapEditing } from '../features/map/model/mapEditing';
 
 interface PopupData {
@@ -88,6 +92,7 @@ const DynamicPopup: React.FC = () => {
   const { map, reservoirFilter, setReservoirFilter } = useMapContext();
   const { editing } = useMapEditing();
   const [popupData, setPopupData] = useState<PopupData | null>(null);
+  const [candidates, setCandidates] = useState<RoiCandidate[]>([]);
   const [pixel, setPixel] = useState<number[]>([0, 0]);
   const [detailedDam, setDetailedDam] = useState<any | null>(null);
 
@@ -113,7 +118,29 @@ const DynamicPopup: React.FC = () => {
 
     const clickHandler = (e: any) => {
       if (editing || isDrawing() || drawingJustEnded()) return; // editing or drawing owns clicks; no popup
-      const feature = map.forEachFeatureAtPixel(e.pixel, (f) => f);
+      // Every feature under the click, not just the first: the thematic feature, and the
+      // ward and province boundaries, are all "Dùng làm vùng phân tích" candidates (U-6).
+      let feature: any = null;
+      let thematic: any = null;
+      let province: any = null;
+      let ward: any = null;
+      map.forEachFeatureAtPixel(e.pixel, (f, layer) => {
+        const p = f.getProperties();
+        if (!feature) feature = f;
+        // The normalized props carry `id` for CRUD; fall back to the WFS feature id
+        // ("rivers.<uuid>") so a layer that does not set it still offers its feature.
+        if (!thematic && p.layerKey) thematic = { ...p, id: p.id ?? String(f.getId() ?? '').split('.').pop() };
+        const layerId = layer?.get('id');
+        if (!province && layerId === 'layer_provinces_2026') province = p;
+        if (!ward && layerId === 'layer_wards_2026') ward = p;
+        return undefined; // keep iterating
+      });
+      const zoom = map.getView().getZoom() ?? 0;
+      const base = [
+        ...(thematic ? [thematicCandidate(thematic)].filter((c): c is RoiCandidate => c !== null) : []),
+        ...adminCandidates(province, ward, zoom),
+      ];
+      setCandidates(base);
 
       // Ranh giới tỉnh/xã là polygon phủ KÍN bản đồ, nên forEachFeatureAtPixel
       // luôn trúng một cái — nếu coi đó là "đã trúng đối tượng" thì nhánh tra cứu
@@ -150,6 +177,12 @@ const DynamicPopup: React.FC = () => {
             // hữu ích hơn tên phường đang hiện sẵn.
             if (!found?.name) return;
             setPopupData({ coordinate: e.coordinate, feature: { ...found, layerKey: 'basemap' } });
+            const layer = found.table ? referenceLayerOfTable(found.table) : null;
+            if (layer && found.osmId) {
+              fetchEntitiesByMember(layer, found.osmId)
+                .then((entities) => setCandidates([...entityCandidates(layer, entities), ...base]))
+                .catch(() => { /* the admin candidates stay; the lookup is a convenience */ });
+            }
           })
           .catch(() => {
             /* Tra cứu nền là tiện ích thêm: hỏng thì im lặng, không chặn bản đồ. */
@@ -464,6 +497,10 @@ const DynamicPopup: React.FC = () => {
         <div className="popup-content">
           {renderPopupContent()}
         </div>
+        <RoiCandidatesView
+          candidates={candidates}
+          onUse={(roi) => { void setRoi(roi, { fit: true }); setPopupData(null); }}
+        />
         
         {isDamOrReservoir && (
           <div className="popup-footer">

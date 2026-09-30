@@ -5,6 +5,7 @@ import { ROI_TOOLS, toolAvailability, type Availability, type RoiTool } from '..
 import { useAnalysis } from './model/useAnalysis';
 import { AnalysisButtonsView } from './ui/AnalysisButtons.view';
 import { AnalysisParamsView } from './ui/AnalysisParams.view';
+import { UseAsRoiButton } from '../roi/ui/UseAsRoiButton';
 import { AnalysisResultCardView } from './ui/AnalysisResultCard.view';
 
 /**
@@ -34,6 +35,10 @@ export function useAnalysisTools(): { buttons: ReactNode; panel: ReactNode } {
           run({ kind: 'zoomToFeature', layerKey: row.layerKey, featureId: row.featureId, lonLat: [row.lon, row.lat] });
         }
       }}
+      renderRowAction={(row) =>
+        row.layerKey && row.featureId
+          ? <UseAsRoiButton roi={{ source: 'feature', layerKey: row.layerKey, featureId: row.featureId }} label={row.name ?? 'đối tượng'} />
+          : null}
       onExport={a.exportCsv}
       onClear={a.clear}
     />

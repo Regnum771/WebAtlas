@@ -1296,3 +1296,11 @@ body {
   .control-group-label { display: none; }
   .roi-chip-label { max-width: 140px; }
 }
+
+.use-as-roi { background: none; border: 1px solid var(--primary); color: var(--primary); border-radius: 6px;
+  padding: 0 6px; margin-left: 6px; font-size: 12px; cursor: pointer; }
+.roi-candidates { border-top: 1px solid #e5e7eb; margin-top: 8px; padding-top: 6px; font-size: 12px; }
+.roi-candidates-title { color: var(--text-muted, #6b7280); margin-bottom: 4px; }
+.roi-candidates ul { list-style: none; margin: 0; padding: 0; }
+.roi-candidate { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 2px 0; }
+.roi-candidate button { background: none; border: none; color: var(--primary); cursor: pointer; font: inherit; }

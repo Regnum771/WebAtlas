@@ -48,9 +48,9 @@ async function renderAndSelectFirstHit() {
   const input = screen.getByPlaceholderText('Tìm kiếm đối tượng…') as HTMLInputElement;
   fireEvent.change(input, { target: { value: 'la' } });
   await act(async () => { vi.advanceTimersByTime(500); });
-  await waitFor(() => expect(screen.getByRole('button', { name: /Hồ Lắk/ })).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('button', { name: /^(?!Dùng ).*Hồ Lắk/ })).toBeInTheDocument());
 
-  fireEvent.click(screen.getByRole('button', { name: /Hồ Lắk/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^(?!Dùng ).*Hồ Lắk/ }));
   return input;
 }
 
@@ -70,7 +70,7 @@ describe('Search (feature slice)', () => {
     const input = await renderAndSelectFirstHit();
 
     expect(input.value).toBe('');
-    expect(screen.queryByRole('button', { name: /Hồ Lắk/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^(?!Dùng ).*Hồ Lắk/ })).not.toBeInTheDocument();
   });
 
   it('draws and frames the whole geometry of the selected hit', async () => {
@@ -106,12 +106,12 @@ describe('Search (feature slice)', () => {
     const input = screen.getByPlaceholderText('Tìm kiếm đối tượng…') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'quoc lo' } });
     await act(async () => { vi.advanceTimersByTime(500); });
-    await waitFor(() => expect(screen.getByRole('button', { name: /Quốc lộ 14/ })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /^(?!Dùng ).*Quốc lộ 14/ })).toBeInTheDocument());
 
     // The badge tells the user this is basemap reference data, not an editable feature.
     expect(screen.getByText('Nền bản đồ')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Quốc lộ 14/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^(?!Dùng ).*Quốc lộ 14/ }));
 
     // "Moves the map": showGeometries is the same navigation call the happy path
     // above uses, run with fit so the view frames the point.

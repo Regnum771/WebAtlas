@@ -107,4 +107,16 @@ describe('SearchBoxView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Hồ Lắk' }));
     expect(onSelect).toHaveBeenCalledWith(hits[1]);
   });
+
+  it('shows an admin hit with its level badge and renders the row action', () => {
+    render(
+      <SearchBoxView
+        query="Đắk" loading={false} onQuery={vi.fn()} onSelect={vi.fn()}
+        results={[{ source: 'admin', layerKey: 'province', featureId: '66', name: 'Tỉnh Đắk Lắk', lonLat: [108, 12.7] }]}
+        renderAction={(hit) => <button type="button">Dùng {hit.name}</button>}
+      />
+    );
+    expect(screen.getByText('Tỉnh')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dùng Tỉnh Đắk Lắk' })).toBeInTheDocument();
+  });
 });

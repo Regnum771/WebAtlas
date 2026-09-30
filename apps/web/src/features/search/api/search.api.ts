@@ -22,13 +22,21 @@ export type SearchHit =
       featureId: string;
       name: string;
       lonLat: [number, number];
+    }
+  | {
+      /** A province or ward of the working region; featureId is its code (Task 6). */
+      source: 'admin';
+      layerKey: 'province' | 'ward';
+      featureId: string;
+      name: string;
+      lonLat: [number, number];
     };
 
 // Every source /api/search accepts (see apps/api search/repository.ts SEARCH_SOURCES):
 // the four editable water layers plus the reference basemap layers, prefixed 'ref:'.
 const SOURCES = [
   'dams', 'lakes', 'rivers', 'stations',
-  'ref:roads', 'ref:railways', 'ref:water', 'ref:landuse', 'ref:places',
+  'ref:roads', 'ref:railways', 'ref:water', 'ref:landuse', 'ref:places', 'admin',
 ].join(',');
 
 export async function fetchSearch(q: string): Promise<SearchHit[]> {

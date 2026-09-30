@@ -81,3 +81,12 @@ describe('pickBasemapFeature', () => {
     expect(picked?.maxspeed).toBeUndefined();
   });
 });
+
+describe('pickBasemapFeature keeps what the ROI lookup needs', () => {
+  it('returns the chosen feature’s osm_id and source table', () => {
+    const picked = pickBasemapFeature({
+      features: [{ id: 'roads_region.fid-1', properties: { osm_id: '152592272', name: 'Đường tỉnh 690', fclass: 'secondary' } }],
+    } as never);
+    expect(picked).toMatchObject({ name: 'Đường tỉnh 690', osmId: '152592272', table: 'roads_region' });
+  });
+});
