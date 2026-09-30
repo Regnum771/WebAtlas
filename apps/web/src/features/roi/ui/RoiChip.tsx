@@ -2,11 +2,13 @@ import { useEffect, useRef } from 'react';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { useMapCommands } from '../../map/model/useMapCommands';
 import { clearRoi, dismissRoiMessage, setRadius, useRoi } from '../model/roi.store';
+import { useDrawFeedback } from '../../map/model/drawingState';
 import { RoiChipView } from './RoiChip.view';
 
 /** Container: renders the chip and keeps the map's ROI layer in step with the store. */
 export default function RoiChip({ drawHint, liveMeasure }: { drawHint?: string | null; liveMeasure?: string | null }) {
   const state = useRoi();
+  const feedback = useDrawFeedback();
   const run = useMapCommands();
   const { map } = useMapContext();
   const runRef = useRef(run);
@@ -22,7 +24,7 @@ export default function RoiChip({ drawHint, liveMeasure }: { drawHint?: string |
   }, [resolved, map]);
   return (
     <RoiChipView
-      state={state} drawHint={drawHint} liveMeasure={liveMeasure}
+      state={state} drawHint={drawHint ?? feedback.hint} liveMeasure={liveMeasure ?? feedback.measure}
       onRadius={(km) => void setRadius(km)} onClear={clearRoi} onDismiss={dismissRoiMessage}
     />
   );

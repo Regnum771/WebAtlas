@@ -6,6 +6,7 @@ import VectorLayer from 'ol/layer/Vector';
 import { getLength, getArea } from 'ol/sphere';
 import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
+import { claimDrawing, releaseDrawing, useDrawFeedback } from './drawingState';
 
 export type MeasureMode = 'none' | 'length' | 'area';
 
@@ -47,6 +48,7 @@ export function useMeasure(): UseMeasureResult {
     let draw: Draw | null = null;
 
     if (mode !== 'none') {
+      claimDrawing('ruler');
       const type = mode === 'length' ? 'LineString' : 'Polygon';
       draw = new Draw({
         source: source,
@@ -77,12 +79,22 @@ export function useMeasure(): UseMeasureResult {
     }
 
     return () => {
+      releaseDrawing('ruler');
       map.removeLayer(vector);
       if (draw) {
         map.removeInteraction(draw);
       }
     };
   }, [map, mode]);
+
+  const { owner } = useDrawFeedback();
+  // An ROI drawing took the map's clicks: stop measuring.
+  useEffect(() => {
+    if (owner === 'roi' && mode !== 'none') {
+      setMode('none');
+      setValue(null);
+    }
+  }, [owner, mode]);
 
   const start = (nextMode: 'length' | 'area') => {
     setMode(nextMode);

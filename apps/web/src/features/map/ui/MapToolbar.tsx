@@ -33,6 +33,7 @@ export interface MapToolbarViewProps {
   analysisButtons?: ReactNode;
   analysisPanel?: ReactNode;
   roiChip?: ReactNode;
+  drawButtons?: ReactNode;
 }
 
 /**
@@ -57,6 +58,7 @@ export function MapToolbarView({
   analysisButtons,
   analysisPanel,
   roiChip,
+  drawButtons,
 }: MapToolbarViewProps) {
   const isMinZoom = zoom <= MIN_ZOOM + 0.05;
   const isMaxZoom = zoom >= MAX_ZOOM - 0.05;
@@ -102,6 +104,13 @@ export function MapToolbarView({
             <Square size={18} />
           </button>
         </div>
+
+        {drawButtons && (
+          <>
+            <div className="control-divider" />
+            {drawButtons}
+          </>
+        )}
 
         {analysisButtons && (
           <>
@@ -183,11 +192,13 @@ export default function MapToolbar({
   analysisButtons,
   analysisPanel,
   roiChip,
+  drawButtons,
 }: {
   flyoutOpen: boolean;
   analysisButtons?: ReactNode;
   analysisPanel?: ReactNode;
   roiChip?: ReactNode;
+  drawButtons?: ReactNode;
 }) {
   const { map, basemap, setBasemap, layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
   const zoom = useMapZoom();
@@ -251,6 +262,7 @@ export default function MapToolbar({
       analysisButtons={analysisButtons}
       analysisPanel={analysisPanel}
       roiChip={roiChip}
+      drawButtons={drawButtons}
     />
   );
 }
