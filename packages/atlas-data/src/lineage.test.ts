@@ -93,3 +93,36 @@ describe('upsertLineage error handling (M2)', () => {
     await expect(upsertLineage(pool, d)).rejects.toBe(originalError);
   });
 });
+
+import { processStep } from './lineage';
+
+describe('processStep (I4: record what ran, not just that it ran)', () => {
+  const hash = 'a3f9c2e1b7d4' + '0'.repeat(52);
+
+  it('names the stage, the 12-char hash prefix, and the summary', () => {
+    const { description, tool } = processStep('0:sql', { type: 'sql', statement: 'SELECT 1' }, hash, 'SELECT 1');
+    expect(description).toBe('stage 0:sql · a3f9c2e1b7d4 · SELECT 1');
+    expect(tool).toBe('sql');
+  });
+
+  it('collapses whitespace in the summary', () => {
+    const { description } = processStep('0:sql', { type: 'sql', statement: 'x' }, hash, 'INSERT  INTO\n   t\tVALUES (1)');
+    expect(description).toBe('stage 0:sql · a3f9c2e1b7d4 · INSERT INTO t VALUES (1)');
+  });
+
+  it('caps the description at 200 characters, ending with …', () => {
+    const { description } = processStep('0:sql', { type: 'sql', statement: 'x' }, hash, 'y'.repeat(500));
+    expect(description).toHaveLength(200);
+    expect(description.endsWith('…')).toBe(true);
+  });
+
+  it('uses the joined argv as the tool for a run stage', () => {
+    const stage = {
+      type: 'run' as const, in: 'host' as const, argv: ['run', 'ingest:rivers', '-w', '@webatlas/api'],
+      produces: 'p', promoteTo: 'load-geojson', promoteBy: '2099-01-01',
+    };
+    expect(processStep('0:run', stage, hash, 'run ingest:rivers -w @webatlas/api').tool).toBe(
+      'run ingest:rivers -w @webatlas/api'
+    );
+  });
+});

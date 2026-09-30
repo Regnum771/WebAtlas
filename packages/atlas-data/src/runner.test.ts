@@ -49,6 +49,18 @@ function memoryPool() {
 }
 
 describe('runBuild', () => {
+  it('records the executed statement in the process step, not just "completed" (I4)', async () => {
+    const stepRows: string[] = [];
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('INTO app.dataset_lineage_step')) stepRows.push(params![1] as string);
+      return { rows: [] };
+    });
+    const pool = { query, connect: vi.fn(async () => ({ query, release: vi.fn() })) } as unknown as Pool;
+    await runBuild(pool, [ds('a', 'SELECT 42')]);
+    expect(stepRows).toHaveLength(1);
+    expect(stepRows[0]).toMatch(/^stage 0:sql · [0-9a-f]{12} · SELECT 42$/);
+  });
+
   let ctx: ReturnType<typeof memoryPool>;
   beforeEach(() => { ctx = memoryPool(); });
 

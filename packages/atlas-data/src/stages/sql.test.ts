@@ -19,10 +19,12 @@ const fakePool = () => {
   return { pool: pool as unknown as Pool, client };
 };
 
+const ctx = { datasetId: 't', forced: false, log: () => {} };
+
 describe('executeSql', () => {
   it('runs the statement on the pool', async () => {
     const { pool } = fakePool();
-    await executeSql(pool, { type: 'sql', statement: 'SELECT 1' });
+    await executeSql(pool, { type: 'sql', statement: 'SELECT 1' }, ctx);
     expect(pool.query).toHaveBeenCalledWith('SELECT 1');
   });
 
@@ -35,7 +37,7 @@ describe('executeSql', () => {
     await executeSql(pool, {
       type: 'sql',
       statement: 'REFRESH MATERIALIZED VIEW CONCURRENTLY water.rivers_overview',
-    });
+    }, ctx);
 
     expect(pool.connect).not.toHaveBeenCalled();
 
