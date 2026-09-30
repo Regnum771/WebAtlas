@@ -76,6 +76,12 @@ describe('preflight (spec F-1, U-6, U-7)', () => {
     expect(f.logs.filter((l) => l.startsWith('created '))).toHaveLength(2);
   });
 
+  it('with one env file present, copies only the missing one', async () => {
+    const f = fakeSystem({ existing: [ENV_FILES[0]] });
+    await preflight(f.sys, cfg);
+    expect(f.copies).toEqual([[join('/repo', 'apps', 'api', '.env.example'), join('/repo', 'apps', 'api', '.env')]]);
+  });
+
   it('refuses below the free-space floor, with the number', async () => {
     const f = fakeSystem({ existing: ENV_FILES, free: 2 * GiB });
     await expect(preflight(f.sys, cfg)).rejects.toThrow(/only 2\.0 GB free .* needs at least 6 GB/);
@@ -89,11 +95,12 @@ describe('startStack / buildTools / migrate', () => {
     await buildTools(f.sys, cfg);
     await migrate(f.sys, cfg);
     expect(f.calls).toEqual([
-      'docker compose -f /repo/infra/docker-compose.yml up -d db geoserver',
+      'docker compose -f /repo/infra/docker-compose.yml up -d --no-recreate db geoserver',
       'docker compose -f /repo/infra/docker-compose.yml --profile tools build tools',
       '/usr/bin/node /npm/bin/npm-cli.js run migrate:up -w @webatlas/api',
     ]);
     expect(f.calls.join('\n')).not.toMatch(/\bdown\b/);
+    expect(f.calls[0]).toContain('--no-recreate');
   });
 
   it('carry the failing command output in the error', async () => {
@@ -104,6 +111,17 @@ describe('startStack / buildTools / migrate', () => {
 });
 
 describe('waitReady (spec §4 stack lifecycle)', () => {
+  it('checks the database over TCP, not the init server socket', async () => {
+    const f = fakeSystem();
+    await waitReady(f.sys, cfg, gs);
+    expect(f.calls[0]).toBe('docker compose -f /repo/infra/docker-compose.yml exec -T db pg_isready -h localhost');
+  });
+
+  it('gives up on a database that never answers, with its last output', async () => {
+    const f = fakeSystem({ exec: () => 1 });
+    await expect(waitReady(f.sys, cfg, gs)).rejects.toThrow(/the database did not become ready within 10 s[\s\S]*last line/);
+  });
+
   it('polls the database, then GeoServer REST, until both answer', async () => {
     let dbAttempts = 0;
     const f = fakeSystem({ exec: () => (++dbAttempts < 3 ? 1 : 0), statuses: [0, 503, 200] });

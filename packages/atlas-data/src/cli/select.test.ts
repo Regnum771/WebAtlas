@@ -14,6 +14,16 @@ const ds = (id: string, dependsOn?: string[]): Dataset => ({
 const graph = [ds('contours', ['dem']), ds('dem'), ds('rivers_overview', ['rivers']), ds('rivers')];
 
 describe('selectDatasets (I2)', () => {
+  it('names the direct dependency down a chain', () => {
+    const chain = [ds('a'), ds('b', ['a']), ds('c', ['b'])];
+    const { excluded } = selectDatasets(chain, { only: [], except: ['a'] });
+    expect(excluded.sort((x, y) => x.id.localeCompare(y.id))).toEqual([
+      { id: 'a', reason: '--except' },
+      { id: 'b', reason: 'depends on a' },
+      { id: 'c', reason: 'depends on b' },
+    ]);
+  });
+
   it('with no flags, selects everything and excludes nothing', () => {
     const { selected, excluded } = selectDatasets(graph, { only: [], except: [] });
     expect(selected.map((d) => d.id).sort()).toEqual(

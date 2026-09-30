@@ -80,8 +80,8 @@ export async function preflight(sys: UpSystem, cfg: UpConfig): Promise<void> {
 
 /** Up, never down (spec §4): starting an already-running stack is a no-op, and no volume is ever touched. */
 export async function startStack(sys: UpSystem, cfg: UpConfig): Promise<void> {
-  const r = await sys.exec('docker', [...cfg.docker, 'up', '-d', 'db', 'geoserver'], { env: cfg.dockerEnv });
-  if (r.code !== 0) throw failed('could not start the stack (docker compose up -d db geoserver):', r);
+  const r = await sys.exec('docker', [...cfg.docker, 'up', '-d', '--no-recreate', 'db', 'geoserver'], { env: cfg.dockerEnv });
+  if (r.code !== 0) throw failed('could not start the stack (docker compose up -d --no-recreate db geoserver):', r);
 }
 
 /** Readiness is polled, not assumed (spec §4): db accepting connections, then GeoServer's REST API answering. */
@@ -94,10 +94,11 @@ export async function waitReady(
   const poll = cfg.pollMs ?? 2_000;
   const deadline = sys.now() + timeout;
 
+  // -h localhost: TCP. On first boot the image's init server listens on the unix socket only.
   for (;;) {
-    const r = await sys.exec('docker', [...cfg.docker, 'exec', '-T', 'db', 'pg_isready'], { env: cfg.dockerEnv, quiet: true });
+    const r = await sys.exec('docker', [...cfg.docker, 'exec', '-T', 'db', 'pg_isready', '-h', 'localhost'], { env: cfg.dockerEnv, quiet: true });
     if (r.code === 0) break;
-    if (sys.now() >= deadline) throw new UpError(`the database did not become ready within ${timeout / 1000} s`);
+    if (sys.now() >= deadline) throw new UpError([`the database did not become ready within ${timeout / 1000} s`, ...r.tail.map((l) => `  | ${l}`)].join('\n'));
     await sys.sleep(poll);
   }
   sys.log('db ready');
