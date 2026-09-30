@@ -47,6 +47,19 @@ describe.skipIf(!ON)('the atlas-tools image', () => {
     expect(lines).toContain('[tools] env ok');
   }, 300_000);
 
+  // `compose run -T` gives Python a pipe, not a TTY, so stdout is block-buffered: in Task 12
+  // load_basemap.py's progress lines never reached the log during a 30+ minute load.
+  it('runs Python unbuffered, so progress lines stream while a stage runs', async () => {
+    // write_through is what PYTHONUNBUFFERED / -u sets on a non-TTY stdout (it is False without it).
+    await executeRun({} as Pool, tools(['python3', '-c', 'import sys; print("unbuffered" if sys.stdout.write_through else "buffered")']), ctx);
+    expect(lines).toContain('[tools] unbuffered');
+  }, 300_000);
+
+  it('load_basemap.py clips through the spatial index and writes in chunks', async () => {
+    await executeRun({} as Pool, tools(['python3', 'packages/atlas-data/tools/basemap/test_load_basemap.py']), ctx);
+    expect(lines).toContain('[tools] load_basemap checks passed');
+  }, 300_000);
+
   it('sees the repository at /repo', async () => {
     await executeRun({} as Pool, tools(['bash', '-c', 'test -f packages/shared/src/contours.ts && echo repo ok']), ctx);
     expect(lines).toContain('[tools] repo ok');

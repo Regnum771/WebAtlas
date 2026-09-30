@@ -51,6 +51,9 @@ services:
     volumes:
       - ..:/repo
     environment:
+      # `run -T` gives Python a pipe, which it block-buffers: without this a long load prints
+      # nothing until it exits, and only the runner's heartbeat shows it is alive.
+      PYTHONUNBUFFERED: "1"
       # In-network addresses (spec C-11): inside the network the database is `db:5432`, not localhost.
       PGHOST: db
       PGPORT: "5432"
