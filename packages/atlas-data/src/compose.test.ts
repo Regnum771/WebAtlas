@@ -12,6 +12,13 @@ describe('composeEnv', () => {
     expect(out.COMPOSE_PROJECT_NAME).toBe('p');
   });
 
+  it('removes the keys whatever their case (Windows environment names are case-insensitive)', () => {
+    const out = composeEnv({ Postgres_Password: 'x', geoserver_admin_user: 'y', Path: 'p' });
+    expect(out.Postgres_Password).toBeUndefined();
+    expect(out.geoserver_admin_user).toBeUndefined();
+    expect(out.Path).toBe('p');
+  });
+
   it('does not mutate its input', () => {
     const env = { POSTGRES_PASSWORD: 'x' };
     composeEnv(env);

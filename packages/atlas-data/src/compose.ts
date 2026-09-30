@@ -13,8 +13,11 @@ export const COMPOSE_INTERPOLATED_KEYS = [
 ] as const;
 
 export function composeEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const out: NodeJS.ProcessEnv = { ...env };
-  for (const k of COMPOSE_INTERPOLATED_KEYS) delete out[k];
+  // Case-insensitive: on Windows environment names are, and a copy of process.env is a plain object,
+  // so `Postgres_Password` would otherwise survive and still be interpolated by compose.
+  const drop = new Set<string>(COMPOSE_INTERPOLATED_KEYS.map((k) => k.toUpperCase()));
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(env)) if (!drop.has(k.toUpperCase())) out[k] = v;
   return out;
 }
 

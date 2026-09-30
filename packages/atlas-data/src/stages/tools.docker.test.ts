@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import type { Pool } from 'pg';
 import { executeRun } from './run';
 import { runProcess } from '../process';
@@ -22,16 +22,29 @@ describe.skipIf(!ON)('the atlas-tools image', () => {
     expect(r.code).toBe(0);
   }, 1_800_000);
 
+  beforeEach(() => {
+    lines.length = 0;
+  });
+
   it('has the Python geo stack', async () => {
-    await expect(
-      executeRun({} as Pool, tools(['python3', '-c', 'import geopandas, pyogrio, rasterio, psycopg2, sqlalchemy, geoalchemy2, requests; print("py ok")']), ctx)
-    ).resolves.toBeDefined();
+    await executeRun({} as Pool, tools(['python3', '-c', 'import geopandas, pyogrio, rasterio, psycopg2, sqlalchemy, geoalchemy2, requests; print("py ok")']), ctx);
     expect(lines).toContain('[tools] py ok');
   }, 300_000);
 
   it('has raster2pgsql, psql, bash and curl', async () => {
     await executeRun({} as Pool, tools(['bash', '-c', 'command -v raster2pgsql psql curl >/dev/null && echo bins ok']), ctx);
     expect(lines).toContain('[tools] bins ok');
+  }, 300_000);
+
+  it('has a raster2pgsql that reports a PostGIS release', async () => {
+    await executeRun({} as Pool, tools(['bash', '-c', 'raster2pgsql 2>&1 | head -3']), ctx);
+    expect(lines.some((l) => /RELEASE: 3\.\d+/.test(l))).toBe(true);
+  }, 300_000);
+
+  it('receives the in-network environment the scripts require', async () => {
+    await executeRun({} as Pool, tools(['bash', '-c',
+      'for v in BASEMAP_DB_URL GEOSERVER_DB_PASSWORD GEOSERVER_ADMIN_PASSWORD PGHOST; do [ -n "${!v}" ] || { echo "missing $v"; exit 1; }; done; echo env ok']), ctx);
+    expect(lines).toContain('[tools] env ok');
   }, 300_000);
 
   it('sees the repository at /repo', async () => {
@@ -44,7 +57,7 @@ describe.skipIf(!ON)('the atlas-tools image', () => {
     expect(lines).toContain('[tools] 42');
   }, 300_000);
 
-  it('runs scripts with LF line endings', async () => {
-    await executeRun({} as Pool, tools(['bash', '-n', 'packages/atlas-data/tools/load-dem.sh']), ctx);
+  it('has no CR in any .sh or .py script', async () => {
+    await executeRun({} as Pool, tools(['bash', '-c', "! grep -rlI $'\\r' packages/atlas-data/tools --include=*.sh --include=*.py"]), ctx);
   }, 300_000);
 });
