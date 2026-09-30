@@ -2,7 +2,7 @@
 
 **Run this when:** the street basemap needs rebuilding, or you want fresher OpenStreetMap data under the map.
 
-**How:** `npm run atlas:build -- --force basemap`. `npm run atlas:up` builds it on a fresh machine. The `basemap` dataset runs five stages, in this order: fetch the Geofabrik extract, `load_basemap.py <zip>`, `publish-basemap.sh featuretypes`, `styles.py`, `publish-basemap.sh group`. Every tool runs inside the `atlas-tools` image (Python geo stack, `psql`, GDAL), so nothing needs installing on the host.
+**How:** `npm run atlas:up` builds it on a fresh machine; `npm run atlas:build -- --force basemap` rebuilds it from the same pinned extract. Fresher OpenStreetMap data means bumping the pinned extract (see "Refreshing to a newer extract" below). The `basemap` dataset runs five stages, in this order: fetch the Geofabrik extract, `load_basemap.py <zip>`, `publish-basemap.sh featuretypes`, `styles.py`, `publish-basemap.sh group`. Every tool runs inside the `atlas-tools` image (Python geo stack, `psql`, GDAL), so nothing needs installing on the host.
 
 The rendered tiles live in PostGIS + GeoServer, not in git. Nothing here needs to run for day-to-day development *provided* the `basemap` schema is already populated and the `webatlas:basemap` layer group exists on your GeoServer.
 
@@ -49,7 +49,7 @@ Their ids live in `BASEMAP_CONTEXT_LAYER_STATE_IDS` (`packages/shared`), so `lay
 npm run atlas:build -- --force basemap
 ```
 
-`--force` is for a deliberate rebuild (for example a newer extract): without it a finished basemap is skipped. It also rebuilds `reference_entities`, which depends on `basemap` (see 3b). The stages below are what the dataset does, in order, and how to run one by hand inside the tools image:
+`--force` is for a deliberate rebuild of the same pinned extract (for example after hand-editing GeoServer): without it a finished basemap is skipped. It also rebuilds `reference_entities`, which depends on `basemap` (see 3b). The stages below are what the dataset does, in order, and how to run one by hand inside the tools image:
 
 ```bash
 docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools <argv>
@@ -57,9 +57,19 @@ docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps
 
 The GeoServer password reaches the scripts through the environment (from `infra/.env`, via the compose service), never as an argument.
 
-### 1. Download the extract (~684 MB)
+### Refreshing to a newer extract
 
-The registry fetches `https://download.geofabrik.de/asia/vietnam-latest-free.shp.zip` into `packages/atlas-data/data/cache/basemap/`. The URL is `latest`, so it is deliberately unpinned: the fetched file's hash is recorded in lineage, and `--force basemap` refreshes it.
+The extract is **pinned** (spec C-10): `packages/atlas-data/src/descriptors/basemap.ts` names one dated Geofabrik file, `vietnam-YYMMDD-free.shp.zip`, and its `sha256`, so every clone gets identical data. Geofabrik's `-latest` aliases are not used: on 2026-09-30 every one of them 301-looped to itself. To refresh:
+
+1. Pick a current dated file from <https://download.geofabrik.de/asia/vietnam.html> ("see and download older files"). Dailies are pruned after about a week and first-of-month files after about three months; the 1 January files stay.
+2. Download it and compute its sha256 (`sha256sum`, or `Get-FileHash` in PowerShell). Geofabrik publishes no `.md5` for daily `.shp.zip` files.
+3. Change `DATE` and `SHA256` together in `descriptors/basemap.ts`, then `npm run atlas:build`. The changed descriptor makes `basemap` stale, and `reference_entities` rebuilds after it.
+
+Do the same if the pinned file has been pruned and the fetch fails with a 404.
+
+### 1. Download the extract (~720 MB)
+
+The registry fetches the pinned `https://download.geofabrik.de/asia/vietnam-260929-free.shp.zip` into `packages/atlas-data/data/cache/basemap/` and checks its `sha256` before keeping it. A file already in the cache with the right hash is reused without a request.
 
 Geofabrik, OpenStreetMap-derived, ODbL. **Do not unzip it** — the loader reads through GDAL's `/vsizip/`, so ~1.1 GB of shapefiles never hit disk.
 
@@ -67,7 +77,7 @@ Geofabrik, OpenStreetMap-derived, ODbL. **Do not unzip it** — the loader reads
 
 ```bash
 docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools \
-  python3 packages/atlas-data/tools/basemap/load_basemap.py packages/atlas-data/data/cache/basemap/vietnam-latest-free.shp.zip
+  python3 packages/atlas-data/tools/basemap/load_basemap.py packages/atlas-data/data/cache/basemap/vietnam-260929-free.shp.zip
 ```
 
 The Python geo stack (`geopandas`, `shapely`, `pyproj`, `psycopg2-binary`, `geoalchemy2`) is in the tools image, pinned in `packages/atlas-data/tools/requirements.txt`; there is nothing to install. No system GDAL on the host either, which matters, because this repo has none.

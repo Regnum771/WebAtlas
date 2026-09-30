@@ -5,3 +5,6 @@
 *.sh        text eol=lf
 *.py        text eol=lf
 Dockerfile  text eol=lf
+# The atlas-tools build COPYs requirements.txt: a CRLF checkout changes that layer's input and
+# misses the build cache, so every Windows clone rebuilt the pip layer (Task 12, 2026-09-30).
+packages/atlas-data/tools/**/*.txt  text eol=lf

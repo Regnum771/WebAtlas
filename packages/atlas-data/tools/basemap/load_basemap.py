@@ -5,7 +5,7 @@ Two tiers, matching the agreed scope:
   * NATIONAL  (coarse) - major roads / railways / big places, whole country.
   * REGION    (detailed) - everything, clipped to the six working-region provinces.
 
-Source: https://download.geofabrik.de/asia/vietnam-latest-free.shp.zip  (OpenStreetMap, ODbL)
+Source: a dated Geofabrik Vietnam extract, pinned by sha256 in packages/atlas-data/src/descriptors/basemap.ts (OpenStreetMap, ODbL)
 Attribution "(c) OpenStreetMap contributors" is REQUIRED wherever these render.
 
 Read straight out of the .zip via GDAL's /vsizip/ so nothing is expanded to disk.

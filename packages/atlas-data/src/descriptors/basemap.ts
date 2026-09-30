@@ -5,13 +5,23 @@ const TABLES = [
   'land_vn', 'roads_vn', 'railways_vn', 'places_vn', 'roads_region', 'places_region', 'landuse_region', 'water_region',
 ] as const;
 
-const ZIP = 'basemap/vietnam-latest-free.shp.zip';
-
 /**
- * Runbook step 5: the self-hosted street basemap from the Geofabrik Vietnam extract (684 MB). The URL
- * is `latest`, so it is deliberately unpinned (spec C-10): the fetched hash is recorded in lineage,
- * and `--force basemap` refreshes it.
+ * The pinned Geofabrik extract (spec C-10). One dated file plus its sha256, so every clone gets
+ * identical data and a changed file fails the fetch instead of silently changing the basemap.
+ * Not `-latest`: on 2026-09-30 every `*-latest*` alias on download.geofabrik.de 301-looped to
+ * itself (Task 12), and Geofabrik prunes dated files after a while (dailies after about a week,
+ * the first-of-month files after about three months; only the 1 January files stay).
+ *
+ * Refreshing the basemap is therefore a deliberate bump: change DATE and SHA256 together, then
+ * `npm run atlas:build`. If the pinned file 404s, bump it to a current dated file the same way.
+ * Geofabrik publishes no .md5 for daily .shp.zip files, so compute the sha256 of the download.
  */
+const DATE = '260929';
+const SHA256 = 'd20f1ea34ab96e1093a2adc45f79302b392d3d33bb9778d1826db01096a9b97d';
+const FILE = `vietnam-${DATE}-free.shp.zip`;
+const ZIP = `basemap/${FILE}`;
+
+/** Runbook step 5: the self-hosted street basemap from the Geofabrik Vietnam extract (about 720 MB). */
 export const basemap = defineDataset({
   id: 'basemap',
   kind: 'vector',
@@ -29,7 +39,7 @@ export const basemap = defineDataset({
     ],
   },
   stages: [
-    { type: 'fetch-http', url: 'https://download.geofabrik.de/asia/vietnam-latest-free.shp.zip', into: ZIP },
+    { type: 'fetch-http', url: `https://download.geofabrik.de/asia/${FILE}`, into: ZIP, sha256: SHA256 },
     {
       type: 'run',
       in: 'tools',

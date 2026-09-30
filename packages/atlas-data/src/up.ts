@@ -73,7 +73,7 @@ export async function preflight(sys: UpSystem, cfg: UpConfig): Promise<void> {
     );
   }
   sys.log(
-    'first build: downloads about 1.2 GB (OpenStreetMap extract 684 MB, FABDEM tiles 512 MB) and takes a while — ' +
+    'first build: downloads about 1.2 GB (OpenStreetMap extract 720 MB, FABDEM tiles 512 MB) and takes a while — ' +
       'see README "Getting started" for the measured time. Re-running resumes; finished work is skipped.'
   );
 }

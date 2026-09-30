@@ -44,7 +44,8 @@ async function sha256File(path: string): Promise<string> {
  *   its `<target>.source` sidecar names exactly `stage.url`, and the dataset is not forced. The
  *   sidecar guarantees the recorded `<hash> <url>` pair is one that was really fetched: a changed
  *   URL with the same `into` downloads again rather than pairing the new URL with an old file's
- *   hash. Refreshing an unpinned `latest` source still takes --force (spec C-10).
+ *   hash. An unpinned source is refreshed only with --force; a pinned one (the basemap, spec C-10)
+ *   by changing its url and sha256 in the descriptor.
  */
 export async function executeFetchHttp(
   _pool: Pool,

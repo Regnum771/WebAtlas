@@ -56,6 +56,14 @@ describe('registered datasets', () => {
     }
   });
 
+  it('the basemap extract is a dated Geofabrik file pinned by sha256, never a -latest alias (spec C-10)', () => {
+    const bm = byId('basemap').stages;
+    const fetch = bm.find((s) => s.type === 'fetch-http') as Extract<(typeof bm)[number], { type: 'fetch-http' }>;
+    expect(fetch.url).toMatch(/^https:\/\/download\.geofabrik\.de\/asia\/vietnam-\d{6}-free\.shp\.zip$/);
+    expect(fetch.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(fetch.into).toBe(`basemap/${fetch.url.split('/').pop()}`);
+  });
+
   it('path arguments agree between stages of one dataset', () => {
     const bm = byId('basemap').stages;
     const fetch = bm.find((s) => s.type === 'fetch-http') as Extract<(typeof bm)[number], { type: 'fetch-http' }>;

@@ -75,7 +75,8 @@ Where things run: PostgreSQL + PostGIS at `localhost:5432`, GeoServer at `http:/
 |---|---|
 | `npm run atlas:status` | What is built, stale, missing or failed — and the one command to run next |
 | `npm run atlas:build -- --only <id>` | Build one dataset and its dependencies |
-| `npm run atlas:build -- --force <id>` | Rebuild a dataset on purpose (e.g. `--force basemap` for a newer OSM extract). Forcing invalidates its dependents, which rebuild only if they are in the selection: `--force basemap` alone also rebuilds `reference_entities`, while `--only basemap --force basemap` leaves it `missing` until a full build |
+| `npm run atlas:build -- --force <id>` | Rebuild a dataset on purpose, from the same inputs. Forcing invalidates its dependents, which rebuild only if they are in the selection: `--force basemap` alone also rebuilds `reference_entities`, while `--only basemap --force basemap` leaves it `missing` until a full build |
+| Newer OpenStreetMap extract | The basemap extract is pinned: bump its date and `sha256` in `packages/atlas-data/src/descriptors/basemap.ts`, then `npm run atlas:build` (see `docs/runbooks/self-hosted-basemap.md`) |
 | `npm run atlas:verify` | Check the atlas actually serves: stages, probes, layers, lineage |
 | `npm run atlas:adopt` | A machine set up before the registry: record what is already built, without re-running it |
 
