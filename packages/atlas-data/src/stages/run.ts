@@ -63,7 +63,7 @@ export async function executeRun(
       [
         `${stage.in} command failed (${why}): ${stage.argv.join(' ')}`,
         ...outcome.tail.map((l) => `  | ${l}`),
-        `re-run: npm run atlas:build -- --only ${ctx.datasetId} --force ${ctx.datasetId}`,
+        `re-run: npm run atlas:build -- --only ${ctx.datasetId}`,
       ].join('\n')
     );
   }

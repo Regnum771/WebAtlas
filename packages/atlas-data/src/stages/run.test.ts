@@ -60,7 +60,8 @@ describe('executeRun', () => {
     const run = executeRun(pool, stage({}), ctx([]), viaNode('console.log("last words"); process.exit(2)'));
     await expect(run).rejects.toThrow(/exit 2/);
     await expect(run).rejects.toThrow(/\| last words/);
-    await expect(run).rejects.toThrow(/npm run atlas:build -- --only rivers --force rivers/);
+    await expect(run).rejects.toThrow(/re-run: npm run atlas:build -- --only rivers$/m);
+    await expect(run).rejects.not.toThrow(/--force/);
   });
 
   it('really runs npm on the host (argv --version)', async () => {

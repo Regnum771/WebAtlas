@@ -262,7 +262,7 @@ The summary depends on the fetched or loaded content, so it is computed **after*
 - **`run`:**
   - Spawns per §7.
   - Streams stdout and stderr line by line with a `[<dataset>]` prefix, and prints a heartbeat every 30 s of silence.
-  - A non-zero exit fails the stage. The error carries the last 20 output lines and the command that re-runs this dataset alone (`npm run atlas:build -- --only <id> --force <id>`).
+  - A non-zero exit fails the stage. The error carries the last 20 output lines and the command that re-runs this dataset alone (`npm run atlas:build -- --only <id>`). `--only` alone retries just the failed stage, whose state is `failed`; `--force` would also redo completed stages, including downloads.
 - **`fetch-http`:**
   - Downloads into `data/cache/<into>`, with the path validated to stay beneath `data/cache`. It writes `<into>.part` and renames on completion, so an interrupted download is never taken for a finished one.
   - When a `sha256` is declared, a mismatch fails the stage **before** the rename and leaves the previous file untouched.
