@@ -10,6 +10,7 @@ const message = (err: unknown): string => (err instanceof Error ? err.message : 
 /** Checks in order; the first failure wins and nothing after it runs. A thrown check is a failure. */
 export function allOf(...checks: Probe[]): Probe {
   return async (ctx) => {
+    if (checks.length === 0) return fail('no checks defined');
     const details: string[] = [];
     for (const check of checks) {
       let r: ProbeResult;
@@ -42,11 +43,14 @@ export function rowCount(label: string, sql: string, min = 1): Probe {
 }
 
 /** Rows visible through a versioned layer's `<layer>_active` view. */
-export const viewCount = (layer: string): Probe =>
-  rowCount(`water.${layer}_active`, `SELECT count(*)::text AS n FROM water.${layer}_active`);
+export const viewCount = (layer: string): Probe => {
+  if (!/^[a-z_][a-z0-9_]*$/.test(layer)) throw new Error(`viewCount: invalid layer name "${layer}"`);
+  return rowCount(`water.${layer}_active`, `SELECT count(*)::text AS n FROM water.${layer}_active`);
+};
 
 export function wfsAnswers(layer: string): Probe {
   return async ({ geoserver }) => {
+   try {
     const res = await geoserver(
       `/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=webatlas:${layer}&outputFormat=application/json&count=1`
     );
@@ -58,12 +62,16 @@ export function wfsAnswers(layer: string): Probe {
     return (body?.features?.length ?? 0) > 0
       ? pass(`webatlas:${layer} serves WFS`)
       : fail(`webatlas:${layer} WFS returned no features`);
+   } catch (err) {
+    return fail(`webatlas:${layer} WFS: ${message(err)}`);
+   }
   };
 }
 
 /** A missing WMS layer answers 200 with an XML ServiceException (measured), so the check is the PNG type. */
 export function wmsAnswers(layer: string, bbox: string): Probe {
   return async ({ geoserver }) => {
+   try {
     const res = await geoserver(
       `/wms?service=WMS&version=1.1.1&request=GetMap&layers=webatlas:${layer}&styles=&bbox=${bbox}` +
         `&width=64&height=64&srs=EPSG:4326&format=image/png`
@@ -73,6 +81,9 @@ export function wmsAnswers(layer: string, bbox: string): Probe {
     return res.status === 200 && type.startsWith('image/png')
       ? pass(`webatlas:${layer} renders`)
       : fail(`webatlas:${layer} WMS ${res.status} ${type}`);
+   } catch (err) {
+    return fail(`webatlas:${layer} WMS: ${message(err)}`);
+   }
   };
 }
 
@@ -102,7 +113,7 @@ export function elevationBetween(label: string, lon: number, lat: number, min: n
 export function probeContext(pool: Pool, env: NodeJS.ProcessEnv = process.env, f: typeof fetch = fetch): ProbeContext {
   return {
     pool,
-    geoserver: (path) => {
+    geoserver: async (path) => {
       const gs = geoserverEnv(env);
       return f(`${gs.url}${path}`, {
         headers: { Authorization: 'Basic ' + Buffer.from(`${gs.user}:${gs.password}`).toString('base64') },

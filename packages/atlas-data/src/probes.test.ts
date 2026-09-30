@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Pool } from 'pg';
-import { allOf, elevationBetween, fail, pass, rowCount, wfsAnswers, wmsAnswers } from './probes';
+import { allOf, viewCount, elevationBetween, fail, pass, rowCount, wfsAnswers, wmsAnswers } from './probes';
 import type { ProbeContext } from './types';
 
 const ctx = (over: Partial<ProbeContext> = {}): ProbeContext => ({
@@ -77,5 +77,43 @@ describe('elevationBetween', () => {
     expect((await elevationBetween('BMT', 108, 12, 440, 500)(at('472.0'))).ok).toBe(true);
     expect((await elevationBetween('BMT', 108, 12, 440, 500)(at('12.0'))).ok).toBe(false);
     expect(await elevationBetween('BMT', 108, 12, 440, 500)(at(null))).toEqual({ ok: false, detail: 'BMT: no elevation (DEM not loaded there)' });
+  });
+});
+
+describe('hardening', () => {
+  it('allOf with no checks fails', async () => {
+    expect(await allOf()(ctx())).toEqual({ ok: false, detail: 'no checks defined' });
+  });
+
+  it('wfs/wms failures never reject and name the layer', async () => {
+    const thrower = ctx({ geoserver: (() => { throw new Error('GEOSERVER_URL is not set'); }) as never });
+    const rejecter = ctx({ geoserver: async () => { throw new Error('timeout'); } });
+    expect(await wfsAnswers('dams')(thrower)).toEqual({ ok: false, detail: 'webatlas:dams WFS: GEOSERVER_URL is not set' });
+    expect(await wfsAnswers('dams')(rejecter)).toEqual({ ok: false, detail: 'webatlas:dams WFS: timeout' });
+    expect(await wmsAnswers('basemap', '1,2,3,4')(thrower)).toEqual({ ok: false, detail: 'webatlas:basemap WMS: GEOSERVER_URL is not set' });
+    expect(await wmsAnswers('basemap', '1,2,3,4')(rejecter)).toEqual({ ok: false, detail: 'webatlas:basemap WMS: timeout' });
+  });
+
+  it('wfs fails on an XML exception body and on a non-200', async () => {
+    const xml = ctx({ geoserver: async () => new Response('<ows:ExceptionReport/>', { status: 200 }) });
+    const bad = ctx({ geoserver: async () => new Response('no', { status: 404 }) });
+    expect((await wfsAnswers('dams')(xml)).ok).toBe(false);
+    expect(await wfsAnswers('dams')(bad)).toEqual({ ok: false, detail: 'webatlas:dams WFS 404' });
+  });
+
+  it('rowCount fails on an empty result set', async () => {
+    const pool = { query: vi.fn(async () => ({ rows: [] })) } as unknown as Pool;
+    expect((await rowCount('x', 'SELECT')(ctx({ pool }))).ok).toBe(false);
+  });
+
+  it('elevationBetween fails when no tile intersects', async () => {
+    const pool = { query: vi.fn(async () => ({ rows: [] })) } as unknown as Pool;
+    expect(await elevationBetween('BMT', 108, 12, 440, 500)(ctx({ pool }))).toEqual({ ok: false, detail: 'BMT: no elevation (DEM not loaded there)' });
+  });
+
+  it('viewCount rejects a bad identifier at definition time', () => {
+    expect(() => viewCount('dams; DROP TABLE x')).toThrow(/invalid layer name/);
+    expect(() => viewCount('Dams')).toThrow();
+    expect(() => viewCount('dams')).not.toThrow();
   });
 });
