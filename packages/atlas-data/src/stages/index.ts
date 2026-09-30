@@ -3,6 +3,7 @@ import type { Stage } from '../types';
 import { executeSql } from './sql';
 import { executeRun } from './run';
 import { executeFetchHttp } from './fetchHttp';
+import { executePublishGeoserver } from './publishGeoserver';
 
 /** What a stage needs to know besides its own configuration. */
 export interface StageContext {
@@ -33,6 +34,7 @@ const EXECUTORS: { [K in Stage['type']]?: Executor<K> } = {
   sql: executeSql,
   run: executeRun,
   'fetch-http': executeFetchHttp,
+  'publish-geoserver': executePublishGeoserver,
 };
 
 export function hasExecutor(type: Stage['type']): boolean {
