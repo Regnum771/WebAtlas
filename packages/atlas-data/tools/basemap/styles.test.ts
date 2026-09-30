@@ -1,18 +1,18 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import type { Pool } from 'pg';
-import { getPool, closePool } from '../db/pool';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import pg from 'pg';
 
 /**
  * Tests over the SLD ARTIFACTS, not over a live GeoServer.
  *
- * `scripts/basemap/styles.py` writes each `<name>.sld` to disk as a side effect
+ * `tools/basemap/styles.py` writes each `<name>.sld` to disk as a side effect
  * of uploading it, and those files are committed — so asserting against them is
  * asserting against what the generator produces, without needing Python or a
  * running GeoServer in the test run.
  */
-const SLD_DIR = join(process.cwd(), 'scripts', 'basemap');
+const SLD_DIR = dirname(fileURLToPath(import.meta.url));
 const read = (name: string) => readFileSync(join(SLD_DIR, `${name}.sld`), 'utf8');
 
 /** The app clamps zoom at 1:25.000 (MAX_SCALE in the frontend's zoomScale.ts). */
@@ -31,14 +31,6 @@ const STYLED_TABLES: Array<{ table: string; sld: string }> = [
   { table: 'railways_vn', sld: 'basemap_railways' },
   { table: 'water_region', sld: 'basemap_water' },
 ];
-
-let pool: Pool;
-beforeAll(() => {
-  pool = getPool();
-});
-afterAll(async () => {
-  await closePool();
-});
 
 function scaleGates(sld: string): number[] {
   return [...sld.matchAll(/<MaxScaleDenominator>(\d+)<\/MaxScaleDenominator>/g)].map((m) => Number(m[1]));
@@ -84,6 +76,37 @@ describe('basemap SLD artifacts', () => {
     expect(trackRule).toContain('<MaxScaleDenominator>100000</MaxScaleDenominator>');
   });
 
+  it('labels roads, tiered so names do not swamp the map', () => {
+    // The basemap drew every road as an unnamed line: 32.864 named roads in
+    // roads_region and 45.542 in roads_vn, none of them rendered.
+    const vn = read('basemap_roads_vn');
+    const region = read('basemap_roads_region');
+    expect(vn).toContain('<TextSymbolizer>');
+    expect(region).toContain('<TextSymbolizer>');
+    // Line placement, not point placement — a road label has to run along the way.
+    expect(vn).toContain('<LinePlacement>');
+    expect(vn).toContain('name="followLine"');
+    // Segments of one road share a name; grouping them avoids repeating the
+    // label on every OSM segment, which is both ugly and expensive to render.
+    expect(vn).toContain('name="group"');
+  });
+
+  it('labels by name, the field that is actually populated', () => {
+    // ref (QL1A) is only on the majors; name covers 99,5% of motorway, 94% of
+    // trunk and 91% of primary, so name is the one field worth labelling.
+    expect(read('basemap_roads_vn')).toContain('<ogc:PropertyName>name</ogc:PropertyName>');
+  });
+});
+
+describe.skipIf(!process.env.DATABASE_URL)('basemap SLD artifacts vs live tables', () => {
+  let pool: pg.Pool;
+  beforeAll(() => {
+    pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  });
+  afterAll(async () => {
+    await pool.end();
+  });
+
   it('names every fclass present in the data, so no class is silently dropped', async () => {
     // The spec's rule: a value not named in any rule is not drawn. A later OSM
     // import adding a class would otherwise vanish with no error anywhere — this
@@ -112,26 +135,5 @@ describe('basemap SLD artifacts', () => {
         .filter((f) => !named.has(f) && !DELIBERATELY_UNDRAWN.has(f));
       expect(missing, `${table} has classes no rule names: ${missing.join(', ')}`).toEqual([]);
     }
-  });
-
-  it('labels roads, tiered so names do not swamp the map', () => {
-    // The basemap drew every road as an unnamed line: 32.864 named roads in
-    // roads_region and 45.542 in roads_vn, none of them rendered.
-    const vn = read('basemap_roads_vn');
-    const region = read('basemap_roads_region');
-    expect(vn).toContain('<TextSymbolizer>');
-    expect(region).toContain('<TextSymbolizer>');
-    // Line placement, not point placement — a road label has to run along the way.
-    expect(vn).toContain('<LinePlacement>');
-    expect(vn).toContain('name="followLine"');
-    // Segments of one road share a name; grouping them avoids repeating the
-    // label on every OSM segment, which is both ugly and expensive to render.
-    expect(vn).toContain('name="group"');
-  });
-
-  it('labels by name, the field that is actually populated', () => {
-    // ref (QL1A) is only on the majors; name covers 99,5% of motorway, 94% of
-    // trunk and 91% of primary, so name is the one field worth labelling.
-    expect(read('basemap_roads_vn')).toContain('<ogc:PropertyName>name</ogc:PropertyName>');
   });
 });

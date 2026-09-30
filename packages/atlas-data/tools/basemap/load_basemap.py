@@ -22,7 +22,7 @@ from shapely.geometry import shape
 from shapely.ops import unary_union
 from sqlalchemy import create_engine, text
 
-# Repo root is four levels up: apps/api/scripts/basemap/load_basemap.py
+# Repo root is four levels up: packages/atlas-data/tools/basemap/load_basemap.py
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 
 ZIP = os.environ.get("BASEMAP_ZIP", "vietnam-free.shp.zip")

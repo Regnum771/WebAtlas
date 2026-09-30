@@ -1,18 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Tests over the SLD ARTIFACTS, not over a live GeoServer — same precedent as
- * basemapStyles.test.ts. `scripts/contours/styles.py` writes each `<name>.sld`
+ * basemap/styles.test.ts. `tools/contours/styles.py` writes each `<name>.sld`
  * to disk and those files are committed, so asserting against them asserts
  * against what the generator produces, without needing Python or a running
  * GeoServer in the test run.
  *
- * No database here: unlike basemapStyles.test.ts, every assertion is text over
+ * No database here: unlike basemap/styles.test.ts, every assertion is text over
  * the artifact.
  */
-const SLD_DIR = join(process.cwd(), 'scripts', 'contours');
+const SLD_DIR = dirname(fileURLToPath(import.meta.url));
 const read = (name: string) => readFileSync(join(SLD_DIR, `${name}.sld`), 'utf8');
 
 const STYLES = ['contours_plain', 'contours_labelled'] as const;

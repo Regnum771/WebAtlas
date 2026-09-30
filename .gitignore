@@ -37,7 +37,7 @@ infra/.env
 apps/api/.env
 
 # Dữ liệu OSM thô — chỉ commit bản đã cắt theo vùng
-apps/api/scripts/.osm-cache/
+packages/atlas-data/tools/.osm-cache/
 # Bytecode Python từ các script chuẩn bị dữ liệu
 __pycache__/
 # DEM Copernicus GLO-30: hàng trăm MB, mỗi máy tự tải bằng scripts/prep_dem.py.

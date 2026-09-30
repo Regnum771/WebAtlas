@@ -4,7 +4,7 @@
  * Lọc theo tag, chuẩn hoá thuộc tính, rồi ghi vào thư mục seed. Bước cắt theo
  * vùng do clip-to-region.mjs đảm nhiệm (chạy sau script này).
  *
- * Chạy: node apps/api/scripts/build-osm-seeds.mjs
+ * Chạy: node packages/atlas-data/tools/build-osm-seeds.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';

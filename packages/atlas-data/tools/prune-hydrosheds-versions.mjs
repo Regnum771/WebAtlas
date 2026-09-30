@@ -6,7 +6,7 @@
  *
  * File seed vẫn còn trong git — nếu cần quay lại, chạy lại seed/ingest.
  *
- * Chạy: node apps/api/scripts/prune-hydrosheds-versions.mjs
+ * Chạy: node packages/atlas-data/tools/prune-hydrosheds-versions.mjs
  */
 import 'dotenv/config';
 import pg from 'pg';

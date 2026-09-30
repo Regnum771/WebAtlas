@@ -160,7 +160,7 @@ Nguồn: [thanglequoc/vietnamese-provinces-database](https://github.com/thangleq
 Chạy lại khi ranh giới hành chính thay đổi:
 
 ```bash
-node apps/api/scripts/fetch-boundaries.mjs
+node packages/atlas-data/tools/fetch-boundaries.mjs
 ```
 
 Hình học được đơn giản hóa (Douglas–Peucker tol 0,0001 ≈ 11 m, toạ độ làm tròn
@@ -185,11 +185,11 @@ Toàn bộ pipeline tái tạo dữ liệu OSM, theo đúng thứ tự (có các
 bắt buộc — xem danh sách ngay dưới):
 
 ```bash
-node apps/api/scripts/fetch-osm-waterways.mjs      # 1. tải thô từ Overpass (không commit)
-node apps/api/scripts/explore-osm.mjs              # 2. xem phân bố tag đã đổi chưa
-node apps/api/scripts/report-dam-crosscheck.mjs    # 3. đối chiếu đập OSM vs danh mục (chỉ sinh báo cáo)
-node apps/api/scripts/build-osm-seeds.mjs          # 4. chuyển thành file seed
-node apps/api/scripts/clip-to-region.mjs           # 5. cắt xuống vùng công tác
+node packages/atlas-data/tools/fetch-osm-waterways.mjs      # 1. tải thô từ Overpass (không commit)
+node packages/atlas-data/tools/explore-osm.mjs              # 2. xem phân bố tag đã đổi chưa
+node packages/atlas-data/tools/report-dam-crosscheck.mjs    # 3. đối chiếu đập OSM vs danh mục (chỉ sinh báo cáo)
+node packages/atlas-data/tools/build-osm-seeds.mjs          # 4. chuyển thành file seed
+node packages/atlas-data/tools/clip-to-region.mjs           # 5. cắt xuống vùng công tác
 npm run seed -w @webatlas/api                      # 6. nạp lại các layer chuyên đề khác
 npm run ingest:rivers -w @webatlas/api             # 7. nạp OSM rivers làm version active
 ```
@@ -215,7 +215,7 @@ version cũ nào đó đang active (để không xoá nhầm dữ liệu đang p
 sau bước 7, không bắt buộc:
 
 ```bash
-node apps/api/scripts/prune-hydrosheds-versions.mjs
+node packages/atlas-data/tools/prune-hydrosheds-versions.mjs
 ```
 
 ## Regenerating HydroSHEDS seed data
@@ -243,7 +243,7 @@ To regenerate:
    ```
 3. Run the prep script against the unzipped `.shp` files:
    ```bash
-   apps/api/scripts/prep-hydrosheds.sh /path/to/HydroLAKES_polys_v10.shp /path/to/HydroRIVERS_v10_as.shp
+   packages/atlas-data/tools/prep-hydrosheds.sh /path/to/HydroLAKES_polys_v10.shp /path/to/HydroRIVERS_v10_as.shp
    ```
    This writes `hydrolakes-vn.geojson` and `hydrorivers-region.geojson` into
    `apps/api/src/db/seeds/data/`. Lakes carry `Hylak_id, Lake_name, Lake_type, Lake_area,

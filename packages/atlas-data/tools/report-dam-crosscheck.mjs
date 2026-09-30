@@ -8,7 +8,7 @@
  *   1. Đập OSM có tên nhưng không khớp danh mục -> có thể danh mục còn thiếu.
  *   2. 19 đập trong danh mục thiếu toạ độ -> gợi ý ứng viên OSM cùng tên.
  *
- * Chạy: node apps/api/scripts/report-dam-crosscheck.mjs
+ * Chạy: node packages/atlas-data/tools/report-dam-crosscheck.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -85,7 +85,7 @@ const suggestions = missingGeom.map((f) => {
 const lines = [
   '# Báo cáo đối chiếu đập: OSM vs danh mục dự án',
   '',
-  `*Sinh tự động bởi \`apps/api/scripts/report-dam-crosscheck.mjs\` — ${new Date().toISOString().slice(0, 10)}*`,
+  `*Sinh tự động bởi \`packages/atlas-data/tools/report-dam-crosscheck.mjs\` — ${new Date().toISOString().slice(0, 10)}*`,
   '',
   '**Báo cáo này không sửa dữ liệu.** Danh mục dự án có các trường ISO (công suất,',
   'sản lượng, năm vận hành) mà OSM không có, nên mọi thay đổi phải do người rà soát quyết định.',

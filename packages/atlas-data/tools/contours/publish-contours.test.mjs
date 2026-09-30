@@ -2,12 +2,13 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, delimiter } from 'node:path';
+import { dirname, join, delimiter } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Exercises publish-contours.sh against a STUBBED `curl` on PATH, never a real
  * GeoServer — same "test the artifact/script itself" precedent as
- * contourStyles.test.ts, just for a shell script instead of a generated file.
+ * contours/styles.test.ts, just for a shell script instead of a generated file.
  *
  * The real `python3` runs unmodified (styles.py --print-intervals only reads
  * packages/shared/src/contours.ts; no `requests` import on that path, so it needs
@@ -19,7 +20,7 @@ import { join, delimiter } from 'node:path';
  * a literal "\n" in that format as a newline, so the stub must too).
  */
 
-const SCRIPT = join(process.cwd(), 'scripts', 'contours', 'publish-contours.sh');
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'publish-contours.sh');
 
 let stubDir;
 

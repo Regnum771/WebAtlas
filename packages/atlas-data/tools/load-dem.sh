@@ -2,9 +2,9 @@
 # Load the clipped FABDEM V1-2 tiles produced by prep_dem.py into
 # basemap.dem_region. Run once by a developer; NOT run in CI.
 #
-#   1. python apps/api/scripts/prep_dem.py --mainland   # download + clip
+#   1. python packages/atlas-data/tools/prep_dem.py --mainland   # download + clip
 #   2. npm run migrate:up -w @webatlas/api          # creates the empty table
-#   3. apps/api/scripts/load-dem.sh                 # this script
+#   3. packages/atlas-data/tools/load-dem.sh                 # this script
 #
 # See docs/runbooks/elevation-dem.md. Idempotent by truncate-and-reload: running it
 # twice leaves one copy of the data, not two.

@@ -509,7 +509,7 @@ Measured on a full build against the live dataset (5.6 s for all five layers):
 
 **Why the trigram indexes are on this table, not on the raw `basemap` tables.** This is a deliberate departure from
 treating reference layers exactly as they arrive from the loader, and it is the least obvious property of this
-design. `apps/api/scripts/basemap/load_basemap.py` loads each raw table with GeoPandas'
+design. `packages/atlas-data/tools/basemap/load_basemap.py` loads each raw table with GeoPandas'
 `to_postgis(..., if_exists="replace")`, which **drops and recreates** the table on every run. An index created on
 `basemap.roads_region` by a migration would therefore vanish silently the next time the basemap is reloaded, with
 nothing to signal that search had quietly stopped using it. `basemap.reference_entities` is never touched by the

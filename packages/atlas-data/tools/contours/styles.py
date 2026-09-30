@@ -14,7 +14,7 @@ to re-request tiles on every basemap change. It is also the treatment already pr
 layer: the labels survive over imagery precisely because they carry a white halo.
 
 Both styles are also WRITTEN TO DISK as <name>.sld and committed, so
-apps/api/src/geoserver/contourStyles.test.ts can assert against what this generator produces
+packages/atlas-data/tools/contours/styles.test.ts can assert against what this generator produces
 without needing Python or a live GeoServer in the test run.
 
 Changing anything here does NOT invalidate cached tiles. Truncate GWC for the contour layers
@@ -41,7 +41,7 @@ USER = os.environ.get("GEOSERVER_ADMIN_USER", "admin")
 
 # The published buckets are 250/100/50 m today; a 20 m bucket is expected later (see
 # packages/shared/src/contours.ts). Parsing here — rather than hand-copying the list a
-# second time — is the same precedent as apps/api/scripts/basemap/styles.py's _palette():
+# second time — is the same precedent as packages/atlas-data/tools/basemap/styles.py's _palette():
 # a missing/empty match raises instead of silently drifting from the shared source.
 CONTOURS_TS = (
     pathlib.Path(__file__).resolve().parents[4]
@@ -97,7 +97,7 @@ def _line_rule(is_index: bool, colour: str, width: str, opacity: str | None = No
 # contour's white casing overdraws the previous contour's brown, biting chunks out of the
 # lines exactly where terrain is steep and contours crowd together. GeoServer completes each
 # FeatureTypeStyle across every feature before starting the next, so a separate FTS lays all
-# the casings down first. Asserted by apps/api/src/geoserver/contourStyles.test.ts.
+# the casings down first. Asserted by packages/atlas-data/tools/contours/styles.test.ts.
 #
 # The final line MUST keep `</FeatureTypeStyle></UserStyle></NamedLayer>` unbroken: LABELLED
 # below is derived by replacing that exact sequence, and splitting it across lines would
@@ -149,7 +149,7 @@ def write(name: str, body: str) -> None:
     """Write the SLD next to this script so the artifact can be committed and asserted on.
 
     Same precedent as scripts/basemap/styles.py, which writes each `<name>.sld` so that
-    apps/api/src/geoserver/basemapStyles.test.ts can assert against committed artifacts
+    packages/atlas-data/tools/basemap/styles.test.ts can assert against committed artifacts
     without needing Python or a live GeoServer in the test run.
 
     Resolved from __file__, NOT the process CWD as basemap's does — that one only lands in
@@ -168,7 +168,7 @@ def upload(name: str, body: str, pw: str) -> None:
     # here (main() already called it once, for --write-only) costs nothing, but it turns
     # "upload sends what write() wrote" from an incidental fact of call order into
     # something upload() itself guarantees: it is now IMPOSSIBLE for GeoServer to receive
-    # a style that the committed .sld (and contourStyles.test.ts, which asserts against
+    # a style that the committed .sld (and contours/styles.test.ts, which asserts against
     # that file) does not also hold.
     write(name, body)
     path = pathlib.Path(__file__).resolve().parent / f"{name}.sld"

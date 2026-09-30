@@ -62,7 +62,7 @@ pip install geopandas shapely pyproj psycopg2-binary geoalchemy2
 ### 3. Load into PostGIS
 
 ```bash
-cd apps/api/scripts/basemap
+cd packages/atlas-data/tools/basemap
 BASEMAP_ZIP=/path/to/vietnam-free.shp.zip python load_basemap.py
 ```
 

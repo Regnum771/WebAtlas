@@ -40,8 +40,8 @@ No system GDAL: `rasterio` bundles its own, the same reasoning as `prep_hydroshe
 ## 1. Download and clip (~5 min)
 
 ```bash
-python apps/api/scripts/prep_dem.py --dry-run --mainland   # list the tiles, install nothing
-python apps/api/scripts/prep_dem.py --mainland             # what you almost certainly want
+python packages/atlas-data/tools/prep_dem.py --dry-run --mainland   # list the tiles, install nothing
+python packages/atlas-data/tools/prep_dem.py --mainland             # what you almost certainly want
 ```
 
 `--dry-run` needs only `shapely`; the rasterio import is lazy, so you can check the tile list before installing anything or downloading a byte.
@@ -75,7 +75,7 @@ Migration `1000000000010_dem-raster` creates the `basemap` schema if missing, en
 ## 3. Load
 
 ```bash
-apps/api/scripts/load-dem.sh
+packages/atlas-data/tools/load-dem.sh
 ```
 
 Truncates, loads every clipped tile at 128×128 blocks, then derives the raster constraints. Idempotent: run it twice and you still have one copy.
@@ -103,7 +103,7 @@ Then ask the assistant: *"Buôn Ma Thuột cao bao nhiêu mét so với mực n�
 
 ## Gotchas
 
-- **`raster2pgsql` is not in the `postgis/postgis:16-3.4` image.** The server-side extension is there, the client binary is not (`find / -name 'raster2pgsql*'` comes back empty). Every raster tutorial's one-liner fails on this stack. `load-dem.sh` works around it with a one-off image built from `apps/api/scripts/raster-tools.Dockerfile` — deliberately *not* by rebuilding the `db` service, which would make every developer build an image to gain a binary used once.
+- **`raster2pgsql` is not in the `postgis/postgis:16-3.4` image.** The server-side extension is there, the client binary is not (`find / -name 'raster2pgsql*'` comes back empty). Every raster tutorial's one-liner fails on this stack. `load-dem.sh` works around it with a one-off image built from `packages/atlas-data/tools/raster-tools.Dockerfile` — deliberately *not* by rebuilding the `db` service, which would make every developer build an image to gain a binary used once.
 - **The loader talks to `db` over the compose network**, not `localhost`. If the network is not `webatlas_default` on your machine, set `DEM_NETWORK`.
 - **`AddRasterConstraints('basemap','dem_region','rast')` fails with "The table 'basemap' does not occur in the search_path".** Three bare string literals resolve to the `(table, column, VARIADIC constraints[])` overload instead of `(schema, table, column)`, so PostGIS reads `basemap` as the table name. Cast them: `'basemap'::name,'dem_region'::name,'rast'::name`. The script does; the error message points nowhere near the cause.
 - **`raster2pgsql -F` needs a `filename` column**, which is why the migration creates one. Without it the very first tile dies with `column "filename" of relation "dem_region" does not exist`.

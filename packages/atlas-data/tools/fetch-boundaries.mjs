@@ -12,7 +12,7 @@
  *
  * Hình học BẮT BUỘC phải đơn giản hóa: dữ liệu xã thô là 157 MB.
  *
- * Chạy: node apps/api/scripts/fetch-boundaries.mjs
+ * Chạy: node packages/atlas-data/tools/fetch-boundaries.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';

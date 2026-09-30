@@ -7,10 +7,10 @@
  * Truy vấn theo TỪNG TỈNH: Overpass đã từ chối truy vấn cả vùng vì quá lớn.
  *
  * Đầu ra (KHÔNG commit — dữ liệu thô, task sau sẽ cắt và commit bản đã lọc):
- *   apps/api/scripts/.osm-cache/osm-waterways-raw.geojson
- *   apps/api/scripts/.osm-cache/osm-water-raw.geojson
+ *   packages/atlas-data/tools/.osm-cache/osm-waterways-raw.geojson
+ *   packages/atlas-data/tools/.osm-cache/osm-water-raw.geojson
  *
- * Chạy: node apps/api/scripts/fetch-osm-waterways.mjs
+ * Chạy: node packages/atlas-data/tools/fetch-osm-waterways.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';

@@ -4,13 +4,13 @@
 upload() must send exactly the bytes it just wrote to <name>.sld — not a separate copy
 of the in-memory string it happened to be called with — so editing styles.py can never
 produce a style GeoServer receives that diverges from the committed .sld artifact
-contourStyles.test.ts asserts against. See .superpowers/sdd/final-review-fixes.md, I7.
+contours/styles.test.ts asserts against. See .superpowers/sdd/final-review-fixes.md, I7.
 
 No pytest / requests dependency: this repo has no Python test runner, and pulling one in
 for a single check would be new infra for its own sake (the review's fix explicitly says
 "do not add a CI step"). Plain asserts, run directly:
 
-    python3 apps/api/scripts/contours/test_styles_upload.py
+    python3 packages/atlas-data/tools/contours/test_styles_upload.py
 """
 import importlib.util
 import pathlib

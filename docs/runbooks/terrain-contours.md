@@ -52,17 +52,17 @@ Needed for both scripts below: `GEOSERVER_ADMIN_USER`, `GEOSERVER_ADMIN_PASSWORD
 ### 3b. Styles first
 
 ```bash
-python3 apps/api/scripts/contours/styles.py "$GEOSERVER_ADMIN_PASSWORD"
+python3 packages/atlas-data/tools/contours/styles.py "$GEOSERVER_ADMIN_PASSWORD"
 ```
 
 **The password is a positional argument, not an environment variable.** `styles.py` reads it from `sys.argv[1]`; only the admin *user* comes from the environment (`GEOSERVER_ADMIN_USER`). Sourcing `infra/.env` in step 3a exports `GEOSERVER_ADMIN_PASSWORD` into your shell, which makes it look as though this command is already armed — it is not. Omitting the argument now prints a usage message naming the three forms.
 
 Uploads two SLDs — `webatlas:contours_plain` and `webatlas:contours_labelled` — one neutral brown pair serving all three basemaps, with a white casing under each line so they stay legible over satellite imagery. **Must run before `publish-contours.sh`**, or the layers it creates reference a style that does not exist yet and GeoServer refuses the default-style assignment.
 
-It also writes `contours_plain.sld` and `contours_labelled.sld` next to itself, and **those artifacts are committed**. [`contourStyles.test.ts`](../../apps/api/src/geoserver/contourStyles.test.ts) asserts against them, so a style edit that is not regenerated will show up as a failing test rather than as a surprise on the map. To refresh them without touching GeoServer:
+It also writes `contours_plain.sld` and `contours_labelled.sld` next to itself, and **those artifacts are committed**. [`styles.test.ts`](../../packages/atlas-data/tools/contours/styles.test.ts) asserts against them, so a style edit that is not regenerated will show up as a failing test rather than as a surprise on the map. To refresh them without touching GeoServer:
 
 ```bash
-python3 apps/api/scripts/contours/styles.py --write-only
+python3 packages/atlas-data/tools/contours/styles.py --write-only
 ```
 
 **Commit the regenerated `.sld` alongside any change to `styles.py`.**
@@ -72,7 +72,7 @@ python3 apps/api/scripts/contours/styles.py --write-only
 ### 3c. Then publish the layers
 
 ```bash
-bash apps/api/scripts/contours/publish-contours.sh
+bash packages/atlas-data/tools/contours/publish-contours.sh
 ```
 
 Publishes one SQL-view feature type per interval (`contours_250`, `contours_100`, `contours_50`) on the `basemap_pg` datastore — each view is `SELECT ... FROM basemap.contours WHERE interval_m = <n>`, so every published layer serves exactly one bucket and the client never has to pass a filter. Assigns `contours_plain` as the default style and `contours_labelled` as an alternate, then truncates the tile cache (GWC) for all three layers.
@@ -107,7 +107,7 @@ The brown lines were originally near-invisible over satellite imagery; only the 
 
 Each line now gets a **white casing** — a wider, translucent white stroke laid underneath it (line width + 1.5, so 0.75 px of white each side, matching the label halo's 1.5 radius). One style still serves all three basemaps: the casing is what carries satellite, and it is near-invisible against the light street basemap. This was chosen over per-basemap styles, which would have doubled the style count to 12 GWC tile sets and required the client to re-request tiles on every basemap change.
 
-**The two-`FeatureTypeStyle` split in `styles.py` is load-bearing — do not collapse it.** Casings live in the first FTS and lines in the second. Putting a casing and its line in the same `<Rule>` instead renders them per feature — casing, line, casing, line — so a neighbouring contour's white casing overdraws the previous contour's brown, biting chunks out of lines exactly where terrain is steep and contours crowd together. GeoServer completes each FTS across every feature before starting the next, which is what makes the split work. `contourStyles.test.ts` asserts the two blocks and their order precisely because this failure is invisible in the SLD source and only appears on a rendered tile.
+**The two-`FeatureTypeStyle` split in `styles.py` is load-bearing — do not collapse it.** Casings live in the first FTS and lines in the second. Putting a casing and its line in the same `<Rule>` instead renders them per feature — casing, line, casing, line — so a neighbouring contour's white casing overdraws the previous contour's brown, biting chunks out of lines exactly where terrain is steep and contours crowd together. GeoServer completes each FTS across every feature before starting the next, which is what makes the split work. `contours/styles.test.ts` asserts the two blocks and their order precisely because this failure is invisible in the SLD source and only appears on a rendered tile.
 
 If satellite ever wants its own hue after all, the door is open: the client already selects a style per request (`contourStyle()` in `contours.ts`), so it is an SLD addition plus one more style name, not a redesign.
 

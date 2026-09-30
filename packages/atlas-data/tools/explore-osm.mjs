@@ -5,7 +5,7 @@
  * Đây là công cụ THƯỜNG TRỰC, không phải việc dùng một lần: mỗi lần cập nhật
  * dữ liệu OSM, chạy lại để biết nguồn đã thay đổi thế nào trước khi nạp.
  *
- * Chạy: node apps/api/scripts/explore-osm.mjs
+ * Chạy: node packages/atlas-data/tools/explore-osm.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';

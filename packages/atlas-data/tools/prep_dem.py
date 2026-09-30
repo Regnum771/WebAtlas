@@ -76,7 +76,7 @@ from shapely.ops import unary_union
 # here (the other scripts in this directory do not need it), and --dry-run exists precisely
 # so you can check the tile list before installing anything or downloading a byte.
 
-# Repo root is three levels up: apps/api/scripts/prep_dem.py
+# Repo root is three levels up: packages/atlas-data/tools/prep_dem.py
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 # Keep in sync with REGION_PROVINCE_CODES in packages/shared/src/region.ts. A .py script
@@ -314,7 +314,7 @@ def main() -> None:
     total = sum(p.stat().st_size for p in clipped.glob("*.tif"))
     print(f"\n{len(kept)} clipped tiles in {clipped} ({total / 1e6:.0f} MB)")
     print("Raw tiles kept in ./raw for re-clipping; delete them once satisfied.")
-    print("Next: apps/api/scripts/load-dem.sh")
+    print("Next: packages/atlas-data/tools/load-dem.sh")
 
 
 if __name__ == "__main__":

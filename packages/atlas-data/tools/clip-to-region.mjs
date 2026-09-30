@@ -4,7 +4,7 @@
  * Chạy trên các file seed tại chỗ (ghi đè). Dữ liệu seed đã được commit nên
  * `git restore` khôi phục được nếu cần.
  *
- * Chạy: node apps/api/scripts/clip-to-region.mjs
+ * Chạy: node packages/atlas-data/tools/clip-to-region.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';

@@ -1,0 +1,7 @@
+# Scripts run inside the Linux atlas-tools container. With core.autocrlf=true and no
+# attributes, Windows checkouts hold CRLF, and bash fails on the first line
+# ($'\r': command not found). Measured 2026-09-30: every .sh and .py under
+# the old scripts directory had CRLF.
+*.sh        text eol=lf
+*.py        text eol=lf
+Dockerfile  text eol=lf
