@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { isDrawing } from '../features/map/model/drawingState';
+import { drawingJustEnded, isDrawing } from '../features/map/model/drawingState';
 import { useMapContext } from '../app/providers/MapProvider';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
 import { fetchBasemapInfo } from '../features/map/model/basemapInfo';
@@ -112,7 +112,7 @@ const DynamicPopup: React.FC = () => {
     if (!map) return;
 
     const clickHandler = (e: any) => {
-      if (editing || isDrawing()) return; // editing or drawing owns clicks; no popup
+      if (editing || isDrawing() || drawingJustEnded()) return; // editing or drawing owns clicks; no popup
       const feature = map.forEachFeatureAtPixel(e.pixel, (f) => f);
 
       // Ranh giới tỉnh/xã là polygon phủ KÍN bản đồ, nên forEachFeatureAtPixel
