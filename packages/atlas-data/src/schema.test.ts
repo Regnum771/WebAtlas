@@ -121,3 +121,26 @@ describe('publish-geoserver nativeName', () => {
     expect(() => defineDataset(pub('rivers_detail'))).not.toThrow();
   });
 });
+
+describe('stage variants reject unknown keys', () => {
+  const withStage = (stage: Record<string, unknown>) => ({ ...valid, stages: [stage] as never });
+
+  it('a publish stage with a lower-case `nativename` typo is rejected', () => {
+    expect(() =>
+      defineDataset(withStage({ type: 'publish-geoserver', layer: 'rivers', nativename: 'rivers_detail' }))
+    ).toThrow(/nativename/);
+  });
+
+  it('a fetch stage with a `sha265` typo is rejected, not silently unpinned', () => {
+    expect(() =>
+      defineDataset(withStage({ type: 'fetch-http', url: 'https://example.org/a.zip', into: 'a.zip', sha265: 'a'.repeat(64) }))
+    ).toThrow(/sha265/);
+  });
+
+  it('sql and load-geojson stages reject stray keys too', () => {
+    expect(() => defineDataset(withStage({ type: 'sql', statement: 'SELECT 1', stmt: 'x' }))).toThrow();
+    expect(() =>
+      defineDataset(withStage({ type: 'load-geojson', file: 'a.geojson', table: 't', columns: () => ({}), colums: 1 }))
+    ).toThrow();
+  });
+});

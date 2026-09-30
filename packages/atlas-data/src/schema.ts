@@ -34,25 +34,33 @@ const lineageSchema = z.object({
 });
 
 const stageSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('fetch-http'),
-    url: z.string().url(),
-    into: cacheRelativePath,
-    sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
-  }),
-  z.object({
-    type: z.literal('load-geojson'),
-    file: z.string().min(1),
-    table: z.string().min(1),
-    columns: z.function(),
-  }),
-  z.object({ type: z.literal('sql'), statement: z.string().min(1) }),
-  z.object({
-    type: z.literal('publish-geoserver'),
-    layer: z.string().min(1),
-    nativeName: z.string().min(1).optional(),
-    style: z.string().optional(),
-  }),
+  // Every variant is strict: zod would otherwise strip a typo'd key (`nativename`, `sha265`) and
+  // the stage would silently publish the default relation or lose its pin.
+  z
+    .object({
+      type: z.literal('fetch-http'),
+      url: z.string().url(),
+      into: cacheRelativePath,
+      sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('load-geojson'),
+      file: z.string().min(1),
+      table: z.string().min(1),
+      columns: z.function(),
+    })
+    .strict(),
+  z.object({ type: z.literal('sql'), statement: z.string().min(1) }).strict(),
+  z
+    .object({
+      type: z.literal('publish-geoserver'),
+      layer: z.string().min(1),
+      nativeName: z.string().min(1).optional(),
+      style: z.string().optional(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal('run'),
