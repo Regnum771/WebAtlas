@@ -1,3 +1,5 @@
+import type { Pool } from 'pg';
+
 /** Map a GeoJSON feature's properties to { column: value }, excluding geometry. */
 export type ColumnMap = (
   props: Record<string, unknown>,
@@ -62,4 +64,23 @@ export interface Dataset {
   dependsOn?: string[];
   editable?: boolean;
   stages: Stage[];
+  probe?: Probe;
 }
+
+/** What a probe may look at: the database, and GeoServer (a GET of a path under GEOSERVER_URL). */
+export interface ProbeContext {
+  pool: Pool;
+  geoserver: (path: string) => Promise<Response>;
+}
+
+/** Whether a dataset's output exists and serves, with a one-line account either way. */
+export interface ProbeResult {
+  ok: boolean;
+  detail: string;
+}
+
+/**
+ * A cheap, read-only check of what a dataset produces (spec FR-13). One definition of "built" serves
+ * both atlas:adopt (record an already-built machine) and atlas:verify (does it actually serve).
+ */
+export type Probe = (ctx: ProbeContext) => Promise<ProbeResult>;
