@@ -1725,6 +1725,16 @@ export const basemap = defineDataset({
       promoteTo: 'load-ogr',
       promoteBy: '2027-06-30',
     },
+    // Order matters on a fresh GeoServer (Task 3 review): styles.py assigns styles to layers that must
+    // already exist, and the layer group needs the styles. Hence featuretypes → styles → group.
+    {
+      type: 'run',
+      in: 'tools',
+      argv: ['bash', 'packages/atlas-data/tools/basemap/publish-basemap.sh', 'featuretypes'],
+      produces: 'GeoServer datastore basemap_pg and the basemap feature types',
+      promoteTo: 'publish-geoserver',
+      promoteBy: '2027-06-30',
+    },
     {
       type: 'run',
       in: 'tools',
@@ -1736,8 +1746,8 @@ export const basemap = defineDataset({
     {
       type: 'run',
       in: 'tools',
-      argv: ['bash', 'packages/atlas-data/tools/basemap/publish-basemap.sh'],
-      produces: 'GeoServer datastore basemap_pg, feature types, layer group webatlas:basemap',
+      argv: ['bash', 'packages/atlas-data/tools/basemap/publish-basemap.sh', 'group'],
+      produces: 'GeoServer layer group webatlas:basemap, tile cache truncated',
       promoteTo: 'publish-geoserver',
       promoteBy: '2027-06-30',
     },
