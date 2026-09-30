@@ -56,6 +56,19 @@ describe('registered datasets', () => {
     }
   });
 
+  it('path arguments agree between stages of one dataset', () => {
+    const bm = byId('basemap').stages;
+    const fetch = bm.find((s) => s.type === 'fetch-http') as Extract<(typeof bm)[number], { type: 'fetch-http' }>;
+    const load = bm.find((s) => s.type === 'run') as Extract<(typeof bm)[number], { type: 'run' }>;
+    expect(load.argv[2]).toBe(`packages/atlas-data/data/cache/${fetch.into}`);
+
+    const dm = byId('dem').stages.filter((s) => s.type === 'run') as Extract<(typeof bm)[number], { type: 'run' }>[];
+    const out = dm[0].argv[dm[0].argv.indexOf('--out') + 1];
+    expect(dm[1].argv[2]).toBe(`${out}/clipped`);
+    const prep = readFileSync(join(REPO_ROOT, 'packages/atlas-data/tools/prep_dem.py'), 'utf8');
+    expect(prep).toMatch(/\/ "clipped"/);
+  });
+
   it("contours' intervals match packages/shared/src/contours.ts", () => {
     const src = readFileSync(join(REPO_ROOT, 'packages/shared/src/contours.ts'), 'utf8');
     const m = src.match(/CONTOUR_INTERVALS\s*=\s*\[([^\]]*)\]/);

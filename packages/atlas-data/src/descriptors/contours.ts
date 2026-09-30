@@ -8,9 +8,9 @@ import { allOf, rowCount, wmsAnswers } from '../probes';
 export const CONTOUR_INTERVALS_M = [250, 100, 50] as const;
 
 /**
- * Runbook step 8: contour lines from the DEM, then their styles and GeoServer layers. The publish
- * script ensures the basemap_pg store itself, so this depends on the DEM only — a dependsOn on the
- * basemap would wrongly make contours inherit OpenStreetMap's ODbL.
+ * Runbook step 8: contour lines from the DEM, then their styles and GeoServer layers. The stages
+ * ensure the webatlas workspace (styles.py) and the basemap_pg store (publish script) themselves,
+ * so this depends on the DEM only — a dependsOn on the basemap would wrongly make contours inherit OpenStreetMap's ODbL.
  */
 export const contours = defineDataset({
   id: 'contours',
@@ -51,6 +51,6 @@ export const contours = defineDataset({
     ...CONTOUR_INTERVALS_M.map((m) =>
       rowCount(`contours ${m} m`, `SELECT count(*)::text AS n FROM basemap.contours WHERE interval_m = ${m}`)
     ),
-    wmsAnswers('contours_50', '108.0,12.5,108.2,12.7')
+    ...CONTOUR_INTERVALS_M.map((m) => wmsAnswers(`contours_${m}`, '108.0,12.5,108.2,12.7'))
   ),
 });

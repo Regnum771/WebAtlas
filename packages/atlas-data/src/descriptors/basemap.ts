@@ -1,6 +1,10 @@
 import { defineDataset } from '../schema';
 import { allOf, rowCount, wmsAnswers } from '../probes';
 
+const TABLES = [
+  'land_vn', 'roads_vn', 'railways_vn', 'places_vn', 'roads_region', 'places_region', 'landuse_region', 'water_region',
+] as const;
+
 const ZIP = 'basemap/vietnam-latest-free.shp.zip';
 
 /**
@@ -61,8 +65,9 @@ export const basemap = defineDataset({
       promoteBy: '2027-06-30',
     },
   ],
+  // Every table load_basemap.py writes: a partial load must not pass.
   probe: allOf(
-    rowCount('basemap.roads_region', 'SELECT count(*)::text AS n FROM basemap.roads_region'),
+    ...TABLES.map((t) => rowCount(`basemap.${t}`, `SELECT count(*)::text AS n FROM basemap.${t}`)),
     wmsAnswers('basemap', '108.0,12.5,108.2,12.7')
   ),
 });

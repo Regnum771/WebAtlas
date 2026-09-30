@@ -34,14 +34,19 @@ def _load_styles_with_fake_requests(calls):
 
     fake_requests = types.ModuleType("requests")
 
-    def post(url, params=None, data=None, headers=None, auth=None):
-        calls.append(("POST", url, data))
+    def get(url, auth=None):
+        calls.append(("GET", url, None))
+        return FakeResponse(404)  # fresh GeoServer: no workspace yet
+
+    def post(url, params=None, data=None, headers=None, auth=None, json=None):
+        calls.append(("POST", url, json if json is not None else data))
         return FakeResponse(201)
 
     def put(url, data=None, headers=None, auth=None):
         calls.append(("PUT", url, data))
         return FakeResponse(200)
 
+    fake_requests.get = get
     fake_requests.post = post
     fake_requests.put = put
     sys.modules["requests"] = fake_requests
@@ -77,6 +82,14 @@ def main():
         assert on_disk == sent_text, "on-disk artifact and uploaded bytes diverged"
     finally:
         sld_path.unlink(missing_ok=True)
+
+    # Fresh GeoServer: the workspace is looked up (404) and created BEFORE any style upload.
+    calls.clear()
+    styles.publish_styles("irrelevant-password")
+    seq = [(m, u.split("/rest", 1)[1]) for m, u, _ in calls]
+    assert seq[:2] == [("GET", "/workspaces/webatlas"), ("POST", "/workspaces")], seq
+    assert calls[1][2] == {"workspace": {"name": "webatlas"}}, calls[1]
+    assert [m for m, _ in seq[2:]] == ["POST", "POST"] and all("/styles" in u for _, u in seq[2:]), seq
 
     print("OK: upload() writes the .sld first and uploads exactly those bytes")
 

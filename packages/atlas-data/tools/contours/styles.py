@@ -161,6 +161,32 @@ def write(name: str, body: str) -> None:
     print(f"  {path.name}: written")
 
 
+def ensure_workspace(pw: str) -> None:
+    """Create the webatlas workspace when a fresh GeoServer lacks it (200 = nothing to do).
+
+    publish-contours.sh ensures it too, but it runs AFTER this script, so `atlas:build --only
+    contours` on a fresh GeoServer would otherwise 404 on the first style upload.
+    """
+    import requests  # see note above import block
+
+    auth = (USER, pw)
+    r = requests.get(f"{GS}/workspaces/{WS}", auth=auth)
+    if r.status_code == 200:
+        return
+    if r.status_code != 404:
+        raise RuntimeError(f"GET workspace {WS}: unexpected HTTP {r.status_code}")
+    r = requests.post(f"{GS}/workspaces", json={"workspace": {"name": WS}}, auth=auth)
+    print(f"  workspace {WS}: {r.status_code}")
+    if not 200 <= r.status_code < 300:
+        raise RuntimeError(f"POST workspace {WS}: HTTP {r.status_code}")
+
+
+def publish_styles(pw: str) -> None:
+    ensure_workspace(pw)
+    upload("contours_plain", PLAIN, pw)
+    upload("contours_labelled", LABELLED, pw)
+
+
 def upload(name: str, body: str, pw: str) -> None:
     import requests  # see note above import block
 
@@ -224,5 +250,4 @@ if __name__ == "__main__":
             "       python styles.py --write-only       (regenerate .sld only, no upload)\n"
             "       python styles.py --print-intervals"
         )
-    upload("contours_plain", PLAIN, password)
-    upload("contours_labelled", LABELLED, password)
+    publish_styles(password)
