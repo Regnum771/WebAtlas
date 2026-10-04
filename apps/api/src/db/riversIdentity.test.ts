@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from './pool';
 import { LAYER_REGISTRY } from '../layers/registry';
-import { RIVERS_HYDRO_LAYER } from './seeds/ingestRivers';
+import { RIVER_WAY_COLUMNS } from '@webatlas/shared';
 
 afterAll(async () => { await closePool(); });
 
@@ -33,8 +33,8 @@ describe('rivers identity space', () => {
     expect(LAYER_REGISTRY.rivers.externalIdType).toBe('text');
   });
 
-  it('prefixes the id the OSM ingest writes', () => {
-    const cols = RIVERS_HYDRO_LAYER.columns({ osmId: 12207485, name: 'Sông Thu Bồn' }, 0);
+  it('prefixes the id the rivers load writes', () => {
+    const cols = RIVER_WAY_COLUMNS({ osmId: 12207485, name: 'Sông Thu Bồn' }, 0);
     expect(cols.external_id).toBe('osm:12207485');
   });
 });

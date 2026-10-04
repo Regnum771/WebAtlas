@@ -1,23 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { getPool, closePool } from '../pool';
-import { loadAdminBoundaries } from './adminBoundaries';
+import { describe, it, expect, afterAll } from 'vitest';
+import { getPool, closePool } from './pool';
 
-beforeAll(async () => {
-  const client = await getPool().connect();
-  try {
-    await client.query('BEGIN');
-    await loadAdminBoundaries(client);
-    await client.query('COMMIT');
-  } catch (e) {
-    await client.query('ROLLBACK');
-    throw e;
-  } finally {
-    client.release();
-  }
-});
+// Loaded by the admin_boundaries dataset; here, by the global setup (src/test/globalSetup.ts).
+// That the load REPLACES the two tables is tested in packages/atlas-data (loadGeojson.db.test.ts).
 afterAll(async () => { await closePool(); });
 
-describe('loadAdminBoundaries', () => {
+describe('the administrative boundaries', () => {
   it('loads all 34 provinces and the 616 wards of the working region', async () => {
     const { rows } = await getPool().query<{ p: string; w: string }>(
       `SELECT (SELECT count(*) FROM admin.provinces)::text AS p,
@@ -49,21 +37,5 @@ describe('loadAdminBoundaries', () => {
         LEFT JOIN admin.provinces p ON p.code = w.province_code WHERE p.code IS NULL`
     );
     expect(rows[0].orphans).toBe('0');
-  });
-
-  it('is idempotent — loading twice leaves the same counts', async () => {
-    const client = await getPool().connect();
-    try {
-      await client.query('BEGIN');
-      const second = await loadAdminBoundaries(client);
-      await client.query('COMMIT');
-      expect(second).toEqual({ provinces: 34, wards: 616 });
-    } finally {
-      client.release();
-    }
-    const { rows } = await getPool().query<{ p: string }>(
-      `SELECT count(*)::text AS p FROM admin.provinces`
-    );
-    expect(rows[0].p).toBe('34');
   });
 });

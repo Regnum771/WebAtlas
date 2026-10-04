@@ -2,6 +2,9 @@ import { defineConfig, configDefaults } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // Seeds the thematic layers once per run; see the file.
+    globalSetup: ['./src/test/globalSetup.ts'],
+
     // Live-model suites cost real API tokens on every execution, so they are
     // opt-in (`npm run test:api:live`) rather than part of the default run.
     exclude: [...configDefaults.exclude, '**/*.live.test.ts'],
