@@ -94,8 +94,10 @@ jobs:
       - run: npx tsc -p packages/versioning/tsconfig.json --noEmit
       - run: npm run test:versioning
       # Bộ nạp load-geojson và việc tiếp nhận phiên bản cũ: kiểm thử cần cơ sở dữ liệu thật, chạy
-      # trong transaction rồi rollback. Chỉ hai tệp này: phần còn lại của atlas-data chạy ở job riêng.
-      - run: npx vitest run src/stages/loadGeojson.db.test.ts src/adoptLegacy.db.test.ts src/ensureSeeded.db.test.ts
+      # trong transaction rồi rollback. Lọc theo tên `.db.test` chứ không liệt kê từng tệp, để một
+      # tệp *.db.test.ts mới tự được chạy; job atlas-data không có cơ sở dữ liệu nên ở đó chúng tự
+      # bỏ qua. Kiểm thử cần GeoServer (probes.db) vẫn bỏ qua ở đây.
+      - run: npx vitest run .db.test
         working-directory: packages/atlas-data
       - run: npx tsc -p apps/api/tsconfig.json --noEmit
       - run: npm run test:api
