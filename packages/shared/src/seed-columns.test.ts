@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { EDITABLE_LAYER_KEYS } from './index';
-import { RIVER_REACH_COLUMNS, RIVER_WAY_COLUMNS, SEED_LAYER_COLUMNS } from './seed-columns';
+import {
+  ADMIN_PROVINCE_COLUMNS, ADMIN_WARD_COLUMNS, RIVER_REACH_COLUMNS, RIVER_WAY_COLUMNS, SEED_LAYER_COLUMNS,
+} from './seed-columns';
 import { assignDamStatus } from './dam-status';
 
 describe('seed column maps', () => {
@@ -49,5 +51,14 @@ describe('seed column maps', () => {
       stream_order: 3, length_m: 2500, name: null,
     });
     expect(RIVER_REACH_COLUMNS({ HYRIV_ID: 40002, NEXT_DOWN: 0, ORD_STRA: 4, LENGTH_KM: 1 }, 0).flows_into_external_id).toBeNull();
+  });
+
+  it('map a province and a ward from the boundary files, coercing codes to text', () => {
+    expect(ADMIN_PROVINCE_COLUMNS({ code: 66, name: 'Đắk Lắk', nameEn: 'Dak Lak', fullName: 'Tỉnh Đắk Lắk', areaKm2: 18096.4 }, 0))
+      .toEqual({ code: '66', name: 'Đắk Lắk', name_en: 'Dak Lak', full_name: 'Tỉnh Đắk Lắk', area_km2: 18096.4 });
+    expect(ADMIN_PROVINCE_COLUMNS({ code: '01', name: 'Hà Nội' }, 0))
+      .toEqual({ code: '01', name: 'Hà Nội', name_en: null, full_name: null, area_km2: null });
+    expect(ADMIN_WARD_COLUMNS({ code: 24133, provinceCode: 66, name: 'Buôn Ma Thuột' }, 0))
+      .toEqual({ code: '24133', province_code: '66', name: 'Buôn Ma Thuột', name_en: null, full_name: null, area_km2: null });
   });
 });

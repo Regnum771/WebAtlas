@@ -23,6 +23,8 @@ export interface BuildOptions {
   universe?: Dataset[];
   /** Dataset ids whose every stage executes regardless of the skip rule. */
   force?: string[];
+  /** Dataset ids whose load may replace steward edits (--supersede-edits). Never implied by `force`. */
+  supersedeEdits?: string[];
   /** Where stage output goes. Defaults to console.log. */
   log?: (line: string) => void;
 }
@@ -58,6 +60,7 @@ export async function runBuild(
   // by --except is still invalidated, so atlas:status reports it missing until built.
   const universe = options.universe ?? datasets;
   const force = new Set(options.force ?? []);
+  const supersede = new Set(options.supersedeEdits ?? []);
   const report: BuildReport = { executed: [], skipped: [], failed: [], blocked: [], errors: {} };
   const ordered = topologicalOrder(datasets);
   const plan = stageHashPlan(ordered);
@@ -110,7 +113,7 @@ export async function runBuild(
           // leave the dataset with no rows at all, which atlas:adopt takes for an untracked
           // machine and records as built. `failed` re-runs on the next build and blocks adopt.
           await writeStageState(pool, d.id, key, hash, 'failed');
-          ({ summary } = await executeStage(pool, stage, { datasetId: d.id, forced, log }));
+          ({ summary } = await executeStage(pool, stage, { datasetId: d.id, forced, supersedeEdits: supersede.has(d.id), log }));
           stageExecuted = true;
         } catch (err) {
           report.failed.push(current);

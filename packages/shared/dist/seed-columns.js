@@ -67,3 +67,22 @@ export const RIVER_REACH_COLUMNS = (p) => ({
     // HydroRIVERS has no names; the joined name is recorded on the link, never here.
     name: null,
 });
+/**
+ * The administrative boundaries, from the same two files the browser loads
+ * (apps/web/public/provinces-34.geojson, wards-region.geojson). Codes are text: '01' is not 1.
+ */
+export const ADMIN_PROVINCE_COLUMNS = (p) => ({
+    code: String(p.code),
+    name: String(p.name),
+    name_en: p.nameEn ?? null,
+    full_name: p.fullName ?? null,
+    area_km2: p.areaKm2 ?? null,
+});
+export const ADMIN_WARD_COLUMNS = (p) => ({
+    code: String(p.code),
+    province_code: String(p.provinceCode),
+    name: String(p.name),
+    name_en: p.nameEn ?? null,
+    full_name: p.fullName ?? null,
+    area_km2: p.areaKm2 ?? null,
+});

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { Dataset, Stage } from './types';
+import { sha256OfFile, stageFileHashes, type FileHasher } from './fileHash';
 
 /**
  * Stable identifier for a stage within its dataset. Position is included because a
@@ -45,10 +46,15 @@ function canonical(value: unknown): unknown {
  * Function-valued fields (load-geojson's `columns`) are serialised via toString() so
  * that editing a column mapping invalidates the stage — including a pure reformat,
  * a known, accepted cost.
+ *
+ * A load-geojson stage is its configuration plus the bytes it loads: `hash` gives each file's
+ * content hash, so editing a file makes the stage stale and touching it without changing it
+ * does not (spec §11). No other stage type calls `hash`.
  */
-export function stageInputHash(stage: Stage, upstreamHashes: string[]): string {
+export function stageInputHash(stage: Stage, upstreamHashes: string[], hash: FileHasher = sha256OfFile): string {
   const payload = JSON.stringify({
     stage: canonical(stage),
+    ...(stage.type === 'load-geojson' ? { files: stageFileHashes(stage, hash) } : {}),
     upstream: [...upstreamHashes].sort(),
   });
   return createHash('sha256').update(payload).digest('hex');
@@ -63,10 +69,11 @@ export function stageInputHash(stage: Stage, upstreamHashes: string[]): string {
  * changes every hash after it, and only those.
  *
  * `datasets` must already be in topological order (use topologicalOrder from graph.ts).
- * Pure: the runner and atlas:status both call this, so they cannot disagree about what
- * is stale.
+ * The runner, atlas:status, atlas:verify and atlas:adopt all call this, so they cannot disagree
+ * about what is stale. Deterministic for given file contents; it reads the files of load-geojson
+ * stages (through `hash`) on every call, and touches nothing else.
  */
-export function stageHashPlan(orderedDatasets: Dataset[]): Map<string, string[]> {
+export function stageHashPlan(orderedDatasets: Dataset[], hash: FileHasher = sha256OfFile): Map<string, string[]> {
   const plan = new Map<string, string[]>();
 
   for (const d of orderedDatasets) {
@@ -87,9 +94,9 @@ export function stageHashPlan(orderedDatasets: Dataset[]): Map<string, string[]>
 
     const stageHashes: string[] = [];
     for (const stage of d.stages) {
-      const hash = stageInputHash(stage, inputs);
-      stageHashes.push(hash);
-      inputs = [hash];
+      const stageHash = stageInputHash(stage, inputs, hash);
+      stageHashes.push(stageHash);
+      inputs = [stageHash];
     }
     plan.set(d.id, stageHashes);
   }

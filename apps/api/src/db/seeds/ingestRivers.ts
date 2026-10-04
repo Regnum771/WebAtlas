@@ -20,7 +20,7 @@ const HYDRORIVERS_SOURCE = 'OSM waterways + HydroRIVERS v10';
 // a contract other sources depend on, not an implementation detail.
 export const RIVERS_HYDRO_LAYER: SeedLayer = {
   table: 'rivers',
-  file: resolvePath(here, 'data/osm-rivers-region.geojson'),
+  file: resolvePath(here, '../../../../../packages/atlas-data/data/seeds/osm-rivers-region.geojson'),
   source: HYDRORIVERS_SOURCE,
   multiLine: true,
   columns: RIVER_WAY_COLUMNS,

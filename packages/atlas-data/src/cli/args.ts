@@ -2,9 +2,11 @@ export interface BuildArgs {
   only: string[];
   except: string[];
   force: string[];
+  /** Datasets whose load may replace steward edits. Never implied by --force (spec §11). */
+  supersedeEdits: string[];
 }
 
-const FLAGS = ['--only', '--except', '--force'] as const;
+const FLAGS = ['--only', '--except', '--force', '--supersede-edits'] as const;
 type Flag = (typeof FLAGS)[number];
 
 function splitIds(flag: Flag, raw: string): string[] {
@@ -54,5 +56,7 @@ export function parseBuildArgs(argv: string[]): BuildArgs {
     only: values['--only'] !== undefined ? splitIds('--only', values['--only']) : [],
     except: values['--except'] !== undefined ? splitIds('--except', values['--except']) : [],
     force: values['--force'] !== undefined ? splitIds('--force', values['--force']) : [],
+    supersedeEdits:
+      values['--supersede-edits'] !== undefined ? splitIds('--supersede-edits', values['--supersede-edits']) : [],
   };
 }

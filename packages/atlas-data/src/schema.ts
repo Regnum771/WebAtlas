@@ -19,6 +19,27 @@ const cacheRelativePath = z
     'must be a relative path inside data/cache, with no ".." segment'
   );
 
+/** A relative path with no `..` segment, under whichever root the stage names. */
+const relativePath = z
+  .string()
+  .min(1)
+  .refine(
+    (p) => !posix.isAbsolute(p) && !win32.isAbsolute(p) && !/^[a-zA-Z]:/.test(p) && !p.split(/[\\/]/).includes('..'),
+    'must be a relative path with no ".." segment'
+  );
+
+const loadGeojsonFile = z
+  .object({
+    file: relativePath,
+    root: z.enum(['data', 'repo']).optional(),
+    columns: z.function(),
+    // Interpolated into SQL by the non-versioned loader: schema.table, lower-case identifiers only.
+    target: z.string().regex(/^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$/).optional(),
+    multiLine: z.boolean().optional(),
+    multiPolygon: z.boolean().optional(),
+  })
+  .strict();
+
 const sourceSchema = z.object({
   citation: z.string().min(1),
   licence: z.string().min(1),
@@ -47,9 +68,11 @@ const stageSchema = z.discriminatedUnion('type', [
   z
     .object({
       type: z.literal('load-geojson'),
-      file: z.string().min(1),
-      table: z.string().min(1),
-      columns: z.function(),
+      // Interpolated into SQL as water.<layer>: a lower-case identifier.
+      layer: z.string().regex(/^[a-z_][a-z0-9_]*$/),
+      versioned: z.boolean(),
+      files: z.array(loadGeojsonFile).min(1),
+      legacySource: z.string().min(1).optional(),
     })
     .strict(),
   z.object({ type: z.literal('sql'), statement: z.string().min(1) }).strict(),
@@ -87,16 +110,40 @@ const stageSchema = z.discriminatedUnion('type', [
     .strict(),
 ]);
 
-export const datasetSchema = z.object({
-  id: z.string().min(1),
-  kind: z.enum(['vector', 'raster', 'derived']),
-  lineage: lineageSchema,
-  dependsOn: z.array(z.string()).optional(),
-  editable: z.boolean().optional(),
-  // At least one: a dataset with no stages can never be materialised.
-  stages: z.array(stageSchema).min(1),
-  probe: z.function().optional(),
-});
+export const datasetSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: z.enum(['vector', 'raster', 'derived']),
+    lineage: lineageSchema,
+    dependsOn: z.array(z.string()).optional(),
+    editable: z.boolean().optional(),
+    // At least one: a dataset with no stages can never be materialised.
+    stages: z.array(stageSchema).min(1),
+    probe: z.function().optional(),
+  })
+  // A rule across two fields of a load-geojson stage. Here, not on the stage variant: a member of
+  // a discriminated union must stay a plain object schema.
+  .superRefine((d, ctx) => {
+    for (const [si, s] of d.stages.entries()) {
+      if (s.type !== 'load-geojson') continue;
+      for (const [fi, f] of s.files.entries()) {
+        if (s.versioned && f.target !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['stages', si, 'files', fi, 'target'],
+            message: 'target is for a non-versioned load; a versioned layer loads into water.<layer>',
+          });
+        }
+        if (!s.versioned && f.target === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['stages', si, 'files', fi, 'target'],
+            message: 'a non-versioned load must name its target table',
+          });
+        }
+      }
+    }
+  });
 
 /** Validate a descriptor at module load. Throws ZodError on invalid input. */
 export function defineDataset(d: Dataset): Dataset {

@@ -105,6 +105,22 @@ describe('processStep (I4: record what ran, not just that it ran)', () => {
     expect(tool).toBe('sql');
   });
 
+  it('names the files a load-geojson stage loaded as its tool', () => {
+    const { tool } = processStep(
+      '0:load-geojson',
+      {
+        type: 'load-geojson', layer: 'rivers', versioned: true,
+        files: [
+          { file: 'seeds/osm-rivers-region.geojson', columns: () => ({}) },
+          { file: 'seeds/hydrorivers-region.geojson', columns: () => ({}) },
+        ],
+      },
+      hash,
+      'rivers: 23119 features in a new version'
+    );
+    expect(tool).toBe('load-geojson seeds/osm-rivers-region.geojson + seeds/hydrorivers-region.geojson');
+  });
+
   it('collapses whitespace in the summary', () => {
     const { description } = processStep('0:sql', { type: 'sql', statement: 'x' }, hash, 'INSERT  INTO\n   t\tVALUES (1)');
     expect(description).toBe('stage 0:sql · a3f9c2e1b7d4 · INSERT INTO t VALUES (1)');

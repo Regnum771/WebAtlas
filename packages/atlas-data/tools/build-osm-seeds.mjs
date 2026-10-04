@@ -14,7 +14,7 @@ import { waterwayToStreamOrder, osmWaterToLakeType } from '@webatlas/shared';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../../..');
 const cacheDir = path.join(scriptDir, '.osm-cache');
-const seedDir = path.join(repoRoot, 'apps/api/src/db/seeds/data');
+const seedDir = path.join(repoRoot, 'packages/atlas-data/data/seeds');
 
 const EARTH_RADIUS_M = 6378137;
 

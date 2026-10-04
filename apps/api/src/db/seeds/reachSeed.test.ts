@@ -5,7 +5,7 @@ import { resolve as resolvePath } from 'node:path';
 import { REGION_PROVINCE_CODES } from '@webatlas/shared';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const SEED = resolvePath(here, 'data/hydrorivers-region.geojson');
+const SEED = resolvePath(here, '../../../../../packages/atlas-data/data/seeds/hydrorivers-region.geojson');
 const PREP = resolvePath(here, '../../../../../packages/atlas-data/tools/prep_hydrosheds.py');
 
 interface Reach {

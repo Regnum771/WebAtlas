@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { executeSql } from './sql';
 
-const ctx = { datasetId: 't', forced: false, log: () => {} };
+const ctx = { datasetId: 't', forced: false, supersedeEdits: false, log: () => {} };
 const DB = process.env.DATABASE_URL;
 
 describe.skipIf(!DB)('executeSql against a real database', () => {

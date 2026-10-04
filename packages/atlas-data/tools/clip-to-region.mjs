@@ -13,7 +13,7 @@ import { buildRegionRings, featureIntersectsRegion } from './lib/regionClip.mjs'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../../..');
-const dataDir = path.join(repoRoot, 'apps/api/src/db/seeds/data');
+const dataDir = path.join(repoRoot, 'packages/atlas-data/data/seeds');
 const provincesPath = path.join(repoRoot, 'apps/web/public/provinces-34.geojson');
 
 // Giữ đồng bộ với REGION_PROVINCE_CODES trong packages/shared/src/region.ts.
@@ -30,7 +30,7 @@ const TARGETS = [
   path.join(dataDir, 'drought_points.geojson'),
   path.join(dataDir, 'saltwater_intrusion.geojson'),
   path.join(dataDir, 'flood_generation.geojson'),
-  path.join(repoRoot, 'apps/web/public/thuydienvietnam.geojson'),
+  path.join(dataDir, 'dams.geojson'),
 ];
 
 const provinces = JSON.parse(fs.readFileSync(provincesPath, 'utf8'));

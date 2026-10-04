@@ -5,7 +5,7 @@ import { realSystem } from './system';
 import { takeCompose } from './composeFlag';
 import { printBuildReport } from './report';
 import { parseBuildArgs } from './args';
-import { selectDatasets, assertForceSelected, type ExclusionReason } from './select';
+import { selectDatasets, assertForceSelected, assertSupersedeSelected, type ExclusionReason } from './select';
 import { ALL_DATASETS, validateRegistry } from '../registry';
 import { runBuild } from '../runner';
 import { verifyAtlas, formatVerify } from '../verify';
@@ -23,14 +23,17 @@ async function main(): Promise<void> {
   let datasets = ALL_DATASETS;
   let excluded: ExclusionReason[] = [];
   let force: string[] = [];
+  let supersedeEdits: string[] = [];
   try {
     const { compose, rest } = takeCompose(process.argv.slice(2));
     if (compose) process.env.ATLAS_COMPOSE_FILE = resolve(process.env.INIT_CWD ?? process.cwd(), compose);
-    const { only, except, force: forced } = parseBuildArgs(rest);
+    const { only, except, force: forced, supersedeEdits: superseded } = parseBuildArgs(rest);
     ({ selected: datasets, excluded } = selectDatasets(ALL_DATASETS, { only, except }));
     if (datasets.length === 0) throw new Error('atlas:up: no datasets selected (--only/--except excluded everything)');
     assertForceSelected(forced, ALL_DATASETS, datasets);
     force = forced;
+    assertSupersedeSelected(superseded, ALL_DATASETS, datasets);
+    supersedeEdits = superseded;
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
@@ -77,7 +80,7 @@ async function main(): Promise<void> {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
   try {
     console.log('== build');
-    printBuildReport(await runBuild(pool, datasets, { universe: ALL_DATASETS, force }));
+    printBuildReport(await runBuild(pool, datasets, { universe: ALL_DATASETS, force, supersedeEdits }));
     console.log('== verify');
     const { lines, ok } = formatVerify(await verifyAtlas(pool, datasets, probeContext(pool)));
     for (const line of lines) console.log(line);

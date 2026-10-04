@@ -683,15 +683,17 @@ them. The `atlas-tools` image (Debian bookworm with the PGDG repository, Python 
 only Node, Docker and git. `atlas:status`, `atlas:build`, `atlas:verify` and `atlas:adopt` manage the result. Step 5
 (Plan C) is under way in three parts. The first is done: the versioning core (the versions service, administrative-code
 stamping, the river hierarchy and its gates, and the feature loader) lives in `packages/versioning`, which both the API and
-the dataset pipeline can import, and the seed attribute mappings live in `packages/shared`. Two parts remain: the
-`load-geojson` executor with its datasets, and then the retirement of the seed and river `run` stages together with the
-old `npm run seed`, `ingest:rivers` and `publish:geoserver` commands.
+the dataset pipeline can import, and the seed attribute mappings live in `packages/shared`. The second is done too: a
+`load-geojson` stage loads `admin_boundaries`, the seven thematic layers and `rivers`, each a dataset of its own with its
+own licence and sources. A versioned load is keyed to the content of its files: unchanged content creates no version and
+only re-stamps the administrative codes, and changed content will not replace a layer that carries steward edits unless
+the build is told to (`--supersede-edits`). One part remains: the retirement of the old `npm run seed`, `ingest:rivers`
+and `publish:geoserver` commands, which still exist beside the datasets and still create a version on every run.
 
-The river ingest departs from the second half of the rule above. The design called for it to be declared as a registry
-dataset that loads its GeoJSON, but the registry has no `load-geojson` executor yet. It is therefore registered as
-`rivers`, with a `run` stage naming the ingest script, followed by a `publish-geoserver` stage, and a promotion deadline
-of 31 December 2026 for moving the first stage to `load-geojson`; the runner executes both stages today, and the
-registry's own test fails the build once that date passes, so the escape hatch cannot quietly become permanent.
+The river ingest now follows the rule above. `rivers` is a registry dataset whose `load-geojson` stage loads the OSM ways
+and the HydroRIVERS reaches into one version, followed by two `publish-geoserver` stages. The `run` escape hatch it used
+until Plan C-2, with its promotion deadline of 31 December 2026, is gone; the remaining `run` stages are the raster and
+basemap ones, which carry their own deadlines.
 
 ---
 

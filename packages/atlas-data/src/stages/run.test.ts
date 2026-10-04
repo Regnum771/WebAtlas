@@ -55,7 +55,7 @@ describe('commandFor', () => {
 });
 
 describe('executeRun', () => {
-  const ctx = (lines: string[]) => ({ datasetId: 'rivers', forced: false, log: (l: string) => lines.push(l) });
+  const ctx = (lines: string[]) => ({ datasetId: 'rivers', forced: false, supersedeEdits: false, log: (l: string) => lines.push(l) });
   const viaNode = (script: string) => () => ({ file: process.execPath, args: ['-e', script], cwd: process.cwd() });
 
   it('succeeds on exit 0 and summarises the argv', async () => {

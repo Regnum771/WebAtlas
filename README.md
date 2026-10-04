@@ -87,9 +87,13 @@ it creates.
 | `npm run atlas:build -- --force <id>` | Rebuild a dataset on purpose, from the same inputs. Forcing invalidates its dependents, which rebuild only if they are in the selection: `--force basemap` alone also rebuilds `reference_entities`, while `--only basemap --force basemap` leaves it `missing` until a full build |
 | Newer OpenStreetMap extract | The basemap extract is pinned to a first-of-month Geofabrik file: bump its date and `sha256` in `packages/atlas-data/src/descriptors/basemap.ts`, then `npm run atlas:build` (see `docs/runbooks/self-hosted-basemap.md`) |
 | `npm run atlas:verify` | Check the atlas actually serves: stages, probes, layers, lineage |
-| `npm run atlas:adopt` | A machine set up before the registry: record what is already built, without re-running it |
+| `npm run atlas:build -- --supersede-edits <layer>` | Load new seed content over a layer that has steward edits on top. Without it the build stops rather than hide the edits; `--force` never implies it |
+| `npm run atlas:adopt` | A machine set up before the registry, or before a dataset was registered: record what is already built, without re-running it. For the thematic layers it re-labels the existing version with its content hash, so nothing is reloaded |
 
-Datasets: `seeds`, `rivers`, `basemap`, `reference_entities`, `dem`, `contours` (plus the synthetic `demo`).
+Datasets: `admin_boundaries`; the thematic layers `dams`, `stations`, `flood_zones`, `drought_points`,
+`saltwater_intrusion`, `flood_generation`, `lakes` and `rivers`, each loaded from the GeoJSON under
+`packages/atlas-data/data/seeds` and keyed to the file's content, so an unchanged file never creates a new
+version; then `basemap`, `reference_entities`, `dem`, `contours` (plus the synthetic `demo`).
 The runbooks under `docs/runbooks/` describe what each dataset is and where it comes from.
 
 `atlas:up` never recreates or stops a service that is already running, so it is safe to run on a
@@ -183,7 +187,7 @@ Sai số 11 m nằm dưới nửa pixel ở mức zoom tối đa của app (1:10
 
 ## Regenerating OSM water data
 
-`apps/api/src/db/seeds/data/osm-rivers-region.geojson` và
+`packages/atlas-data/data/seeds/osm-rivers-region.geojson` và
 `osm-lakes-region.geojson` là generated artifact đã commit — không cần chạy lại
 để chạy app.
 
@@ -195,8 +199,9 @@ OSM là nguồn `rivers`/`lakes` duy nhất (không còn `thuyhe.geojson` — xe
 `ingest:rivers` riêng, **bắt buộc chạy sau `seed`** vì nó tạo và kích hoạt một
 version `rivers` mới đè lên bất kỳ version nào `seed` để lại active.
 
-Từ khi có sổ đăng ký, bước 6–7 dưới đây có thể chạy bằng `npm run atlas:build -- --force seeds` rồi `--force rivers`
-(`rivers` tự phụ thuộc `seeds`); các lệnh `seed` và `ingest:rivers` cũ vẫn chạy được cho đến Plan C.
+Từ khi có sổ đăng ký, bước 6–7 dưới đây chỉ là `npm run atlas:build`: tệp seed đổi nội dung thì tập dữ liệu tương ứng
+(`lakes`, `rivers`) tự thành cũ và được nạp lại thành một phiên bản mới. Các lệnh `seed` và `ingest:rivers` cũ vẫn chạy
+được cho đến Plan C-3.
 
 Toàn bộ pipeline tái tạo dữ liệu OSM, theo đúng thứ tự (có các ràng buộc thứ tự
 bắt buộc — xem danh sách ngay dưới):
@@ -217,7 +222,7 @@ npm run ingest:rivers -w @webatlas/api             # 7. nạp OSM rivers làm ve
   ánh xạ trong `packages/shared/src/osm-water.ts`: nếu OSM xuất hiện giá trị
   tag mới đáng kể, cập nhật bảng trước khi nạp.
 - **Bước 3 trước bước 5** — `clip-to-region.mjs` ghi đè
-  `apps/web/public/thuydienvietnam.geojson` **tại chỗ** (cắt xuống vùng công
+  `packages/atlas-data/data/seeds/dams.geojson` **tại chỗ** (cắt xuống vùng công
   tác). `report-dam-crosscheck.mjs` cần bản đầy đủ (toàn quốc) để đối chiếu
   đúng; nó có fallback đọc từ `git show HEAD:` nếu file trên đĩa đã bị cắt,
   nhưng fallback đó chỉ in cảnh báo ra console chứ không chặn chạy sai — chạy
@@ -237,7 +242,7 @@ node packages/atlas-data/tools/prune-hydrosheds-versions.mjs
 
 ## Regenerating HydroSHEDS seed data
 
-The lakes/reservoirs seed `apps/api/src/db/seeds/data/hydrolakes-vn.geojson` (clipped to the
+The lakes/reservoirs seed `packages/atlas-data/data/seeds/hydrolakes-vn.geojson` (clipped to the
 Vietnam bbox `102 8 110 24`, lon/lat) and the river-reach seed `hydrorivers-region.geojson`
 (whole reaches intersecting the six working provinces) are derived from the upstream
 HydroSHEDS datasets and committed as generated artifacts — you don't need to regenerate them
@@ -261,7 +266,7 @@ To regenerate:
    packages/atlas-data/tools/prep-hydrosheds.sh /path/to/HydroLAKES_polys_v10.shp /path/to/HydroRIVERS_v10_as.shp
    ```
    This writes `hydrolakes-vn.geojson` and `hydrorivers-region.geojson` into
-   `apps/api/src/db/seeds/data/`. Lakes carry `Hylak_id, Lake_name, Lake_type, Lake_area,
+   `packages/atlas-data/data/seeds/`. Lakes carry `Hylak_id, Lake_name, Lake_type, Lake_area,
    Vol_total, Shore_len`. Reaches carry `HYRIV_ID, NEXT_DOWN, MAIN_RIV, ORD_STRA, LENGTH_KM`,
    at every stream order (13,045 reaches, 3.4 MB with coordinates rounded to 5 decimals):
    `NEXT_DOWN` is the downstream link the river hierarchy is built on, so no order may be

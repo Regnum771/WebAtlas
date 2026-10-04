@@ -4,12 +4,15 @@ import { executeSql } from './sql';
 import { executeRun } from './run';
 import { executeFetchHttp } from './fetchHttp';
 import { executePublishGeoserver } from './publishGeoserver';
+import { executeLoadGeojson } from './loadGeojson';
 
 /** What a stage needs to know besides its own configuration. */
 export interface StageContext {
   datasetId: string;
   /** True when the dataset was named in --force: re-do work even if its output exists. */
   forced: boolean;
+  /** True when the dataset was named in --supersede-edits: a load may replace steward edits. */
+  supersedeEdits: boolean;
   /** Where progress lines go. The runner passes console.log; tests pass a collector. */
   log: (line: string) => void;
 }
@@ -35,6 +38,7 @@ const EXECUTORS: { [K in Stage['type']]?: Executor<K> } = {
   run: executeRun,
   'fetch-http': executeFetchHttp,
   'publish-geoserver': executePublishGeoserver,
+  'load-geojson': executeLoadGeojson,
 };
 
 export function hasExecutor(type: Stage['type']): boolean {

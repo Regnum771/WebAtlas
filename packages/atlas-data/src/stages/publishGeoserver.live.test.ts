@@ -6,7 +6,7 @@ import { geoserverEnv } from '../geoserver';
 
 const GS = process.env.GEOSERVER_URL;
 const DB = process.env.DATABASE_URL;
-const ctx = { datasetId: '__atlasdata_test__', forced: false, log: () => {} };
+const ctx = { datasetId: '__atlasdata_test__', forced: false, supersedeEdits: false, log: () => {} };
 const VIEW = '__atlasdata_test__view';
 const LAYER = '__atlasdata_test__layer';
 

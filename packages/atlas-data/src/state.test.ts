@@ -38,10 +38,23 @@ describe('stageInputHash', () => {
     );
   });
 
-  it('hashes a function-valued field by source, so editing a column map invalidates it', () => {
-    const a: Stage = { type: 'load-geojson', file: 'f', table: 't', columns: (p) => ({ x: p.a }) };
-    const b: Stage = { type: 'load-geojson', file: 'f', table: 't', columns: (p) => ({ x: p.b }) };
-    expect(stageInputHash(a, [])).not.toBe(stageInputHash(b, []));
+  it('hashes a load-geojson column mapping by its source text', () => {
+    const mk = (columns: (p: Record<string, unknown>) => Record<string, unknown>): Stage => ({
+      type: 'load-geojson', layer: 'dams', versioned: true, files: [{ file: 'seeds/f.geojson', columns }],
+    });
+    const same = () => 'h';
+    expect(stageInputHash(mk((p) => ({ x: p.a })), [], same)).not.toBe(stageInputHash(mk((p) => ({ x: p.b })), [], same));
+  });
+
+  it('a load-geojson stage is stale when a file changes content, and only then', () => {
+    const s: Stage = { type: 'load-geojson', layer: 'dams', versioned: true, files: [{ file: 'seeds/f.geojson', columns: () => ({}) }] };
+    expect(stageInputHash(s, [], () => 'v1')).toBe(stageInputHash(s, [], () => 'v1'));
+    expect(stageInputHash(s, [], () => 'v1')).not.toBe(stageInputHash(s, [], () => 'v2'));
+  });
+
+  it('other stage types never touch the file hasher', () => {
+    const boom = () => { throw new Error('hashed a file'); };
+    expect(() => stageInputHash({ type: 'sql', statement: 'SELECT 1' }, [], boom)).not.toThrow();
   });
 
   it('ignores the order of keys in the stage object, so a cosmetic reorder does not rebuild', () => {

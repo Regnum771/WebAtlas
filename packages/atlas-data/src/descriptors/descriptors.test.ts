@@ -3,7 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALL_DATASETS, validateRegistry } from '../registry';
 import { resolveLicences } from '../lineage';
-import { REPO_ROOT } from '../paths';
+import { REPO_ROOT, resolveStageFile } from '../paths';
+import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 import { CONTOUR_INTERVALS_M } from './contours';
 import { LAYER_GROUPS } from './basemap';
 
@@ -20,14 +21,77 @@ describe('registered datasets', () => {
 
   it('cover every runbook step (spec FR-2)', () => {
     expect(ALL_DATASETS.map((d) => d.id)).toEqual([
-      'demo', 'seeds', 'rivers', 'basemap', 'reference_entities', 'dem', 'contours',
+      'demo', 'admin_boundaries', 'dams', 'stations', 'flood_zones', 'drought_points', 'saltwater_intrusion',
+      'flood_generation', 'lakes', 'rivers', 'basemap', 'reference_entities', 'dem', 'contours',
     ]);
   });
 
   it('declare the ordering rules as dependsOn, not prose (spec FR-8)', () => {
-    expect(byId('rivers').dependsOn).toEqual(['seeds']);
+    for (const id of ['dams', 'stations', 'flood_zones', 'drought_points', 'saltwater_intrusion', 'flood_generation', 'lakes', 'rivers']) {
+      expect(byId(id).dependsOn, id).toEqual(['admin_boundaries']);
+    }
     expect(byId('reference_entities').dependsOn).toEqual(['basemap']);
     expect(byId('contours').dependsOn).toEqual(['dem']);
+  });
+
+  it('no thematic dataset is a run stage any more: each is one load-geojson and its publishes', () => {
+    for (const id of ['dams', 'stations', 'flood_zones', 'drought_points', 'saltwater_intrusion', 'flood_generation', 'lakes']) {
+      expect(byId(id).stages.map((s) => s.type), id).toEqual(['load-geojson', 'publish-geoserver']);
+    }
+    expect(byId('rivers').stages.map((s) => s.type)).toEqual(['load-geojson', 'publish-geoserver', 'publish-geoserver']);
+    expect(byId('admin_boundaries').stages.map((s) => s.type)).toEqual(['load-geojson']);
+  });
+
+  it('every load-geojson file exists, and each versioned layer is an editable layer key', () => {
+    for (const d of ALL_DATASETS) {
+      for (const s of d.stages) {
+        if (s.type !== 'load-geojson') continue;
+        for (const f of s.files) expect(existsSync(resolveStageFile(f)), `${d.id}: ${f.file}`).toBe(true);
+        if (s.versioned) {
+          expect(EDITABLE_LAYER_KEYS as readonly string[], d.id).toContain(s.layer);
+          // The dataset id is the layer key, so `--supersede-edits <id>` names the layer.
+          expect(s.layer).toBe(d.id);
+        }
+      }
+    }
+  });
+
+  it('every editable layer is loaded by exactly one dataset', () => {
+    const layers = ALL_DATASETS.flatMap((d) => d.stages).flatMap((s) => (s.type === 'load-geojson' && s.versioned ? [s.layer] : []));
+    expect([...layers].sort()).toEqual([...EDITABLE_LAYER_KEYS].sort());
+  });
+
+  it('each versioned load names the source string the old seed command wrote, so machines can be adopted', () => {
+    const legacy = Object.fromEntries(
+      ALL_DATASETS.flatMap((d) => d.stages).flatMap((s) => (s.type === 'load-geojson' && s.versioned ? [[s.layer, s.legacySource]] : []))
+    );
+    expect(legacy).toEqual({
+      dams: 'thuydienvietnam.geojson', stations: 'stations.geojson', flood_zones: 'flood_zones.geojson',
+      drought_points: 'drought_points.geojson', saltwater_intrusion: 'saltwater_intrusion.geojson',
+      flood_generation: 'flood_generation.geojson', lakes: 'OSM water bodies', rivers: 'OSM waterways + HydroRIVERS v10',
+    });
+  });
+
+  it('the boundaries are a non-versioned load of the two files the map itself uses', () => {
+    const [load] = byId('admin_boundaries').stages;
+    if (load.type !== 'load-geojson') throw new Error('expected load-geojson');
+    expect(load.versioned).toBe(false);
+    expect(load.files.map((f) => [f.root, f.file, f.target])).toEqual([
+      ['repo', 'apps/web/public/provinces-34.geojson', 'admin.provinces'],
+      ['repo', 'apps/web/public/wards-region.geojson', 'admin.wards'],
+    ]);
+  });
+
+  it('licences follow the table in spec §11', () => {
+    const licence = (id: string) => byId(id).lineage.licence;
+    expect(licence('dams')).toBe('CC-BY-SA-4.0');
+    expect(licence('lakes')).toBe('ODbL-1.0');
+    expect(licence('rivers')).toBe('ODbL-1.0');
+    for (const id of ['stations', 'flood_zones', 'drought_points', 'saltwater_intrusion', 'flood_generation']) {
+      expect(licence(id), id).toBe('LicenseRef-webatlas-synthetic');
+      expect(byId(id).lineage.statement, id).toMatch(/minh hoạ tổng hợp/);
+    }
+    expect(licence('admin_boundaries')).toBe('MIT');
   });
 
   it('every real dataset declares a probe (adoption and verify need one)', () => {
