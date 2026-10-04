@@ -98,7 +98,7 @@ jobs:
       # tệp *.db.test.ts mới tự được chạy; job atlas-data không có cơ sở dữ liệu nên ở đó chúng tự
       # bỏ qua. Kiểm thử cần GeoServer (probes.db) vẫn bỏ qua ở đây. Chạy từng tệp một
       # (--no-file-parallelism, qua `npm run test:db`): các tệp dùng chung bảng phiên bản của các lớp thật.
-      - run: npx vitest run .db.test
+      - run: npm run test:db
         working-directory: packages/atlas-data
       - run: npx tsc -p apps/api/tsconfig.json --noEmit
       - run: npm run test:api

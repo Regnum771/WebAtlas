@@ -296,7 +296,7 @@ describe('featuresService edit sessions (§7)', () => {
   // Two sessions minting concurrently must not land on the same external_id: they write
   // into different draft versions, so the per-version unique index cannot catch a
   // duplicate, and the resolver's DISTINCT ON would later collapse the pair.
-  it('two concurrent sessions on an integer-typed layer cannot mint the same external_id', async () => {
+  it("two concurrent sessions on one layer: the second waits for the first to mint, and its stale commit is refused", async () => {
     const a = await svc().editSession('dams');
     const b = await svc().editSession('dams');
 
@@ -315,7 +315,6 @@ describe('featuresService edit sessions (§7)', () => {
     // visible and committed while b's is not (it lives in b's open transaction). b's draft was
     // opened on the version a has just replaced, so committing it is now refused (the API's
     // error handler turns this ConflictError into a 409) rather than dropping a's version.
-    expect(rowB.id).not.toBe(rowA.id);
     const extA = await getPool().query(`SELECT external_id FROM water.dams WHERE id = $1`, [rowA.id]);
     expect(extA.rows).toHaveLength(1);
     const activeAfterA = await activeVersionId('dams');

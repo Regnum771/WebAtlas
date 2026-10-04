@@ -161,8 +161,10 @@ export function versionsService(pg: Pool) {
       if (!draft.rows[0]) throw new NotFoundError(`Version ${draftId} not found for layer ${layerKey}`);
       const parent = draft.rows[0].parent;
       if (parent !== activeId) {
+        // The locked active row can be missing after waiting on another commit; don't print "undefined".
+        const now = activeId ? `the active version is now ${activeId}` : `the layer's active version has changed since`;
         throw new ConflictError(
-          `layer ${layerKey} changed since this edit session started (its draft ${draftId} was opened on ${parent}; the active version is now ${activeId}). Reopen the session and redo the edits.`
+          `layer ${layerKey} changed since this edit session started (its draft ${draftId} was opened on ${parent}; ${now}). Reopen the session and redo the edits.`
         );
       }
       await svc.activate(client, layerKey, draftId);

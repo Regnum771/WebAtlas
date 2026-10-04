@@ -99,7 +99,11 @@ describe('retention', () => {
       expect(before.length).toBeGreaterThan(0);
       const pruned = await pruneVersions(c, 'stations');
       expect(pruned.versions).toBeGreaterThan(0);
-      expect(await stationVersions(c)).not.toEqual(expect.arrayContaining(extra));
+      // Retention keeps the two newest unactivated loads and drops the oldest.
+      const kept = await stationVersions(c);
+      expect(kept).not.toContain(extra[0]);
+      expect(kept).toContain(extra[1]);
+      expect(kept).toContain(extra[2]);
       expect(await activeIds()).toEqual(before);
       const { rows } = await c.query(`SELECT name FROM water.stations_active WHERE external_id = 'rt-1'`);
       expect(rows).toEqual([{ name: 'R' }]);
