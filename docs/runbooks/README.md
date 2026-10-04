@@ -31,7 +31,7 @@ The old numbered steps map onto the registry as follows. Each dataset is a row i
 missing or failed and the one command to run next; `npm run atlas:verify` checks the atlas actually serves;
 `npm run atlas:adopt` records a machine set up before the registry without re-running anything. Use
 `npm run atlas:build -- --force <id>` to rebuild on purpose (forcing a dataset invalidates its dependents, which rebuild only if they are in the selection: `--force basemap` alone also rebuilds `reference_entities`, while `--only basemap --force basemap` leaves it `missing` until a full build).
-`atlas:up` accepts `--compose <file>` and the build flags `--only`, `--except` and `--force`.
+`atlas:up` accepts `--compose <file>` and the build flags `--only`, `--except`, `--force` and `--supersede-edits`.
 
 The old `npm run seed`, `ingest:rivers` and `publish:geoserver` commands are gone: the registry loads and publishes
 those layers itself. `reference:build` and `contours:generate` remain as the commands two `run` stages call, and

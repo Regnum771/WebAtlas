@@ -23,18 +23,11 @@ export default defineConfig({
     // (seeds, WFS publication, backfill) purely as a timing artifact rather than
     // a real defect. A genuinely hung query still fails the suite, just later.
     testTimeout: 30_000,
-    // seed.test.ts's beforeAll runs the full seed pipeline (now including admin-code
-    // stamping) against the live DB. Measured 29-45s standalone; the full API suite adds
-    // contention from other suites hitting the same dev DB in the same run. 60s keeps
-    // comfortable margin above the observed worst case without masking a genuine hang.
-    //
-    // Two test bodies in seed.test.ts (and one in modules/versions/integration.test.ts)
-    // also call the full seed/ingest pipeline a second time from inside the test itself,
-    // not just in beforeAll. That cost is billed against testTimeout, not hookTimeout, so
-    // raising hookTimeout alone doesn't cover them — each of those tests instead carries
-    // its own per-test timeout (vitest's third `it()` argument) rather than raising this
-    // suite-wide default, which stays a tight ceiling for the many tests that don't re-run
-    // a seed/ingest.
+    // Seeding no longer happens in a hook: globalSetup loads the layers once per run, and a
+    // second run finds them unchanged. What is left in hooks is fixture setup against the shared
+    // dev database, which other suites of the same run also load; 60s is margin for that, and a
+    // genuine hang still fails. The few tests that rebuild something large carry their own
+    // per-test timeout (vitest's third `it()` argument) rather than raising the default above.
     hookTimeout: 60_000,
   },
 });

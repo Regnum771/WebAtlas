@@ -50,7 +50,7 @@ describe('versionsService.activate stamps administrative codes as part of the co
         [LAYER, TEST_SOURCE]
       );
       versionId = rows[0].id;
-      // Buôn Ma Thuột, Đắk Lắk (code 66) — same fixture point as db/adminStamp.test.ts.
+      // Buôn Ma Thuột, Đắk Lắk (code 66) — same fixture point as adminStamp.test.ts.
       // Codes start explicitly empty: nothing stamps this row before activate() runs.
       await client.query(
         `INSERT INTO water.dams (external_id, name, geom, dataset_version_id, province_codes, ward_codes)

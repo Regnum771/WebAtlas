@@ -7,7 +7,7 @@ import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, candidateCtes, 
 
 /**
  * Truy vấn quan hệ, không phải phép toán hình học: mã hành chính đã được đóng dấu sẵn lên
- * từng đối tượng (db/adminStamp.ts) và có chỉ mục GIN trên province_codes/ward_codes. Chỉ
+ * từng đối tượng (packages/versioning, adminStamp.ts) và có chỉ mục GIN trên province_codes/ward_codes. Chỉ
  * mục đó chỉ tới được nếu phép giao mảng chạm thẳng vào bảng gốc — candidateCtes (xem
  * helpers.ts) là bước đó; áp phép giao lên trên view *_active thì Postgres phải quét và
  * khử trùng lặp cả lớp trước khi lọc, vì view là một hàng rào với optimizer.

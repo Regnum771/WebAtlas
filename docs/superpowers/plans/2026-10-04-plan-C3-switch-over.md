@@ -742,3 +742,23 @@ Then, in the clone:
 - Task 3: `ensureSeeded.db.test.ts` was added to the CI step that runs the atlas-data database tests. The two `run`-stage test literals now use `reference:build`. A comment in `ensureSeeded.ts` named the removed command; reworded.
 - Task 2: `test:api` ends at 434, not 435: the three `nativeNameFor` tests, the second-seed-run test and the `loadAdminBoundaries` idempotency test went (5); two tests were replaced one for one.
 - Task 5 Step 5 (tear-down) waits for the user's word.
+
+## Review of the whole of Plan C (2026-10-04)
+
+One independent review of the three branches together, before merging. No Critical finding. Two Important, both fixed here; the Minor items that were cheap were fixed too.
+
+| | Finding | Fix |
+|---|---|---|
+| I-1 | A version was identified by its files' bytes alone. A changed `columns` function or geometry flag re-ran the stage (the stage hash includes the function text), found the bytes unchanged, re-stamped, and reported success with the old columns still in the table. | A version is `source` (content) and `source_version` (`mapping-<n>`, from the stage's `mappingRevision`, 1 when omitted). The same file under a new revision loads a new version, and is refused over steward edits like new content. A test in `descriptors.test.ts` pins the mapping code and each stage's files and flags, and tells whoever trips it to decide whether the revision must rise. |
+| I-2 | The edit guard read the active version without a lock, so an edit committed while a load ran would be deactivated by it, unseen. | The load's first statement locks the layer's version rows `FOR UPDATE` to the end of the transaction. Tested with a second connection's `FOR UPDATE NOWAIT`. |
+| M-1 | Only `atlas:adopt` re-labelled a version the old command had loaded; a build on a machine that skipped it loaded a second copy. | The versioned load tries adoption first. `adoptLegacySource(client, load)` returns `current`, `relabelled` or `mismatch`, and also labels a version loaded before `source_version` existed. |
+| M-2 | After `ensureSeeded` replaced the boundaries, layers it found unchanged kept codes stamped against the old ones. | Every layer after a replacement takes the loader's re-stamp path. |
+| M-5 | `atlas:seed` ignored arguments silently. | It refuses any, and points at `atlas:build -- --supersede-edits <layer>` when a load stops for edits. |
+| M-6 | Column names from a `columns` function were written into SQL unchecked. | Both loaders reject a key that is not a plain column name. |
+| M-7 | CI listed the database test files by name. | `npx vitest run .db.test`. |
+| M-4 | A checkout that converted line endings would change every seed file's hash. | `*.geojson -text`. All thirteen were already stored without CR. |
+| M-8 | Stale text. | README, runbook index, three comments, and amendment notes in the design's §7, §11 and §12. |
+
+Left as it is: a missing seed file aborts every `atlas:*` command, because the stage hash plan reads every file (M-3). The message names the file, and a clone cannot be missing a committed file.
+
+**On the dev stack afterwards.** `atlas:seed`: nine `unchanged`, the eight ingest roots now carry `mapping-1`, and the count stayed at 241 through every suite. `atlas:status`: fourteen `ok`; `atlas:verify`: `all 50 checks passed`. `test:api` 434; `test:versioning` 52; `test:shared` 119; atlas-data 353 passed and 51 skipped, plus 37 database tests (the two that need GeoServer skip without `GEOSERVER_URL`); `test:web` 543.
