@@ -1,0 +1,108 @@
+{
+  "description": "Every named feature of the six working-region provinces, for the api CI job. See README.md beside this file.",
+  "source": {
+    "extract": "vietnam-261001-free.shp.zip",
+    "licence": "ODbL-1.0",
+    "attribution": "© OpenStreetMap contributors, via Geofabrik"
+  },
+  "files": [
+    {
+      "table": "basemap.roads_region",
+      "file": "roads_region.copy.gz",
+      "rule": "name IS NOT NULL OR ref IS NOT NULL",
+      "columns": [
+        "bridge",
+        "code",
+        "fclass",
+        "maxspeed",
+        "name",
+        "oneway",
+        "osm_id",
+        "ref",
+        "tunnel",
+        "geometry"
+      ],
+      "rows": 33637,
+      "sha256": "5fdd0c7976d37f9660a01629ad28a671f2a7da50d16e50de4d92494688dc89bf"
+    },
+    {
+      "table": "basemap.water_region",
+      "file": "water_region.copy.gz",
+      "rule": "name IS NOT NULL",
+      "columns": [
+        "code",
+        "fclass",
+        "name",
+        "osm_id",
+        "geometry"
+      ],
+      "rows": 680,
+      "sha256": "107b9c7434202a2f24d350d3143d6d4931555f6f3570252f7cd8ccf8ca1fc6eb"
+    },
+    {
+      "table": "basemap.landuse_region",
+      "file": "landuse_region.copy.gz",
+      "rule": "name IS NOT NULL",
+      "columns": [
+        "code",
+        "fclass",
+        "name",
+        "osm_id",
+        "geometry"
+      ],
+      "rows": 812,
+      "sha256": "594cc4f9a458d0e1cf3de8a6e21e091e5eab2afb78029301e2c62ad9e5bb0d4f"
+    },
+    {
+      "table": "basemap.railways_vn",
+      "file": "railways_vn.copy.gz",
+      "rule": "TRUE",
+      "columns": [
+        "code",
+        "fclass",
+        "name",
+        "osm_id",
+        "geometry"
+      ],
+      "rows": 3764,
+      "sha256": "f87b3c13e963ecad2cce66e80359cab808b58b1b28139b52e17a8ea61aa368e6"
+    },
+    {
+      "table": "basemap.places_region",
+      "file": "places_region.copy.gz",
+      "rule": "TRUE",
+      "columns": [
+        "code",
+        "fclass",
+        "name",
+        "osm_id",
+        "population",
+        "geometry"
+      ],
+      "rows": 6040,
+      "sha256": "b2d63ab6d8b3db667aa1e43239d4ec3f19501b45932b365eac58d65eee5450d7"
+    }
+  ],
+  "referenceEntities": {
+    "landuse": {
+      "count": 794,
+      "sha256": "39372ebc30e9c16a187fd9778c504f43be3b8ec63a6feb571cd099a4c050d10a"
+    },
+    "places": {
+      "count": 5878,
+      "sha256": "21149b448b500329e7957c4273043df055ced7129e048c75ae6e1f3d637774a0"
+    },
+    "railways": {
+      "count": 203,
+      "sha256": "abcee4ec01b10f302fa66184d4d377b009b49e1d86dc843ff189e975c4a561c9"
+    },
+    "roads": {
+      "count": 13658,
+      "sha256": "1f49f81878ee14dc12c19fd7e4560085fc04c5d6e65d4fdcefe8a7af574f8434"
+    },
+    "water": {
+      "count": 601,
+      "sha256": "be2bda5539c8df6af555cdbc9ef629b11514565c458e0e5947203640cd1e280f"
+    }
+  }
+}
