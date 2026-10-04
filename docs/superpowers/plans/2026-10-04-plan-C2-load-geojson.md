@@ -1692,3 +1692,38 @@ gh pr create --base main --head feat/registry-plan-c2 --title "Kế hoạch C-2:
 ```
 
 PR body in Vietnamese: `## Tóm tắt`, `## Hành vi` (the four situations of spec §11 as a table), `## Khác với spec` (the five decisions at the top of this plan), `## Kiểm chứng` (the table above with real numbers, and Steps 1 to 3), `## Lưu ý` (stacked on #20; machines built before need `npm run atlas:adopt`; the old commands remain until C-3), `## Tiếp theo`. Watch CI; append `## Execution notes` to this plan; commit and push.
+
+---
+
+## Execution notes (2026-10-04, inline in the controller session)
+
+| Task | Commit | Result |
+|---|---|---|
+| 1. Stage shape and file hashing | `14a8ec5` | atlas-data 331 passed |
+| 2. Relocate the seed data | `387cee6` | Eleven renames; `test:api` 439 from the new location |
+| 3. The loader | `2f15927` | 7 database tests, version count unchanged by them |
+| 4. `--supersede-edits` and adoption | `9ce67ce` | 5 database tests |
+| 5. The dataset graph | `b701cc5` | atlas-data 348 passed |
+| 5b. Adoption of a tracked dataset | `3167d62` | found in Task 6, see below |
+| 6. CI and documents | `6a94155` | PR #21, run 37195612354: all four jobs pass |
+
+**Final numbers.** atlas-data 350 passed and 38 skipped; its two database test files 12 of 12, executed locally and in CI (`loadGeojson.db.test.ts` 7, `adoptLegacy.db.test.ts` 5); `test:shared` 119; `test:versioning` 51; `test:api` 439 (CI: 425 passed, 14 skipped); `test:web` 543.
+
+**Task 6 on the dev machine**
+
+- `atlas:adopt`: `adopted` for `admin_boundaries` and the seven layers; `rivers` reported `has-state … its existing version was re-labelled`. `app.dataset_versions` stayed at 219 rows.
+- `atlas:build` straight after: `executed 3, skipped 28` — `rivers: content unchanged; re-stamped 1 version` and its two publishes. 219 rows.
+- Every active version's `source` then read `<file>@sha256:…`. `atlas:status`: all fourteen `ok`. `atlas:verify`: `all 50 checks passed`.
+- `--force stations`: `stations: content unchanged; re-stamped 1 version`, `executed 2`.
+- `--force admin_boundaries`: `admin: replaced admin.provinces 34, admin.wards 616`, then all eight layers `content unchanged; re-stamped 1 version`; `executed 18, skipped 13`; 219 rows; verify 50 of 50.
+- `--supersede-edits damz` → `--supersede-edits names unknown dataset "damz"`, exit 1. `--only dams --supersede-edits lakes` → `--supersede-edits lakes is not in the selected set`, exit 1.
+- Changed content, the edit guard and `--supersede-edits` were not exercised on the live tables; they are covered by the database tests on real layers under rollback.
+
+**Deviations from this plan**
+
+- **Adoption of a tracked dataset (new commit `3167d62`).** `rivers` kept its two publish stages, whose state rows have the same keys as before, so `atlas:adopt` saw it as already tracked and skipped it; the next build would have loaded all of it again as a new version. `atlas:adopt` now re-labels the existing version of any versioned layer whose load stage has no state on that machine, tracked or not. State is left alone and the build's load then takes the re-stamp path. Two tests added to `adopt.test.ts`.
+- **Schema (Task 1).** The two `target` rules went straight onto `datasetSchema` as a `superRefine`, the fallback the plan described, with paths `['stages', i, 'files', j, 'target']`.
+- **Task 2.** `.gitignore` keeps its `apps/api/src/db/seeds/data/dem/` line: that directory still exists on this machine with 680 MB of ignored DEM files from before Plan B. `packages/shared/src/legend.test.ts` had the old dams file name in a comment; updated.
+- **Task 3.** The stage tests' context literals gained `supersedeEdits: false` by hand: `*.test.ts` is excluded from the package's `tsc` project, so the compiler does not name them.
+
+**Observed: the old commands and the new loader do not know about each other (Task 6 Step 3).** One `test:api` run on the dev stack took `app.dataset_versions` from 219 to 241 rows and left every layer's active version with its legacy `source` again: `seed.test.ts` and `integration.test.ts` still call the old seed and river ingest. For `rivers` the old ingest re-activated an older version that still carried the legacy source. The registry's state stays `ok` and `atlas:verify` still passes 50 of 50, because the content is the same. This is the situation Plan C-3 ends (`ensureSeeded`, removal of the old commands); the first loader run after C-3 will load each layer once as new content and be stable from then on.
