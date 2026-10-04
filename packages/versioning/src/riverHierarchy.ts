@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { resolvedSql } from './resolve';
 
 /** Sample points per reach, at 0.1, 0.3, 0.5, 0.7, 0.9 along its length. */
 export const MATCH_SAMPLES = 5;
@@ -28,10 +29,8 @@ export const MATCH_KNN_WINDOW = 32;
 /**
  * Resolve `versionId`'s chain into temp tables for the rest of the build.
  *
- * Why temp tables and not water.rivers_active: the view's WITH RECURSIVE + DISTINCT ON
- * pipeline is an optimizer fence, so no predicate reaches the index underneath it.
- * Measured 2026-09-22: the name join below timed out past 120s against the view and
- * took 10.9s against these tables. Same reasoning, same fix as search's repository.
+ * Why temp tables: the build reads the resolved set many times, and the version it builds is not
+ * active yet, so water.rivers_active (the active state) is not what it needs.
  *
  * Resolution is keyed on the GIVEN version's ancestor chain, not on the active pointer,
  * so this works unchanged inside an ingest transaction (an ingest version has no parent,
@@ -40,24 +39,12 @@ export const MATCH_KNN_WINDOW = 32;
 export async function materialiseResolved(client: PoolClient, versionId: string): Promise<void> {
   await client.query(`DROP TABLE IF EXISTS res_rivers, res_named_ways`);
   await client.query(
-    `CREATE TEMP TABLE res_rivers AS
-     WITH RECURSIVE chain AS (
-       SELECT id, parent_version_id, 0 AS depth FROM app.dataset_versions WHERE id = $1
-       UNION ALL
-       SELECT p.id, p.parent_version_id, c.depth + 1
-         FROM app.dataset_versions p JOIN chain c ON p.id = c.parent_version_id
-     ),
-     resolved AS (
-       SELECT DISTINCT ON (t.external_id) t.*
-         FROM water.rivers t JOIN chain c ON t.dataset_version_id = c.id
-         ORDER BY t.external_id, c.depth
-     )
-     -- Every column Task 7's supersede step copies onto a new row, not just the ones the
-     -- vote reads: a superseding row must carry the feature's full current state, and
-     -- re-reading water.rivers for the rest would cross the optimizer fence again.
-     SELECT external_id, feature_level, name, code, stream_order, length_m,
-            parent_external_id, flows_into_external_id, match_confidence, geom
-       FROM resolved WHERE NOT deleted`,
+    // Every column Task 7's supersede step copies onto a new row, not just the ones the vote
+    // reads: a superseding row must carry the feature's full current state.
+    `CREATE TEMP TABLE res_rivers AS ${resolvedSql(
+      'rivers',
+      'external_id, feature_level, name, code, stream_order, length_m, parent_external_id, flows_into_external_id, match_confidence, geom'
+    )}`,
     [versionId]
   );
   await client.query(`CREATE INDEX ON res_rivers (external_id)`);

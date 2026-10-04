@@ -107,7 +107,7 @@ describe('registered datasets', () => {
         'the build then loads it as a new version instead of re-stamping the old rows. Then update this table.'
     ).toEqual({
       mappingCode: 'e6422daf17a9031c',
-      riverHierarchyCode: '5949e0684862a5f6',
+      riverHierarchyCode: 'b457e1d24f1823c8',
       loads: {
         admin: 'mapping-1: provinces-34.geojson multiPolygon -> admin.provinces + wards-region.geojson multiPolygon -> admin.wards',
         dams: 'mapping-1: dams.geojson',

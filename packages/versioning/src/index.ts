@@ -19,3 +19,5 @@ export {
 } from './riverHierarchy';
 export { assertRiverGates, RIVER_BASELINE, type RiverBaseline } from './riverGates';
 export { loadFeatures, type FeatureLoadSpec } from './loadFeatures';
+export { resolvedSql } from './resolve';
+export { refreshCurrentRows } from './currentRows';

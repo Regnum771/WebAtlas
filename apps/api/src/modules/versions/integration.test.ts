@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from '../../db/pool';
-import { loadFeatures, versionsService, type FeatureLoadSpec } from '@webatlas/versioning';
+import { loadFeatures, refreshCurrentRows, versionsService, type FeatureLoadSpec } from '@webatlas/versioning';
 import { SEED_LAYER_COLUMNS } from '@webatlas/shared';
 import { resolveStageFile } from '@webatlas/atlas-data';
 
@@ -72,6 +72,13 @@ describe('versioning integration (§6 rollback + addressability)', () => {
     const supId = superseder.rows[0].id;
     await pool.query(`UPDATE app.dataset_versions SET is_active=false WHERE layer_key='stations' AND is_active`);
     await pool.query(`UPDATE app.dataset_versions SET is_active=true WHERE id=$1`, [priorActive]);
+    // Raw flip instead of activate(): move the current flag with it.
+    const restore = await pool.connect();
+    try {
+      await refreshCurrentRows(restore, 'stations', priorActive!);
+    } finally {
+      restore.release();
+    }
     await pool.query(`DELETE FROM water.stations WHERE dataset_version_id=$1`, [supId]);
     await pool.query(`DELETE FROM app.dataset_versions WHERE id=$1`, [supId]);
   });

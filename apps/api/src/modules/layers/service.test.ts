@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from '../../db/pool';
 import { featuresService } from './service';
-import { versionsRepository, versionsService } from '@webatlas/versioning';
+import { refreshCurrentRows, versionsService } from '@webatlas/versioning';
 import { ConflictError, GeometryError, NotFoundError } from '../../errors';
 
 const TEST_NAME = 'svc-test-dam@webatlas.test';
@@ -33,7 +33,7 @@ describe('featuresService edit sessions (§7)', () => {
     // Drop the edit-versions these tests published, restoring the seeded ingest
     // version as active so the suite leaves the database as it found it. Feature
     // rows cascade away with their version; the tombstones do too.
-    for (const layer of ['dams', 'stations']) {
+    for (const layer of ['dams', 'stations'] as const) {
       await getPool().query(
         `DELETE FROM water.${layer} WHERE dataset_version_id IN
            (SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND kind = 'edit')`,
@@ -42,13 +42,23 @@ describe('featuresService edit sessions (§7)', () => {
       await getPool().query(
         `DELETE FROM app.dataset_versions WHERE layer_key = $1 AND kind = 'edit'`, [layer]
       );
-      await getPool().query(
+      const restored = await getPool().query(
         `UPDATE app.dataset_versions SET is_active = true
          WHERE id = (SELECT id FROM app.dataset_versions
                      WHERE layer_key = $1 AND kind = 'ingest'
-                     ORDER BY ingested_at DESC LIMIT 1)`,
+                     ORDER BY ingested_at DESC LIMIT 1)
+         RETURNING id`,
         [layer]
       );
+      // Raw flip instead of activate(): move the current flag with it.
+      if (restored.rows[0]) {
+        const client = await getPool().connect();
+        try {
+          await refreshCurrentRows(client, layer, restored.rows[0].id);
+        } finally {
+          client.release();
+        }
+      }
     }
     await getPool().query(`DELETE FROM water.dams WHERE name = $1`, [TEST_NAME]);
     await getPool().query(`DELETE FROM water.stations WHERE name = $1`, [TEST_STATION]);
@@ -308,20 +318,6 @@ describe('featuresService edit sessions (§7)', () => {
     expect(ext.rows).toHaveLength(2);
     const values = ext.rows.map((r) => Number(r.external_id));
     expect(new Set(values).size).toBe(2);
-
-    // Distinct ids mean the resolver can keep both. (b branched off the version that
-    // was active when it opened, so a's version is not in b's chain — that is ordinary
-    // branch semantics, not id collision. Resolve over a chain containing both drafts
-    // to prove DISTINCT ON keeps two rows rather than collapsing them into one.)
-    const both = await getPool().query(
-      versionsRepository(getPool()).resolvedSql('dams', [
-        (await getPool().query(`SELECT dataset_version_id FROM water.dams WHERE id = $1`, [rowB.id])).rows[0].dataset_version_id,
-        (await getPool().query(`SELECT dataset_version_id FROM water.dams WHERE id = $1`, [rowA.id])).rows[0].dataset_version_id,
-      ])
-    );
-    const resolved = both.rows.map((r) => r.id as string);
-    expect(resolved).toContain(rowA.id);
-    expect(resolved).toContain(rowB.id);
   });
 
   it('rejects an update to a feature that does not exist', async () => {

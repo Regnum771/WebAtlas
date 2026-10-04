@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import { versionsRepository } from './repository';
 import { stampAdminCodes } from './adminStamp';
+import { refreshCurrentRows } from './currentRows';
 import { buildRiverHierarchy } from './riverHierarchy';
 import { assertRiverGates, RIVER_BASELINE } from './riverGates';
 import { ConflictError, NotFoundError } from './errors';
@@ -104,6 +105,12 @@ export function versionsService(pg: Pool) {
       );
       if (result.rowCount === 0) {
         throw new NotFoundError(`Version ${versionId} not found for layer ${layerKey}`);
+      }
+      // The stored answer to "which rows are the map now" (S1). Here, after the pointer moved
+      // and in the caller's transaction, because this is the one function every path to
+      // "active" goes through. Only the thematic layers have the column.
+      if ((EDITABLE_LAYER_KEYS as readonly string[]).includes(layerKey)) {
+        await refreshCurrentRows(client, layerKey as EditableLayerKey, versionId);
       }
     },
 
