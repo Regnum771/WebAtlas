@@ -198,6 +198,30 @@ describe('fetch-http', () => {
       expect(await readdir(join(cache, 'basemap'))).toContain('v-260901.zip');
     });
 
+    it('never removes the stage\'s own sidecars, whatever the pattern says', async () => {
+      await old();
+      await executeFetchHttp(pool, pinned({ supersedes: '.*' }), ctx(), cache);
+      expect((await readdir(join(cache, 'basemap'))).sort()).toEqual(['v-261001.zip', 'v-261001.zip.source']);
+    });
+
+    it('matches whole file names: an alternation cannot widen it', async () => {
+      await old();
+      await executeFetchHttp(pool, pinned({ supersedes: String.raw`v-\d{6}\.zip|other` }), ctx(), cache);
+      // `other` alone would match only a file named exactly "other".
+      expect(await readdir(join(cache, 'basemap'))).toContain('other.zip');
+      expect(await readdir(join(cache, 'basemap'))).not.toContain('v-260901.zip');
+    });
+
+    it('a file that cannot be removed is reported and left; the stage still succeeds', async () => {
+      await old();
+      await mkdir(join(cache, 'basemap', 'v-260701.zip'));
+      await writeFile(join(cache, 'basemap', 'v-260701.zip', 'inside'), 'x');
+      const lines: string[] = [];
+      await executeFetchHttp(pool, pinned(), { ...ctx(), log: (l: string) => lines.push(l) }, cache);
+      expect(lines.join('\n')).toMatch(/could not remove v-260701\.zip from the cache .*left in place/);
+      expect(await readdir(join(cache, 'basemap'))).not.toContain('v-260901.zip');
+    });
+
     it('removes nothing without it', async () => {
       await old();
       await executeFetchHttp(pool, pinned({ supersedes: undefined }), ctx(), cache);

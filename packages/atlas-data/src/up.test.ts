@@ -120,6 +120,11 @@ describe('assertOwnStack: a second clone shares the compose project name', () =>
     expect(message).toMatch(/ATLAS_SHARED_STACK=1/);
   });
 
+  it('takes a container started with this file and an override as this checkout\'s', async () => {
+    const f = containersFrom('/repo/infra/docker-compose.yml,/repo/infra/docker-compose.override.yml');
+    await expect(assertOwnStack(f.sys, cfg)).resolves.toBeUndefined();
+  });
+
   it('proceeds when the sharing is declared', async () => {
     const f = containersFrom('/other/clone/infra/docker-compose.yml');
     await expect(assertOwnStack(f.sys, { ...cfg, allowSharedStack: true })).resolves.toBeUndefined();
@@ -147,8 +152,8 @@ describe('closingLines', () => {
 
   it('a partial build does not say the atlas is ready', () => {
     const text = closingLines({ ...base, argv: ['--only', 'dams'], selected: ['admin_boundaries', 'dams'] }).join('\n');
-    expect(text).toContain('built and verified 2 of 4 datasets; not built by this run: basemap, dem');
-    expect(text).toContain('the atlas is complete only after npm run atlas:up ');
+    expect(text).toContain('built and verified 2 of 4 datasets; not selected by this run: basemap, dem');
+    expect(text).toContain('npm run atlas:status shows whether the rest is built; npm run atlas:up builds whatever is missing');
     expect(text).not.toMatch(/create an administrator/);
   });
 
@@ -158,13 +163,14 @@ describe('closingLines', () => {
       'atlas:up did not complete — fix the error above and run npm run atlas:up -- --compose infra/other.yml --except dem again (finished work is skipped)'
     );
     expect(closingLines({ ...base, ok: false })[1]).toMatch(/run npm run atlas:up again/);
+    expect(closingLines({ ...base, ok: false, argv: ['--compose', 'my stack.yml'] })[1]).toContain('npm run atlas:up -- --compose "my stack.yml" again');
   });
 
   it('the whole-atlas command of a partial build keeps --compose and drops the selection', () => {
     const text = closingLines({
       ...base, argv: ['--compose', 'x.yml', '--only', 'dams'], composeArgv: ['--compose', 'x.yml'], selected: ['dams'],
     }).join('\n');
-    expect(text).toContain('only after npm run atlas:up -- --compose x.yml ');
+    expect(text).toContain('; npm run atlas:up -- --compose x.yml builds whatever is missing');
   });
 });
 

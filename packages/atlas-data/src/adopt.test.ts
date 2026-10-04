@@ -144,4 +144,22 @@ describe('adoptDatasets', () => {
     expect(adoptLegacySource).not.toHaveBeenCalled();
     expect(out[0]).toEqual({ id: 'stations', result: 'has-state', detail: 'already tracked; atlas:build decides what to redo' });
   });
+
+  it('records nothing for a dataset with an absent input, or for anything that depends on it', async () => {
+    const absent: Dataset = {
+      ...layerDs(async () => ({ ok: true, detail: 'x' })),
+      id: 'admin_boundaries',
+      stages: [{
+        type: 'load-geojson', layer: 'admin', versioned: false,
+        files: [{ file: 'seeds/__absent__.geojson', columns: () => ({}), target: 'admin.provinces' }],
+      }],
+    };
+    const dependent: Dataset = { ...ds('dams', async () => ({ ok: true, detail: 'x' })), dependsOn: ['admin_boundaries'] };
+    const m = memoryPool();
+    const out = await adoptDatasets(m.pool, [absent, dependent], ctx);
+    expect(out.map((o) => o.result)).toEqual(['missing-input', 'missing-input']);
+    expect(out[0].detail).toMatch(/__absent__\.geojson/);
+    expect(out[1].detail).toBe('depends on admin_boundaries, which has a missing input');
+    expect(m.state.size).toBe(0);
+  });
 });

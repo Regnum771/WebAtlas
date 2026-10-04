@@ -302,11 +302,12 @@ def dump_schema() -> str:
 def gzip_bytes(data: bytes) -> bytes:
     """gzip with nothing of the machine in it: no timestamp, and the header's OS byte fixed.
 
-    zlib writes the platform there (3 on Unix, 10 on Windows), so the same rows gave different files,
-    and different sha256, depending on where `build` ran. 3 is what the committed fixture has.
+    What Python writes there depends on the platform and the Python version (3, 10 and 255 have
+    all been seen), so the same rows gave different files, and different sha256, depending on
+    where `build` ran. 3 is what the committed fixture has.
     """
     blob = gzip.compress(data, compresslevel=9, mtime=0)
-    return blob[:9] + b"" + blob[10:]
+    return blob[:9] + b"\x03" + blob[10:]
 
 
 def pinned_extract() -> str:
@@ -316,16 +317,17 @@ def pinned_extract() -> str:
     return f"vietnam-{m.group(1)}-free.shp.zip"
 
 
-def loaded_extract() -> str:
+LOADED_EXTRACT_SQL = ("SELECT tool FROM app.dataset_lineage_step WHERE dataset_id = 'basemap' "
+                      "AND tool LIKE '%load_basemap.py%' ORDER BY ran_at DESC LIMIT 1")
+
+
+def loaded_extract(tool: str) -> str:
     """The extract the basemap tables came from: the argument of the last load in the lineage.
 
     Not the descriptor's pin: after a pin bump and before a rebuild, the pin names an extract this
     database has never seen. A machine that was adopted has no load on record; only there the pin
     is the best there is, and the output says so.
     """
-    tool = scalar(
-        "SELECT tool FROM app.dataset_lineage_step WHERE dataset_id = 'basemap' "
-        "AND tool LIKE '%load_basemap.py%' ORDER BY ran_at DESC LIMIT 1")
     m = re.search(r"(vietnam-\d{6}-free\.shp\.zip)", tool)
     if m:
         return m.group(1)
@@ -360,6 +362,8 @@ def cmd_build() -> None:
             "ORDER BY osm_id COLLATE \"C\", md5(ST_AsEWKB(geometry, 'NDR')) COLLATE \"C\", "
             "md5(t::text) COLLATE \"C\") TO STDOUT")
     sections["entities"] = DIGEST_SQL
+    # In the snapshot too: a load finishing during `build` must not name its extract over older rows.
+    sections["lineage"] = LOADED_EXTRACT_SQL
     out = snapshot(sections)
 
     if out["unnamed_road"].strip() != b"t":
@@ -395,7 +399,7 @@ def cmd_build() -> None:
         "description": "Every named feature of the six working-region provinces, for the api CI job. "
                        "See README.md beside this file.",
         "source": {
-            "extract": loaded_extract(),
+            "extract": loaded_extract(out["lineage"].decode("utf-8").strip()),
             "licence": "ODbL-1.0",
             "attribution": "© OpenStreetMap contributors, via Geofabrik",
         },

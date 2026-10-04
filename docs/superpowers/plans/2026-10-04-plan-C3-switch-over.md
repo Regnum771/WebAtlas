@@ -781,9 +781,27 @@ Every item of "Deferred, for a follow-up after Plan C" above, plus two that the 
 | The timing-sensitive `select_within` test | No code change. Not reproduced: 1.2 s to 2.9 s on the dev database, 0.6 s on a fresh one, with or without table statistics. The dev database is slower because it stores history (`lakes`: 131,512 rows in 34 versions, 3,868 active). What made it creep up, every test run adding versions, ended with Plan C. Left for the optimisation pass: query time that grows with stored versions. |
 | `packages/shared/dist` is ignored and tracked at once | The two outputs without a source (`attribute-schema`, `map-view`) are deleted. Whether `dist` stays tracked is left to the restructure pass: it depends on whether `shared` keeps a build step at all. |
 | A forced `rivers` rebuild does not rebuild the hierarchy | A changed hierarchy builder is now a new mapping revision: raise `mappingRevision` on the rivers load and the same files load as a new version, built with the current code. The pin test covers `packages/versioning/src/riverHierarchy.ts`, so the change cannot pass unnoticed. Deleting the version by hand is no longer the way. |
-| A missing seed file aborts every command (review M-3) | The stage hash plan hashes a missing file as `missing`: only its own stage goes stale, and the load names the file when it runs. |
+| A missing seed file aborts every command (review M-3) | The stage hash plan hashes a missing file as `missing`, so the other commands go on. The build and `atlas:adopt` refuse a stage whose file is absent before touching any state, naming the file; once it is restored nothing has to rebuild. |
 | The river gate test's query (found during the review) | It compares in JS instead of self-joining `rivers_active`, which ran as a 13,045 x 13,045 nested loop: 6 s at best, over 30 s on a just-loaded table. |
 
 Also fixed on the way: `load_basemap.py` imported `resource`, which Windows does not have.
 
 Not in the list and not done: replacing a basemap table holds an `ACCESS EXCLUSIVE` lock for the whole load (`roads_region`, about four minutes), so tile requests for that table wait during a rebuild on a live stack.
+
+**Review of the branch (2026-10-04).** One independent review: no Critical, three Important, all fixed.
+
+- I-1: `gzip_bytes()` held a raw control byte in the source instead of the escape `\x03`. An editor dropping it would have corrupted every `.copy.gz` while `build` reported success.
+- I-2: a missing seed file made its stage and everything downstream look stale, and the runner invalidated all of it before failing (18 stages for a missing boundary file). The runner and `atlas:adopt` now refuse such a stage before touching state.
+- I-3: the lock's connection had no error listener, so a connection reset during an hour-long build would have crashed the process mid-stage. The loss is now recorded and reported, the pools use `keepAlive`, and the connection is closed rather than returned, so the lock goes with it.
+
+Minor items fixed with them:
+
+- `supersedes` is matched against whole names and never touches the stage's own sidecars; removing a file is best effort.
+- A container started with an override file counts as this checkout's, and a relative `ATLAS_COMPOSE_FILE` is resolved against the repository.
+- `atlas:up` takes the lock before migrating, and the lock uses the two-integer key form.
+- The pin digest keeps whitespace inside literals; `load_basemap.py` handles 3D tables.
+- The fixture reads the lineage inside its snapshot.
+- Clearer hints from `atlas:up` for a partial build, with quoted arguments.
+- The runbook notes the shared tools image and the `docker compose down` case.
+
+The fixture still rebuilds byte-identical.

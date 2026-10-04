@@ -23,4 +23,20 @@ describe.skipIf(!DB)('the build lock', () => {
     await expect(withBuildLock(pool, 'atlas:build', async () => { throw new Error('stage failed'); })).rejects.toThrow('stage failed');
     expect(await withBuildLock(pool, 'atlas:build', async () => 'ran')).toBe('ran');
   });
+
+  it('reports a lost lock connection instead of crashing, and the lock is free afterwards', async () => {
+    const outcome = await withBuildLock(pool, 'atlas:build', async () => {
+      // Kill the backend that holds the lock, as a network reset would.
+      await pool.query(
+        `SELECT pg_terminate_backend(pid) FROM pg_locks
+          WHERE locktype = 'advisory' AND granted AND objsubid = 2 AND classid = $1::int::oid AND objid = 1`,
+        [0x41544c53]
+      );
+      await new Promise((r) => setTimeout(r, 300));
+      return 'built';
+    }).catch((e: unknown) => e);
+    expect(outcome).toBeInstanceOf(BuildLockedError);
+    expect((outcome as Error).message).toMatch(/lock was lost during the build/);
+    expect(await withBuildLock(pool, 'atlas:build', async () => 'ran')).toBe('ran');
+  });
 });

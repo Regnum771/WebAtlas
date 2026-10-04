@@ -367,6 +367,30 @@ describe('runBuild', () => {
     expect(report.errors['a/0:sql']).toBe('state write boom');
   });
 
+  it('refuses a load whose file is absent before invalidating anything, so restoring the file rebuilds nothing', async () => {
+    const load: Dataset = {
+      id: 'dams', kind: 'vector', lineage: { statement: 's', licence: 'CC0-1.0', sources: [] },
+      stages: [
+        { type: 'load-geojson', layer: 'dams', versioned: true, files: [{ file: 'seeds/__absent__.geojson', columns: () => ({}) }] },
+        { type: 'sql', statement: 'SELECT 1' },
+      ],
+    };
+    const p = memoryPool();
+    p.state.set('dams|1:sql', { input_hash: 'old', status: 'ok' });
+    p.state.set('later|0:sql', { input_hash: 'old', status: 'ok' });
+    vi.mocked(executeStage).mockClear();
+    const report = await runBuild(p.pool, [load, ds('later', 'SELECT 2', ['dams'])]);
+    expect(report.failed).toEqual(['dams/0:load-geojson']);
+    expect(report.errors['dams/0:load-geojson']).toMatch(/missing input .*__absent__\.geojson; nothing was invalidated/);
+    expect(report.blocked).toEqual(['dams/1:sql', 'later/0:sql']);
+    expect(executeStage).not.toHaveBeenCalled();
+    // Every row as it was: no failed mark, no invalidation of the later stage or the dependent.
+    expect([...p.state.entries()]).toEqual([
+      ['dams|1:sql', { input_hash: 'old', status: 'ok' }],
+      ['later|0:sql', { input_hash: 'old', status: 'ok' }],
+    ]);
+  });
+
   it('tells a stage whether its dataset may supersede steward edits', async () => {
     vi.mocked(executeStage).mockClear();
     const { pool } = memoryPool();

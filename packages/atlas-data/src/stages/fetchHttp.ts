@@ -9,6 +9,7 @@ import type { Pool } from 'pg';
 import type { Stage } from '../types';
 import type { StageContext, StageResult } from './index';
 import { DATA_CACHE } from '../paths';
+import { supersededPattern } from '../schema';
 
 type FetchStage = Extract<Stage, { type: 'fetch-http' }>;
 const PROGRESS_EVERY = 64 * 1024 * 1024;
@@ -34,6 +35,30 @@ async function sha256File(path: string): Promise<string> {
 }
 
 /**
+ * Remove the earlier downloads `stage.supersedes` names, with their sidecars and any part file.
+ * Only called once the stage's own file is in place and verified, so a failed download never
+ * costs the copy that still worked. Never the stage's own file or its sidecars, whatever the
+ * pattern says. Housekeeping: a file that cannot be removed (held open on Windows, say) is
+ * reported and left, and the stage still succeeds.
+ */
+async function removeSuperseded(stage: FetchStage, target: string, ctx: StageContext): Promise<void> {
+  if (!stage.supersedes) return;
+  const pattern = supersededPattern(stage.supersedes);
+  const dir = dirname(target);
+  const own = basename(target);
+  const keep = new Set([own, `${own}.source`, `${own}.part`]);
+  for (const name of await readdir(dir)) {
+    if (keep.has(name) || !pattern.test(name)) continue;
+    try {
+      for (const file of [name, `${name}.source`, `${name}.part`]) await rm(resolve(dir, file), { force: true });
+      ctx.log(`[${ctx.datasetId}] removed ${name} from the cache: superseded by ${own}`);
+    } catch (err) {
+      ctx.log(`[${ctx.datasetId}] could not remove ${name} from the cache (${err instanceof Error ? err.message : String(err)}); left in place`);
+    }
+  }
+}
+
+/**
  * Download `stage.url` into `<cache>/<stage.into>` (spec §8).
  * - Written to `<target>.part` and renamed on completion: an interrupted download can never be
  *   taken for a finished one, and the .part is removed on any failure.
@@ -49,22 +74,6 @@ async function sha256File(path: string): Promise<string> {
  *   is refreshed with --force; a pinned one (the basemap, spec C-10) by changing its url and
  *   sha256 in the descriptor.
  */
-/**
- * Remove the earlier downloads `stage.supersedes` names, with their sidecars and any part file.
- * Only called once the stage's own file is in place and verified, so a failed download never
- * costs the copy that still worked.
- */
-async function removeSuperseded(stage: FetchStage, target: string, ctx: StageContext): Promise<void> {
-  if (!stage.supersedes) return;
-  const pattern = new RegExp(stage.supersedes);
-  const dir = dirname(target);
-  for (const name of await readdir(dir)) {
-    if (name === basename(target) || !pattern.test(name)) continue;
-    for (const file of [name, `${name}.source`, `${name}.part`]) await rm(resolve(dir, file), { force: true });
-    ctx.log(`[${ctx.datasetId}] removed ${name} from the cache: superseded by ${basename(target)}`);
-  }
-}
-
 export async function executeFetchHttp(
   _pool: Pool,
   stage: FetchStage,

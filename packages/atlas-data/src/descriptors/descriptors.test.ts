@@ -76,10 +76,12 @@ describe('registered datasets', () => {
   it('what each load writes is pinned: changing it means a new mapping revision', () => {
     // A version is its files' content AND its mapping revision. The build cannot tell a mapping
     // that writes something different from one that was only reformatted, so a person decides,
-    // here. Whitespace is ignored; a comment is not.
+    // here. Layout is ignored; a comment is not.
     const digest = (...files: string[]): string =>
       createHash('sha256')
-        .update(files.map((f) => readFileSync(join(REPO_ROOT, f), 'utf8').replace(/\s+/g, '')).join('\n'))
+        // Runs of whitespace become one space: line endings, indentation and a BOM do not count,
+        // and `' '` versus `''` in a literal still does.
+        .update(files.map((f) => readFileSync(join(REPO_ROOT, f), 'utf8').replace(/\s+/g, ' ').trim()).join('\n'))
         .digest('hex')
         .slice(0, 16);
     const mappingCode = digest('packages/shared/src/seed-columns.ts', 'packages/shared/src/dam-status.ts');
@@ -104,8 +106,8 @@ describe('registered datasets', () => {
         'differently from the same file (for the builder: the rivers layer), raise that stage\'s mappingRevision: ' +
         'the build then loads it as a new version instead of re-stamping the old rows. Then update this table.'
     ).toEqual({
-      mappingCode: '78b24d56a74f0a66',
-      riverHierarchyCode: 'f2fb86c0302090b2',
+      mappingCode: 'e6422daf17a9031c',
+      riverHierarchyCode: '5949e0684862a5f6',
       loads: {
         admin: 'mapping-1: provinces-34.geojson multiPolygon -> admin.provinces + wards-region.geojson multiPolygon -> admin.wards',
         dams: 'mapping-1: dams.geojson',

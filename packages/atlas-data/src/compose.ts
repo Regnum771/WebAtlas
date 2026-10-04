@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { REPO_ROOT } from './paths';
 
 /**
@@ -23,7 +23,10 @@ export function composeEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Process
 
 /** The compose file every docker call uses. `atlas:up --compose <file>` sets ATLAS_COMPOSE_FILE (spec §9). */
 export function composeFile(env: NodeJS.ProcessEnv = process.env, repoRoot: string = REPO_ROOT): string {
-  return env.ATLAS_COMPOSE_FILE ?? join(repoRoot, 'infra', 'docker-compose.yml');
+  // Relative to the repository: docker runs there (cli/system.ts), whichever workspace npm is in.
+  const file = env.ATLAS_COMPOSE_FILE;
+  if (!file) return join(repoRoot, 'infra', 'docker-compose.yml');
+  return isAbsolute(file) ? file : resolve(repoRoot, file);
 }
 
 export function composeArgs(env: NodeJS.ProcessEnv = process.env, repoRoot: string = REPO_ROOT): string[] {

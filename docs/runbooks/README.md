@@ -48,6 +48,11 @@ stack of its own, before its first `npm run atlas:up`:
    `GEOSERVER_PORT` to two free ports. The project name gives it its own containers and volumes.
 3. In `apps/api/.env`, put those ports into `DATABASE_URL`, `ASSISTANT_DATABASE_URL` and `GEOSERVER_URL`.
 
+The check reads the labels of running or stopped containers. After `docker compose down` in the first clone there
+are none, and without its own project name the second clone would attach the first one's database volume: set the
+name first. Both stacks use the same tools image (`webatlas-atlas-tools`); that is harmless while they are on the
+same commit, and the image is rebuilt by whichever `atlas:up` runs next.
+
 On Windows a published port can fail silently when it falls in an excluded range, which moves after a reboot:
 `netsh interface ipv4 show excludedportrange protocol=tcp` lists them. If sharing one stack between two
 checkouts is what you want (the repository was moved, say), run `atlas:up` with `ATLAS_SHARED_STACK=1`.

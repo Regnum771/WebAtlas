@@ -68,10 +68,6 @@ async function main(): Promise<void> {
     if (!process.env.GEOSERVER_URL) throw new UpError('GEOSERVER_URL is not set (apps/api/.env)');
     await startStack(sys, cfg);
     await waitReady(sys, cfg, geoserverEnv());
-    console.log('== atlas-tools image');
-    await buildTools(sys, cfg);
-    console.log('== migrations');
-    await migrate(sys, cfg);
   } catch (err) {
     if (err instanceof UpError) {
       console.error(`atlas:up: ${err.message}`);
@@ -83,19 +79,27 @@ async function main(): Promise<void> {
 
   for (const e of excluded) console.log(`  excluded ${e.id} (${e.reason})`);
   let failedRun = false;
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  // keepAlive: the build lock's connection sits idle for the whole build (buildLock.ts).
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, keepAlive: true });
   try {
-    console.log('== build');
-    printBuildReport(
-      await withBuildLock(pool, 'atlas:up', () => runBuild(pool, datasets, { universe: ALL_DATASETS, force, supersedeEdits }))
-    );
-    console.log('== verify');
-    const { lines, ok } = formatVerify(await verifyAtlas(pool, datasets, probeContext(pool)));
-    for (const line of lines) console.log(line);
-    if (!ok) failedRun = true;
+    // Locked from the first write on: a second atlas:up started by mistake must not migrate the
+    // database under a build that is running.
+    await withBuildLock(pool, 'atlas:up', async () => {
+      console.log('== atlas-tools image');
+      await buildTools(sys, cfg);
+      console.log('== migrations');
+      await migrate(sys, cfg);
+      console.log('== build');
+      printBuildReport(await runBuild(pool, datasets, { universe: ALL_DATASETS, force, supersedeEdits }));
+      console.log('== verify');
+      const { lines, ok } = formatVerify(await verifyAtlas(pool, datasets, probeContext(pool)));
+      for (const line of lines) console.log(line);
+      if (!ok) failedRun = true;
+    });
   } catch (err) {
-    if (!(err instanceof BuildLockedError)) throw err;
-    console.error(err.message);
+    if (err instanceof UpError) console.error(`atlas:up: ${err.message}`);
+    else if (err instanceof BuildLockedError) console.error(err.message);
+    else throw err;
     failedRun = true;
   } finally {
     await pool.end();

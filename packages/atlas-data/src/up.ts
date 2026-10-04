@@ -108,11 +108,11 @@ export async function assertOwnStack(sys: UpSystem, cfg: UpConfig): Promise<void
   );
   // No answer is no evidence: startStack reports a Docker that really cannot run compose.
   if (r.code !== 0) return;
-  // A project started with several -f files lists them comma-separated; this command uses one.
+  // One line per container. A project started with several -f files lists them comma-separated
+  // (an override file, say): the container is this checkout's if any of them is this file.
   const other = r.tail
-    .flatMap((line) => line.split(','))
-    .map((f) => f.trim())
-    .find((f) => /\.ya?ml$/i.test(f) && !samePath(f, cfg.composeFile));
+    .map((line) => line.split(',').map((f) => f.trim()).filter((f) => /\.ya?ml$/i.test(f)))
+    .find((files) => files.length > 0 && !files.some((f) => samePath(f, cfg.composeFile)))?.[0];
   if (!other) return;
   throw new UpError(
     [
@@ -136,7 +136,8 @@ export function closingLines(run: {
   selected: string[];
   all: string[];
 }): string[] {
-  const command = (args: string[]): string => (args.length ? `npm run atlas:up -- ${args.join(' ')}` : 'npm run atlas:up');
+  const quote = (a: string): string => (/^[\w@%+=:,./-]+$/.test(a) ? a : `"${a.replace(/"/g, '\\"')}"`);
+  const command = (args: string[]): string => (args.length ? `npm run atlas:up -- ${args.map(quote).join(' ')}` : 'npm run atlas:up');
   if (!run.ok) {
     return ['', `atlas:up did not complete — fix the error above and run ${command(run.argv)} again (finished work is skipped)`];
   }
@@ -144,8 +145,8 @@ export function closingLines(run: {
     const left = run.all.filter((id) => !run.selected.includes(id));
     return [
       '',
-      `built and verified ${run.selected.length} of ${run.all.length} datasets; not built by this run: ${left.join(', ')}`,
-      `the atlas is complete only after ${command(run.composeArgv)}   (npm run atlas:status shows what is there)`,
+      `built and verified ${run.selected.length} of ${run.all.length} datasets; not selected by this run: ${left.join(', ')}`,
+      `npm run atlas:status shows whether the rest is built; ${command(run.composeArgv)} builds whatever is missing`,
     ];
   }
   return [

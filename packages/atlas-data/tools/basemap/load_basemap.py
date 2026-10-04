@@ -89,9 +89,11 @@ def write_chunks(n: int, size: int = WRITE_CHUNK) -> list[tuple[int, int, str]]:
 
 
 def column_geometry_type(gdf: gpd.GeoDataFrame) -> str:
-    """The column type one to_postgis call over these rows creates: their single type, else GEOMETRY."""
+    """The column type one to_postgis call over these rows creates: their single type, else GEOMETRY;
+    with a Z suffix when any of them is 3D, as geopandas does."""
     kinds = [k for k in gdf.geom_type.unique() if k is not None]
-    return kinds[0].upper() if len(kinds) == 1 else "GEOMETRY"
+    base = kinds[0].upper() if len(kinds) == 1 else "GEOMETRY"
+    return base + ("Z" if bool(gdf.has_z.any()) else "")
 
 
 def write(gdf: gpd.GeoDataFrame, table: str, engine) -> None:
@@ -115,7 +117,8 @@ def write(gdf: gpd.GeoDataFrame, table: str, engine) -> None:
             # type a single call over the whole table would have chosen.
             if if_exists == "replace" and column_geometry_type(chunk) != whole:
                 c.execute(text(
-                    f'ALTER TABLE basemap."{table}" ALTER COLUMN "{gdf.geometry.name}" TYPE geometry(Geometry, 4326)'))
+                    f'ALTER TABLE basemap."{table}" ALTER COLUMN "{gdf.geometry.name}" '
+                    f'TYPE geometry({"GeometryZ" if whole.endswith("Z") else "Geometry"}, 4326)'))
         # KHONG tu tao index hinh hoc o day: to_postgis cua GeoPandas da tao san
         # idx_<table>_geometry. Truoc day dong nay tao them mot GiST thu hai y het
         # tren moi bang, chi ton thoi gian ghi va dung luong, khong giup doc.

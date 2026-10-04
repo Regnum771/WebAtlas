@@ -54,6 +54,14 @@ const lineageSchema = z.object({
   sources: z.array(sourceSchema),
 });
 
+/**
+ * A fetch stage's `supersedes`, as it is applied: to whole file names. Wrapped rather than checked
+ * for ^ and $, so `a|b$` cannot quietly match every name that starts with `a`.
+ */
+export function supersededPattern(source: string): RegExp {
+  return new RegExp(`^(?:${source})$`);
+}
+
 const stageSchema = z.discriminatedUnion('type', [
   // Every variant is strict: zod would otherwise strip a typo'd key (`nativename`, `sha265`) and
   // the stage would silently publish the default relation or lose its pin.
@@ -131,19 +139,16 @@ export const datasetSchema = z
         const fail = (message: string): void => {
           ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['stages', si, 'supersedes'], message });
         };
-        // It decides which files get deleted from the cache, so it must say exactly which: whole
-        // file names, of the family this stage's own file belongs to.
+        // It decides which files get deleted from the cache. It is matched against whole file names
+        // (supersededPattern), and must cover the family this stage's own file belongs to.
         const own = s.into.split('/').pop()!;
         let pattern: RegExp | undefined;
         try {
-          pattern = new RegExp(s.supersedes);
+          pattern = supersededPattern(s.supersedes);
         } catch {
           fail('is not a regular expression');
         }
-        if (pattern) {
-          if (!s.supersedes.startsWith('^') || !s.supersedes.endsWith('$')) fail('must be anchored: ^…$');
-          else if (!pattern.test(own)) fail(`must match this stage's own file name ("${own}")`);
-        }
+        if (pattern && !pattern.test(own)) fail(`must match this stage's own file name ("${own}")`);
       }
       if (s.type !== 'load-geojson') continue;
       for (const [fi, f] of s.files.entries()) {

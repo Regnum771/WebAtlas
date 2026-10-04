@@ -31,7 +31,7 @@ describe('file hashing for load-geojson', () => {
     expect(() => sha256OfFile(join(dir, 'nope.geojson'))).toThrow(/nope\.geojson/);
   });
 
-  it('planning tolerates a missing file: it hashes as missing, so only its own stage goes stale', () => {
+  it('planning tolerates a missing file: it hashes as missing instead of stopping every command', () => {
     const f = join(dir, 'planned.geojson');
     writeFileSync(f, '{}');
     expect(plannedHashOfFile(f)).toBe(sha256OfFile(f));

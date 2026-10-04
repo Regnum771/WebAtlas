@@ -42,7 +42,8 @@ async function main(): Promise<void> {
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL is not set');
-  const pool = new pg.Pool({ connectionString });
+  // keepAlive: the build lock's connection sits idle for the whole build (buildLock.ts).
+  const pool = new pg.Pool({ connectionString, keepAlive: true });
 
   try {
     const report = await withBuildLock(pool, 'atlas:build', () =>

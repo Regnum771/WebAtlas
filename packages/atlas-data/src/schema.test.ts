@@ -141,8 +141,8 @@ describe('stage variants reject unknown keys', () => {
     const fetch = (supersedes: string) =>
       withStage({ type: 'fetch-http', url: 'https://example.org/v-261001.zip', into: 'basemap/v-261001.zip', supersedes });
     expect(() => defineDataset(fetch(String.raw`^v-\d{6}\.zip$`))).not.toThrow();
-    // It decides what gets deleted from the cache.
-    expect(() => defineDataset(fetch(String.raw`v-\d{6}\.zip`))).toThrow(/anchored/);
+    // Applied to whole names, so it needs no ^ and $ of its own.
+    expect(() => defineDataset(fetch(String.raw`v-\d{6}\.zip`))).not.toThrow();
     expect(() => defineDataset(fetch('^v-(\\d{6}\\.zip$'))).toThrow(/not a regular expression/);
     expect(() => defineDataset(fetch(String.raw`^w-\d{6}\.zip$`))).toThrow(/own file name/);
   });

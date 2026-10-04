@@ -63,4 +63,6 @@ npm run test -w @webatlas/atlas-data
 the same time cannot give it tables and digest from different moments. The manifest's extract name is
 the one the tables were actually loaded from, taken from the database's lineage (the last
 `load_basemap.py` step), not from the pin in `descriptors/basemap.ts`; on an adopted machine, which
-has no load on record, it falls back to the pin and says so.
+has no load on record, it falls back to the pin and says so. Still, run it when no build is running:
+`load_basemap.py` commits table by table, so a snapshot taken mid-load can hold tables from two
+extracts. That normally shows up as the "reference_entities is stale" error rather than a wrong fixture.

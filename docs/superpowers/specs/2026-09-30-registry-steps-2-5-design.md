@@ -312,8 +312,8 @@ Each dataset may declare `probe(ctx): Promise<{ ok: boolean; detail: string }>`,
 - `atlas:build` takes `--compose` too. `atlas:status`, `atlas:verify` and `atlas:adopt` never start a container; given the flag they say it has no effect there.
 - One build per database: `atlas:build`, `atlas:up` and `atlas:adopt` hold a PostgreSQL advisory lock while they write build state, and a second one stops at once.
 - `atlas:up` refuses when the compose project's containers were created from another checkout's compose file (a second clone keeps the project name), unless `ATLAS_SHARED_STACK=1`.
-- `fetch-http` takes `supersedes`: an anchored pattern of earlier downloads in the target's directory, removed once the new file is in place and verified. It is not part of the stage hash.
-- The stage hash plan hashes a missing `load-geojson` file as `missing`, so one absent file makes one stage stale instead of stopping every command.
+- `fetch-http` takes `supersedes`: a pattern, matched against whole file names, of earlier downloads in the target's directory, removed once the new file is in place and verified. It is not part of the stage hash.
+- The stage hash plan hashes a missing `load-geojson` file as `missing`, so one absent file no longer stops every command. The build and `atlas:adopt` refuse a stage whose file is absent before touching any state.
 
 ### Preflight (U-6, U-7)
 

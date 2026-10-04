@@ -147,6 +147,8 @@ check("write: a type that first appears after the first chunk widens the column 
 engine, calls, error = run_write(mixed_first)
 check("write: a first chunk that is already mixed needs no widening (geopandas made it GEOMETRY)",
       error is None and not any(is_alter(s) for s in engine.conn.executed))
+check("column type: a 3D row makes it Z, as geopandas does",
+      lb.column_geometry_type(gpd.GeoDataFrame(geometry=[LineString([(0, 0, 1), (1, 1, 1)])], crs="EPSG:4326")) == "LINESTRINGZ")
 engine, calls, error = run_write(gdf)
 check("write: a table of one type keeps that type",
       error is None and not any(is_alter(s) for s in engine.conn.executed))
