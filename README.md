@@ -183,7 +183,7 @@ Sai số 11 m nằm dưới nửa pixel ở mức zoom tối đa của app (1:10
 
 ## Regenerating OSM water data
 
-`apps/api/src/db/seeds/data/osm-rivers-region.geojson` và
+`packages/atlas-data/data/seeds/osm-rivers-region.geojson` và
 `osm-lakes-region.geojson` là generated artifact đã commit — không cần chạy lại
 để chạy app.
 
@@ -217,7 +217,7 @@ npm run ingest:rivers -w @webatlas/api             # 7. nạp OSM rivers làm ve
   ánh xạ trong `packages/shared/src/osm-water.ts`: nếu OSM xuất hiện giá trị
   tag mới đáng kể, cập nhật bảng trước khi nạp.
 - **Bước 3 trước bước 5** — `clip-to-region.mjs` ghi đè
-  `apps/web/public/thuydienvietnam.geojson` **tại chỗ** (cắt xuống vùng công
+  `packages/atlas-data/data/seeds/dams.geojson` **tại chỗ** (cắt xuống vùng công
   tác). `report-dam-crosscheck.mjs` cần bản đầy đủ (toàn quốc) để đối chiếu
   đúng; nó có fallback đọc từ `git show HEAD:` nếu file trên đĩa đã bị cắt,
   nhưng fallback đó chỉ in cảnh báo ra console chứ không chặn chạy sai — chạy
@@ -237,7 +237,7 @@ node packages/atlas-data/tools/prune-hydrosheds-versions.mjs
 
 ## Regenerating HydroSHEDS seed data
 
-The lakes/reservoirs seed `apps/api/src/db/seeds/data/hydrolakes-vn.geojson` (clipped to the
+The lakes/reservoirs seed `packages/atlas-data/data/seeds/hydrolakes-vn.geojson` (clipped to the
 Vietnam bbox `102 8 110 24`, lon/lat) and the river-reach seed `hydrorivers-region.geojson`
 (whole reaches intersecting the six working provinces) are derived from the upstream
 HydroSHEDS datasets and committed as generated artifacts — you don't need to regenerate them
@@ -261,7 +261,7 @@ To regenerate:
    packages/atlas-data/tools/prep-hydrosheds.sh /path/to/HydroLAKES_polys_v10.shp /path/to/HydroRIVERS_v10_as.shp
    ```
    This writes `hydrolakes-vn.geojson` and `hydrorivers-region.geojson` into
-   `apps/api/src/db/seeds/data/`. Lakes carry `Hylak_id, Lake_name, Lake_type, Lake_area,
+   `packages/atlas-data/data/seeds/`. Lakes carry `Hylak_id, Lake_name, Lake_type, Lake_area,
    Vol_total, Shore_len`. Reaches carry `HYRIV_ID, NEXT_DOWN, MAIN_RIV, ORD_STRA, LENGTH_KM`,
    at every stream order (13,045 reaches, 3.4 MB with coordinates rounded to 5 decimals):
    `NEXT_DOWN` is the downstream link the river hierarchy is built on, so no order may be

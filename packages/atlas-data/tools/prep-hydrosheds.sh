@@ -20,7 +20,7 @@ set -euo pipefail
 LAKES_SRC="${1:?path to HydroLAKES polygons shapefile}"
 RIVERS_SRC="${2:?path to HydroRIVERS shapefile}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-OUT="$SCRIPT_DIR/../src/db/seeds/data"
+OUT="$SCRIPT_DIR/../data/seeds"
 
 # Vietnam extent (minX minY maxX maxY, lon/lat, EPSG:4326). Kept in sync with the BBOX
 # constant in prep_hydrosheds.py.

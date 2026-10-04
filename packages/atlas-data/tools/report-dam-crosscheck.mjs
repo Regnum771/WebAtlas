@@ -41,7 +41,7 @@ function normalizeName(name) {
  * (repo chưa commit) thì mới dùng file trên đĩa.
  */
 function readFullCatalogue() {
-  const relPath = 'apps/web/public/thuydienvietnam.geojson';
+  const relPath = 'packages/atlas-data/data/seeds/dams.geojson';
   try {
     const fromGit = execFileSync('git', ['show', `HEAD:${relPath}`], {
       cwd: repoRoot,

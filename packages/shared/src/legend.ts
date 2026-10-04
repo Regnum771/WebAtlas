@@ -32,7 +32,7 @@ export const FABDEM_ATTRIBUTION =
   'FABDEM is produced using Copernicus WorldDEM-30 © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.';
 
 /**
- * The dams layer (water.dams) is seeded from apps/web/public/thuydienvietnam.geojson,
+ * The dams layer (water.dams) is seeded from packages/atlas-data/data/seeds/dams.geojson,
  * published by Open Development Vietnam under CC BY-SA 4.0 — a share-alike licence
  * that, like OSM's ODbL above, requires attribution wherever the data is shown.
  * This is that attribution; do not drop it thinking dams "just" needs a legend swatch.

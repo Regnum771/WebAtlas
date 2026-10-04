@@ -93,7 +93,7 @@ def _write_geojson(gdf: "gpd.GeoDataFrame", dst: str, round_to: int | None = Non
     # Round-trip through geopandas' own GeoJSON writer, then re-serialize with compact
     # output so the committed file is diff-friendly and has no CRS member (GeoJSON is
     # implicitly WGS84 per RFC 7946), matching the other seed files in
-    # apps/api/src/db/seeds/data/.
+    # packages/atlas-data/data/seeds/.
     raw = json.loads(gdf.to_json())
     features = raw["features"]
     if round_to is not None:

@@ -4,10 +4,10 @@ import type { FeatureLoadSpec } from '@webatlas/versioning';
 import { SEED_LAYER_COLUMNS } from '@webatlas/shared';
 
 const here = dirname(fileURLToPath(import.meta.url));
-// apps/api/src/db/seeds -> repo root is five levels up
+// apps/api/src/db/seeds -> repo root is five levels up. The seed files live with the dataset
+// pipeline since Plan C-2; this command reads them there until C-3 removes it.
 const repoRoot = resolve(here, '../../../../..');
-const webPublic = resolve(repoRoot, 'apps/web/public');
-const seedData = resolve(here, 'data');
+const seedData = resolve(repoRoot, 'packages/atlas-data/data/seeds');
 
 /** A load spec plus its provenance: the origin recorded on the dataset_versions row. */
 export type SeedLayer = FeatureLoadSpec & { source: string };
@@ -15,7 +15,8 @@ export type SeedLayer = FeatureLoadSpec & { source: string };
 export const SEED_LAYERS: SeedLayer[] = [
   {
     table: 'dams',
-    file: resolve(webPublic, 'thuydienvietnam.geojson'),
+    file: resolve(seedData, 'dams.geojson'),
+    // The file was renamed dams.geojson; the source string is what existing versions carry.
     source: 'thuydienvietnam.geojson',
     columns: SEED_LAYER_COLUMNS.dams,
   },

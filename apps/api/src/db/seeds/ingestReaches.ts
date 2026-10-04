@@ -20,7 +20,7 @@ const here = fileURLToPath(new URL('.', import.meta.url));
  */
 export const REACHES_LAYER: SeedLayer = {
   table: 'rivers',
-  file: resolvePath(here, 'data/hydrorivers-region.geojson'),
+  file: resolvePath(here, '../../../../../packages/atlas-data/data/seeds/hydrorivers-region.geojson'),
   source: 'HydroRIVERS v10',
   multiLine: true,
   columns: RIVER_REACH_COLUMNS,

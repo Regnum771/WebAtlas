@@ -58,7 +58,7 @@ lines are for a manual rerun.
    that create `basemap.dem_region` and `basemap.contours` empty and ready for steps 7–8.
 3. **The `seeds` dataset** loads the committed feature layers (dams, lakes, stations, flood zones, flood generation,
    drought points, saltwater intrusion) from the GeoJSON under
-   [`apps/api/src/db/seeds/data`](../../apps/api/src/db/seeds/data) — these files are in
+   [`packages/atlas-data/data/seeds`](../../packages/atlas-data/data/seeds) — these files are in
    git, so this step is fully reproducible from a checkout. Manual rerun: `npm run atlas:build -- --only seeds`.
 
    `npm run seed` now also loads `admin.provinces` / `admin.wards` from the GeoJSON committed in `apps/web/public`, and

@@ -80,7 +80,7 @@ describe('legendFor', () => {
     expect(LEGEND_ATTRIBUTION.layer_lakes).toContain('OpenStreetMap');
   });
 
-  // Regression test: the dams dataset (thuydienvietnam.geojson) is published by Open
+  // Regression test: the dams dataset (dams.geojson, formerly thuydienvietnam.geojson) is published by Open
   // Development Vietnam under CC BY-SA 4.0, which requires attribution wherever the
   // data is shown — but LEGEND_ATTRIBUTION had no entry for layer_dams, so a printed
   // map of the dams layer carried no attribution for that data at all.
