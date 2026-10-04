@@ -16,6 +16,7 @@ const DIR = join(REPO_ROOT, 'packages/atlas-data/fixtures/basemap');
 interface FixtureFile { table: string; file: string; rule: string; columns: string[]; rows: number; sha256: string }
 interface Manifest {
   source: { extract: string; licence: string; attribution: string };
+  schema: { file: string; sha256: string };
   files: FixtureFile[];
   referenceEntities: Record<string, { count: number; sha256: string }>;
 }
@@ -48,7 +49,8 @@ describe('the committed basemap fixture', () => {
       expect(lines.pop(), `${f.file} ends with a newline`).toBe('');
       expect(lines.length, f.file).toBe(f.rows);
       expect(f.rows, f.file).toBeGreaterThan(0);
-      expect(lines[0].split('\t').length, `${f.file} columns`).toBe(f.columns.length);
+      const widths = new Set(lines.map((l) => l.split('\t').length));
+      expect([...widths], `${f.file} columns`).toEqual([f.columns.length]);
       expect(f.columns).toContain('osm_id');
       expect(f.columns).toContain('geometry');
     }
@@ -59,7 +61,10 @@ describe('the committed basemap fixture', () => {
     expect(dumps).toEqual(manifest.files.map((f) => f.file).sort());
   });
 
-  it('schema.sql creates exactly the five tables, with their geometry and fclass indexes', () => {
+  it('schema.sql matches its sha256 and creates exactly the five tables, with their geometry and fclass indexes', () => {
+    // load runs this file verbatim, so it is checksummed like the data.
+    expect(manifest.schema.file).toBe('schema.sql');
+    expect(createHash('sha256').update(readFileSync(join(DIR, 'schema.sql'))).digest('hex')).toBe(manifest.schema.sha256);
     const schema = readFileSync(join(DIR, 'schema.sql'), 'utf8');
     const tables = [...schema.matchAll(/^CREATE TABLE (basemap\.[a-z_]+) \(/gm)].map((m) => m[1]).sort();
     expect(tables).toEqual(manifest.files.map((f) => f.table).sort());

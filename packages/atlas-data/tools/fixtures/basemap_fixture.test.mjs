@@ -44,7 +44,7 @@ const PLACES = '1\tBuôn Ma Thuột\t0101\n2\t\\N\t0102\n';
 const RAILWAYS = '7\t0103\n';
 const DIGESTS = { places: 'a'.repeat(64), railways: 'b'.repeat(64) };
 
-let dir, fixtureDir, log, stdinFile, stub;
+let dir, fixtureDir, log, stdinFile, stub, manifest;
 
 function makeFixture() {
   const files = [
@@ -63,11 +63,16 @@ function makeFixture() {
       railways: { count: 1, sha256: DIGESTS.railways },
     },
   };
+  const schema =
+    'CREATE SCHEMA IF NOT EXISTS basemap;\nCREATE TABLE basemap.places_region (osm_id text, name text, geometry text);\nCREATE TABLE basemap.railways_vn (osm_id text, geometry text);\n';
+  writeFileSync(join(fixtureDir, 'schema.sql'), schema);
+  manifest.schema = { file: 'schema.sql', sha256: createHash('sha256').update(schema).digest('hex') };
+  writeManifest(manifest);
+  return manifest;
+}
+
+function writeManifest(manifest) {
   writeFileSync(join(fixtureDir, 'MANIFEST.json'), JSON.stringify(manifest, null, 2));
-  writeFileSync(
-    join(fixtureDir, 'schema.sql'),
-    'CREATE SCHEMA IF NOT EXISTS basemap;\nCREATE TABLE basemap.places_region (osm_id text, name text, geometry text);\nCREATE TABLE basemap.railways_vn (osm_id text, geometry text);\n'
-  );
 }
 
 beforeEach(() => {
@@ -77,7 +82,7 @@ beforeEach(() => {
   stdinFile = join(dir, 'psql.stdin');
   stub = join(dir, 'psql-stub.sh');
   writeFileSync(stub, PSQL_STUB);
-  makeFixture();
+  manifest = makeFixture();
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -103,6 +108,10 @@ describe.skipIf(!HAS_PYTHON)('basemap_fixture.py load', { timeout: 60000 }, () =
     expect(r.status).toBe(0);
     const sent = readFileSync(stdinFile, 'utf8');
     const order = [
+      // The guard that matters: inside the transaction, under a lock, before anything is dropped.
+      'LOCK TABLE basemap.places_region IN ACCESS EXCLUSIVE MODE;',
+      'basemap.places_region already holds rows',
+      'LOCK TABLE basemap.railways_vn IN ACCESS EXCLUSIVE MODE;',
       'DROP TABLE IF EXISTS basemap.places_region;',
       'CREATE TABLE basemap.places_region',
       'COPY basemap.places_region ("osm_id", "name", "geometry") FROM STDIN;',
@@ -133,6 +142,32 @@ describe.skipIf(!HAS_PYTHON)('basemap_fixture.py load', { timeout: 60000 }, () =
     expect(r.stderr).toContain('railways_vn.copy.gz');
     expect(r.stderr).toContain('sha256');
     expect(existsSync(log)).toBe(false);
+  });
+
+  it('stops before calling psql when schema.sql does not match its sha256', () => {
+    // load executes schema.sql verbatim, so an edited one must not get as far as the server.
+    writeFileSync(join(fixtureDir, 'schema.sql'), 'DROP SCHEMA water CASCADE;\n');
+    const r = run('load');
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('schema.sql');
+    expect(r.stderr).toContain('sha256');
+    expect(existsSync(log)).toBe(false);
+  });
+
+  it('rejects a manifest naming anything but the five fixture tables, a trailing newline included', () => {
+    // 'basemap.places_region\n' passed a ^…$ check, slipped past the rows guard (no such relation)
+    // and was still dropped by DROP TABLE IF EXISTS.
+    for (const table of ['basemap.places_region\n', 'basemap.roads_vn', 'water.dams', 'basemap.places_region; DROP TABLE x']) {
+      writeManifest({ ...manifest, files: [{ ...manifest.files[0], table }, manifest.files[1]] });
+      const r = run('load');
+      expect(r.status, JSON.stringify(table)).toBe(1);
+      expect(r.stderr).toContain('unexpected table');
+      expect(existsSync(log)).toBe(false);
+    }
+    writeManifest({ ...manifest, files: [{ ...manifest.files[0], columns: ['osm_id', 'name"; --'] }, manifest.files[1]] });
+    const r = run('load');
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('unexpected');
   });
 
   it('refuses to load over a table that already holds rows', () => {

@@ -43,11 +43,14 @@ TABLES = {
     "places_region": "TRUE",
 }
 
-# One line per layer: key, entity count, sha256 over the sorted lines "entity_id|member_count".
+# One line per layer: key, entity count, sha256 over the sorted lines
+# "entity_id|member_count|md5 of the member ids". The members are in the digest so that entities
+# with the right ids and sizes but other segments do not pass.
 DIGEST_SQL = """/* fixture:digest */
 SELECT layer_key, count(*),
        encode(sha256(convert_to(
-         string_agg(entity_id || '|' || member_count, E'\\n' ORDER BY entity_id COLLATE "C"), 'UTF8')), 'hex')
+         string_agg(entity_id || '|' || member_count || '|' || md5(array_to_string(member_ids, ',')),
+                    E'\\n' ORDER BY entity_id COLLATE "C"), 'UTF8')), 'hex')
   FROM basemap.reference_entities
  GROUP BY layer_key
  ORDER BY layer_key"""
@@ -65,8 +68,8 @@ MEMBER_ROWS_SQL = {
     "places": "SELECT count(*) FROM basemap.places_region WHERE name IS NOT NULL AND geometry IS NOT NULL",
 }
 
-SAFE_TABLE = re.compile(r"^basemap\.[a-z_]+$")
-SAFE_COLUMN = re.compile(r"^[a-z_][a-z0-9_]*$")
+ALLOWED_TABLES = {f"basemap.{t}" for t in TABLES}
+SAFE_COLUMN = re.compile(r"[a-z_][a-z0-9_]*")
 
 
 class FixtureError(Exception):
@@ -118,16 +121,20 @@ def read_manifest() -> dict:
     if not path.exists():
         raise FixtureError(f"{path} is missing")
     manifest = json.loads(path.read_text(encoding="utf-8"))
+    # These names are written into SQL. A table must be one of the five, exactly: a pattern check
+    # let "basemap.roads_region\\n" through, which the rows guard then failed to recognise.
     for f in manifest["files"]:
-        if not SAFE_TABLE.match(f["table"]) or not all(SAFE_COLUMN.match(c) for c in f["columns"]):
-            raise FixtureError(f"{MANIFEST}: unexpected table or column name in the entry for {f['file']}")
+        if f["table"] not in ALLOWED_TABLES:
+            raise FixtureError(f"{MANIFEST}: unexpected table {f['table']!r}; nothing was loaded")
+        if not all(isinstance(c, str) and SAFE_COLUMN.fullmatch(c) for c in f["columns"]):
+            raise FixtureError(f"{MANIFEST}: unexpected column name in the entry for {f['file']}; nothing was loaded")
     return manifest
 
 
 def checked_files(manifest: dict) -> dict:
-    """File name -> its bytes, once every file has matched its sha256."""
+    """File name -> its bytes, once every file, schema.sql included, has matched its sha256."""
     blobs = {}
-    for f in manifest["files"]:
+    for f in [*manifest["files"], manifest["schema"]]:
         path = FIXTURE_DIR / f["file"]
         if not path.exists():
             raise FixtureError(f"{f['file']} is missing from {FIXTURE_DIR}; nothing was loaded")
@@ -143,16 +150,15 @@ def checked_files(manifest: dict) -> dict:
 def cmd_load() -> None:
     manifest = read_manifest()
     blobs = checked_files(manifest)
-    schema_path = FIXTURE_DIR / SCHEMA
-    if not schema_path.exists():
-        raise FixtureError(f"{SCHEMA} is missing from {FIXTURE_DIR}; nothing was loaded")
-    schema = schema_path.read_text(encoding="utf-8")
+    schema = blobs[manifest["schema"]["file"]]
 
-    # Never over a real atlas: a target table may exist (an earlier fixture load), but it must be empty.
+    # Never over a real atlas: a target table may exist (an earlier fixture load), but it must be
+    # empty. This first check is here for its plain message; the one that holds is in the load
+    # transaction below, under a lock.
     names = ", ".join("'" + f["table"].split(".")[1] + "'" for f in manifest["files"])
     existing = [r[0] for r in rows(
         "/* fixture:existing */ SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
-        f"WHERE n.nspname = 'basemap' AND c.relkind = 'r' AND c.relname IN ({names}) ORDER BY 1")]
+        f"WHERE n.nspname = 'basemap' AND c.relname IN ({names}) ORDER BY 1")]
     for name in existing:
         if scalar(f"/* fixture:rows */ SELECT EXISTS (SELECT 1 FROM basemap.{name})") == "t":
             raise FixtureError(
@@ -161,8 +167,18 @@ def cmd_load() -> None:
 
     parts = [b"/* fixture:load */\n"]
     for f in manifest["files"]:
+        table = f["table"]
+        # Same transaction as the DROP, and locked: rows committed after the check above cannot
+        # slip in, and any kind of relation is covered, not only an ordinary table.
+        parts.append((
+            f"DO $$ BEGIN IF to_regclass('{table}') IS NOT NULL THEN "
+            f"LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE; "
+            f"IF EXISTS (SELECT 1 FROM {table}) THEN "
+            f"RAISE EXCEPTION '{table} already holds rows; the fixture never replaces a loaded basemap'; "
+            "END IF; END IF; END $$;\n").encode())
+    for f in manifest["files"]:
         parts.append(f"DROP TABLE IF EXISTS {f['table']};\n".encode())
-    parts.append(schema.encode("utf-8"))
+    parts.append(schema)
     parts.append(b"\n")
     for f in manifest["files"]:
         table, want = f["table"], int(f["rows"])
@@ -228,8 +244,16 @@ def dump_schema() -> str:
     # in recent versions, \restrict lines carrying a random token, which an older psql rejects and
     # which would change the file on every run.
     lines = [l for l in r.stdout.decode("utf-8").splitlines() if l.strip() and not l.startswith(("--", "\\"))]
-    statements = [s.strip() for s in "\n".join(lines).split(";\n")]
-    kept = [s.rstrip(";") for s in statements if s.startswith(("CREATE TABLE basemap.", "CREATE INDEX "))]
+    statements = [s.strip().rstrip(";") for s in "\n".join(lines).split(";\n") if s.strip()]
+    kept = [s for s in statements if s.startswith(("CREATE TABLE basemap.", "CREATE INDEX "))]
+    # Anything else that defines the tables (a constraint, a sequence, a unique index) must stop the
+    # build: dropped silently, the fixture's tables would differ from the loader's.
+    dropped = [s for s in statements if s not in kept and not s.startswith(("SET ", "SELECT pg_catalog.set_config"))]
+    if dropped:
+        raise FixtureError(
+            "pg_dump wrote statements this tool does not carry into schema.sql: "
+            + "; ".join(s.splitlines()[0][:80] for s in dropped)
+            + ". Extend dump_schema() to keep them.")
     created = [s for s in kept if s.startswith("CREATE TABLE")]
     if len(created) != len(TABLES):
         raise FixtureError(f"pg_dump described {len(created)} tables, expected {len(TABLES)}")
@@ -270,10 +294,12 @@ def cmd_build() -> None:
             "SELECT column_name FROM information_schema.columns "
             f"WHERE table_schema = 'basemap' AND table_name = '{table}' ORDER BY ordinal_position")]
         column_list = ", ".join(f'"{c}"' for c in columns)
-        # A total order, so unchanged data gives identical bytes: OSM ids repeat in the area tables.
+        # A total order, so unchanged data gives identical bytes. OSM ids repeat in the area tables,
+        # hence the geometry; the whole row last, for two rows that share both.
         data = query(
-            f"COPY (SELECT {column_list} FROM basemap.{table} WHERE {rule} "
-            'ORDER BY osm_id COLLATE "C", md5(ST_AsEWKB(geometry)) COLLATE "C") TO STDOUT')
+            f"COPY (SELECT {column_list} FROM basemap.{table} t WHERE {rule} "
+            "ORDER BY osm_id COLLATE \"C\", md5(ST_AsEWKB(geometry, 'NDR')) COLLATE \"C\", "
+            "md5(t::text) COLLATE \"C\") TO STDOUT")
         blob = gzip.compress(data, compresslevel=9, mtime=0)
         name = f"{table}.copy.gz"
         count = data.count(b"\n")
@@ -292,6 +318,7 @@ def cmd_build() -> None:
             "licence": "ODbL-1.0",
             "attribution": "© OpenStreetMap contributors, via Geofabrik",
         },
+        "schema": {"file": SCHEMA, "sha256": hashlib.sha256(staged[SCHEMA]).hexdigest()},
         "files": files,
         "referenceEntities": built_entities(),
     }

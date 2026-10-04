@@ -25,8 +25,9 @@ every run (`verify`, below).
 
 - `schema.sql`: the real table and index definitions, dumped from a built atlas.
 - `<table>.copy.gz`: PostgreSQL COPY text, gzipped. Binary in git.
-- `MANIFEST.json`: the source extract; each file's selection rule, columns, row count and sha256;
-  and for each reference layer, the entity count and a digest of the real atlas's entity ids.
+- `MANIFEST.json`: the source extract; the sha256 of `schema.sql`; each file's selection rule,
+  columns, row count and sha256; and for each reference layer, the entity count and a digest of the
+  real atlas's entities (id, member count and member ids).
 
 ## Using it
 
@@ -57,3 +58,11 @@ npm run test -w @webatlas/atlas-data
 
 `build` refuses a database that was itself loaded from the fixture, and one whose
 `reference_entities` is older than its tables. Unchanged data gives byte-identical files.
+
+Two things `build` cannot check, so check them yourself first:
+
+- **`npm run atlas:status` shows `basemap` and `reference_entities` as `ok`.** The manifest takes the
+  extract's name from the pin in `descriptors/basemap.ts`. After a pin bump and before a rebuild,
+  that is not the extract the tables came from.
+- **No build is running.** `build` reads the database in several sessions; a rebuild in the middle
+  can give tables and digest from different moments. CI's `verify` would then fail.

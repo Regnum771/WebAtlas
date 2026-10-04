@@ -5,6 +5,10 @@
     "licence": "ODbL-1.0",
     "attribution": "© OpenStreetMap contributors, via Geofabrik"
   },
+  "schema": {
+    "file": "schema.sql",
+    "sha256": "011a131fabc50a45a046f0b64bc60fb02582f15fac689da05d60a9e6bae4cded"
+  },
   "files": [
     {
       "table": "basemap.roads_region",
@@ -86,23 +90,23 @@
   "referenceEntities": {
     "landuse": {
       "count": 794,
-      "sha256": "39372ebc30e9c16a187fd9778c504f43be3b8ec63a6feb571cd099a4c050d10a"
+      "sha256": "08f11c6d57c3de84f8a38e181f13ab09d29ba12303a93443b0f951017f8cb474"
     },
     "places": {
       "count": 5878,
-      "sha256": "21149b448b500329e7957c4273043df055ced7129e048c75ae6e1f3d637774a0"
+      "sha256": "c31918ce46e2cfb06ab97989beca42876105709a454a6a0999cd777ad48f2eef"
     },
     "railways": {
       "count": 203,
-      "sha256": "abcee4ec01b10f302fa66184d4d377b009b49e1d86dc843ff189e975c4a561c9"
+      "sha256": "94112f38f9596b8c2703bacc5c2a586fb685daa6fa619f7a3b01a272caf52502"
     },
     "roads": {
       "count": 13658,
-      "sha256": "1f49f81878ee14dc12c19fd7e4560085fc04c5d6e65d4fdcefe8a7af574f8434"
+      "sha256": "32833868517c5476242a2313493df93bc012c56fbefedeeb8220761fd219d98b"
     },
     "water": {
       "count": 601,
-      "sha256": "be2bda5539c8df6af555cdbc9ef629b11514565c458e0e5947203640cd1e280f"
+      "sha256": "e79e9ee3b70902a0ca824bf2d8d9a981f202957e880265ce8238c97cd26b94b1"
     }
   }
 }
