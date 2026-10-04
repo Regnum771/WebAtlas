@@ -115,6 +115,9 @@ export function processStep(
   summary: string
 ): { description: string; tool: string } {
   const description = capped(`stage ${key} · ${inputHash.slice(0, 12)} · ${summary}`);
-  const tool = stage.type === 'run' ? stage.argv.join(' ') : stage.type;
+  const tool =
+    stage.type === 'run' ? stage.argv.join(' ')
+    : stage.type === 'load-geojson' ? `load-geojson ${stage.files.map((f) => f.file).join(' + ')}`
+    : stage.type;
   return { description, tool };
 }

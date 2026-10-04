@@ -1,3 +1,4 @@
+import { RIVER_REACH_COLUMNS, RIVER_WAY_COLUMNS } from '@webatlas/shared';
 import { defineDataset } from '../schema';
 import { allOf, rowCount, wfsAnswers } from '../probes';
 
@@ -8,15 +9,15 @@ import { allOf, rowCount, wfsAnswers } from '../probes';
  * Id là khoá lớp `rivers` chứ không phải `hydrorivers` (spec C-9): hàng trạng thái cũ
  * dưới id `hydrorivers` chỉ có trên máy dev và vô hại.
  *
- * Còn là cửa thoát `run` cho tới khi load-geojson có (Plan C, spec §11). Lệnh chạy trên
- * máy chủ qua npm, không qua shell. Phụ thuộc `seeds`: ingest gán mã hành chính theo ranh giới
- * tỉnh/xã mà `seeds` nạp.
+ * Một load-geojson nạp HAI tệp vào MỘT phiên bản (spec C-6): một phiên bản ingest không có cha,
+ * nên nạp hai cấp vào hai phiên bản thì một cấp sẽ biến mất với mọi người đọc. Phụ thuộc
+ * `admin_boundaries`: kích hoạt gán mã tỉnh/xã theo ranh giới.
  */
 export const rivers = defineDataset({
   id: 'rivers',
   kind: 'vector',
   editable: true,
-  dependsOn: ['seeds'],
+  dependsOn: ['admin_boundaries'],
   lineage: {
     statement:
       'Đoạn sông HydroRIVERS v10 chọn theo sáu tỉnh vùng công tác, nối tên từ đường thuỷ OSM, ' +
@@ -36,12 +37,14 @@ export const rivers = defineDataset({
   },
   stages: [
     {
-      type: 'run',
-      in: 'host',
-      argv: ['run', 'ingest:rivers', '-w', '@webatlas/api'],
-      produces: 'water.rivers (levels 1-3) + app.dataset_versions row',
-      promoteTo: 'load-geojson',
-      promoteBy: '2026-12-31',
+      type: 'load-geojson',
+      layer: 'rivers',
+      versioned: true,
+      legacySource: 'OSM waterways + HydroRIVERS v10',
+      files: [
+        { file: 'seeds/osm-rivers-region.geojson', columns: RIVER_WAY_COLUMNS, multiLine: true },
+        { file: 'seeds/hydrorivers-region.geojson', columns: RIVER_REACH_COLUMNS, multiLine: true },
+      ],
     },
     // rivers_detail, not rivers_active: water.rivers holds all three levels, so the active view
     // would draw every river as its ways, reaches and entity stacked together.
