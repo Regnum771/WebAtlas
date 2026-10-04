@@ -74,7 +74,7 @@ async function seedOne(pool: Pool, stage: LoadStage): Promise<{ action: SeedActi
  * It uses the load-geojson core, so an unchanged file creates no version: a second call, and a
  * second test run, change nothing. It is NOT atlas:build: no stage state, no lineage, no GeoServer.
  * And it never hides steward edits: a layer with edits on top of other content fails here with the
- * loader's message, where `npm run seed` used to load over it.
+ * loader's message, where the old seed command used to load over it.
  */
 export async function ensureSeeded(pool: Pool, datasets: Dataset[] = ALL_DATASETS): Promise<SeedOutcome[]> {
   const out: SeedOutcome[] = [];

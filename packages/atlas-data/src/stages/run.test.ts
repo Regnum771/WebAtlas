@@ -37,10 +37,10 @@ describe('npmCli', () => {
 
 describe('commandFor', () => {
   it('host: node + npm-cli.js + argv, from the repo root, never a shell', () => {
-    const c = commandFor(stage({ argv: ['run', 'ingest:rivers', '-w', '@webatlas/api'] }), '/repo');
+    const c = commandFor(stage({ argv: ['run', 'reference:build', '-w', '@webatlas/api'] }), '/repo');
     expect(c.file).toBe(process.execPath);
     expect(c.args[0].endsWith('npm-cli.js')).toBe(true);
-    expect(c.args.slice(1)).toEqual(['run', 'ingest:rivers', '-w', '@webatlas/api']);
+    expect(c.args.slice(1)).toEqual(['run', 'reference:build', '-w', '@webatlas/api']);
     expect(c.cwd).toBe('/repo');
   });
 

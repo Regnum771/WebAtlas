@@ -134,11 +134,11 @@ describe('processStep (I4: record what ran, not just that it ran)', () => {
 
   it('uses the joined argv as the tool for a run stage', () => {
     const stage = {
-      type: 'run' as const, in: 'host' as const, argv: ['run', 'ingest:rivers', '-w', '@webatlas/api'],
+      type: 'run' as const, in: 'host' as const, argv: ['run', 'reference:build', '-w', '@webatlas/api'],
       produces: 'p', promoteTo: 'load-geojson', promoteBy: '2099-01-01',
     };
-    expect(processStep('0:run', stage, hash, 'run ingest:rivers -w @webatlas/api').tool).toBe(
-      'run ingest:rivers -w @webatlas/api'
+    expect(processStep('0:run', stage, hash, 'run reference:build -w @webatlas/api').tool).toBe(
+      'run reference:build -w @webatlas/api'
     );
   });
 });
