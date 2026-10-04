@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { getPool, closePool } from '../pool';
+import { getPool, closePool } from './pool';
 
 afterAll(async () => { await closePool(); });
 

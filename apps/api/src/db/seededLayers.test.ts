@@ -1,18 +1,16 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { getPool, closePool } from '../pool';
-import { runSeeds } from './run';
+import { describe, it, expect, afterAll } from 'vitest';
+import { ensureSeeded } from '@webatlas/atlas-data';
+import { getPool, closePool } from './pool';
 import { DAM_STATUS_SLUGS } from '@webatlas/shared';
 
-beforeAll(async () => {
-  await runSeeds();
-});
+// The global setup (src/test/globalSetup.ts) has already brought every layer to the committed
+// seed content; these tests assert what that content is.
 afterAll(async () => {
   await closePool();
 });
 
-// What the map shows: rows belonging to the layer's *active* version. Seeding now
-// appends a new version rather than overwriting, so the raw table holds one row-set
-// per version and a bare count(*) would grow with every run.
+// What the map shows: rows belonging to the layer's *active* version. The raw table holds one
+// row-set per version, so a bare count(*) would count every load the layer has ever had.
 async function count(table: string): Promise<number> {
   const { rows } = await getPool().query(
     `SELECT count(*)::int AS n FROM water.${table} f
@@ -23,7 +21,7 @@ async function count(table: string): Promise<number> {
   return rows[0].n;
 }
 
-describe('seeds', () => {
+describe('the seeded layers', () => {
   it('loads dams from the source GeoJSON', async () => {
     // 151 = số đập còn lại sau khi clip-to-region.mjs cắt danh mục 371 đập toàn quốc
     // xuống vùng công tác 6 tỉnh (132 có toạ độ trong vùng + 19 bản ghi thiếu toạ độ
@@ -31,26 +29,12 @@ describe('seeds', () => {
     expect(await count('dams')).toBe(151);
   });
 
-  it('does NOT seed thuyhe.geojson (nationwide legacy rivers) — OSM is the sole rivers source', async () => {
-    // thuyhe.geojson (2013 sông toàn quốc, ngoài vùng công tác) đã bị loại khỏi
-    // SEED_LAYERS: một second rivers producer bên cạnh `ingest:rivers` (OSM) là một
-    // cái bẫy, không phải tính năng. runSeeds() một mình không được tạo bất kỳ
-    // version 'rivers' mới nào có source 'thuyhe.geojson'.
-    const { rows } = await getPool().query(
-      `SELECT count(*)::int AS n FROM app.dataset_versions
-       WHERE layer_key = 'rivers' AND source = 'thuyhe.geojson' AND ingested_at > now() - interval '1 minute'`
-    );
-    expect(rows[0].n).toBe(0);
-
-    // Whatever was active for 'rivers' before this test run (nothing, or an OSM
-    // ingest from `npm run ingest:rivers` against this persistent dev DB) must NOT
-    // have been replaced by a thuyhe version: it's never our seed's active source.
+  it('rivers never comes from thuyhe.geojson (nationwide legacy rivers): OSM is the sole source', async () => {
     const { rows: active } = await getPool().query(
       `SELECT source FROM app.dataset_versions WHERE layer_key = 'rivers' AND is_active`
     );
-    if (active.length > 0) {
-      expect(active[0].source).not.toBe('thuyhe.geojson');
-    }
+    expect(active).toHaveLength(1);
+    expect(active[0].source).not.toBe('thuyhe.geojson');
   });
 
   it('loads the five mock layers (2 features each)', async () => {
@@ -78,24 +62,23 @@ describe('seeds', () => {
     expect(rows[0].n).toBe(19);
   });
 
-  // This test calls runSeeds() a second time, i.e. the full seed pipeline (now
-  // including admin-code stamping) on top of the beforeAll run. That's the same
-  // 25-45s cost as the hook, but it's billed against testTimeout (30s), not
-  // hookTimeout (60s) — so it needs its own longer budget rather than relying on
-  // the suite-wide default.
-  it('re-running appends a version rather than mutating the active one in place', async () => {
-    const activeBefore = await getPool().query(
-      `SELECT id FROM app.dataset_versions WHERE layer_key = 'flood_zones' AND is_active`
-    );
-    await runSeeds();
-    const activeAfter = await getPool().query(
-      `SELECT id FROM app.dataset_versions WHERE layer_key = 'flood_zones' AND is_active`
-    );
-    expect(activeAfter.rows[0].id).not.toBe(activeBefore.rows[0].id);
-    // The new active version still holds exactly the 2 source features.
+  it('seeding again creates no version and leaves the active one in place', async () => {
+    // The old seed command appended a version of every layer on every run. The loader is keyed
+    // to file content, so an unchanged file changes nothing.
+    const state = async () =>
+      (
+        await getPool().query(
+          `SELECT (SELECT count(*)::int FROM app.dataset_versions) AS n,
+                  (SELECT id FROM app.dataset_versions WHERE layer_key = 'flood_zones' AND is_active) AS active`
+        )
+      ).rows[0];
+    const before = await state();
+    const out = await ensureSeeded(getPool());
+    expect(out.every((o) => o.action === 'unchanged'), JSON.stringify(out)).toBe(true);
+    expect(await state()).toEqual(before);
     const { rows } = await getPool().query(
       `SELECT count(*)::int AS n FROM water.flood_zones WHERE dataset_version_id = $1 AND NOT deleted`,
-      [activeAfter.rows[0].id]
+      [before.active]
     );
     expect(rows[0].n).toBe(2);
   }, 120_000);
@@ -125,9 +108,9 @@ describe('seeds', () => {
       SELECT source, label, is_active FROM app.dataset_versions
       WHERE layer_key = 'lakes' AND is_active
     `);
-    // Label is derived sequentially per layer ("version N"), not a fixed literal — repeated
-    // seed runs (including across test runs against a persistent dev DB) keep incrementing it.
-    expect(ver[0]).toMatchObject({ source: 'OSM water bodies', is_active: true });
+    // The source is the file and a hash of its content; the label is still "version N".
+    expect(ver[0].is_active).toBe(true);
+    expect(ver[0].source).toMatch(/^osm-lakes-region\.geojson@sha256:[0-9a-f]{64}$/);
     expect(ver[0].label).toMatch(/^version \d+$/);
 
     // Attribute mapping landed: at least one lake has a mapped type. OSM không có
@@ -141,8 +124,8 @@ describe('seeds', () => {
 
 describe('seeds create dataset versions (§6)', () => {
   it('each seeded layer has an active ingest version whose feature_count matches its rows', async () => {
-    // 'rivers' is no longer in SEED_LAYERS (thuyhe.geojson removed) — OSM rivers
-    // arrive only via `npm run ingest:rivers`, so it's excluded from this check.
+    // rivers is excluded: its feature_count includes the level-1 rivers activation derives,
+    // and it has its own tests.
     for (const layer of ['dams', 'stations']) {
       const { rows } = await getPool().query(
         `SELECT id, feature_count FROM app.dataset_versions
@@ -161,50 +144,20 @@ describe('seeds create dataset versions (§6)', () => {
     }
   });
 
-  it('records provenance from the seed registry on the version row', async () => {
+  it('records the content it was loaded from on the version row', async () => {
     const { rows } = await getPool().query(
       `SELECT source, label, kind, parent_version_id FROM app.dataset_versions
        WHERE layer_key = 'dams' AND is_active`
     );
-    expect(rows[0].source).toBe('thuydienvietnam.geojson');
-    // Label is derived sequentially per layer ("version N"), not a fixed literal — repeated
-    // seed runs (including across test runs against a persistent dev DB) keep incrementing it.
+    expect(rows[0].source).toMatch(/^dams\.geojson@sha256:[0-9a-f]{64}$/);
     expect(rows[0].label).toMatch(/^version \d+$/);
     expect(rows[0].kind).toBe('ingest');
     expect(rows[0].parent_version_id).toBeNull();
   });
 
-  // Same as above: a second full runSeeds() call, ~25-45s, needs a budget beyond
-  // the suite's 30s testTimeout default even though the beforeAll's identical cost
-  // is already covered by the separate (60s) hookTimeout.
-  it('a second seed run creates a new active version and leaves the prior one addressable', async () => {
-    const before = await getPool().query(
-      `SELECT id FROM app.dataset_versions WHERE layer_key = 'stations' AND is_active`
-    );
-    const priorActive = before.rows[0].id;
-
-    await runSeeds();
-
-    const versions = await getPool().query(
-      `SELECT count(*)::int AS n FROM app.dataset_versions WHERE layer_key = 'stations'`
-    );
-    expect(versions.rows[0].n).toBeGreaterThanOrEqual(2);
-
-    const active = await getPool().query(
-      `SELECT id FROM app.dataset_versions WHERE layer_key = 'stations' AND is_active`
-    );
-    expect(active.rows[0].id).not.toBe(priorActive); // active moved to the new version
-
-    // The prior version is still there and its rows still resolvable.
-    const prior = await getPool().query(
-      `SELECT count(*)::int AS n FROM water.stations WHERE dataset_version_id = $1`,
-      [priorActive]
-    );
-    expect(prior.rows[0].n).toBe(2);
-  }, 120_000);
 });
 
-describe('administrative stamping during seed', () => {
+describe('administrative stamping of the seeded layers', () => {
   it('stamps dams with the province they fall in', async () => {
     const { rows } = await getPool().query<{ stamped: string; total: string }>(
       `SELECT count(*) FILTER (WHERE array_length(province_codes, 1) IS NOT NULL)::text AS stamped,

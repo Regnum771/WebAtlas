@@ -1,8 +1,8 @@
 /**
- * GeoServer REST, ported from apps/api/src/geoserver/{client,publish}.ts (spec §8). A deliberate,
- * temporary duplicate: the API's publish script keeps working until Plan C removes it (NFR-7), and
- * a package must not import an app. Unlike the original, every call takes its environment and fetch
- * explicitly, so it is testable without a GeoServer.
+ * GeoServer REST for the publish stages (spec §8). The only publisher: the API's own publish
+ * script went with Plan C, and what remains in apps/api/src/geoserver/client.ts is the read-only
+ * client its tests use. Every call takes its environment and fetch explicitly, so it is testable
+ * without a GeoServer.
  */
 export interface GeoServerEnv {
   url: string;

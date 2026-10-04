@@ -1,7 +1,15 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from '../../db/pool';
-import { loadFeatures, versionsService } from '@webatlas/versioning';
-import { SEED_LAYERS } from '../../db/seeds/registry';
+import { loadFeatures, versionsService, type FeatureLoadSpec } from '@webatlas/versioning';
+import { SEED_LAYER_COLUMNS } from '@webatlas/shared';
+import { resolveStageFile } from '@webatlas/atlas-data';
+
+/** The stations seed file, loaded straight through the versioning core. */
+const stations: FeatureLoadSpec = {
+  table: 'stations',
+  file: resolveStageFile({ file: 'seeds/stations.geojson' }),
+  columns: SEED_LAYER_COLUMNS.stations,
+};
 
 afterAll(async () => { await closePool(); });
 
@@ -9,7 +17,6 @@ describe('versioning integration (§6 rollback + addressability)', () => {
   it('a mid-ingest failure rolls back, leaving the previously-active version active and served', async () => {
     const pool = getPool();
     const svc = versionsService(pool);
-    const stations = SEED_LAYERS.find((l) => l.table === 'stations')!;
 
     const activeBefore = await svc.getActiveVersionId('stations');
     const { rows: servedBefore } = await pool.query(`SELECT count(*)::int AS n FROM water.stations_active`);
@@ -45,7 +52,6 @@ describe('versioning integration (§6 rollback + addressability)', () => {
     const priorIds = await svc.resolveFeatureIds('stations', priorActive!);
 
     // New successful ingest of the same layer.
-    const stations = SEED_LAYERS.find((l) => l.table === 'stations')!;
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -70,44 +76,28 @@ describe('versioning integration (§6 rollback + addressability)', () => {
     await pool.query(`DELETE FROM app.dataset_versions WHERE id=$1`, [supId]);
   });
 
-  // HydroRIVERS is ~26.9k features, inserted row-by-row through the same seed
-  // pipeline as the rest of the suite; a first-time ingest alone runs well past
-  // the shared 30s integration-suite budget, so this test gets a longer local
-  // timeout rather than raising the global one for every other (much smaller) test.
-  it('ingests OSM waterways as the rivers version and flips it active (no thuyhe seed layer precedes it)', async () => {
+  it('rivers is one active ingest version holding all three levels', async () => {
+    // Loaded by the rivers dataset's load-geojson stage (two files, one version); the load itself,
+    // with its hierarchy and gates, is tested in packages/atlas-data (loadGeojson.db.test.ts).
     const pool = getPool();
     const svc = versionsService(pool);
-    const { ingestHydroRivers } = await import('../../db/seeds/ingestRivers');
-
-    // thuyhe.geojson was removed from SEED_LAYERS (Finding 2): runSeeds() in this
-    // suite's beforeAll no longer creates/activates a 'rivers' version at all. So
-    // whatever is active for 'rivers' right now is either nothing (fresh DB) or a
-    // prior OSM ingest already sitting active in this persistent dev DB — never a
-    // freshly-seeded thuyhe version.
-    const beforeActiveId = await svc.getActiveVersionId('rivers');
-    if (beforeActiveId) {
-      const beforeVersion = await svc.getVersion(beforeActiveId);
-      expect(beforeVersion?.source).not.toBe('thuyhe.geojson');
-    }
-
-    const { versionId } = await ingestHydroRivers();
-
-    // New version is active + ingest-kind.
     const active = await svc.getActiveVersionId('rivers');
-    expect(active).toBe(versionId);
-    const v = await svc.getVersion(versionId);
-    // Source string was deliberately bumped (see ingestRivers.ts) because the version
-    // idempotency key partly rests on it: leaving it as 'OSM waterways' would silently
-    // reactivate the old ways-only version instead of registering this ingest, which
-    // now also loads level-2 HydroRIVERS reaches into the same version.
-    expect(v).toMatchObject({ kind: 'ingest', source: 'OSM waterways + HydroRIVERS v10', isActive: true });
-
-    // rivers_active resolves to the OSM rows.
-    const newIds = await svc.resolveFeatureIds('rivers', versionId);
-    expect(newIds.length).toBeGreaterThan(0);
-
-    // Idempotent: a second ingest doesn't create a duplicate active v2.
-    const second = await ingestHydroRivers();
-    expect(second.versionId).toBe(versionId);
-  }, 180_000);
+    expect(active).not.toBeNull();
+    const { rows: chain } = await pool.query<{ kind: string; source: string }>(
+      `WITH RECURSIVE c AS (
+         SELECT id, kind, source, parent_version_id FROM app.dataset_versions WHERE id = $1
+         UNION ALL
+         SELECT v.id, v.kind, v.source, v.parent_version_id
+           FROM app.dataset_versions v JOIN c ON v.id = c.parent_version_id
+       )
+       SELECT kind, source FROM c WHERE kind = 'ingest'`,
+      [active]
+    );
+    expect(chain).toHaveLength(1);
+    expect(chain[0].source).toMatch(/^osm-rivers-region\.geojson\+hydrorivers-region\.geojson@sha256:[0-9a-f]{64}$/);
+    const { rows } = await pool.query<{ level: number }>(
+      `SELECT DISTINCT feature_level AS level FROM water.rivers_active ORDER BY 1`
+    );
+    expect(rows.map((r) => r.level)).toEqual([1, 2, 3]);
+  });
 });

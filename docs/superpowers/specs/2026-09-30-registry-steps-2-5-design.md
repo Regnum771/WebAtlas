@@ -191,6 +191,8 @@ It takes over the core that lives in `apps/api` today. That core already depends
 
 The attribute mappings (`columns` functions) and `assignDamStatus` move to `packages/shared` (INV-4). `apps/api` imports all of the above through the package, so nothing is duplicated during the transition.
 
+**Amended 2026-10-04 (Plan C-1).** The API's error classes do not extend the package's. The package throws its own HTTP-free `NotFoundError` and `ConflictError`, and the API's error handler maps them to 404 and 409 (`apps/api/src/plugins/errorHandler.ts`), which keeps every response the same without a class hierarchy across the package boundary.
+
 ### `packages/atlas-data` layout
 
 ```
@@ -371,6 +373,14 @@ Every dataset with its outcome. Excluded datasets are listed with their cause ("
 
 **Adoption** (C-1): if a layer's active version is an ingest version whose `source` equals the descriptor's `legacySource` **and** whose `feature_count` equals the file's feature count, `atlas:adopt` rewrites its `source` to the hashed form. Otherwise the first build loads one new version, and the edit guard still applies.
 
+**Amended 2026-10-04 (Plan C review).** Four things differ from the text above.
+
+- **A version is its content and its mapping.** The stage takes `mappingRevision?: number` (1 when omitted) and a file takes `multiPolygon?: boolean` and `root?: 'data' | 'repo'`. The loader records `source_version = 'mapping-<n>'`, and "an ingest version with this `source` exists" in the table reads "with this `source` and this `source_version`". Without it, a changed `columns` function re-ran the stage, found the bytes unchanged, re-stamped, and reported success with the old columns still in the table. A person decides when a mapping change is a new revision; a test pins the mapping code and each stage's flags so the change cannot pass unnoticed.
+- **The load locks the layer.** Its first statement is `SELECT … FROM app.dataset_versions WHERE layer_key = $1 FOR UPDATE`, held to the end of the transaction. Committing an edit needs one of those rows, so an edit cannot be committed between the guard's check and the activation that would hide it.
+- **The build adopts too.** Adoption is the first thing the versioned load tries, not only `atlas:adopt`: a machine that never ran `atlas:adopt` gets its existing version re-labelled and re-stamped, with the edits on top of it left active, instead of a second copy. Adoption compares the row count of the root version (for `rivers`, the rows the files supplied, not the derived hierarchy), not `feature_count`, and applies to the root of the active chain, not only to an active ingest version. It also labels a version loaded before `source_version` was recorded. Neither is done once the stage is past its first mapping revision: nobody can say which mapping an unlabelled version used, except that it was the first.
+- **The load analyses what it filled.** `ANALYZE water.<layer>` after activation, and both boundary tables after a replacement, in the same transaction. Autovacuum reaches a new table about a minute later; until then the planner has no statistics, which made one query over freshly loaded rivers take 72 s instead of 11 s.
+- **Tracked datasets.** `atlas:adopt` also re-labels the version of a dataset that already has build state when its load stage is new to that state (`rivers` on a machine built before step 5).
+
 ### Data relocation (FR-11, C-2)
 
 - Every file in `apps/api/src/db/seeds/data/` moves to `packages/atlas-data/data/seeds/`.
@@ -392,6 +402,8 @@ Every dataset with its outcome. Excluded datasets are listed with their cause ("
 
 The API suites stop calling `runSeeds`. A test helper `ensureSeeded(layers)` runs the versioned load for the layers a suite needs. An unchanged file creates no version, so repeated test runs stop growing `app.dataset_versions`.
 
+**Amended 2026-10-04 (Plan C-3).** The helper takes no layer list and runs once per test run, from a Vitest global setup: nearly every API suite reads the seeded layers and none declared it. Before loading anything it re-labels a version the old command loaded, so switching a machine over creates no versions. CI, which this design had parked, runs the same function through a command, `npm run atlas:seed`, because the `packages/versioning` suite needs seeded data and cannot import `atlas-data`. Neither records build state nor calls GeoServer.
+
 ### Old commands
 
 - At the end of step 5, `npm run seed`, `ingest:rivers` and `publish:geoserver` (and their root aliases) are removed. The docs point at `atlas:*`.
@@ -404,6 +416,7 @@ The API suites stop calling `runSeeds`. A test helper `ensureSeeded(layers)` run
 **Tests**
 
 - **Database:** tests are gated on `DATABASE_URL` and must be shown to execute, not skip. They use `__atlasdata_test__*` layers, never real ones.
+  - **Amended 2026-10-04 (Plan C-2).** The `load-geojson`, adoption and `ensureSeeded` tests run on the real layers: a layer key is a CHECK-constrained set and each has its own table, so there is no test layer to load into. Each test runs in a transaction that is always rolled back, and the suite's own assertion is that the version count is the same after as before. CI runs every `*.db.test.ts` of the package in the `api` job, which has the database.
 - **Cascade:** a synthetic two-dataset graph shaped like DEM → contours.
   - Forcing the upstream re-runs its later stages and its dependent.
   - A dependent excluded by `--except` is still invalidated.

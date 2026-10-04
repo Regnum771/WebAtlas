@@ -48,7 +48,7 @@ export const LEGEND_ATTRIBUTION: Record<string, string> = {
   // is the ONLY place any of these notices reach a user. That covers rivers, lakes, dams,
   // the basemap context layers below (roads/railways/water/landuse) and the contour layer.
   // The hazard layers (flood/drought/saltwater-intrusion/flood-generation) and stations
-  // are seeded from local placeholder data (db/seeds/registry.ts), not a licensed
+  // are seeded from local placeholder data (packages/atlas-data/src/descriptors/layers.ts), not a licensed
   // third-party source, so they carry no attribution obligation and none is added here.
   // The one genuinely uncovered residual is the RASTER basemap tiles themselves — the
   // OSM street tiles and Esri satellite tiles drawn as the map background — which have

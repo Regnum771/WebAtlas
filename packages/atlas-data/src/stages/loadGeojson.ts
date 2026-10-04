@@ -6,6 +6,7 @@ import type { Stage } from '../types';
 import type { StageContext, StageResult } from './index';
 import { resolveStageFile } from '../paths';
 import { versionSource } from '../fileHash';
+import { adoptLegacySource } from '../adoptLegacy';
 
 type LoadStage = Extract<Stage, { type: 'load-geojson' }>;
 
@@ -15,6 +16,10 @@ export interface ResolvedLoad {
   versioned: boolean;
   /** `<file names>@sha256:<hash of the file hashes>` (spec §11). Unused in non-versioned mode. */
   source: string;
+  /** `mapping-<n>`: the revision of the column mapping, the other half of a version's identity. */
+  mapping: string;
+  /** The source string the old seed command wrote for this layer, if it had one. */
+  legacySource?: string;
   files: Array<{ path: string; columns: ColumnMap; target?: string; multiLine?: boolean; multiPolygon?: boolean }>;
 }
 
@@ -31,6 +36,8 @@ export function resolveLoad(stage: LoadStage): ResolvedLoad {
     layer: stage.layer,
     versioned: stage.versioned,
     source: versionSource(stage),
+    mapping: `mapping-${stage.mappingRevision ?? 1}`,
+    legacySource: stage.legacySource,
     files: stage.files.map((f) => ({
       path: resolveStageFile(f),
       columns: f.columns,
@@ -69,25 +76,36 @@ async function loadVersioned(
   load: ResolvedLoad,
   opts: { supersedeEdits: boolean }
 ): Promise<LoadOutcome> {
-  const chain = await activeChain(client, load.layer);
-  const root = chain[chain.length - 1];
+  // Take the layer's version rows before looking at them. Committing an edit session flips the
+  // active pointer, which needs the same row: it now waits for this load, and if this load
+  // activates a new version the edit's own activation then fails on the one-active-version index.
+  // Without the lock an edit committed during the load (rivers takes about 40 s) would be
+  // deactivated by it, unseen by the guard below.
+  await client.query(`SELECT id FROM app.dataset_versions WHERE layer_key = $1 FOR UPDATE`, [load.layer]);
 
-  // Unchanged content: the active chain already rests on this exact load. Create nothing, activate
-  // nothing; but the boundaries may have changed (they are upstream of every layer), so every
-  // version of the chain gets its administrative codes again (spec C-5).
-  if (root && root.kind === 'ingest' && root.source === load.source) {
+  // Is what the layer rests on already this load? Either under the current labels, or under an
+  // older one that is re-labelled here (a machine that never ran atlas:adopt): then there is
+  // nothing to load, and no reason to stop for edits that sit on the very same content.
+  const adoption = await adoptLegacySource(client, load);
+  const chain = await activeChain(client, load.layer);
+
+  // Unchanged: create nothing, activate nothing. The boundaries may have changed (they are upstream
+  // of every layer), so every version of the chain gets its administrative codes again (spec C-5).
+  if (adoption.result !== 'mismatch') {
     if (isEditable(load.layer)) {
       for (const v of chain) await stampAdminCodes(client, load.layer, v.id);
     }
+    const relabelled = adoption.result === 'relabelled' ? ' (existing version re-labelled)' : '';
     return {
       action: 'restamped',
-      versionId: root.id,
-      summary: `${load.layer}: content unchanged; re-stamped ${chain.length} version${chain.length === 1 ? '' : 's'}`,
+      versionId: adoption.versionId,
+      summary: `${load.layer}: content unchanged${relabelled}; re-stamped ${chain.length} version${chain.length === 1 ? '' : 's'}`,
     };
   }
 
-  // New content. Edits sit on top of the previous load: replacing it would hide them, and nothing
-  // replays them yet. Only an explicit --supersede-edits may do that; --force never does.
+  // New content, or the same file under a new mapping revision. Edits sit on top of the previous
+  // load: replacing it would hide them, and nothing replays them yet. Only an explicit
+  // --supersede-edits may do that; --force never does.
   if (chain[0]?.kind === 'edit' && !opts.supersedeEdits) {
     throw new Error(
       `${load.layer} has steward edits on top of its last load; loading new content would hide them. ` +
@@ -96,7 +114,11 @@ async function loadVersioned(
   }
 
   const versions = versionsService(pool);
-  const versionId = await versions.createIngestVersion(client, { layerKey: load.layer, source: load.source });
+  const versionId = await versions.createIngestVersion(client, {
+    layerKey: load.layer,
+    source: load.source,
+    sourceVersion: load.mapping,
+  });
   for (const f of load.files) {
     await loadFeatures(
       client,
@@ -112,10 +134,14 @@ async function loadVersioned(
     [versionId]
   );
   await client.query(`UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`, [rows[0].n, versionId]);
+  // Autovacuum gets to a freshly filled table about a minute later, and until then the planner has
+  // no statistics for it. Measured on rivers: a self-join over the active view took 72 s, and 11 s
+  // once analysed. After activation, so the rows it derives are counted too.
+  await client.query(`ANALYZE water.${load.layer}`);
   return {
     action: 'loaded',
     versionId,
-    summary: `${load.layer}: ${rows[0].n} features in a new version from ${load.source}`,
+    summary: `${load.layer}: ${rows[0].n} features in a new version from ${load.source} (${load.mapping})`,
   };
 }
 
@@ -133,6 +159,10 @@ async function insertPlain(
   for (const [index, feature] of fc.features.entries()) {
     const cols = f.columns(feature.properties, index);
     const names = Object.keys(cols);
+    // Interpolated below: a column map must return plain column names, never keys taken from data.
+    for (const name of names) {
+      if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error(`load-geojson: "${name}" is not a column name (${target})`);
+    }
     await client.query(
       `INSERT INTO ${target} (${names.join(', ')}, geom)
        VALUES (${names.map((_, i) => `$${i + 1}`).join(', ')}, ${geom.replace('$GEOM', `$${names.length + 1}`)})`,
@@ -151,6 +181,8 @@ async function loadReplacing(client: PoolClient, load: ResolvedLoad): Promise<Lo
   for (const f of [...load.files].reverse()) await client.query(`DELETE FROM ${f.target}`);
   const parts: string[] = [];
   for (const f of load.files) parts.push(`${f.target} ${await insertPlain(client, f.target!, f)}`);
+  // Every layer's stamping joins against these next; see the note on ANALYZE in loadVersioned.
+  for (const f of load.files) await client.query(`ANALYZE ${f.target}`);
   return { action: 'replaced', summary: `${load.layer}: replaced ${parts.join(', ')}` };
 }
 

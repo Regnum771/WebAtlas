@@ -39,7 +39,7 @@ try {
     if (active.length) {
       console.error('TỪ CHỐI XÓA: các version sau đang active —');
       for (const r of active) console.error(`  ${r.layer_key} "${r.source}"`);
-      console.error('Hãy chạy seed + ingest:rivers để OSM thành active trước.');
+      console.error('Hãy chạy npm run atlas:build để OSM thành active trước.');
       process.exitCode = 1;
     } else {
       await client.query('BEGIN');

@@ -27,7 +27,7 @@ async function relabel(pool: Pool, loads: LoadStage[]): Promise<string | undefin
   try {
     await client.query('BEGIN');
     for (const s of loads) {
-      const a = await adoptLegacySource(client, s, resolveLoad(s));
+      const a = await adoptLegacySource(client, resolveLoad(s));
       if (a.result === 'mismatch') {
         refused = a.detail;
         break;

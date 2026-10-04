@@ -7,12 +7,9 @@
     "migrate": "node-pg-migrate -m src/db/migrations --tsconfig tsconfig.json",
     "migrate:up": "node-pg-migrate up -m src/db/migrations",
     "migrate:down": "node-pg-migrate down -m src/db/migrations",
-    "seed": "tsx src/db/seeds/run.ts",
-    "ingest:rivers": "tsx src/db/seeds/ingestRivers.ts",
     "rivers:hierarchy": "tsx src/scripts/buildRiverHierarchy.ts",
     "reference:build": "tsx src/scripts/buildReference.ts",
     "contours:generate": "tsx src/scripts/generateContours.ts",
-    "publish:geoserver": "tsx src/geoserver/publish.ts",
     "dev": "tsx watch src/start.ts",
     "start": "tsx src/start.ts",
     "create-admin": "tsx src/scripts/create-admin.ts",
@@ -35,6 +32,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@webatlas/atlas-data": "*",
     "@types/pg": "^8.11.10",
     "tsx": "^4.19.2",
     "typescript": "~6.0.2",

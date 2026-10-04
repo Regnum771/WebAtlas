@@ -46,6 +46,11 @@ describe('stageInputHash', () => {
     expect(stageInputHash(mk((p) => ({ x: p.a })), [], same)).not.toBe(stageInputHash(mk((p) => ({ x: p.b })), [], same));
   });
 
+  it('a new mapping revision makes a load-geojson stage stale', () => {
+    const s: Stage = { type: 'load-geojson', layer: 'dams', versioned: true, files: [{ file: 'seeds/f.geojson', columns: () => ({}) }] };
+    expect(stageInputHash({ ...s, mappingRevision: 2 }, [], () => 'v1')).not.toBe(stageInputHash(s, [], () => 'v1'));
+  });
+
   it('a load-geojson stage is stale when a file changes content, and only then', () => {
     const s: Stage = { type: 'load-geojson', layer: 'dams', versioned: true, files: [{ file: 'seeds/f.geojson', columns: () => ({}) }] };
     expect(stageInputHash(s, [], () => 'v1')).toBe(stageInputHash(s, [], () => 'v1'));

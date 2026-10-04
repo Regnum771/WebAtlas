@@ -73,6 +73,7 @@ const stageSchema = z.discriminatedUnion('type', [
       versioned: z.boolean(),
       files: z.array(loadGeojsonFile).min(1),
       legacySource: z.string().min(1).optional(),
+      mappingRevision: z.number().int().positive().optional(),
     })
     .strict(),
   z.object({ type: z.literal('sql'), statement: z.string().min(1) }).strict(),

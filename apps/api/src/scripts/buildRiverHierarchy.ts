@@ -15,9 +15,10 @@ import { assertRiverGates, buildRiverHierarchy, RIVER_BASELINE } from '@webatlas
  * The builder writes only differences, so on an unchanged network it reports 0 rows
  * superseded; a non-zero figure means the current code would change the committed
  * hierarchy. The rollback is policy, not necessity: activate() stays the only writer of
- * a committed hierarchy. To actually rebuild, delete the version and re-run
- * `npm run ingest:rivers -w @webatlas/api`. Do NOT turn this script into an in-place
- * rebuild.
+ * a committed hierarchy. To actually rebuild, delete the version and run
+ * `npm run atlas:build -- --force rivers`: with no active version the load is new content,
+ * and activation builds the hierarchy. (A forced build over an unchanged version only
+ * re-stamps it.) Do NOT turn this script into an in-place rebuild.
  *
  * Usage: npm run rivers:hierarchy -w @webatlas/api
  */
@@ -46,7 +47,7 @@ async function main(): Promise<void> {
     );
     console.log(`  ${built.superseded} rows would change against the committed hierarchy`);
     console.log(`  gates passed in ${elapsed}s`);
-    console.log('  ROLLBACK: this script only verifies -- re-run `npm run ingest:rivers` to rebuild');
+    console.log('  ROLLBACK: this script only verifies -- to rebuild, see its header');
   } finally {
     // A failed ROLLBACK (e.g. a dropped connection) must not skip releasing the client
     // or closing the pool, or the process hangs on the open handle.

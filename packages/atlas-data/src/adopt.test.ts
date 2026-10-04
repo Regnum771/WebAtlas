@@ -107,7 +107,7 @@ describe('adoptDatasets', () => {
   });
 
   it('adopts a layer whose existing version was re-labelled, or was already current', async () => {
-    for (const adoption of [{ result: 'relabelled' as const, versionId: 'v1' }, { result: 'current' as const }]) {
+    for (const adoption of [{ result: 'relabelled' as const, versionId: 'v1' }, { result: 'current' as const, versionId: 'v1' }]) {
       vi.mocked(adoptLegacySource).mockResolvedValueOnce(adoption);
       const m = memoryPool();
       const d = layerDs(async () => ({ ok: true, detail: 'water.stations_active: 2' }));

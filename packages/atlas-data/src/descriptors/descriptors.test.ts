@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALL_DATASETS, validateRegistry } from '../registry';
@@ -69,6 +70,47 @@ describe('registered datasets', () => {
       dams: 'thuydienvietnam.geojson', stations: 'stations.geojson', flood_zones: 'flood_zones.geojson',
       drought_points: 'drought_points.geojson', saltwater_intrusion: 'saltwater_intrusion.geojson',
       flood_generation: 'flood_generation.geojson', lakes: 'OSM water bodies', rivers: 'OSM waterways + HydroRIVERS v10',
+    });
+  });
+
+  it('what each load writes is pinned: changing it means a new mapping revision', () => {
+    // A version is its files' content AND its mapping revision. The build cannot tell a mapping
+    // that writes something different from one that was only reformatted, so a person decides,
+    // here. Whitespace is ignored; a comment is not.
+    const mappingCode = createHash('sha256')
+      .update(['seed-columns.ts', 'dam-status.ts']
+        .map((f) => readFileSync(join(REPO_ROOT, 'packages/shared/src', f), 'utf8').replace(/\s+/g, ''))
+        .join('\n'))
+      .digest('hex')
+      .slice(0, 16);
+    const loads = Object.fromEntries(
+      ALL_DATASETS.flatMap((d) => d.stages).flatMap((s) =>
+        s.type !== 'load-geojson' ? [] : [[
+          s.layer,
+          `mapping-${s.mappingRevision ?? 1}: ` + s.files
+            .map((f) => [f.file.split('/').pop(), f.multiLine && 'multiLine', f.multiPolygon && 'multiPolygon', f.target && `-> ${f.target}`]
+              .filter(Boolean).join(' '))
+            .join(' + '),
+        ]])
+    );
+    expect(
+      { mappingCode, loads },
+      'A column map (packages/shared/src/seed-columns.ts, dam-status.ts) or a load stage changed. ' +
+        'If a layer would now be written differently from the same file, raise that stage\'s mappingRevision: ' +
+        'the build then loads it as a new version instead of re-stamping the old rows. Then update this table.'
+    ).toEqual({
+      mappingCode: '78b24d56a74f0a66',
+      loads: {
+        admin: 'mapping-1: provinces-34.geojson multiPolygon -> admin.provinces + wards-region.geojson multiPolygon -> admin.wards',
+        dams: 'mapping-1: dams.geojson',
+        stations: 'mapping-1: stations.geojson',
+        flood_zones: 'mapping-1: flood_zones.geojson multiPolygon',
+        drought_points: 'mapping-1: drought_points.geojson',
+        saltwater_intrusion: 'mapping-1: saltwater_intrusion.geojson',
+        flood_generation: 'mapping-1: flood_generation.geojson multiPolygon',
+        lakes: 'mapping-1: osm-lakes-region.geojson multiPolygon',
+        rivers: 'mapping-1: osm-rivers-region.geojson multiLine + hydrorivers-region.geojson multiLine',
+      },
     });
   });
 

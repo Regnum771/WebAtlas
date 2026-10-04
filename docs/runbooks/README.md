@@ -31,10 +31,11 @@ The old numbered steps map onto the registry as follows. Each dataset is a row i
 missing or failed and the one command to run next; `npm run atlas:verify` checks the atlas actually serves;
 `npm run atlas:adopt` records a machine set up before the registry without re-running anything. Use
 `npm run atlas:build -- --force <id>` to rebuild on purpose (forcing a dataset invalidates its dependents, which rebuild only if they are in the selection: `--force basemap` alone also rebuilds `reference_entities`, while `--only basemap --force basemap` leaves it `missing` until a full build).
-`atlas:up` accepts `--compose <file>` and the build flags `--only`, `--except` and `--force`.
+`atlas:up` accepts `--compose <file>` and the build flags `--only`, `--except`, `--force` and `--supersede-edits`.
 
-The old commands (`npm run seed`, `ingest:rivers`, `publish:geoserver`, `reference:build`, `contours:generate`) still work
-until Plan C. Scripts read the GeoServer password from the environment (`infra/.env`, through the compose
+The old `npm run seed`, `ingest:rivers` and `publish:geoserver` commands are gone: the registry loads and publishes
+those layers itself. `reference:build` and `contours:generate` remain as the commands two `run` stages call, and
+`npm run atlas:seed` loads the seed data alone, for CI and test databases. Scripts read the GeoServer password from the environment (`infra/.env`, through the compose
 service), never from argv.
 
 To run one script by hand, for example to debug it, use the tools image:
@@ -66,13 +67,12 @@ lines are for a manual rerun.
    A load is keyed to the file's content: rebuilding with an unchanged file creates no new version and only
    re-stamps the administrative codes. Changing the boundary files re-stamps every layer. If a layer has steward
    edits on top of its last load, loading *changed* content stops with a message instead of hiding them; pass
-   `--supersede-edits <layer>` to go ahead. (`npm run seed` still exists until Plan C-3 and still creates a new
-   version of every layer each time it runs.)
+   `--supersede-edits <layer>` to go ahead.
 
    **Upgrading an existing database:** migration `1000000000016_admin-stamping` adds `province_codes` /
    `ward_codes` with `DEFAULT '{}'` and does not backfill them — a database that already had data before that
-   migration reads every feature as belonging to no administrative unit until it is re-seeded. Run `npm run seed
-   -w @webatlas/api` and `npm run ingest:rivers -w @webatlas/api` again after migrating (or `npm run atlas:build -- --force admin_boundaries`, which re-stamps every layer); otherwise
+   migration reads every feature as belonging to no administrative unit until it is re-stamped. Run
+   `npm run atlas:build -- --force admin_boundaries` after migrating, which re-stamps every layer; otherwise
    `GET /api/layers/<layer>/features?province=…` and the assistant's `features_in_admin_unit` tool return `200`
    with an empty result, silently, rather than an error that would flag the staleness.
 
@@ -128,9 +128,9 @@ lines are for a manual rerun.
    step 7, and it depends on `dem`, so excluding `dem` excludes it too. Manual rerun:
    `npm run atlas:build -- --only contours`.
 9. **Publishing the feature layers to GeoServer** — creates the `webatlas_water` datastore
-   and the WMS/WFS layers the web app actually renders. Publishing is now part of each dataset's own stages: `seeds` (seven `publish-geoserver` stages, one per layer),
-   `rivers`, `basemap` and `contours` all publish their layers, so no separate publish step is needed and it follows its data automatically. The standalone
-   `npm run publish:geoserver` is superseded by `atlas:build` and kept until Plan C.
+   and the WMS/WFS layers the web app actually renders. Publishing is part of each dataset's own stages: the seven layer datasets (one `publish-geoserver` stage each),
+   `rivers`, `basemap` and `contours` all publish their layers, so there is no separate publish step and publishing
+   follows its data automatically.
 
 ## Why `basemap`, `dem` and `contours` are "not in git"
 

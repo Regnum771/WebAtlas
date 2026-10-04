@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { describe, it, expect } from 'vitest';
 import { gsRequest } from './client';
-import { nativeNameFor } from './publish';
+import { ALL_DATASETS } from '@webatlas/atlas-data';
 
 const WS = process.env.GEOSERVER_WORKSPACE ?? 'webatlas';
 const STORE = `${WS}_water`;
@@ -11,7 +11,7 @@ const LAYERS = [
 ];
 
 // Live WFS smoke test: needs a running GeoServer with the layers published
-// (npm run publish:geoserver). Gated on GEOSERVER_URL so CI — which runs
+// (npm run atlas:build). Gated on GEOSERVER_URL so CI — which runs
 // Postgres only, no GeoServer (CI design §1) — skips it; the local dev
 // stack sets GEOSERVER_URL in apps/api/.env, so it still runs there.
 const GS = process.env.GEOSERVER_URL;
@@ -26,6 +26,13 @@ async function wfsCount(layer: string): Promise<number> {
   expect(json.type).toBe('FeatureCollection');
   return json.features.length;
 }
+
+/** The relation each public layer is published over, from the registry's publish stages. */
+const NATIVE_NAME = new Map(
+  ALL_DATASETS.flatMap((d) => d.stages).flatMap((s) =>
+    s.type === 'publish-geoserver' ? [[s.layer, s.nativeName ?? `${s.layer}_active`] as const] : []
+  )
+);
 
 describe.skipIf(!GS)('WFS publication', () => {
   it('serves dams as GeoJSON', async () => {
@@ -47,7 +54,7 @@ describe.skipIf(!GS)('WFS publication', () => {
       expect(res.status, `featuretype ${l} should be published`).toBe(200);
       const json = (await res.json()) as { featureType: { name: string; nativeName: string } };
       expect(json.featureType.name, `${l} public layer name`).toBe(l);
-      expect(json.featureType.nativeName, `${l} backing relation`).toBe(nativeNameFor(l));
+      expect(json.featureType.nativeName, `${l} backing relation`).toBe(NATIVE_NAME.get(l));
     }
   });
 
@@ -60,23 +67,5 @@ describe.skipIf(!GS)('WFS publication', () => {
     const res = await fetch(url);
     expect(res.status).toBe(200);
     expect(await res.text()).toMatch(/numberMatched="9486"/);
-  });
-});
-
-describe('nativeNameFor', () => {
-  it('publishes the river overview under its own name, not a _active twin', () => {
-    // ensureLayer maps table -> nativeName `${table}_active`, which is right for
-    // the versioned layers and wrong for this one: rivers_overview IS the
-    // relation. Getting it wrong makes GeoServer look for rivers_overview_active
-    // and fail with a confusing 500.
-    expect(nativeNameFor('rivers_overview')).toBe('rivers_overview');
-  });
-
-  it('keeps the _active mapping for versioned layers', () => {
-    expect(nativeNameFor('dams')).toBe('dams_active');
-  });
-
-  it('backs rivers with the level-3 view, not the all-levels one', () => {
-    expect(nativeNameFor('rivers')).toBe('rivers_detail');
   });
 });

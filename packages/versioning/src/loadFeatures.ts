@@ -42,6 +42,12 @@ export async function loadFeatures(
   for (const [index, f] of features.entries()) {
     const cols = spec.columns(f.properties, index);
     const colNames = Object.keys(cols);
+    // Interpolated below: a column map must return plain column names, never keys taken from data.
+    for (const name of colNames) {
+      if (!/^[a-z_][a-z0-9_]*$/.test(name)) {
+        throw new Error(`water.${spec.table}: "${name}" is not a column name`);
+      }
+    }
     const values = Object.values(cols);
     const hasGeometry = f.geometry != null;
 

@@ -78,14 +78,10 @@ jobs:
       - run: npm ci
       - run: npm run build:shared
       - run: npm run migrate
-      - run: npm run seed
-      # Bước 4 của docs/runbooks/README.md — đánh dấu BẮT BUỘC, và dữ liệu nguồn nằm
-      # trong git, nhưng CI trước nay bỏ qua. Thiếu nó thì riverOverview.test.ts và
-      # data.test.ts chạy trên bảng rỗng; tệ hơn, kết quả còn đổi theo việc suite nào
-      # tình cờ chạy trước, vì integration.test.ts cũng nạp sông trong lúc kiểm thử.
-      #
-      # Gọi qua -w: package.json ở gốc không có script này (khác migrate/seed).
-      - run: npm run ingest:rivers -w @webatlas/api
+      # Ranh giới, bảy lớp chuyên đề và sông, nạp bằng chính bộ nạp của atlas:build nhưng không
+      # ghi trạng thái build và không cần GeoServer. Kiểm thử của packages/versioning dùng dữ
+      # liệu này; bộ kiểm thử API tự gọi lại ensureSeeded (không làm gì khi dữ liệu đã có).
+      - run: npm run atlas:seed
       # Bản đồ nền thật cần bản trích Geofabrik 720 MB nên CI không dựng được. Thay vào đó nạp
       # fixture đã commit (mọi đối tượng có tên của sáu tỉnh, packages/atlas-data/fixtures/basemap),
       # dựng thực thể tham chiếu như atlas:up vẫn làm, rồi đối chiếu với digest lấy từ atlas thật:
@@ -98,8 +94,10 @@ jobs:
       - run: npx tsc -p packages/versioning/tsconfig.json --noEmit
       - run: npm run test:versioning
       # Bộ nạp load-geojson và việc tiếp nhận phiên bản cũ: kiểm thử cần cơ sở dữ liệu thật, chạy
-      # trong transaction rồi rollback. Chỉ hai tệp này: phần còn lại của atlas-data chạy ở job riêng.
-      - run: npx vitest run src/stages/loadGeojson.db.test.ts src/adoptLegacy.db.test.ts
+      # trong transaction rồi rollback. Lọc theo tên `.db.test` chứ không liệt kê từng tệp, để một
+      # tệp *.db.test.ts mới tự được chạy; job atlas-data không có cơ sở dữ liệu nên ở đó chúng tự
+      # bỏ qua. Kiểm thử cần GeoServer (probes.db) vẫn bỏ qua ở đây.
+      - run: npx vitest run .db.test
         working-directory: packages/atlas-data
       - run: npx tsc -p apps/api/tsconfig.json --noEmit
       - run: npm run test:api
