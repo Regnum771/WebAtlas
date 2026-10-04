@@ -116,4 +116,32 @@ describe('adoptDatasets', () => {
       expect(m.state.get('stations|0:load-geojson')).toEqual({ input_hash: stageHashPlan([d]).get('stations')![0], status: 'ok' });
     }
   });
+
+  it('re-labels the version of a tracked dataset whose load stage is new, so the build does not reload it', async () => {
+    // rivers on a machine built before load-geojson: its publish stages have state under the same
+    // keys, its load stage has none. Skipping it as "tracked" would make the next build load all
+    // of it again as a new version.
+    vi.mocked(adoptLegacySource).mockClear();
+    vi.mocked(adoptLegacySource).mockResolvedValueOnce({ result: 'relabelled', versionId: 'v1' });
+    const d: Dataset = {
+      ...layerDs(async () => ({ ok: true, detail: 'x' })),
+      stages: [...layerDs(undefined).stages, { type: 'publish-geoserver', layer: 'stations' }],
+    };
+    const m = memoryPool({ 'stations|1:publish-geoserver': { input_hash: 'old', status: 'ok' } });
+    const out = await adoptDatasets(m.pool, [d], ctx);
+    expect(adoptLegacySource).toHaveBeenCalledTimes(1);
+    expect(out[0].result).toBe('has-state');
+    expect(out[0].detail).toMatch(/re-labelled/);
+    // State is untouched: the build decides, and its load will find the content already there.
+    expect(m.state.size).toBe(1);
+  });
+
+  it('does not touch the version of a tracked dataset whose load stage already has state', async () => {
+    vi.mocked(adoptLegacySource).mockClear();
+    const d = layerDs(async () => ({ ok: true, detail: 'x' }));
+    const m = memoryPool({ 'stations|0:load-geojson': { input_hash: 'old', status: 'ok' } });
+    const out = await adoptDatasets(m.pool, [d], ctx);
+    expect(adoptLegacySource).not.toHaveBeenCalled();
+    expect(out[0]).toEqual({ id: 'stations', result: 'has-state', detail: 'already tracked; atlas:build decides what to redo' });
+  });
 });
