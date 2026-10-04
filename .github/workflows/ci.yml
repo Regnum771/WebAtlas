@@ -33,6 +33,23 @@ jobs:
       - run: npm run build:web
       - run: npm run test:web
 
+  # Sổ đăng ký dữ liệu. Chạy KHÔNG có DATABASE_URL, Docker hay GeoServer: các kiểm thử cần
+  # những thứ đó tự bỏ qua (skipIf), phần còn lại (runner, descriptor, probe, fetch-http, các
+  # script công bố chạy với curl giả) không phụ thuộc dữ liệu. Trước đây gói này không có
+  # trong CI, nên một thay đổi làm hỏng atlas:up vẫn merge được.
+  atlas-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build:shared
+      - run: npx tsc -p packages/atlas-data/tsconfig.json --noEmit
+      - run: npm run test -w @webatlas/atlas-data
+
   api:
     runs-on: ubuntu-latest
     services:
