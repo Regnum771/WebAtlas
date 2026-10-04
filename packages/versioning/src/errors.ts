@@ -16,3 +16,6 @@ export class ConflictError extends Error {
     this.name = new.target.name;
   }
 }
+
+/** An edit draft was opened on a version that is no longer active, so committing it is refused. */
+export class StaleDraftError extends ConflictError {}

@@ -16,6 +16,7 @@ interface Args {
 
 function messageFor(e: ApiError): { error: string | null; fieldErrors: Record<string, string> } {
   if (e.status === 422) return { error: 'Invalid geometry — please redraw', fieldErrors: {} };
+  if (e.code === 'STALE_EDIT') return { error: 'Someone else changed this layer while you were saving. Please try again.', fieldErrors: {} };
   if (e.status === 409) return { error: 'A feature like this already exists', fieldErrors: {} };
   if (e.status === 404) return { error: 'This feature no longer exists', fieldErrors: {} };
   if (e.status === 400) {

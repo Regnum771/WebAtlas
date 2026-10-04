@@ -225,14 +225,9 @@ npm run atlas:build                                # 6. nạp các tệp seed đ
 - **Bước 6 tự lo thứ tự** — `rivers` và các lớp khác đều phụ thuộc `admin_boundaries`; sổ đăng ký
   dựng theo đúng thứ tự phụ thuộc và chỉ nạp lại những tập có tệp đổi nội dung.
 
-`prune-hydrosheds-versions.mjs` dọn các version `rivers`/`lakes` cũ (HydroSHEDS,
-`thuyhe.geojson`) khỏi DB sau khi OSM đã lên active — **từ chối chạy** nếu
-version cũ nào đó đang active (để không xoá nhầm dữ liệu đang phục vụ). Chạy
-sau bước 7, không bắt buộc:
-
-```bash
-node packages/atlas-data/tools/prune-hydrosheds-versions.mjs
-```
+Các version cũ (kể cả HydroSHEDS `thuyhe.geojson`) được dọn tự động từ S1: `pruneVersions`
+chạy sau mỗi lần kích hoạt và trong `atlas:seed`/`atlas:build`, giữ chuỗi đang hoạt động, hai
+lần nạp gần nhất và các version được ghim. Không còn lệnh dọn thủ công.
 
 ## Regenerating HydroSHEDS seed data
 

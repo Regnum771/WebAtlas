@@ -9,6 +9,7 @@ vi.mock('../../map/model/mapEditing', () => ({
 }));
 const deleteFeature = vi.fn();
 vi.mock('../api/features.api', () => ({ deleteFeature: (...a: unknown[]) => deleteFeature(...a), createFeature: vi.fn(), updateFeature: vi.fn() }));
+import { ApiError } from '../../../shared/api/apiClient';
 import { useEditExistingPresenter } from './useEditExistingPresenter';
 
 describe('useEditExistingPresenter', () => {
@@ -47,6 +48,16 @@ describe('useEditExistingPresenter', () => {
     expect(deleteFeature).toHaveBeenCalledWith('dams', 'f1');
     expect(refreshLayer).toHaveBeenCalled();
     expect(result.current.selection).toBeNull();
+  });
+
+  it('confirmDelete shows the try-again message on STALE_EDIT', async () => {
+    deleteFeature.mockRejectedValue(new ApiError(409, 'STALE_EDIT', 'layer changed'));
+    const { result } = renderHook(() => useEditExistingPresenter());
+    act(() => result.current.enter());
+    const onSelected = enterEditMode.mock.calls[0][0];
+    act(() => onSelected({ layerKey: 'dams', featureId: 'f1', geometry: { type: 'Point', coordinates: [108, 13] }, isoProps: {} }));
+    await act(async () => { await result.current.confirmDelete(); });
+    expect(result.current.error).toBe('Someone else changed this layer while you were saving. Please try again.');
   });
 
   it('exit() leaves edit mode and clears selection', () => {

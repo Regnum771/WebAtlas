@@ -251,7 +251,10 @@ view causes the entire layer to be scanned and de-duplicated before the predicat
 index therefore apply their predicate to the base table first, to obtain candidate business keys, and resolve the
 version chain only for those candidates.
 
-This was true until migration 22; the views are now plain filters (see 'How the active state is stored').
+Until migration 22 this was the rule, and two obligations followed from it: the candidate step ran across all versions
+and so returned a superset, which had to be re-filtered (real predicate plus deletion test) after resolution; and two
+independent chains in one statement needed distinct relation aliases. Both are history: the views are now plain
+filters, so neither applies (see 'How the active state is stored').
 
 ### How the active state is stored (since migration 22)
 
@@ -269,17 +272,18 @@ every version listed in `app.version_pins` with its chain to the root; everythin
 rows first. Scenarios (S4) pin the versions they branched from.
 
 Committing an edit session whose draft was opened on a version that is no longer active is now
-refused (`ConflictError`, HTTP 409) instead of silently dropping the intervening version.
+refused (`StaleDraftError`, a `ConflictError`; HTTP 409 with code `STALE_EDIT`) instead of silently dropping the
+intervening version. The API's one-shot writes retry such a commit once on a fresh session.
 
-Two obligations follow, and both have produced defects when neglected:
-
-1. The candidate step runs across all versions and therefore returns a superset. The real predicate, together with the
-   deletion test, **must** be re-applied after resolution.
-2. Two independent chains in one statement require distinct relation aliases.
+Deploying migration 22: run `npm run atlas:seed` (or `npm run atlas:build`) right after `npm run migrate`. The
+first activation prunes the whole backlog of every layer inside its transaction (on the dev database about 127k
+`lakes` rows), which should not happen inside a steward's web edit. This also assumes a single-instance deploy: old
+code activating after the migration would move the pointer without moving the flag.
 
 ### 5.4 Operational note on version accumulation
 
-Repeated ingests accumulate versions. In the development database at revision 1.0, 2,647 versions had accumulated, of
+Until migration 22, repeated ingests accumulated versions with nothing to remove them; retention is now automatic (see
+'How the active state is stored'). The figures below are from that period. In the development database at revision 1.0, 2,647 versions had accumulated, of
 which nine were reachable from an active version; the unreachable remainder accounted for approximately 1.4 GB, or 63%
 of the database. Pruning must retain the complete ancestor chain of each active version, not merely the active version
 itself, because a resolved view inherits rows from its ancestors.

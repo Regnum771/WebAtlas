@@ -6,7 +6,7 @@ import { refreshCurrentRows } from './currentRows';
 import { pruneVersions } from './retention';
 import { buildRiverHierarchy } from './riverHierarchy';
 import { assertRiverGates, RIVER_BASELINE } from './riverGates';
-import { ConflictError, NotFoundError } from './errors';
+import { ConflictError, NotFoundError, StaleDraftError } from './errors';
 
 export interface IngestVersionArgs {
   layerKey: string;
@@ -163,7 +163,7 @@ export function versionsService(pg: Pool) {
       if (parent !== activeId) {
         // The locked active row can be missing after waiting on another commit; don't print "undefined".
         const now = activeId ? `the active version is now ${activeId}` : `the layer's active version has changed since`;
-        throw new ConflictError(
+        throw new StaleDraftError(
           `layer ${layerKey} changed since this edit session started (its draft ${draftId} was opened on ${parent}; ${now}). Reopen the session and redo the edits.`
         );
       }

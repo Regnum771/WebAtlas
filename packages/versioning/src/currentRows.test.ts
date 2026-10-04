@@ -101,6 +101,10 @@ describe('the current flag follows activation', () => {
       );
       await svc.discardEditDraft(c, 'stations', draft);
       expect(await flagged(c)).toEqual(before);
+      const gone = await c.query(`SELECT count(*)::int AS n FROM app.dataset_versions WHERE id = $1`, [draft]);
+      expect(gone.rows[0].n).toBe(0);
+      const rows = await c.query(`SELECT count(*)::int AS n FROM water.stations WHERE dataset_version_id = $1`, [draft]);
+      expect(rows.rows[0].n).toBe(0);
     });
   });
 

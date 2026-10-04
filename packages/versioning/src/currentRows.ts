@@ -15,7 +15,8 @@ import { resolvedSql } from './resolve';
  */
 export async function refreshCurrentRows(client: PoolClient, layerKey: EditableLayerKey, versionId: string): Promise<void> {
   await client.query(
-    `UPDATE water.${layerKey} SET is_current = false WHERE is_current AND id NOT IN (${resolvedSql(layerKey)})`,
+    `UPDATE water.${layerKey} t SET is_current = false
+     WHERE t.is_current AND NOT EXISTS (SELECT 1 FROM (${resolvedSql(layerKey)}) r WHERE r.id = t.id)`,
     [versionId]
   );
   await client.query(
