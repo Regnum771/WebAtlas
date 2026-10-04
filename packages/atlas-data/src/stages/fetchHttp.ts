@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, resolve, sep } from 'node:path';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, resolve, sep } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
@@ -9,6 +9,7 @@ import type { Pool } from 'pg';
 import type { Stage } from '../types';
 import type { StageContext, StageResult } from './index';
 import { DATA_CACHE } from '../paths';
+import { supersededPattern } from '../schema';
 
 type FetchStage = Extract<Stage, { type: 'fetch-http' }>;
 const PROGRESS_EVERY = 64 * 1024 * 1024;
@@ -31,6 +32,30 @@ async function sha256File(path: string): Promise<string> {
   const hash = createHash('sha256');
   await pipeline(createReadStream(path), hash);
   return hash.digest('hex');
+}
+
+/**
+ * Remove the earlier downloads `stage.supersedes` names, with their sidecars and any part file.
+ * Only called once the stage's own file is in place and verified, so a failed download never
+ * costs the copy that still worked. Never the stage's own file or its sidecars, whatever the
+ * pattern says. Housekeeping: a file that cannot be removed (held open on Windows, say) is
+ * reported and left, and the stage still succeeds.
+ */
+async function removeSuperseded(stage: FetchStage, target: string, ctx: StageContext): Promise<void> {
+  if (!stage.supersedes) return;
+  const pattern = supersededPattern(stage.supersedes);
+  const dir = dirname(target);
+  const own = basename(target);
+  const keep = new Set([own, `${own}.source`, `${own}.part`]);
+  for (const name of await readdir(dir)) {
+    if (keep.has(name) || !pattern.test(name)) continue;
+    try {
+      for (const file of [name, `${name}.source`, `${name}.part`]) await rm(resolve(dir, file), { force: true });
+      ctx.log(`[${ctx.datasetId}] removed ${name} from the cache: superseded by ${own}`);
+    } catch (err) {
+      ctx.log(`[${ctx.datasetId}] could not remove ${name} from the cache (${err instanceof Error ? err.message : String(err)}); left in place`);
+    }
+  }
 }
 
 /**
@@ -77,6 +102,7 @@ export async function executeFetchHttp(
             ? `[${ctx.datasetId}] ${stage.into} matches its pin; reused although forced`
             : `[${ctx.datasetId}] ${stage.into} already present (sha256 ${have.slice(0, 12)})`
         );
+        await removeSuperseded(stage, target, ctx);
         return { summary: `sha256:${have} ${stage.url} (reused)` };
       }
       ctx.log(`[${ctx.datasetId}] ${stage.into} does not match its pin; downloading again`);
@@ -141,6 +167,7 @@ export async function executeFetchHttp(
     await rm(sidecar, { force: true });
     await rename(part, target);
     await writeFile(sidecar, stage.url, 'utf8');
+    await removeSuperseded(stage, target, ctx);
     return { summary: `sha256:${got} ${stage.url}` };
   } catch (err) {
     if (idled) throw idleError();

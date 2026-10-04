@@ -31,7 +31,31 @@ The old numbered steps map onto the registry as follows. Each dataset is a row i
 missing or failed and the one command to run next; `npm run atlas:verify` checks the atlas actually serves;
 `npm run atlas:adopt` records a machine set up before the registry without re-running anything. Use
 `npm run atlas:build -- --force <id>` to rebuild on purpose (forcing a dataset invalidates its dependents, which rebuild only if they are in the selection: `--force basemap` alone also rebuilds `reference_entities`, while `--only basemap --force basemap` leaves it `missing` until a full build).
-`atlas:up` accepts `--compose <file>` and the build flags `--only`, `--except`, `--force` and `--supersede-edits`.
+`atlas:up` and `atlas:build` accept `--compose <file>` (the compose file their containers run from) and the build
+flags `--only`, `--except`, `--force` and `--supersede-edits`. `atlas:status`, `atlas:verify` and `atlas:adopt` take no
+arguments and never use Docker: they look at whatever `DATABASE_URL` and `GEOSERVER_URL` in `apps/api/.env` point at.
+Only one build runs against a database at a time; a second one stops at once and says so.
+
+### A second stack on one machine
+
+A second clone of this repository uses the same compose project name, `webatlas`, so its `docker compose` would
+talk to the first clone's containers, and its new `apps/api/.env` would point at the same ports. `atlas:up`
+refuses to go on when the project's containers were created from another checkout. To give the second clone a
+stack of its own, before its first `npm run atlas:up`:
+
+1. Copy `infra/.env.example` to `infra/.env` and `apps/api/.env.example` to `apps/api/.env`.
+2. In `infra/.env`, add `COMPOSE_PROJECT_NAME=webatlas_second` (any other name) and set `POSTGRES_PORT` and
+   `GEOSERVER_PORT` to two free ports. The project name gives it its own containers and volumes.
+3. In `apps/api/.env`, put those ports into `DATABASE_URL`, `ASSISTANT_DATABASE_URL` and `GEOSERVER_URL`.
+
+The check reads the labels of running or stopped containers. After `docker compose down` in the first clone there
+are none, and without its own project name the second clone would attach the first one's database volume: set the
+name first. Both stacks use the same tools image (`webatlas-atlas-tools`); that is harmless while they are on the
+same commit, and the image is rebuilt by whichever `atlas:up` runs next.
+
+On Windows a published port can fail silently when it falls in an excluded range, which moves after a reboot:
+`netsh interface ipv4 show excludedportrange protocol=tcp` lists them. If sharing one stack between two
+checkouts is what you want (the repository was moved, say), run `atlas:up` with `ATLAS_SHARED_STACK=1`.
 
 The old `npm run seed`, `ingest:rivers` and `publish:geoserver` commands are gone: the registry loads and publishes
 those layers itself. `reference:build` and `contours:generate` remain as the commands two `run` stages call, and

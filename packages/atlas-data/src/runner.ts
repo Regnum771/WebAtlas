@@ -4,6 +4,7 @@ import { topologicalOrder, transitiveDependents } from './graph';
 import { upsertLineage, appendProcessStep, processStep } from './lineage';
 import { stageKey, stageHashPlan, readStageState, writeStageState, invalidateStageState } from './state';
 import { executeStage } from './stages/index';
+import { missingInputs } from './fileHash';
 
 export interface BuildReport {
   executed: string[];
@@ -99,6 +100,19 @@ export async function runBuild(
         if (!forced && prior?.status === 'ok' && prior.input_hash === hash) {
           report.skipped.push(current);
           continue;
+        }
+
+        // A load whose file is absent hashes as `missing`, so it looks changed. Refused here, before
+        // anything is invalidated or marked failed: once the file is restored, every hash is what
+        // it was before and nothing has to rebuild.
+        const absent = missingInputs(stage);
+        if (absent.length > 0) {
+          report.failed.push(current);
+          report.errors[current] =
+            `missing input ${absent.join(', ')}; nothing was invalidated, restore the file and build again`;
+          broken.add(d.id);
+          failedAt = i;
+          break;
         }
 
         let summary = '';

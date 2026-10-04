@@ -5,8 +5,9 @@ import { stageKey, stageHashPlan, readStageState, writeStageState } from './stat
 import { upsertLineage, appendProcessStep, adoptionStep } from './lineage';
 import { adoptLegacySource } from './adoptLegacy';
 import { resolveLoad } from './stages/loadGeojson';
+import { missingInputs } from './fileHash';
 
-export type AdoptResult = 'adopted' | 'has-state' | 'no-probe' | 'probe-failed' | 'needs-build';
+export type AdoptResult = 'adopted' | 'has-state' | 'no-probe' | 'probe-failed' | 'needs-build' | 'missing-input';
 
 export interface AdoptOutcome {
   id: string;
@@ -57,9 +58,25 @@ export async function adoptDatasets(pool: Pool, datasets: Dataset[], ctx: ProbeC
   const ordered = topologicalOrder(datasets);
   const plan = stageHashPlan(ordered);
   const out: AdoptOutcome[] = [];
+  // Datasets whose own inputs, or a dependency's, are absent. Their planned hashes rest on
+  // `missing`: recording them ok would make status and verify report a complete atlas with an
+  // input file gone, and everything would turn stale the moment the file came back.
+  const incomplete = new Set<string>();
 
   for (const d of ordered) {
     const keys = d.stages.map((s, i) => stageKey(i, s));
+
+    const absent = d.stages.flatMap(missingInputs);
+    const blockedBy = (d.dependsOn ?? []).find((dep) => incomplete.has(dep));
+    if (absent.length > 0 || blockedBy) {
+      incomplete.add(d.id);
+      out.push({
+        id: d.id,
+        result: 'missing-input',
+        detail: absent.length > 0 ? `missing input ${absent.join(', ')}` : `depends on ${blockedBy}, which has a missing input`,
+      });
+      continue;
+    }
 
     let tracked = false;
     for (const key of keys) {

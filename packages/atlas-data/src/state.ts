@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Pool } from 'pg';
 import type { Dataset, Stage } from './types';
-import { sha256OfFile, stageFileHashes, type FileHasher } from './fileHash';
+import { plannedHashOfFile, stageFileHashes, type FileHasher } from './fileHash';
 
 /**
  * Stable identifier for a stage within its dataset. Position is included because a
@@ -31,6 +31,13 @@ function canonical(value: unknown): unknown {
   return value;
 }
 
+/** What of a stage decides its output. Cache housekeeping does not, so changing it re-runs nothing. */
+function hashed(stage: Stage): Stage {
+  if (stage.type !== 'fetch-http' || stage.supersedes === undefined) return stage;
+  const { supersedes: _housekeeping, ...rest } = stage;
+  return rest;
+}
+
 /**
  * Hash of everything that should force a rerun: the stage's own configuration plus its
  * upstreams' hashes.
@@ -51,9 +58,9 @@ function canonical(value: unknown): unknown {
  * content hash, so editing a file makes the stage stale and touching it without changing it
  * does not (spec §11). No other stage type calls `hash`.
  */
-export function stageInputHash(stage: Stage, upstreamHashes: string[], hash: FileHasher = sha256OfFile): string {
+export function stageInputHash(stage: Stage, upstreamHashes: string[], hash: FileHasher = plannedHashOfFile): string {
   const payload = JSON.stringify({
-    stage: canonical(stage),
+    stage: canonical(hashed(stage)),
     ...(stage.type === 'load-geojson' ? { files: stageFileHashes(stage, hash) } : {}),
     upstream: [...upstreamHashes].sort(),
   });
@@ -73,7 +80,7 @@ export function stageInputHash(stage: Stage, upstreamHashes: string[], hash: Fil
  * about what is stale. Deterministic for given file contents; it reads the files of load-geojson
  * stages (through `hash`) on every call, and touches nothing else.
  */
-export function stageHashPlan(orderedDatasets: Dataset[], hash: FileHasher = sha256OfFile): Map<string, string[]> {
+export function stageHashPlan(orderedDatasets: Dataset[], hash: FileHasher = plannedHashOfFile): Map<string, string[]> {
   const plan = new Map<string, string[]>();
 
   for (const d of orderedDatasets) {

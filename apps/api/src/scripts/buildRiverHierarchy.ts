@@ -15,10 +15,13 @@ import { assertRiverGates, buildRiverHierarchy, RIVER_BASELINE } from '@webatlas
  * The builder writes only differences, so on an unchanged network it reports 0 rows
  * superseded; a non-zero figure means the current code would change the committed
  * hierarchy. The rollback is policy, not necessity: activate() stays the only writer of
- * a committed hierarchy. To actually rebuild, delete the version and run
- * `npm run atlas:build -- --force rivers`: with no active version the load is new content,
- * and activation builds the hierarchy. (A forced build over an unchanged version only
- * re-stamps it.) Do NOT turn this script into an in-place rebuild.
+ * a committed hierarchy. To actually rebuild after changing the builder, raise
+ * `mappingRevision` on the rivers load stage (packages/atlas-data/src/descriptors/rivers.ts)
+ * and run `npm run atlas:build`: the same files then load as a new version, and activation
+ * builds its hierarchy with the current code. Over steward edits that needs
+ * `--supersede-edits rivers`. A forced build over an unchanged version only re-stamps it,
+ * and a pin test in atlas-data fails when the builder changes without that decision being
+ * made. Do NOT turn this script into an in-place rebuild.
  *
  * Usage: npm run rivers:hierarchy -w @webatlas/api
  */

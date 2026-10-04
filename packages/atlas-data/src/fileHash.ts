@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import type { Stage } from './types';
 import { resolveStageFile } from './paths';
@@ -19,6 +19,17 @@ export const sha256OfFile: FileHasher = (absolutePath) => {
   return createHash('sha256').update(content).digest('hex');
 };
 
+/**
+ * For PLANNING (the stage hash plan that status, verify, adopt and build all compute for every
+ * dataset): a file that is not there hashes as `missing` instead of throwing, so one absent seed
+ * file no longer takes every command down before it can say anything about the other datasets.
+ * The hash chain makes that stage and everything after it look stale. The build and atlas:adopt
+ * therefore refuse a stage whose file is absent (missingInputs) BEFORE they touch any state: once
+ * the file is back, every hash is what it was and nothing has to rebuild.
+ */
+export const plannedHashOfFile: FileHasher = (absolutePath) =>
+  existsSync(absolutePath) ? sha256OfFile(absolutePath) : 'missing';
+
 /** The content hash of each file of the stage, in the stage's order. */
 export function stageFileHashes(stage: LoadStage, hash: FileHasher = sha256OfFile): string[] {
   return stage.files.map((f) => hash(resolveStageFile(f)));
@@ -33,4 +44,10 @@ export function versionSource(stage: LoadStage, hash: FileHasher = sha256OfFile)
   const names = stage.files.map((f) => basename(f.file)).join('+');
   const digest = createHash('sha256').update(stageFileHashes(stage, hash).join('')).digest('hex');
   return `${names}@sha256:${digest}`;
+}
+
+/** The absolute paths of a load-geojson stage's files that are not there; empty for other stages. */
+export function missingInputs(stage: Stage): string[] {
+  if (stage.type !== 'load-geojson') return [];
+  return stage.files.map((f) => resolveStageFile(f)).filter((path) => !existsSync(path));
 }

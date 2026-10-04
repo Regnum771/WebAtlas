@@ -57,6 +57,12 @@ describe('stageInputHash', () => {
     expect(stageInputHash(s, [], () => 'v1')).not.toBe(stageInputHash(s, [], () => 'v2'));
   });
 
+  it('cache housekeeping is not part of a fetch stage: adding it re-runs nothing', () => {
+    const fetch: Stage = { type: 'fetch-http', url: 'https://example.org/v-261001.zip', into: 'basemap/v-261001.zip' };
+    expect(stageInputHash({ ...fetch, supersedes: String.raw`^v-\d{6}\.zip$` }, [])).toBe(stageInputHash(fetch, []));
+    expect(stageInputHash({ ...fetch, into: 'basemap/v-270101.zip' }, [])).not.toBe(stageInputHash(fetch, []));
+  });
+
   it('other stage types never touch the file hasher', () => {
     const boom = () => { throw new Error('hashed a file'); };
     expect(() => stageInputHash({ type: 'sql', statement: 'SELECT 1' }, [], boom)).not.toThrow();

@@ -224,17 +224,20 @@ describe('same-name gap bridging', () => {
 
 describe('activation gates', () => {
   it('finds no cycle and no Strahler decrease in the shipped network', async () => {
-    const { rows } = await getPool().query<{ decreasing: string }>(
-      `SELECT count(*)::text AS decreasing
-         FROM water.rivers_active u
-         JOIN water.rivers_active d ON d.external_id = u.flows_into_external_id
-        WHERE u.feature_level = 2 AND d.feature_level = 2
-          AND d.stream_order < u.stream_order`
+    // Compared here, not in SQL. As a self-join of rivers_active the planner takes each side of
+    // the view for a handful of rows and runs a nested loop over 13,045 x 13,045: 6 s at best, and
+    // over 30 s on a table loaded seconds earlier.
+    const { rows } = await getPool().query<{ id: string; into: string | null; ord: number }>(
+      `SELECT external_id AS id, flows_into_external_id AS "into", stream_order AS ord
+         FROM water.rivers_active WHERE feature_level = 2`
     );
+    const order = new Map(rows.map((r) => [r.id, r.ord]));
+    const decreasing = rows.filter((u) => u.into !== null && order.has(u.into) && order.get(u.into)! < u.ord);
     // Verified against the raw shapefile before this plan was written: 0 violations and
     // 0 cycles in the 13,045-reach selection. A nonzero count means the ingest mangled
     // the links, not that HydroRIVERS is wrong.
-    expect(rows[0].decreasing).toBe('0');
+    expect(rows.length).toBeGreaterThan(10_000);
+    expect(decreasing.map((r) => r.id)).toEqual([]);
   });
 
   it('gives every river at least one reach', async () => {

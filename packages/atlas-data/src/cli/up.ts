@@ -1,8 +1,7 @@
-import { resolve } from 'node:path';
 import pg from 'pg';
 import { loadDevEnv } from './env';
 import { realSystem } from './system';
-import { takeCompose } from './composeFlag';
+import { applyCompose } from './composeFlag';
 import { printBuildReport } from './report';
 import { parseBuildArgs } from './args';
 import { selectDatasets, assertForceSelected, assertSupersedeSelected, type ExclusionReason } from './select';
@@ -11,9 +10,10 @@ import { runBuild } from '../runner';
 import { verifyAtlas, formatVerify } from '../verify';
 import { probeContext } from '../probes';
 import { geoserverEnv } from '../geoserver';
-import { composeArgs, composeEnv } from '../compose';
+import { composeArgs, composeEnv, composeFile } from '../compose';
+import { BuildLockedError, withBuildLock } from '../buildLock';
 import { npmCli } from '../stages/run';
-import { buildTools, migrate, preflight, startStack, UpError, waitReady, type UpConfig } from '../up';
+import { assertOwnStack, buildTools, closingLines, migrate, preflight, startStack, UpError, waitReady, type UpConfig } from '../up';
 import { DATA_CACHE, REPO_ROOT } from '../paths';
 
 async function main(): Promise<void> {
@@ -24,9 +24,12 @@ async function main(): Promise<void> {
   let excluded: ExclusionReason[] = [];
   let force: string[] = [];
   let supersedeEdits: string[] = [];
+  const argv = process.argv.slice(2);
+  let compose: string | undefined;
   try {
-    const { compose, rest } = takeCompose(process.argv.slice(2));
-    if (compose) process.env.ATLAS_COMPOSE_FILE = resolve(process.env.INIT_CWD ?? process.cwd(), compose);
+    const taken = applyCompose(argv, 'atlas:up');
+    compose = taken.compose;
+    const rest = taken.rest;
     const { only, except, force: forced, supersedeEdits: superseded } = parseBuildArgs(rest);
     ({ selected: datasets, excluded } = selectDatasets(ALL_DATASETS, { only, except }));
     if (datasets.length === 0) throw new Error('atlas:up: no datasets selected (--only/--except excluded everything)');
@@ -46,6 +49,8 @@ async function main(): Promise<void> {
     cacheDir: DATA_CACHE,
     nodeVersion: process.versions.node,
     docker: composeArgs(),
+    composeFile: composeFile(),
+    allowSharedStack: process.env.ATLAS_SHARED_STACK === '1',
     dockerEnv: composeEnv(),
     npm: { file: process.execPath, args: [npmCli()] },
   };
@@ -58,14 +63,11 @@ async function main(): Promise<void> {
     if (envFile) console.log(`(environment from ${envFile})`);
     cfg.dockerEnv = composeEnv();
     console.log('== stack');
+    await assertOwnStack(sys, cfg);
     if (!process.env.DATABASE_URL) throw new UpError('DATABASE_URL is not set (apps/api/.env)');
     if (!process.env.GEOSERVER_URL) throw new UpError('GEOSERVER_URL is not set (apps/api/.env)');
     await startStack(sys, cfg);
     await waitReady(sys, cfg, geoserverEnv());
-    console.log('== atlas-tools image');
-    await buildTools(sys, cfg);
-    console.log('== migrations');
-    await migrate(sys, cfg);
   } catch (err) {
     if (err instanceof UpError) {
       console.error(`atlas:up: ${err.message}`);
@@ -77,28 +79,42 @@ async function main(): Promise<void> {
 
   for (const e of excluded) console.log(`  excluded ${e.id} (${e.reason})`);
   let failedRun = false;
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  // keepAlive: the build lock's connection sits idle for the whole build (buildLock.ts).
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, keepAlive: true });
   try {
-    console.log('== build');
-    printBuildReport(await runBuild(pool, datasets, { universe: ALL_DATASETS, force, supersedeEdits }));
-    console.log('== verify');
-    const { lines, ok } = formatVerify(await verifyAtlas(pool, datasets, probeContext(pool)));
-    for (const line of lines) console.log(line);
-    if (!ok) failedRun = true;
+    // Locked from the first write on: a second atlas:up started by mistake must not migrate the
+    // database under a build that is running.
+    await withBuildLock(pool, 'atlas:up', async () => {
+      console.log('== atlas-tools image');
+      await buildTools(sys, cfg);
+      console.log('== migrations');
+      await migrate(sys, cfg);
+      console.log('== build');
+      printBuildReport(await runBuild(pool, datasets, { universe: ALL_DATASETS, force, supersedeEdits }));
+      console.log('== verify');
+      const { lines, ok } = formatVerify(await verifyAtlas(pool, datasets, probeContext(pool)));
+      for (const line of lines) console.log(line);
+      if (!ok) failedRun = true;
+    });
+  } catch (err) {
+    if (err instanceof UpError) console.error(`atlas:up: ${err.message}`);
+    else if (err instanceof BuildLockedError) console.error(err.message);
+    else throw err;
+    failedRun = true;
   } finally {
     await pool.end();
   }
 
-  if (failedRun || process.exitCode) {
-    console.log('');
-    console.log('atlas:up did not complete — fix the error above and run npm run atlas:up again (finished work is skipped)');
-    process.exitCode = 1;
-    return;
-  }
-  console.log('');
-  console.log('next: create an administrator (there is no default login):');
-  console.log('  npm run create-admin -w @webatlas/api -- --email you@example.com --password "…" --name "…"');
-  console.log('then: npm run dev -w @webatlas/api   and   npm run dev:web');
+  const ok = !failedRun && !process.exitCode;
+  for (const line of closingLines({
+    ok,
+    argv,
+    // The command for the whole atlas keeps --compose and drops the selection flags.
+    composeArgv: compose ? ['--compose', compose] : [],
+    selected: datasets.map((d) => d.id),
+    all: ALL_DATASETS.map((d) => d.id),
+  })) console.log(line);
+  if (!ok) process.exitCode = 1;
 }
 
 main().catch((err) => { console.error(err); process.exitCode = 1; });

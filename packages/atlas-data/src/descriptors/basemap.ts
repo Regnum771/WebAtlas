@@ -49,7 +49,14 @@ export const basemap = defineDataset({
     ],
   },
   stages: [
-    { type: 'fetch-http', url: `https://download.geofabrik.de/asia/${FILE}`, into: ZIP, sha256: SHA256 },
+    {
+      type: 'fetch-http',
+      url: `https://download.geofabrik.de/asia/${FILE}`,
+      into: ZIP,
+      sha256: SHA256,
+      // The pin is in the file name, so moving it would otherwise leave each old 720 MB zip behind.
+      supersedes: String.raw`^vietnam-\d{6}-free\.shp\.zip$`,
+    },
     {
       type: 'run',
       in: 'tools',

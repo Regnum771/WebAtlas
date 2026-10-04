@@ -76,13 +76,19 @@ describe('registered datasets', () => {
   it('what each load writes is pinned: changing it means a new mapping revision', () => {
     // A version is its files' content AND its mapping revision. The build cannot tell a mapping
     // that writes something different from one that was only reformatted, so a person decides,
-    // here. Whitespace is ignored; a comment is not.
-    const mappingCode = createHash('sha256')
-      .update(['seed-columns.ts', 'dam-status.ts']
-        .map((f) => readFileSync(join(REPO_ROOT, 'packages/shared/src', f), 'utf8').replace(/\s+/g, ''))
-        .join('\n'))
-      .digest('hex')
-      .slice(0, 16);
+    // here. Layout is ignored; a comment is not.
+    const digest = (...files: string[]): string =>
+      createHash('sha256')
+        // Runs of whitespace become one space: line endings, indentation and a BOM do not count,
+        // and `' '` versus `''` in a literal still does.
+        .update(files.map((f) => readFileSync(join(REPO_ROOT, f), 'utf8').replace(/\s+/g, ' ').trim()).join('\n'))
+        .digest('hex')
+        .slice(0, 16);
+    const mappingCode = digest('packages/shared/src/seed-columns.ts', 'packages/shared/src/dam-status.ts');
+    // Rivers are more than their files: activation derives the level-1 rivers and the links between
+    // levels. A forced build over unchanged content only re-stamps, so a changed builder reaches the
+    // table only through a new revision of the rivers load.
+    const riverHierarchyCode = digest('packages/versioning/src/riverHierarchy.ts');
     const loads = Object.fromEntries(
       ALL_DATASETS.flatMap((d) => d.stages).flatMap((s) =>
         s.type !== 'load-geojson' ? [] : [[
@@ -94,12 +100,14 @@ describe('registered datasets', () => {
         ]])
     );
     expect(
-      { mappingCode, loads },
-      'A column map (packages/shared/src/seed-columns.ts, dam-status.ts) or a load stage changed. ' +
-        'If a layer would now be written differently from the same file, raise that stage\'s mappingRevision: ' +
+      { mappingCode, riverHierarchyCode, loads },
+      'A column map (packages/shared/src/seed-columns.ts, dam-status.ts), the river hierarchy builder ' +
+        '(packages/versioning/src/riverHierarchy.ts) or a load stage changed. If a layer would now be written ' +
+        'differently from the same file (for the builder: the rivers layer), raise that stage\'s mappingRevision: ' +
         'the build then loads it as a new version instead of re-stamping the old rows. Then update this table.'
     ).toEqual({
-      mappingCode: '78b24d56a74f0a66',
+      mappingCode: 'e6422daf17a9031c',
+      riverHierarchyCode: '5949e0684862a5f6',
       loads: {
         admin: 'mapping-1: provinces-34.geojson multiPolygon -> admin.provinces + wards-region.geojson multiPolygon -> admin.wards',
         dams: 'mapping-1: dams.geojson',
@@ -175,6 +183,15 @@ describe('registered datasets', () => {
     const bm = byId('basemap').stages;
     const fetch = bm.find((s) => s.type === 'fetch-http') as Extract<(typeof bm)[number], { type: 'fetch-http' }>;
     expect(fetch.url).toMatch(/vietnam-\d{4}01-free\.shp\.zip$/);
+  });
+
+  it('the basemap fetch clears earlier pins of the same extract out of the cache, and nothing else', () => {
+    const bm = byId('basemap').stages;
+    const fetch = bm.find((s) => s.type === 'fetch-http') as Extract<(typeof bm)[number], { type: 'fetch-http' }>;
+    const pattern = new RegExp(fetch.supersedes!);
+    expect(pattern.test('vietnam-260901-free.shp.zip')).toBe(true);
+    expect(pattern.test('vietnam-latest-free.shp.zip')).toBe(false);
+    expect(pattern.test('vietnam-260901-free.shp.zip.source')).toBe(false);
   });
 
   it('the basemap probe checks exactly the layer groups the web app requests and the script publishes', () => {

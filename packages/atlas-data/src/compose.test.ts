@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { composeArgs, composeEnv, composeFile, COMPOSE_INTERPOLATED_KEYS } from './compose';
 
 describe('composeEnv', () => {
@@ -34,5 +34,9 @@ describe('composeFile / composeArgs', () => {
 
   it('honours ATLAS_COMPOSE_FILE (atlas:up --compose)', () => {
     expect(composeFile({ ATLAS_COMPOSE_FILE: '/x/prod.yml' }, '/repo')).toBe('/x/prod.yml');
+  });
+
+  it('a relative ATLAS_COMPOSE_FILE is relative to the repository, where docker runs', () => {
+    expect(composeFile({ ATLAS_COMPOSE_FILE: 'infra/other.yml' }, '/repo')).toBe(resolve('/repo', 'infra/other.yml'));
   });
 });
