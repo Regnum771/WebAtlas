@@ -1,8 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 import { getPool, closePool } from '../pool';
-import { versionsService } from '@webatlas/versioning';
-import { loadLayerFeatures } from './run';
+import { loadFeatures, versionsService } from '@webatlas/versioning';
 import type { SeedLayer } from './registry';
 import { REACHES_LAYER } from './ingestReaches';
 
@@ -85,8 +84,8 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
     // kind/parent constraint gives an ingest version no parent, so rivers_active
     // resolves its chain to this version alone. Loading the reaches into a separate
     // ingest version would make every OSM way vanish from the map.
-    await loadLayerFeatures(client, RIVERS_HYDRO_LAYER, versionId);
-    await loadLayerFeatures(client, REACHES_LAYER, versionId);
+    await loadFeatures(client, RIVERS_HYDRO_LAYER, versionId);
+    await loadFeatures(client, REACHES_LAYER, versionId);
     // Dựng phân cấp sông, chạy cổng kích hoạt và đóng dấu mã hành chính đều là nghĩa vụ
     // của svc.activate() (xem versions/service.ts), không gọi tường minh ở đây. Vẫn cùng
     // giao dịch ingest, nên cổng thất bại thì ROLLBACK xoá sạch cả version.

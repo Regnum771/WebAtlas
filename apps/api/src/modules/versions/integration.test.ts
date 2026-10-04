@@ -1,7 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from '../../db/pool';
-import { versionsService } from '@webatlas/versioning';
-import { loadLayerFeatures } from '../../db/seeds/run';
+import { loadFeatures, versionsService } from '@webatlas/versioning';
 import { SEED_LAYERS } from '../../db/seeds/registry';
 
 afterAll(async () => { await closePool(); });
@@ -19,7 +18,7 @@ describe('versioning integration (§6 rollback + addressability)', () => {
     try {
       await client.query('BEGIN');
       const v = await svc.createIngestVersion(client, { layerKey: 'stations', source: 'test', label: 'doomed' });
-      await loadLayerFeatures(client, stations, v);
+      await loadFeatures(client, stations, v);
       // Simulate a failure after partial load, before activate.
       throw new Error('boom');
     } catch (e) {
@@ -51,7 +50,7 @@ describe('versioning integration (§6 rollback + addressability)', () => {
     try {
       await client.query('BEGIN');
       const v = await svc.createIngestVersion(client, { layerKey: 'stations', source: 'test', label: 'superseder' });
-      await loadLayerFeatures(client, stations, v);
+      await loadFeatures(client, stations, v);
       await svc.activate(client, 'stations', v);
       await client.query('COMMIT');
     } finally { client.release(); }

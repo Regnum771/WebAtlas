@@ -1,62 +1,9 @@
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
-import type pg from 'pg';
 import { getPool, closePool } from '../pool';
-import { SEED_LAYERS, type SeedLayer } from './registry';
-import { versionsService } from '@webatlas/versioning';
+import { SEED_LAYERS } from './registry';
+import { loadFeatures, versionsService } from '@webatlas/versioning';
 import { loadAdminBoundaries } from './adminBoundaries';
-
-function geomExpr(layer: SeedLayer): string {
-  // $GEOM is the feature geometry as a GeoJSON string
-  const base = `ST_SetSRID(ST_GeomFromGeoJSON($GEOM), 4326)`;
-  if (layer.multiPolygon || layer.multiLine) return `ST_Multi(${base})`;
-  return base;
-}
-
-// Load every feature of `layer` into a fresh version, stamped with versionId.
-// No ON CONFLICT: a new version starts empty, so there is nothing to conflict with.
-export async function loadLayerFeatures(
-  client: pg.PoolClient,
-  layer: SeedLayer,
-  versionId: string
-): Promise<number> {
-  const fc = JSON.parse(readFileSync(layer.file, 'utf8'));
-  const features: Array<{ geometry: unknown; properties: Record<string, unknown> }> = fc.features;
-  let count = 0;
-
-  for (const [index, f] of features.entries()) {
-    const cols = layer.columns(f.properties, index);
-    const colNames = Object.keys(cols);
-    const values = Object.values(cols);
-    const hasGeometry = f.geometry != null;
-
-    if (!hasGeometry) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `water.${layer.table}: feature external_id=${String(cols.external_id)} has no geometry; storing NULL`
-      );
-    }
-
-    const colPlaceholders = colNames.map((_, i) => `$${i + 1}`);
-    const geomParamIndex = colNames.length + 1;
-    const geomSql = hasGeometry ? geomExpr(layer).replace('$GEOM', `$${geomParamIndex}`) : 'NULL';
-    // With geometry the version is the parameter after it; without geometry no
-    // geometry parameter is bound, so the version takes that slot instead.
-    const versionParamIndex = hasGeometry ? colNames.length + 2 : colNames.length + 1;
-
-    const sql = `
-      INSERT INTO water.${layer.table} (${colNames.join(', ')}, geom, dataset_version_id)
-      VALUES (${colPlaceholders.join(', ')}, ${geomSql}, $${versionParamIndex})
-    `;
-    const params = hasGeometry
-      ? [...values, JSON.stringify(f.geometry), versionId]
-      : [...values, versionId];
-    await client.query(sql, params);
-    count++;
-  }
-  return count;
-}
 
 export async function runSeeds(): Promise<Record<string, number>> {
   const pool = getPool();
@@ -87,7 +34,7 @@ export async function runSeeds(): Promise<Record<string, number>> {
         layerKey: layer.table,
         source: layer.source,
       });
-      result[layer.table] = await loadLayerFeatures(client, layer, versionId);
+      result[layer.table] = await loadFeatures(client, layer, versionId);
       await client.query(
         `UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`,
         [result[layer.table], versionId]

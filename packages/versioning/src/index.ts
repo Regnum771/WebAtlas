@@ -18,3 +18,4 @@ export {
   BRIDGED_CONFIDENCE,
 } from './riverHierarchy';
 export { assertRiverGates, RIVER_BASELINE, type RiverBaseline } from './riverGates';
+export { loadFeatures, type FeatureLoadSpec } from './loadFeatures';

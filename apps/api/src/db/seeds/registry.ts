@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import type { FeatureLoadSpec } from '@webatlas/versioning';
 import { assignDamStatus } from './damStatus';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -8,22 +9,8 @@ const repoRoot = resolve(here, '../../../../..');
 const webPublic = resolve(repoRoot, 'apps/web/public');
 const seedData = resolve(here, 'data');
 
-export interface SeedLayer {
-  table: string;
-  file: string;
-  /** provenance: origin of this dataset (recorded on the dataset_versions row). */
-  source: string;
-  /** true if the source geometry is a single Polygon that must be wrapped as MultiPolygon */
-  multiPolygon?: boolean;
-  /** true if the source geometry is a single LineString/MultiLineString to normalise as MultiLineString */
-  multiLine?: boolean;
-  /**
-   * Map a GeoJSON feature's properties to a { column: value } object (excluding geom).
-   * `index` is the feature's 0-based position within the source file, for layers whose
-   * source data has no reliable per-feature unique key.
-   */
-  columns: (props: Record<string, unknown>, index: number) => Record<string, unknown>;
-}
+/** A load spec plus its provenance: the origin recorded on the dataset_versions row. */
+export type SeedLayer = FeatureLoadSpec & { source: string };
 
 export const SEED_LAYERS: SeedLayer[] = [
   {
