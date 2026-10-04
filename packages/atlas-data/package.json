@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -10,7 +13,8 @@
     "atlas:up": "tsx src/cli/up.ts",
     "atlas:adopt": "tsx src/cli/adopt.ts",
     "atlas:status": "tsx src/cli/status.ts",
-    "atlas:verify": "tsx src/cli/verify.ts"
+    "atlas:verify": "tsx src/cli/verify.ts",
+    "atlas:seed": "tsx src/cli/seed.ts"
   },
   "dependencies": {
     "@webatlas/shared": "*",

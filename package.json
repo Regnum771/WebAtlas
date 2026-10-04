@@ -28,6 +28,7 @@
     "atlas:up": "npm run atlas:up -w @webatlas/atlas-data --",
     "atlas:adopt": "npm run atlas:adopt -w @webatlas/atlas-data --",
     "atlas:status": "npm run atlas:status -w @webatlas/atlas-data --",
-    "atlas:verify": "npm run atlas:verify -w @webatlas/atlas-data --"
+    "atlas:verify": "npm run atlas:verify -w @webatlas/atlas-data --",
+    "atlas:seed": "npm run atlas:seed -w @webatlas/atlas-data --"
   }
 }
