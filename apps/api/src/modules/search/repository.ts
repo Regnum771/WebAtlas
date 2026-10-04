@@ -25,54 +25,17 @@ export const SEARCH_SOURCES: readonly string[] = [
   'admin',
 ];
 
-// The water.<layer>_active views resolve the active dataset-version chain via a
-// materialised WITH RECURSIVE + DISTINCT ON pipeline, which is an optimizer fence:
-// a `name % $1` filter applied on top of the view cannot be pushed down into it, so
-// querying the view directly forces a full scan+dedup of every row in the layer
-// before the trigram filter ever runs (confirmed with EXPLAIN: ~5-6s per query on
-// ~9.5k rows, no index used). Instead, each layer below first finds candidate
-// external_ids straight off the base table — a plain `name % $1` predicate the
-// trigram GIN index *can* serve — and only resolves the active-version chain
-// (identical logic to the view) for that small candidate set. This is not a
-// rewrite of the business rule, just pushing the same filter below the fence.
-//
-// Rivers carry three levels since the topology ingest. Search means the ENTITY
-// (entityPredicate): a level-1 row is one river, which is the whole point -- searching
-// "thu" used to return several rows all called Sông Thu Bồn, each an arbitrary OSM way.
-// Reaches (level 2) have no name at all. The predicate goes in the candidate CTE too, not
-// only the final select: that CTE is what the trigram index serves, and it would
-// otherwise resolve every matching way.
-function layerCtes(key: EditableLayerKey): string {
-  return `
-    active_${key} AS (
-      SELECT id FROM app.dataset_versions WHERE layer_key = '${key}' AND is_active
-    ),
-    chain_${key} AS (
-      SELECT v.id, v.parent_version_id, 0 AS depth
-        FROM app.dataset_versions v JOIN active_${key} a ON v.id = a.id
-      UNION ALL
-      SELECT p.id, p.parent_version_id, c.depth + 1
-        FROM app.dataset_versions p JOIN chain_${key} c ON p.id = c.parent_version_id
-    ),
-    candidates_${key} AS (
-      SELECT DISTINCT external_id FROM water.${key} WHERE name % $1 AND ${entityPredicate(key)}
-    ),
-    resolved_${key} AS (
-      SELECT DISTINCT ON (t.external_id) t.*
-        FROM water.${key} t
-        JOIN chain_${key} c ON t.dataset_version_id = c.id
-        JOIN candidates_${key} ci ON ci.external_id = t.external_id
-        ORDER BY t.external_id, c.depth
-    )`;
-}
-
+// Each layer is searched through its active view, a plain filter that the partial trigram
+// index serves (S1). Rivers carry three levels since the topology ingest; search means the
+// ENTITY (entityPredicate): a level-1 row is one river, so "thu" returns Sông Thu Bồn once, not
+// several of its OSM ways. Reaches (level 2) have no name at all.
 function layerSelect(key: EditableLayerKey): string {
   return `
       SELECT '${key}'::text AS layer_key, 'layer'::text AS source, id::text AS feature_id, name,
              ST_X(ST_PointOnSurface(geom)) AS lon, ST_Y(ST_PointOnSurface(geom)) AS lat,
              similarity(name, $1) AS sim
-      FROM resolved_${key}
-      WHERE NOT deleted AND geom IS NOT NULL AND name IS NOT NULL AND name % $1
+      FROM water.${key}_active
+      WHERE geom IS NOT NULL AND name IS NOT NULL AND name % $1
         AND ${entityPredicate(key)}`;
 }
 
@@ -129,13 +92,9 @@ export async function searchByName(
   limit: number,
   sources: readonly string[] = SEARCHABLE
 ): Promise<SearchHit[]> {
-  // Self-defending, not just relying on the controller's allowlist refine: a
-  // duplicate token (e.g. `sources=dams,dams`) would otherwise reach layerCtes()
-  // twice and emit the same CTE name twice ("active_dams", "chain_dams", ...),
-  // which Postgres rejects with "WITH query name ... specified more than once" --
-  // a 500 on a public endpoint. This file is the one that interpolates those
-  // identifiers into SQL, so it must not trust the caller to have deduplicated.
-  // Also drops anything outside the allowlist for the same reason.
+  // Self-defending, not just relying on the controller's allowlist refine: a duplicate token
+  // (`sources=dams,dams`) would return every hit twice, and anything outside the allowlist must
+  // never reach the SQL below, which interpolates these keys.
   const unique = [...new Set(sources)].filter((s) => SEARCH_SOURCES.includes(s));
 
   const wantAdmin = unique.includes('admin');
@@ -145,7 +104,6 @@ export async function searchByName(
     .map((s) => s.slice(REFERENCE_PREFIX.length)) as ReferenceLayerKey[];
 
   const selects: string[] = [];
-  const ctes = layerKeys.map(layerCtes).join(',\n');
   for (const key of layerKeys) {
     selects.push(layerSelect(key));
   }
@@ -154,9 +112,8 @@ export async function searchByName(
 
   if (!selects.length) return [];
 
-  const prelude = ctes ? `WITH RECURSIVE ${ctes}` : '';
   const { rows } = await pool.query(
-    `${prelude} ${selects.join(' UNION ALL ')} ORDER BY sim DESC, name ASC LIMIT $2`,
+    `${selects.join(' UNION ALL ')} ORDER BY sim DESC, name ASC LIMIT $2`,
     [q, limit]
   );
 

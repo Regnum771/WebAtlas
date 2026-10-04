@@ -1,16 +1,14 @@
-// Xem zoomToRegion.ts: 'zod/v4' là bắt buộc do betaZodTool.
+// See zoomToRegion.ts: 'zod/v4' is required because of betaZodTool.
 import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS, REGION_PROVINCE_CODES, REGION_PROVINCE_NAMES } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, candidateCtes, entityPredicate, layerTable } from './helpers';
+import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, entityPredicate, layerView } from './helpers';
 
 /**
- * Truy vấn quan hệ, không phải phép toán hình học: mã hành chính đã được đóng dấu sẵn lên
- * từng đối tượng (packages/versioning, adminStamp.ts) và có chỉ mục GIN trên province_codes/ward_codes. Chỉ
- * mục đó chỉ tới được nếu phép giao mảng chạm thẳng vào bảng gốc — candidateCtes (xem
- * helpers.ts) là bước đó; áp phép giao lên trên view *_active thì Postgres phải quét và
- * khử trùng lặp cả lớp trước khi lọc, vì view là một hàng rào với optimizer.
+ * A relational query, not a geometric one: the administrative codes are stamped on every
+ * feature in advance (packages/versioning, adminStamp.ts), and the view's partial GIN indexes
+ * on province_codes / ward_codes serve the array test directly.
  */
 export const featuresInAdminUnitTool: ToolFactory = (ctx) =>
   betaZodTool({
@@ -46,24 +44,12 @@ export const featuresInAdminUnitTool: ToolFactory = (ctx) =>
 
       const unit = `${unitRows[0].level} ${unitRows[0].name}`;
       // 'province_codes' or 'ward_codes' only — chosen from the DB lookup above, never
-      // from raw tool input, so this interpolation is safe the same way layerTable's is.
+      // from raw tool input, so this interpolation is safe the same way layerView's is.
       const column = unitRows[0].level === 'tỉnh' ? 'province_codes' : 'ward_codes';
-      // Candidate step: the array-containment test against the base table can use
-      // ${column}'s GIN index directly. See candidateCtes' doc comment for why applying
-      // it on top of the _active view instead cannot use that index at all.
-      const ctes = candidateCtes(
-        input.layerKey,
-        `SELECT external_id FROM ${layerTable(input.layerKey)}
-          WHERE ${column} && ARRAY[$1] AND ${entityPredicate(input.layerKey)}`
-      );
-      // The candidate step is a superset (it ran across every dataset version), so the
-      // containment test is re-applied here, along with NOT deleted — this is the
-      // authoritative filter, not a redundant one.
       const { rows } = await ctx.pool.query<{ featureId: string; name: string | null; lon: number; lat: number; total: string }>(
-        `WITH RECURSIVE ${ctes}
-         SELECT id::text AS "featureId", name, ${POINT_SQL}, count(*) OVER () AS total
-           FROM resolved
-          WHERE NOT deleted AND ${column} && ARRAY[$1] AND ${entityPredicate(input.layerKey)}
+        `SELECT id::text AS "featureId", name, ${POINT_SQL}, count(*) OVER () AS total
+           FROM ${layerView(input.layerKey)}
+          WHERE ${column} && ARRAY[$1] AND ${entityPredicate(input.layerKey)}
           ORDER BY name NULLS LAST
           LIMIT $2`,
         [input.code, ROW_LIMIT]

@@ -12,7 +12,7 @@ let damName: string;
 beforeAll(async () => {
   pool = getPool();
   const { rows } = await pool.query<{ id: string; name: string }>(
-    `SELECT id::text, name FROM water.dams_active WHERE wattage_mw IS NOT NULL AND name IS NOT NULL LIMIT 1`
+    `SELECT id::text, name FROM water.dams_active WHERE wattage_mw IS NOT NULL AND name IS NOT NULL AND geom IS NOT NULL LIMIT 1`
   );
   damId = rows[0].id;
   damName = rows[0].name;

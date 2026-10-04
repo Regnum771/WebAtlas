@@ -25,25 +25,14 @@ function assertKnownLayer(key: EditableLayerKey): void {
 }
 
 /**
- * The active-version view for a layer. This is the only place in the data
- * tools where any part of a query is built from a tool argument that is not
- * a bind parameter — other than candidateCtes/layerTable below, which exist
- * only to reach the same base table this view is built on.
+ * The active-state view for a layer: a plain filter on the rows' stored is_current flag
+ * (migration 22), so a predicate on it reaches the table's partial indexes. This is the only
+ * place in the data tools where any part of a query is built from a tool argument that is not
+ * a bind parameter, and it goes through assertKnownLayer first.
  */
 export function layerView(key: EditableLayerKey): string {
   assertKnownLayer(key);
   return `water.${key}_active`;
-}
-
-/**
- * The base table behind a layer's active-version view. Exists only for
- * candidateCtes below, where a predicate must reach the base table's indexes
- * directly rather than go through the view (see its doc comment for why).
- * Goes through the same allowlist check as layerView.
- */
-export function layerTable(key: EditableLayerKey): string {
-  assertKnownLayer(key);
-  return `water.${key}`;
 }
 
 /**
@@ -53,81 +42,13 @@ export function layerTable(key: EditableLayerKey): string {
  * level-1 river: without this, select_within over Đắk Lắk reported 2,991 rivers where
  * there are 142 (found 2026-09-30). Every other layer has one level, so it is `true`.
  *
- * Collection queries apply it twice, like any other predicate over candidateCtes: in the
- * candidate query (so a KNN over-fetch or LIMIT is not spent on reaches and ways) and
- * again on `resolved`. Lookups BY ID do not use it: a click on one way must still
- * resolve that way. Interpolated as text, but built only from the allowlisted key.
+ * Collection queries apply it in their WHERE clause, so a LIMIT or a nearest-neighbour
+ * over-fetch is not spent on reaches and ways. Lookups BY ID do not use it: a click on one
+ * way must still resolve that way. Interpolated as text, but built only from the allowlisted key.
  */
 export function entityPredicate(key: EditableLayerKey, alias = ''): string {
   assertKnownLayer(key);
   return key === 'rivers' ? `${alias}feature_level = 1` : 'true';
-}
-
-/**
- * Builds the candidate-then-resolve CTE chain that lets a predicate reach an
- * index on the base table, instead of hitting the wall documented in
- * modules/search/repository.ts's layerCtes: water.<layer>_active resolves the
- * active dataset-version chain through a materialised WITH RECURSIVE +
- * DISTINCT ON pipeline, which is an optimizer fence. A predicate applied on
- * top of the view cannot be pushed down into it, so querying the view
- * directly forces a full scan + dedup of the whole layer before the
- * predicate ever runs. This builds the identical resolution logic here,
- * *below* a candidate step that runs directly against the base table, where
- * its indexes are reachable.
- *
- * `candidateQuery` must be a complete `SELECT ... FROM ${layerTable(key)} ...`
- * that returns an `external_id` column, expressed so the base table's index
- * can serve it directly — a `WHERE` predicate (e.g. `geom && envelope`) or an
- * `ORDER BY ... LIMIT` for a bounded KNN over-fetch. It must use bind
- * parameters for every value that comes from tool input; the layer key is the
- * only tool-chosen value ever interpolated as text, and only via this
- * function or layerView, both gated by assertKnownLayer. Do not add another
- * place that interpolates tool input into the SQL this returns.
- *
- * The candidate step runs across *every* version of the base table, so it
- * returns a superset of what the active version actually contains — a row
- * that matched in some other edit/ingest version may not match once resolved
- * to the active chain. Callers MUST re-apply their real predicate (and
- * `NOT deleted`) when selecting from the `resolved` relation this exposes;
- * the candidate query only narrows the scan, it is not the authoritative
- * filter.
- *
- * `prefix` lets two independent CTE chains coexist in one `WITH` — the fixed
- * names (`active_layer`, `chain_layer`, `candidates_layer`, `resolved`) would
- * otherwise collide when a tool spans two layers (or the same layer twice,
- * e.g. distance between two dams). Pass a distinct prefix per chain in that
- * case (e.g. `'from_'` / `'to_'`); the resolved relation is then
- * `${prefix}resolved`. Left at the default `''`, the emitted names are
- * byte-identical to the unprefixed originals, so existing single-chain
- * callers need no change.
- */
-export function candidateCtes(key: EditableLayerKey, candidateQuery: string, prefix = ''): string {
-  const table = layerTable(key);
-  const active = `${prefix}active_layer`;
-  const chain = `${prefix}chain_layer`;
-  const candidates = `${prefix}candidates_layer`;
-  const resolved = `${prefix}resolved`;
-  return `
-    ${active} AS (
-      SELECT id FROM app.dataset_versions WHERE layer_key = '${key}' AND is_active
-    ),
-    ${chain} AS (
-      SELECT v.id, v.parent_version_id, 0 AS depth
-        FROM app.dataset_versions v JOIN ${active} a ON v.id = a.id
-      UNION ALL
-      SELECT p.id, p.parent_version_id, c.depth + 1
-        FROM app.dataset_versions p JOIN ${chain} c ON p.id = c.parent_version_id
-    ),
-    ${candidates} AS (
-      SELECT DISTINCT external_id FROM (${candidateQuery}) AS candidate
-    ),
-    ${resolved} AS (
-      SELECT DISTINCT ON (t.external_id) t.*
-        FROM ${table} t
-        JOIN ${chain} c ON t.dataset_version_id = c.id
-        JOIN ${candidates} ci ON ci.external_id = t.external_id
-        ORDER BY t.external_id, c.depth
-    )`;
 }
 
 /** Vietnamese layer names for the model's replies — it must not translate
@@ -186,14 +107,8 @@ export interface ResolvedFeature {
 }
 
 /**
- * One feature of the ACTIVE version, by id — the shared form of the
- * candidate/re-apply dance that area_of, distance_between and related_features
- * each hand-wrote (handover §5.3 #1).
- *
- * The candidate predicate `id = $1` is a primary-key hit on the base table; it is
- * re-applied after resolution together with `NOT deleted`, because resolution
- * returns the active row for that external_id — if the id belonged to a
- * superseded version, the active row's id differs and the filter yields nothing.
+ * One feature of the ACTIVE state, by id: a primary-key hit on the layer's view. An id that
+ * belongs to a superseded version's row is not in the view and yields null.
  */
 export async function resolveFeature(
   db: Queryable,
@@ -202,20 +117,18 @@ export async function resolveFeature(
   opts: { simplify?: boolean } = {}
 ): Promise<ResolvedFeature | null> {
   if (!isFeatureId(featureId)) return null;
-  const table = layerTable(layerKey); // allowlist check before any interpolation
+  const view = layerView(layerKey); // allowlist check before any interpolation
   // Column names come from the shared constant map, never from tool input.
   const props = Object.keys(LAYER_ATTRIBUTE_MAP[layerKey].attributes)
-    .map((c) => `'${c}', resolved.${c}::text`)
+    .map((c) => `'${c}', ${c}::text`)
     .join(', ');
   const geometrySql = opts.simplify === false ? 'ST_AsGeoJSON(geom, 7)::json' : simplifiedGeoJsonSql('geom');
-  const ctes = candidateCtes(layerKey, `SELECT external_id FROM ${table} WHERE id = $1`);
   const { rows } = await db.query<ResolvedFeature>(
-    `WITH RECURSIVE ${ctes}
-     SELECT id::text AS "featureId", name, ${POINT_SQL},
+    `SELECT id::text AS "featureId", name, ${POINT_SQL},
             ${geometrySql} AS geometry,
             jsonb_build_object(${props}) AS properties
-       FROM resolved
-      WHERE id = $1 AND NOT deleted AND geom IS NOT NULL`,
+       FROM ${view}
+      WHERE id = $1 AND geom IS NOT NULL`,
     [featureId]
   );
   return rows[0] ?? null;

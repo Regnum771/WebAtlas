@@ -1,9 +1,9 @@
-// Xem zoomToRegion.ts: 'zod/v4' là bắt buộc do betaZodTool.
+// See zoomToRegion.ts: 'zod/v4' is required because of betaZodTool.
 import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
-import { activeVersionLabel, candidateCtes, isFeatureId, layerTable } from './helpers';
+import { activeVersionLabel, isFeatureId, layerView } from './helpers';
 
 export const distanceBetweenTool: ToolFactory = (ctx) =>
   betaZodTool({
@@ -21,28 +21,12 @@ export const distanceBetweenTool: ToolFactory = (ctx) =>
         return 'Không có dữ liệu: mã đối tượng không hợp lệ.';
       }
 
-      // Two candidate-then-resolve chains, one per side, distinctly prefixed
-      // so their CTE names don't collide — required even when both sides are
-      // the same layer key (e.g. distance between two dams). Each candidate
-      // predicate is `id = $n` on the base table, a primary-key hit.
-      const fromCtes = candidateCtes(
-        input.fromLayerKey,
-        `SELECT external_id FROM ${layerTable(input.fromLayerKey)} WHERE id = $1`,
-        'from_'
-      );
-      const toCtes = candidateCtes(
-        input.toLayerKey,
-        `SELECT external_id FROM ${layerTable(input.toLayerKey)} WHERE id = $2`,
-        'to_'
-      );
-
       const [{ rows }, datasetVersion] = await Promise.all([
         ctx.pool.query(
-          `WITH RECURSIVE ${fromCtes}, ${toCtes}
-           SELECT a.name AS "fromName", b.name AS "toName",
+          `SELECT a.name AS "fromName", b.name AS "toName",
                   round((ST_Distance(a.geom::geography, b.geom::geography) / 1000)::numeric, 2)::float8 AS "distanceKm"
-             FROM from_resolved a, to_resolved b
-            WHERE a.id = $1 AND NOT a.deleted AND b.id = $2 AND NOT b.deleted`,
+             FROM ${layerView(input.fromLayerKey)} a, ${layerView(input.toLayerKey)} b
+            WHERE a.id = $1 AND b.id = $2`,
           [input.fromFeatureId, input.toFeatureId]
         ),
         activeVersionLabel(ctx.pool, input.fromLayerKey),
