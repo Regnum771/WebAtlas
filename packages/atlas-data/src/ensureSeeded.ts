@@ -28,7 +28,11 @@ async function replacedTablesCurrent(pool: Pool, load: ResolvedLoad): Promise<bo
   return true;
 }
 
-async function seedOne(pool: Pool, stage: LoadStage): Promise<{ action: SeedAction; detail: string }> {
+async function seedOne(
+  pool: Pool,
+  stage: LoadStage,
+  restamp: boolean
+): Promise<{ action: SeedAction; detail: string }> {
   const load = resolveLoad(stage);
 
   if (!stage.versioned && (await replacedTablesCurrent(pool, load))) {
@@ -42,11 +46,15 @@ async function seedOne(pool: Pool, stage: LoadStage): Promise<{ action: SeedActi
     if (stage.versioned) {
       // First ask whether what is there is already this content: under the content-derived source
       // (nothing to do) or under the old seed command's label (re-label it, load nothing).
-      const adoption = await adoptLegacySource(client, stage, load);
-      if (adoption.result === 'current') {
-        result = { action: 'unchanged', detail: `${stage.layer}: already loaded` };
-      } else if (adoption.result === 'relabelled') {
-        result = { action: 'relabelled', detail: `${stage.layer}: existing version re-labelled with its content source` };
+      const adoption = await adoptLegacySource(client, load);
+      if (adoption.result !== 'mismatch') {
+        // The boundaries were just replaced: the codes stamped on this layer are from the old
+        // ones, so take the loader's re-stamp path, as a build would through the cascade.
+        const stamped = restamp ? (await applyLoadGeojson(pool, client, load, { supersedeEdits: false })).summary : null;
+        result =
+          adoption.result === 'current'
+            ? { action: 'unchanged', detail: stamped ?? `${stage.layer}: already loaded` }
+            : { action: 'relabelled', detail: stamped ?? `${stage.layer}: existing version re-labelled with its content source` };
       } else {
         // Missing, or different content. Never over steward edits: the loader refuses, and the
         // caller sees its message.
@@ -78,10 +86,14 @@ async function seedOne(pool: Pool, stage: LoadStage): Promise<{ action: SeedActi
  */
 export async function ensureSeeded(pool: Pool, datasets: Dataset[] = ALL_DATASETS): Promise<SeedOutcome[]> {
   const out: SeedOutcome[] = [];
+  // Once a non-versioned load (the boundaries) has been replaced, every layer after it is re-stamped.
+  let restamp = false;
   for (const d of topologicalOrder(datasets)) {
     for (const stage of d.stages) {
       if (stage.type !== 'load-geojson') continue;
-      out.push({ id: d.id, ...(await seedOne(pool, stage)) });
+      const seeded = await seedOne(pool, stage, restamp);
+      if (seeded.action === 'replaced') restamp = true;
+      out.push({ id: d.id, ...seeded });
     }
   }
   return out;

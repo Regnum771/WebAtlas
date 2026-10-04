@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import pg from 'pg';
 import { versionsService } from '@webatlas/versioning';
 import { RIVER_REACH_COLUMNS, RIVER_WAY_COLUMNS, ADMIN_PROVINCE_COLUMNS, ADMIN_WARD_COLUMNS } from '@webatlas/shared';
-import { applyLoadGeojson, type ResolvedLoad } from './loadGeojson';
+import { loadFeatures } from '@webatlas/versioning';
+import { applyLoadGeojson, resolveLoad, type ResolvedLoad } from './loadGeojson';
+import { ALL_DATASETS } from '../registry';
 import { resolveStageFile } from '../paths';
 
 /**
@@ -39,7 +41,7 @@ function stations(tag: string): ResolvedLoad {
   const path = join(dir, `stations-${tag}.geojson`);
   writeFileSync(path, body);
   return {
-    layer: 'stations', versioned: true, source: `stations.geojson@sha256:${sha(sha(body))}`,
+    layer: 'stations', versioned: true, source: `stations.geojson@sha256:${sha(sha(body))}`, mapping: 'mapping-1',
     files: [{ path, columns: (p) => ({ external_id: p.id, name: p.name }) }],
   };
 }
@@ -58,8 +60,8 @@ async function inRollback<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise
 const versionCount = async (c: pg.PoolClient, layer: string) =>
   Number((await c.query(`SELECT count(*)::text AS n FROM app.dataset_versions WHERE layer_key = $1`, [layer])).rows[0].n);
 const active = async (c: pg.PoolClient, layer: string) =>
-  (await c.query<{ id: string; kind: string; source: string; feature_count: number | null }>(
-    `SELECT id, kind, source, feature_count FROM app.dataset_versions WHERE layer_key = $1 AND is_active`, [layer])).rows[0];
+  (await c.query<{ id: string; kind: string; source: string; source_version: string | null; feature_count: number | null }>(
+    `SELECT id, kind, source, source_version, feature_count FROM app.dataset_versions WHERE layer_key = $1 AND is_active`, [layer])).rows[0];
 
 describe.skipIf(!DB)('load-geojson against the database', () => {
   it('loads new content as one active ingest version, stamped and counted', async () => {
@@ -71,7 +73,7 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
       expect(out.summary).toMatch(/2 features/);
       expect(await versionCount(c, 'stations')).toBe(before + 1);
       const v = await active(c, 'stations');
-      expect(v).toMatchObject({ id: out.versionId, kind: 'ingest', source: load.source, feature_count: 2 });
+      expect(v).toMatchObject({ id: out.versionId, kind: 'ingest', source: load.source, source_version: 'mapping-1', feature_count: 2 });
       const { rows } = await c.query<{ p: string[] }>(
         `SELECT province_codes AS p FROM water.stations WHERE dataset_version_id = $1 ORDER BY external_id`, [v.id]);
       // Stamped by activate(): both points are inside the six provinces.
@@ -139,12 +141,101 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
     });
   });
 
+  it('a new mapping revision loads the same file again as a new version', async () => {
+    // A version is the content of its files AND the revision of the mapping that loaded it. Before
+    // this, a changed column map re-ran the stage, found the file unchanged, re-stamped, and
+    // reported success with the old columns still in the table.
+    await inRollback(async (c) => {
+      const first = await applyLoadGeojson(pool, c, stations('a'), { supersedeEdits: false });
+      const before = await versionCount(c, 'stations');
+      const out = await applyLoadGeojson(pool, c, { ...stations('a'), mapping: 'mapping-2' }, { supersedeEdits: false });
+      expect(out.action).toBe('loaded');
+      expect(out.versionId).not.toBe(first.versionId);
+      expect(await versionCount(c, 'stations')).toBe(before + 1);
+      expect(await active(c, 'stations')).toMatchObject({ source: stations('a').source, source_version: 'mapping-2' });
+    });
+  });
+
+  it('a new mapping revision over steward edits is refused like new content', async () => {
+    await inRollback(async (c) => {
+      await applyLoadGeojson(pool, c, stations('a'), { supersedeEdits: false });
+      const svc = versionsService(pool);
+      await svc.commitEditDraft(c, 'stations', await svc.openEditDraft(c, 'stations'));
+      await expect(
+        applyLoadGeojson(pool, c, { ...stations('a'), mapping: 'mapping-2' }, { supersedeEdits: false })
+      ).rejects.toThrow(/stations has steward edits on top of its last load/);
+    });
+  });
+
+  it('a version the old seed command loaded is re-labelled by the build, not loaded again, even under edits', async () => {
+    // A machine that never ran atlas:adopt. The content is identical, so there is nothing to load
+    // and no reason to stop for the edits on top of it.
+    await inRollback(async (c) => {
+      const load = { ...stations('a'), legacySource: 'stations.geojson' };
+      const svc = versionsService(pool);
+      const legacy = await svc.createIngestVersion(c, { layerKey: 'stations', source: 'stations.geojson' });
+      await loadFeatures(c, { table: 'stations', file: load.files[0].path, columns: load.files[0].columns }, legacy);
+      await svc.activate(c, 'stations', legacy);
+      const draft = await svc.openEditDraft(c, 'stations');
+      await svc.commitEditDraft(c, 'stations', draft);
+      const before = await versionCount(c, 'stations');
+
+      const out = await applyLoadGeojson(pool, c, load, { supersedeEdits: false });
+      expect(out.action).toBe('restamped');
+      expect(out.summary).toMatch(/re-labelled/);
+      expect(out.versionId).toBe(legacy);
+      expect(await versionCount(c, 'stations')).toBe(before);
+      expect((await active(c, 'stations')).id).toBe(draft);
+      const { rows } = await c.query(`SELECT source, source_version FROM app.dataset_versions WHERE id = $1`, [legacy]);
+      expect(rows[0]).toEqual({ source: load.source, source_version: 'mapping-1' });
+    });
+  });
+
+  it('holds the layer\'s version rows for the whole load, so an edit cannot be committed under it', async () => {
+    // Committing an edit flips the active pointer and so needs this row. Without the lock, an edit
+    // committed while a load is running would be deactivated by the load, unseen by its guard.
+    // The re-stamp path writes nothing to app.dataset_versions, so the lock here is the loader's own.
+    const stage = ALL_DATASETS.find((d) => d.id === 'stations')!.stages.find((s) => s.type === 'load-geojson')!;
+    if (stage.type !== 'load-geojson') throw new Error('unreachable');
+    await inRollback(async (c) => {
+      const out = await applyLoadGeojson(pool, c, resolveLoad(stage), { supersedeEdits: false });
+      expect(out.action).toBe('restamped');
+      const other = await pool.connect();
+      try {
+        await expect(
+          other.query(`SELECT id FROM app.dataset_versions WHERE layer_key = 'stations' AND is_active FOR UPDATE NOWAIT`)
+        ).rejects.toThrow(/could not obtain lock/);
+      } finally {
+        other.release();
+      }
+    });
+  });
+
+  it('refuses a column map that returns something other than a column name', async () => {
+    await inRollback(async (c) => {
+      await expect(
+        applyLoadGeojson(pool, c, {
+          layer: 'admin', versioned: false, source: 'unused', mapping: 'mapping-1',
+          // Both tables, as the real stage has them: wards reference provinces, so they go first.
+          files: [
+            {
+              path: resolveStageFile({ file: 'apps/web/public/provinces-34.geojson', root: 'repo' }),
+              target: 'admin.provinces', multiPolygon: true,
+              columns: () => ({ 'code) VALUES (1); --': 'x' }),
+            },
+            { path: resolveStageFile({ file: 'apps/web/public/wards-region.geojson', root: 'repo' }), columns: ADMIN_WARD_COLUMNS, target: 'admin.wards', multiPolygon: true },
+          ],
+        }, { supersedeEdits: false })
+      ).rejects.toThrow(/is not a column name/);
+    });
+  });
+
   it('loads the two river files into one version; activation builds the hierarchy and passes the gates', async () => {
     await inRollback(async (c) => {
       const ways = resolveStageFile({ file: 'seeds/osm-rivers-region.geojson' });
       const reaches = resolveStageFile({ file: 'seeds/hydrorivers-region.geojson' });
       const out = await applyLoadGeojson(pool, c, {
-        layer: 'rivers', versioned: true, source: 'osm-rivers-region.geojson+hydrorivers-region.geojson@sha256:test',
+        layer: 'rivers', versioned: true, source: 'osm-rivers-region.geojson+hydrorivers-region.geojson@sha256:test', mapping: 'mapping-1',
         files: [
           { path: ways, columns: RIVER_WAY_COLUMNS, multiLine: true },
           { path: reaches, columns: RIVER_REACH_COLUMNS, multiLine: true },
@@ -167,7 +258,7 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
         `INSERT INTO admin.provinces (code, name, geom)
          VALUES ('zz', 'sentinel', ST_Multi(ST_SetSRID(ST_GeomFromText('POLYGON((0 0,0 1,1 1,0 0))'), 4326)))`);
       const out = await applyLoadGeojson(pool, c, {
-        layer: 'admin', versioned: false, source: 'unused',
+        layer: 'admin', versioned: false, source: 'unused', mapping: 'mapping-1',
         files: [
           { path: resolveStageFile({ file: 'apps/web/public/provinces-34.geojson', root: 'repo' }), columns: ADMIN_PROVINCE_COLUMNS, target: 'admin.provinces', multiPolygon: true },
           { path: resolveStageFile({ file: 'apps/web/public/wards-region.geojson', root: 'repo' }), columns: ADMIN_WARD_COLUMNS, target: 'admin.wards', multiPolygon: true },

@@ -79,4 +79,28 @@ describe('loadFeatures', () => {
       client.release();
     }
   });
+
+  it('refuses a column map that returns something other than a column name', async () => {
+    // Column names are written into the INSERT. The committed maps return literal keys; this keeps
+    // a future map that spreads feature properties from turning data into SQL.
+    const spec: FeatureLoadSpec = {
+      table: 'stations',
+      file: fixture('bad.geojson', [
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [108.05, 12.68] }, properties: { 'name) VALUES (1); --': 'x' } },
+      ]),
+      columns: (p) => ({ ...p }),
+    };
+    const pool = getPool();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const versionId = await versionsService(pool).createIngestVersion(client, {
+        layerKey: 'stations', source: 'loadFeatures.test', label: 'loadFeatures.test',
+      });
+      await expect(loadFeatures(client, spec, versionId)).rejects.toThrow(/is not a column name/);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
 });

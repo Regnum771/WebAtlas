@@ -49,6 +49,13 @@ export type Stage =
       files: LoadGeojsonFile[];
       /** The `source` string the old seed command wrote, so atlas:adopt can re-label that version. */
       legacySource?: string;
+      /**
+       * Which revision of the column mapping this is; 1 when omitted. A version is identified by
+       * the content of its files AND this number, so bump it whenever a `columns` function or a
+       * geometry flag changes what gets written: the same file is then loaded again as a new
+       * version. A test pins each mapping's code so the change cannot go unnoticed.
+       */
+      mappingRevision?: number;
     }
   | { type: 'sql'; statement: string }
   | {

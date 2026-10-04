@@ -150,6 +150,12 @@ describe('stage variants reject unknown keys', () => {
     it('accepts a versioned layer with one file', () => {
       expect(() => defineDataset(withStage({ ...base, files: [file], legacySource: 'thuydienvietnam.geojson' }))).not.toThrow();
     });
+    it('a mapping revision is a positive whole number', () => {
+      expect(() => defineDataset(withStage({ ...base, files: [file], mappingRevision: 2 }))).not.toThrow();
+      for (const bad of [0, -1, 1.5, '2']) {
+        expect(() => defineDataset(withStage({ ...base, files: [file], mappingRevision: bad })), String(bad)).toThrow();
+      }
+    });
     it('rejects no files, a stray key, and a path that leaves its root', () => {
       expect(() => defineDataset(withStage({ ...base, files: [] }))).toThrow();
       expect(() => defineDataset(withStage({ ...base, files: [file], tabel: 't' }))).toThrow();

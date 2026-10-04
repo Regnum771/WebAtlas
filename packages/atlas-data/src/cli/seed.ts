@@ -9,6 +9,10 @@ import { ensureSeeded } from '../ensureSeeded';
  * GeoServer. For CI and for a test database. To build an atlas, use atlas:up or atlas:build.
  */
 async function main(): Promise<void> {
+  // No flags: in particular it never supersedes edits. A stray argument is refused, not ignored.
+  if (process.argv.length > 2) {
+    throw new Error(`atlas:seed takes no arguments (got "${process.argv.slice(2).join(' ')}")`);
+  }
   const envFile = loadDevEnv();
   if (envFile) console.log(`(environment from ${envFile})`);
   validateRegistry();
@@ -24,6 +28,11 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(message);
+  // The loader's message names a flag this command does not take.
+  if (message.includes('--supersede-edits')) {
+    console.error('atlas:seed never loads over edits. To do that deliberately: npm run atlas:build -- --supersede-edits <layer>');
+  }
   process.exitCode = 1;
 });
