@@ -129,10 +129,10 @@ export async function writeStageState(
 }
 
 /**
- * I3: forget the state of the stage about to run, of the dataset's later stages and of every
- * stage of its transitive dependents, in one statement, BEFORE the stage executes. Written first
- * so a crash at any point, a killed runner included, can only leave stages missing, never
- * falsely ok.
+ * I3: forget the state of a dataset's later stages and of every stage of its transitive
+ * dependents, in one statement, BEFORE a stage executes. Written first so a crash at any point
+ * can only leave downstream stages missing, never falsely ok. (The executing stage's own row is
+ * the runner's business: it writes `failed` there before running it.)
  *
  * The SQL deliberately begins with "DELETE FROM app.dataset_stage_state": runner.test.ts's
  * in-memory pool dispatches on that prefix.
