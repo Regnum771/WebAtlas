@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { getPool, closePool } from '../../db/pool';
+import { getPool, closePool } from './testPool';
 import { versionsRepository } from './repository';
 
 afterAll(async () => {

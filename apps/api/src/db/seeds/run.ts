@@ -4,7 +4,7 @@ import { resolve as resolvePath } from 'node:path';
 import type pg from 'pg';
 import { getPool, closePool } from '../pool';
 import { SEED_LAYERS, type SeedLayer } from './registry';
-import { versionsService } from '../../modules/versions/service';
+import { versionsService } from '@webatlas/versioning';
 import { loadAdminBoundaries } from './adminBoundaries';
 
 function geomExpr(layer: SeedLayer): string {

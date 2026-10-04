@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { getPool, closePool } from '../../db/pool';
+import { getPool, closePool } from './testPool';
 import { versionsService } from './service';
 
 // Regression guard for the failure mode recorded in docs/architecture/database-architecture.md

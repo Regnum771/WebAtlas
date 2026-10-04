@@ -4,12 +4,15 @@ import errorHandler from './errorHandler';
 import { validate } from '../lib/validate';
 import { z } from 'zod';
 import { ForbiddenError, ConflictError } from '../errors';
+import { ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError } from '@webatlas/versioning';
 
 const app = Fastify({ logger: false });
 beforeAll(async () => {
   await app.register(errorHandler);
   app.get('/forbidden', async () => { throw new ForbiddenError('nope'); });
   app.get('/conflict', async () => { throw new ConflictError('dup'); });
+  app.get('/versioning-not-found', async () => { throw new VersioningNotFoundError('Version v not found for layer dams'); });
+  app.get('/versioning-conflict', async () => { throw new VersioningConflictError('no active version for layer dams'); });
   app.post('/validated', async (req) => validate(z.object({ n: z.number() }), req.body));
   app.get('/boom', async () => { throw new Error('unexpected'); });
   await app.ready();
@@ -24,6 +27,16 @@ describe('error handler', () => {
     const c = await app.inject({ method: 'GET', url: '/conflict' });
     expect(c.statusCode).toBe(409);
     expect(c.json().error.code).toBe('CONFLICT');
+  });
+  it('maps the versioning package errors to the same 404 and 409 the API classes give', async () => {
+    // The package knows nothing about HTTP. Before it existed, the versions service threw the
+    // API's own classes, so these two responses must not change.
+    const nf = await app.inject({ method: 'GET', url: '/versioning-not-found' });
+    expect(nf.statusCode).toBe(404);
+    expect(nf.json()).toEqual({ error: { code: 'NOT_FOUND', message: 'Version v not found for layer dams' } });
+    const c = await app.inject({ method: 'GET', url: '/versioning-conflict' });
+    expect(c.statusCode).toBe(409);
+    expect(c.json()).toEqual({ error: { code: 'CONFLICT', message: 'no active version for layer dams' } });
   });
   it('maps zod validation failure to 400 with details', async () => {
     const res = await app.inject({ method: 'POST', url: '/validated', payload: { n: 'x' } });

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from '../../db/pool';
-import { versionsService } from './service';
+import { versionsService } from '@webatlas/versioning';
 import { loadLayerFeatures } from '../../db/seeds/run';
 import { SEED_LAYERS } from '../../db/seeds/registry';
 

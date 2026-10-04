@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 import { getPool, closePool } from '../pool';
-import { versionsService } from '../../modules/versions/service';
+import { versionsService } from '@webatlas/versioning';
 import { loadLayerFeatures } from './run';
 import type { SeedLayer } from './registry';
 import { REACHES_LAYER } from './ingestReaches';

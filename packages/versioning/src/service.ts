@@ -1,10 +1,10 @@
 import type { Pool, PoolClient } from 'pg';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import { versionsRepository } from './repository';
-import { stampAdminCodes } from '../../db/adminStamp';
-import { buildRiverHierarchy } from '../../db/riverHierarchy';
-import { assertRiverGates, RIVER_BASELINE } from '../../db/riverGates';
-import { ConflictError, NotFoundError } from '../../errors';
+import { stampAdminCodes } from './adminStamp';
+import { buildRiverHierarchy } from './riverHierarchy';
+import { assertRiverGates, RIVER_BASELINE } from './riverGates';
+import { ConflictError, NotFoundError } from './errors';
 
 export interface IngestVersionArgs {
   layerKey: string;

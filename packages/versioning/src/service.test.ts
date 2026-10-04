@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { getPool, closePool } from '../../db/pool';
+import { getPool, closePool } from './testPool';
 import { versionsService } from './service';
 
 const LAYER = 'zz_svc_dams'; // synthetic layer key; no real table needed for active-flip test

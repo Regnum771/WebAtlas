@@ -1,8 +1,7 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from '../../db/pool';
 import { featuresService } from './service';
-import { versionsService } from '../versions/service';
-import { versionsRepository } from '../versions/repository';
+import { versionsRepository, versionsService } from '@webatlas/versioning';
 import { ConflictError, GeometryError, NotFoundError } from '../../errors';
 
 const TEST_NAME = 'svc-test-dam@webatlas.test';
