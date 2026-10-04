@@ -1070,3 +1070,24 @@ gh pr checks <pr>
 ```
 
 Expected: `shared`, `web`, `atlas-data`, `api` all pass. Then append `## Execution notes` to this plan (commit of each task, the numbers from Step 3, the CI run id, deviations), commit and push.
+
+---
+
+## Execution notes (2026-10-04, inline in the controller session)
+
+| Task | Commit | Result |
+|---|---|---|
+| 1. Scaffold and error classes | `c7630cd` | 4 tests |
+| 2. Move the core and its tests | `16b6051` | Eleven files recorded by git as renames. Moved tests pass with only their import line changed. |
+| 3. `loadFeatures` | `6675cc1` | 2 tests; the API's seed and river ingest run through it |
+| 4. Mappings and `assignDamStatus` to shared | `2c91d2e` | shared 118 |
+| 5. CI and documents | `1aca0b6` | PR #20, run 37190580694: `shared`, `web`, `atlas-data`, `api` all pass |
+
+**Final numbers, dev stack:** `test:api` 439, `test:versioning` 51, `test:shared` 118, atlas-data 321 passed and 26 skipped, `test:web` 543. API plus shared were 595 before and are 608 now: nothing lost, 13 added. In CI: versioning 51 passed; API 425 passed and 14 skipped (the existing GeoServer, point-elevation and assistant-role gates). `rivers:hierarchy` exits 0 with the pinned figures unchanged (588 rivers, 439 names, 4,716 named reaches). `atlas:status` all `ok`, `atlas:verify` 29 of 29. One `test:versioning` run left `app.dataset_versions` at 198 rows, unchanged.
+
+**Deviations from this plan**
+
+- **Counts.** 45 tests moved to the package, not 49: `repository.test.ts` holds 12 tests, and counting `it(` over-counted it. So the package ends at 51 (not 55) and the API at 439 (not 435). The totals reconcile exactly.
+- **Task 3's test.** The plan's test inserted a feature with no geometry into `water.stations`. That column is `NOT NULL` everywhere except `water.dams` (19 real dams have no coordinates), so the test uses `dams`.
+- **Task 2 Step 7's check.** The plan's grep also matched other modules' own `./service` and `./repository` imports. The six importers the table lists were the complete set.
+- **Task 4.** `packages/shared/dist` is in `.gitignore` while 36 of its files are tracked. The four changed files and the two new `seed-columns.*` files were added with `git add -f`. The tracked set also holds `attribute-schema.*` and `map-view.*`, which no longer correspond to a source file; left alone.
