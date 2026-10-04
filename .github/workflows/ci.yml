@@ -86,4 +86,11 @@ jobs:
       #
       # Gọi qua -w: package.json ở gốc không có script này (khác migrate/seed).
       - run: npm run ingest:rivers -w @webatlas/api
+      # Bản đồ nền thật cần bản trích Geofabrik 720 MB nên CI không dựng được. Thay vào đó nạp
+      # fixture đã commit (mọi đối tượng có tên của sáu tỉnh, packages/atlas-data/fixtures/basemap),
+      # dựng thực thể tham chiếu như atlas:up vẫn làm, rồi đối chiếu với digest lấy từ atlas thật:
+      # nếu thực thể dựng từ fixture khác atlas thật thì dừng ở đây, trước khi kiểm thử chạy.
+      - run: python3 packages/atlas-data/tools/fixtures/basemap_fixture.py load
+      - run: npm run reference:build -w @webatlas/api
+      - run: python3 packages/atlas-data/tools/fixtures/basemap_fixture.py verify
       - run: npm run test:api

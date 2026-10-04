@@ -22,6 +22,8 @@ A red job that is always red cannot block a real regression. The alternative of 
 | D5 | The work is **stacked on PR #19**, so that PR goes green. |
 | D6 | Reference entity numbering becomes **deterministic** (§8). Found while checking this design: entity ids depended on table row order. |
 
+Implementation note: the three scripts this document first named are one Python tool with three subcommands (plan `docs/superpowers/plans/2026-10-04-ci-basemap-fixture.md`), because all three need JSON, sha256 and gzip.
+
 ## 3. Why "every named feature" is the right fixture
 
 Only two things in `apps/api` read the raw basemap tables:
@@ -65,9 +67,7 @@ packages/atlas-data/fixtures/basemap/
   railways_vn.copy.gz
   places_region.copy.gz
 packages/atlas-data/tools/fixtures/
-  build-basemap-fixture.sh
-  load-basemap-fixture.sh
-  verify-basemap-fixture.sh
+  basemap_fixture.py    build | load | verify
 ```
 
 - **`schema.sql`** is dumped with `pg_dump --schema-only` from a built atlas, so the table and index definitions are the ones `load_basemap.py` (through geopandas) really creates. It includes `CREATE SCHEMA IF NOT EXISTS basemap`, the geometry indexes and the `fclass` indexes. It is plain text so a change to it is reviewable.
@@ -75,13 +75,13 @@ packages/atlas-data/tools/fixtures/
 - **`MANIFEST.json`** records the Geofabrik `DATE` the atlas was built from, the selection rule of each table, its row count and the sha256 of its file. For each of the five reference layers it also records the entity count and a digest of the real atlas's entities: the sha256 of the sorted lines `entity_id|member_count`.
 - `.gitattributes` marks `*.copy.gz` as binary.
 
-## 6. Cutting the fixture: `build-basemap-fixture.sh`
+## 6. Cutting the fixture: `basemap_fixture.py build`
 
 Run by hand, in the tools image, against a fully built atlas:
 
 ```bash
-docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools \
-  bash packages/atlas-data/tools/fixtures/build-basemap-fixture.sh
+docker compose -f infra/docker-compose.yml --env-file infra/.env --profile tools run --rm -T --no-deps tools \
+  python3 packages/atlas-data/tools/fixtures/basemap_fixture.py build
 ```
 
 Steps:
@@ -93,13 +93,13 @@ Steps:
 
 The script requires `reference_entities` to be current: built by the deterministic build of §8, after the last basemap load. It checks this for each layer by counting the member rows the build would read from the source table and comparing with the sum of `member_count` stored for that layer. A mismatch stops it and prints the command to rebuild.
 
-The proof that the fixture reproduces a real atlas is not made here. It is made in CI, on every run, by `verify-basemap-fixture.sh` (§7).
+The proof that the fixture reproduces a real atlas is not made here. It is made in CI, on every run, by `basemap_fixture.py verify` (§7).
 
 **When to regenerate.** Only when a test needs newer data, or the loader's schema changes. A pin bump alone does not require it: CI stays on the frozen extract, which keeps it deterministic. Each regeneration adds about 14 MB to git history, which is the reason not to do it routinely.
 
-## 7. Loading the fixture: `load-basemap-fixture.sh`
+## 7. Loading the fixture: `basemap_fixture.py load`
 
-Environment: `DATABASE_URL`. Needs `psql`, `gzip` and `sha256sum`, all present on GitHub's Ubuntu runners and in the tools image.
+Environment: `DATABASE_URL`, or the `PG*` variables. Needs `python3` (standard library only) and `psql`, both present on GitHub's Ubuntu runners, in the tools image and on the dev host. The connection reaches `psql` through `PG*` variables, never argv.
 
 1. Verify every file named in the manifest exists and matches its sha256. A mismatch stops the script before anything is written.
 2. **Refuse to run if any of the five tables already holds rows.** The fixture must never overwrite a real atlas. There is no `--force`.
@@ -109,12 +109,12 @@ Environment: `DATABASE_URL`. Needs `psql`, `gzip` and `sha256sum`, all present o
 The `api` job in `.github/workflows/ci.yml` becomes:
 
 ```
-migrate → seed → ingest:rivers → load-basemap-fixture.sh → reference:build → verify-basemap-fixture.sh → test:api
+migrate → seed → ingest:rivers → basemap_fixture.py load → reference:build → basemap_fixture.py verify → test:api
 ```
 
 `reference:build` is the existing `npm run reference:build -w @webatlas/api`; it took 12 s on the acceptance stack.
 
-**`verify-basemap-fixture.sh`** runs after it. For each reference layer it computes the entity count and the digest of `entity_id|member_count` from the freshly built `basemap.reference_entities` and compares them with the manifest. A difference fails the job and prints the layer and both counts. This is the end-to-end check that the fixture, loaded and built in CI, gives exactly the entities of the real atlas it was cut from. It makes the claim in §3 a checked fact on every run, without repeating the build's SQL in a script.
+**`basemap_fixture.py verify`** runs after it. For each reference layer it computes the entity count and the digest of `entity_id|member_count` from the freshly built `basemap.reference_entities` and compares them with the manifest. A difference fails the job and prints the layer and both counts. This is the end-to-end check that the fixture, loaded and built in CI, gives exactly the entities of the real atlas it was cut from. It makes the claim in §3 a checked fact on every run, without repeating the build's SQL in a script.
 
 ## 8. Deterministic entity numbering
 
@@ -155,16 +155,16 @@ Effects:
 | Test | Where | Checks |
 |---|---|---|
 | Manifest | atlas-data suite, no database | Every file in the manifest exists, its sha256 matches, no stray `*.copy.gz`; `schema.sql` creates exactly the five tables |
-| Load and verify scripts, stubbed `psql` | atlas-data suite, same style as `publish-basemap.test.mjs` | Load stops on a checksum mismatch before calling `psql`, when a table already holds rows, and when a loaded row count differs from the manifest. Verify fails when a layer's count or digest differs |
+| `load` and `verify`, stubbed `psql` | atlas-data suite, same style as `publish-basemap.test.mjs` | Load stops on a checksum mismatch before calling `psql`, when a table already holds rows, and when a loaded row count differs from the manifest. Verify fails when a layer's count or digest differs |
 | `demAvailable` | api suite | False for an existing empty table, false for a missing table, true when a row exists |
-| Entity numbering | api suite, `referenceEntities.test.ts` | Building from the same rows in a different physical order gives the same set of entity ids; within one key, cluster numbers ascend with each cluster's smallest member id |
+| Entity numbering | api suite, `referenceEntities.test.ts` | Cluster numbers of one key run from 0 with no gaps and ascend with each cluster's smallest member id. Order independence itself is proven in CI by `verify`: the fixture is loaded in `osm_id` order, the real atlas in loader order |
 | The 15 failing tests | api suite, in CI | Pass, none skipped |
 
 Acceptance:
 
 1. The `api` job is green on PR #19, and its log shows the six formerly failing files running with no skipped data-dependent test.
 2. `npm run test:api` still passes on the dev stack with the full atlas (482 tests today).
-3. `verify-basemap-fixture.sh` passes in CI: the entities built from the fixture match the digest taken from the real atlas.
+3. `basemap_fixture.py verify` passes in CI: the entities built from the fixture match the digest taken from the real atlas.
 
 ## 11. Out of scope
 
