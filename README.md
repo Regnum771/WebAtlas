@@ -28,10 +28,12 @@ webatlas/
     api/            # Fastify + TypeScript API (auth, users, layer feature CRUD, migrations, seeds)
   packages/
     shared/         # @webatlas/shared — cross-cutting TS types (layer keys, geometry + attribute maps)
+    atlas-data/     # @webatlas/atlas-data — dataset registry + build pipeline (atlas:up / atlas:build / atlas:status / atlas:verify)
   infra/
-    docker-compose.yml   # PostGIS + GeoServer
+    docker-compose.yml   # PostGIS + GeoServer, plus the atlas-tools image the pipeline runs its scripts in
     postgis/init.sql     # extensions (postgis, citext) + app/water schemas
     .env.example         # copy to .env (git-ignored) before running the stack
+  docs/runbooks/    # data setup order + per-dataset runbooks (start at README.md)
   docs/superpowers/
     specs/          # design specs
     plans/          # phased implementation plans
@@ -82,7 +84,7 @@ it creates.
 | `npm run atlas:status` | What is built, stale, missing or failed — and the one command to run next |
 | `npm run atlas:build -- --only <id>` | Build one dataset and its dependencies |
 | `npm run atlas:build -- --force <id>` | Rebuild a dataset on purpose, from the same inputs. Forcing invalidates its dependents, which rebuild only if they are in the selection: `--force basemap` alone also rebuilds `reference_entities`, while `--only basemap --force basemap` leaves it `missing` until a full build |
-| Newer OpenStreetMap extract | The basemap extract is pinned: bump its date and `sha256` in `packages/atlas-data/src/descriptors/basemap.ts`, then `npm run atlas:build` (see `docs/runbooks/self-hosted-basemap.md`) |
+| Newer OpenStreetMap extract | The basemap extract is pinned to a first-of-month Geofabrik file: bump its date and `sha256` in `packages/atlas-data/src/descriptors/basemap.ts`, then `npm run atlas:build` (see `docs/runbooks/self-hosted-basemap.md`) |
 | `npm run atlas:verify` | Check the atlas actually serves: stages, probes, layers, lineage |
 | `npm run atlas:adopt` | A machine set up before the registry: record what is already built, without re-running it |
 
@@ -122,6 +124,12 @@ GET    /api/features/:layerKey/:id/geometry → simplified GeoJSON geometry (pub
 POST   /api/analysis/:op                → buffer | select_within | nearest | elevation_profile | zonal_elevation (public, 60/min)
 GET    /api/admin-units?level=province|ward&province= → administrative units with extents (public)
 GET    /api/layers/:key/features?province=&ward=      → features of the ACTIVE version, filtered   [auth]
+GET    /api/elevation?lon=&lat=         → DEM height at a point (public, 600/min)
+GET    /api/search?q=                   → named entities across layers (public)
+GET    /api/reference/layers            → reference-layer catalog (public)
+GET    /api/reference/:layer/entities[/:entityId] → named reference entities (public)
+POST   /api/roi/resolve                 → resolve the analysis region (ROI) — area, line or point (public, 120/min)
+POST   /api/assistant/messages          → map assistant (LLM) turn               [auth, rate-limited per user]
 ```
 
 Passwords are argon2-hashed; JWTs are signed from `JWT_SECRET` with a short expiry; every
@@ -145,9 +153,12 @@ write is recorded in `app.audit_log`; geometry is validated in PostGIS before wr
 | `npm run seed` | Seed the `water.*` thematic layers — superseded by `atlas:build`; kept until Plan C |
 | `npm run publish:geoserver` | Publish the WFS layers in GeoServer — superseded by `atlas:build`; kept until Plan C |
 | `npm run test:api` | Run the API test suite (needs the DB stack up) |
+| `npm run test:api:live` | API tests that call the real LLM (needs an API key) |
+| `npm run test:web` | Run the frontend tests |
 
 API-workspace scripts (run with `-w @webatlas/api`): `dev`, `start`, `create-admin`,
-`migrate:up`, `migrate:down`. Frontend tests: `npm run test -w @webatlas/web`.
+`migrate:up`, `migrate:down`, and the build steps the registry runs for you (`ingest:rivers`,
+`rivers:hierarchy`, `reference:build`, `contours:generate`). Pipeline tests: `npm run test -w @webatlas/atlas-data`.
 
 ## Regenerating administrative boundaries
 
@@ -272,6 +283,10 @@ The build-out is phased. Each plan produces working, testable software on its ow
 - [x] **Vùng công tác + OSM waterways + ranh giới 34 tỉnh** (dữ liệu chuyên đề giới hạn trong 6 tỉnh Nam Trung Bộ & Tây Nguyên; sông/hồ từ OpenStreetMap có tên riêng; ranh giới hành chính sau sáp nhập 01/7/2025).
 - [x] **Plan A — Cải tổ giao diện** (thanh biểu tượng thay bảy panel nổi, bảng lớp/chú giải chạy trên dữ liệu thật, lớp lệnh bản đồ dùng chung `MapCommand`).
 - [x] **Plan B — Trợ lý bản đồ** (LLM phía máy chủ hỏi đáp tiếng Việt, đo đạc bằng PostGIS, điều khiển bản đồ bằng ngôn ngữ tự nhiên). Xem [runbook](docs/runbooks/map-assistant.md). Đã chạy kiểm tra với khoá API thật ngày 14/09/2026: lần đó phát hiện và sửa lỗi mô hình tự bịa toạ độ địa danh (thêm công cụ `locate_place`); chi tiết ở mục "Lần chạy kiểm tra đầu tiên" trong runbook.
+- [x] **Đường đồng mức và DEM** (độ cao theo con trỏ, ô đọc số trên bản đồ, `elevation_profile` / `zonal_elevation`). Xem [runbook DEM](docs/runbooks/elevation-dem.md) và [đường đồng mức](docs/runbooks/terrain-contours.md).
+- [x] **Phản hồi giám sát** (chỉ quản trị viên được ghi, cập nhật dữ liệu qua trợ lý, thao tác phân tích, in ấn, hệ quy chiếu).
+- [x] **Mô hình thực thể, giai đoạn 1–4**: ranh giới hành chính và đóng dấu mã tỉnh/xã lên mọi đối tượng; lớp tham chiếu, thực thể có tên và tìm kiếm; topology sông và phân cấp ba cấp; vùng phân tích (ROI) là đối tượng hạng nhất cùng thanh công cụ phân tích ([hướng dẫn](docs/runbooks/vung-phan-tich.md)). Giai đoạn 5 chưa làm.
+- [x] **Sổ đăng ký dữ liệu — kế hoạch 1, A và B** (`packages/atlas-data`: `atlas:build` / `atlas:status`, dựng lại theo chuỗi phụ thuộc, các stage `run` / `fetch-http` / `publish-geoserver`; ảnh Docker công cụ, `atlas:up` dựng và kiểm chứng mọi thứ từ bản clone mới, `atlas:verify`, `atlas:adopt`). Các [runbook](docs/runbooks/README.md) mô tả từng tập dữ liệu. Kế hoạch C (`packages/versioning`, `load-geojson`, bỏ các lệnh cũ) là bước kế tiếp.
 - [ ] **Tài liệu hoá lại kho** ([docs/superpowers/plans/2026-09-07-repo-redocumentation.md](docs/superpowers/plans/2026-09-07-repo-redocumentation.md)) — mốc kế tiếp.
 
 ## Documentation
