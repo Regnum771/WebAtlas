@@ -87,9 +87,13 @@ it creates.
 | `npm run atlas:build -- --force <id>` | Rebuild a dataset on purpose, from the same inputs. Forcing invalidates its dependents, which rebuild only if they are in the selection: `--force basemap` alone also rebuilds `reference_entities`, while `--only basemap --force basemap` leaves it `missing` until a full build |
 | Newer OpenStreetMap extract | The basemap extract is pinned to a first-of-month Geofabrik file: bump its date and `sha256` in `packages/atlas-data/src/descriptors/basemap.ts`, then `npm run atlas:build` (see `docs/runbooks/self-hosted-basemap.md`) |
 | `npm run atlas:verify` | Check the atlas actually serves: stages, probes, layers, lineage |
-| `npm run atlas:adopt` | A machine set up before the registry: record what is already built, without re-running it |
+| `npm run atlas:build -- --supersede-edits <layer>` | Load new seed content over a layer that has steward edits on top. Without it the build stops rather than hide the edits; `--force` never implies it |
+| `npm run atlas:adopt` | A machine set up before the registry, or before a dataset was registered: record what is already built, without re-running it. For the thematic layers it re-labels the existing version with its content hash, so nothing is reloaded |
 
-Datasets: `seeds`, `rivers`, `basemap`, `reference_entities`, `dem`, `contours` (plus the synthetic `demo`).
+Datasets: `admin_boundaries`; the thematic layers `dams`, `stations`, `flood_zones`, `drought_points`,
+`saltwater_intrusion`, `flood_generation`, `lakes` and `rivers`, each loaded from the GeoJSON under
+`packages/atlas-data/data/seeds` and keyed to the file's content, so an unchanged file never creates a new
+version; then `basemap`, `reference_entities`, `dem`, `contours` (plus the synthetic `demo`).
 The runbooks under `docs/runbooks/` describe what each dataset is and where it comes from.
 
 `atlas:up` never recreates or stops a service that is already running, so it is safe to run on a
@@ -195,8 +199,9 @@ OSM là nguồn `rivers`/`lakes` duy nhất (không còn `thuyhe.geojson` — xe
 `ingest:rivers` riêng, **bắt buộc chạy sau `seed`** vì nó tạo và kích hoạt một
 version `rivers` mới đè lên bất kỳ version nào `seed` để lại active.
 
-Từ khi có sổ đăng ký, bước 6–7 dưới đây có thể chạy bằng `npm run atlas:build -- --force seeds` rồi `--force rivers`
-(`rivers` tự phụ thuộc `seeds`); các lệnh `seed` và `ingest:rivers` cũ vẫn chạy được cho đến Plan C.
+Từ khi có sổ đăng ký, bước 6–7 dưới đây chỉ là `npm run atlas:build`: tệp seed đổi nội dung thì tập dữ liệu tương ứng
+(`lakes`, `rivers`) tự thành cũ và được nạp lại thành một phiên bản mới. Các lệnh `seed` và `ingest:rivers` cũ vẫn chạy
+được cho đến Plan C-3.
 
 Toàn bộ pipeline tái tạo dữ liệu OSM, theo đúng thứ tự (có các ràng buộc thứ tự
 bắt buộc — xem danh sách ngay dưới):

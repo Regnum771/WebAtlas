@@ -19,8 +19,8 @@ The old numbered steps map onto the registry as follows. Each dataset is a row i
 |---|---|---|---|
 | 1 stack | `atlas:up` (`up -d --no-recreate db geoserver`, then waits for readiness) | `npm run atlas:up` | — (infra, not data) |
 | 2 migrate | `atlas:up` | `npm run migrate` | Yes (migrations) |
-| 3 seeds | dataset `seeds` | `npm run atlas:build -- --only seeds` | Yes (seed GeoJSON) |
-| 4 rivers | dataset `rivers` (depends on `seeds`) | `npm run atlas:build -- --only rivers` | Yes (seed GeoJSON) |
+| 3 seeds | dataset `admin_boundaries`, then one dataset per layer (`dams`, `stations`, `flood_zones`, `drought_points`, `saltwater_intrusion`, `flood_generation`, `lakes`) | `npm run atlas:build -- --only <layer>` | Yes (seed GeoJSON) |
+| 4 rivers | dataset `rivers` (depends on `admin_boundaries`) | `npm run atlas:build -- --only rivers` | Yes (seed GeoJSON) |
 | 5 [Self-hosted basemap](self-hosted-basemap.md) | dataset `basemap` | `npm run atlas:build -- --only basemap` | **No** — rebuilt from an OSM extract |
 | 6 reference entities | dataset `reference_entities` (depends on `basemap`) | `npm run atlas:build -- --only reference_entities` | Yes (script; rebuilds a derived table) |
 | 7 [Elevation DEM](elevation-dem.md) | dataset `dem` (optional: `--except dem`) | `npm run atlas:build -- --only dem` | **No** — generated locally |
@@ -56,18 +56,23 @@ lines are for a manual rerun.
 2. **The schema.** `atlas:up` runs every migration under
    [`apps/api/src/db/migrations`](../../apps/api/src/db/migrations), including the ones
    that create `basemap.dem_region` and `basemap.contours` empty and ready for steps 7–8.
-3. **The `seeds` dataset** loads the committed feature layers (dams, lakes, stations, flood zones, flood generation,
-   drought points, saltwater intrusion) from the GeoJSON under
-   [`packages/atlas-data/data/seeds`](../../packages/atlas-data/data/seeds) — these files are in
-   git, so this step is fully reproducible from a checkout. Manual rerun: `npm run atlas:build -- --only seeds`.
+3. **`admin_boundaries` and the seven layer datasets** (`dams`, `lakes`, `stations`, `flood_zones`, `flood_generation`,
+   `drought_points`, `saltwater_intrusion`). `admin_boundaries` loads `admin.provinces` / `admin.wards` from the
+   GeoJSON committed in `apps/web/public`; each layer dataset then loads its GeoJSON from
+   [`packages/atlas-data/data/seeds`](../../packages/atlas-data/data/seeds), stamps `province_codes` / `ward_codes`
+   onto every feature, and publishes the layer. The files are in git, so this is fully reproducible from a checkout
+   with no network access. Manual rerun of one: `npm run atlas:build -- --only dams`.
 
-   `npm run seed` now also loads `admin.provinces` / `admin.wards` from the GeoJSON committed in `apps/web/public`, and
-   stamps `province_codes` / `ward_codes` onto every feature. No network access is required.
+   A load is keyed to the file's content: rebuilding with an unchanged file creates no new version and only
+   re-stamps the administrative codes. Changing the boundary files re-stamps every layer. If a layer has steward
+   edits on top of its last load, loading *changed* content stops with a message instead of hiding them; pass
+   `--supersede-edits <layer>` to go ahead. (`npm run seed` still exists until Plan C-3 and still creates a new
+   version of every layer each time it runs.)
 
    **Upgrading an existing database:** migration `1000000000016_admin-stamping` adds `province_codes` /
    `ward_codes` with `DEFAULT '{}'` and does not backfill them — a database that already had data before that
    migration reads every feature as belonging to no administrative unit until it is re-seeded. Run `npm run seed
-   -w @webatlas/api` and `npm run ingest:rivers -w @webatlas/api` again after migrating (or `npm run atlas:build -- --force seeds`); otherwise
+   -w @webatlas/api` and `npm run ingest:rivers -w @webatlas/api` again after migrating (or `npm run atlas:build -- --force admin_boundaries`, which re-stamps every layer); otherwise
    `GET /api/layers/<layer>/features?province=…` and the assistant's `features_in_admin_unit` tool return `200`
    with an empty result, silently, rather than an error that would flag the staleness.
 
@@ -77,9 +82,9 @@ lines are for a manual rerun.
    step 9: the publish stage repoints `webatlas:rivers` at `rivers_detail` and resets
    GeoServer's cached attribute schema (`npm run atlas:build -- --force rivers` does both). Skip step 9 and the detailed map draws every river as
    its ways, reaches and river entity stacked on top of each other.
-4. **The `rivers` dataset** loads the river network into the `rivers` table — also seed data checked into git,
-   a dataset of its own because it has its own ingest path
-   ([`ingestRivers.ts`](../../apps/api/src/db/seeds/ingestRivers.ts)). One version holds
+4. **The `rivers` dataset** loads the river network into the `rivers` table — also seed data checked into git.
+   It loads two files (`osm-rivers-region.geojson`, `hydrorivers-region.geojson`) into one version, and activation
+   builds the river hierarchy and runs its gates. One version holds
    all three levels: 9,486 OSM ways, 13,045 HydroRIVERS reaches, and the 588 named rivers
    built from them.
 
