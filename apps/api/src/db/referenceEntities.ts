@@ -86,14 +86,16 @@ export async function buildReferenceLayer(pool: Pool, key: ReferenceLayerKey): P
       -- physical order: the same data loaded in another order got other numbers, and the number
       -- is part of the entity id. The grouping itself is stable, so each key's clusters are
       -- renumbered by their smallest member id ("C" collation: independent of the database
-      -- locale). OSM ids repeat in the area tables, hence the geometry tie-break; raw_cluster
-      -- comes last only so two numbers can never collide.
+      -- locale). OSM ids repeat in the area tables, hence the geometry tie-break (little-endian
+      -- bytes, so the same on every server); raw_cluster comes last only so two numbers can never
+      -- collide. With minpoints = 1 no row is noise, so raw_cluster is never NULL and the join
+      -- below keeps every row; raise minpoints and it would silently drop the noise rows.
       k AS (
         SELECT entity_key, raw_cluster,
                (row_number() OVER (
                   PARTITION BY entity_key
                   ORDER BY min(osm_id COLLATE "C"),
-                           min(md5(ST_AsEWKB(geometry)) COLLATE "C"),
+                           min(md5(ST_AsEWKB(geometry, 'NDR')) COLLATE "C"),
                            raw_cluster
                 ) - 1)::int AS cluster_id
           FROM raw
