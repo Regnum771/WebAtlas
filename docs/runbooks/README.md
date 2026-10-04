@@ -56,7 +56,7 @@ lines are for a manual rerun.
 2. **The schema.** `atlas:up` runs every migration under
    [`apps/api/src/db/migrations`](../../apps/api/src/db/migrations), including the ones
    that create `basemap.dem_region` and `basemap.contours` empty and ready for steps 7–8.
-3. **The `seeds` dataset** loads the committed feature layers (dams, rivers, lakes, stations, flood zones,
+3. **The `seeds` dataset** loads the committed feature layers (dams, lakes, stations, flood zones, flood generation,
    drought points, saltwater intrusion) from the GeoJSON under
    [`apps/api/src/db/seeds/data`](../../apps/api/src/db/seeds/data) — these files are in
    git, so this step is fully reproducible from a checkout. Manual rerun: `npm run atlas:build -- --only seeds`.
