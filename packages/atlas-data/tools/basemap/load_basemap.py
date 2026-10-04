@@ -86,12 +86,17 @@ def write_chunks(n: int, size: int = WRITE_CHUNK) -> list[tuple[int, int, str]]:
 
 def write(gdf: gpd.GeoDataFrame, table: str, engine) -> None:
     if gdf.empty:
-        print(f"   !! {table}: 0 features, skipped")
-        return
+        # Every table this script writes is counted by the basemap probe. Skipping would keep the
+        # previous load's table and let that count pass for an extract that no longer has the layer.
+        sys.exit(f"basemap.{table}: the extract yielded 0 features; refusing to keep the previous table")
     gdf = gdf.set_crs("EPSG:4326", allow_override=True)
-    for start, stop, if_exists in write_chunks(len(gdf)):
-        gdf.iloc[start:stop].to_postgis(table, engine, schema="basemap", if_exists=if_exists, index=False)
-    with engine.connect() as c:
+    # One transaction for the whole table. Handed the engine, to_postgis commits per call, so a
+    # load killed between chunks left a committed part-table that the row-count probe accepted and
+    # the live map drew. Handed a connection that is already in a transaction, geopandas reuses it:
+    # memory stays bounded by the chunk, and a failed load leaves the previous table in place.
+    with engine.begin() as c:
+        for start, stop, if_exists in write_chunks(len(gdf)):
+            gdf.iloc[start:stop].to_postgis(table, c, schema="basemap", if_exists=if_exists, index=False)
         # KHONG tu tao index hinh hoc o day: to_postgis cua GeoPandas da tao san
         # idx_<table>_geometry. Truoc day dong nay tao them mot GiST thu hai y het
         # tren moi bang, chi ton thoi gian ghi va dung luong, khong giup doc.
@@ -103,7 +108,6 @@ def write(gdf: gpd.GeoDataFrame, table: str, engine) -> None:
         if "fclass" in gdf.columns:
             c.execute(text(f'CREATE INDEX IF NOT EXISTS {table}_fclass_idx ON basemap."{table}" (fclass)'))
         c.execute(text(f'ANALYZE basemap."{table}"'))
-        c.commit()
     print(f"   -> basemap.{table}: {len(gdf):,} features")
 
 
