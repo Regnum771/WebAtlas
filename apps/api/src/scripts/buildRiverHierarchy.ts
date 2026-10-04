@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import { closePool, getPool } from '../db/pool';
-import { buildRiverHierarchy } from '../db/riverHierarchy';
-import { assertRiverGates, RIVER_BASELINE } from '../db/riverGates';
+import { assertRiverGates, buildRiverHierarchy, RIVER_BASELINE } from '@webatlas/versioning';
 
 /**
  * VERIFY-AND-REPORT ONLY -- this script does NOT rebuild the live rivers version.

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { getPool, closePool } from './pool';
+import { getPool, closePool } from './testPool';
 import { MATCH_MIN_VOTES, MATCH_SAMPLES, BRIDGED_CONFIDENCE } from './riverHierarchy';
 
 afterAll(async () => { await closePool(); });

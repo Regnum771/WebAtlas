@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 import type { SeedLayer } from './registry';
+import { RIVER_REACH_COLUMNS } from '@webatlas/shared';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 
@@ -22,19 +23,5 @@ export const REACHES_LAYER: SeedLayer = {
   file: resolvePath(here, 'data/hydrorivers-region.geojson'),
   source: 'HydroRIVERS v10',
   multiLine: true,
-  columns: (p) => ({
-    external_id: `hyriv:${String(p.HYRIV_ID)}`,
-    feature_level: 2,
-    // HydroRIVERS writes 0 for a terminal reach -> NULL, meaning "end of the network".
-    // A NEXT_DOWN that simply is not in this file (53 reaches leaving the region) keeps
-    // its value: "the water goes somewhere we do not hold" is a different fact, and
-    // collapsing both to NULL would hide it from the activation gates.
-    flows_into_external_id: Number(p.NEXT_DOWN) === 0 ? null : `hyriv:${String(p.NEXT_DOWN)}`,
-    // The TRUE Strahler order (ORD_STRA). Level 3 keeps the OSM waterway rank it has
-    // always held -- the two are different measures and must not be compared.
-    stream_order: p.ORD_STRA,
-    length_m: Number(p.LENGTH_KM) * 1000,
-    // HydroRIVERS has no names. Task 5 records the JOINED name on the link, never here.
-    name: null,
-  }),
+  columns: RIVER_REACH_COLUMNS,
 };

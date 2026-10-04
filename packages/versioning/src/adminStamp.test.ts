@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { getPool, closePool } from './pool';
+import { getPool, closePool } from './testPool';
 import { stampAdminCodes } from './adminStamp';
 
 let versionId: string;

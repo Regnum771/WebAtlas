@@ -28,6 +28,7 @@ webatlas/
     api/            # Fastify + TypeScript API (auth, users, layer feature CRUD, migrations, seeds)
   packages/
     shared/         # @webatlas/shared — cross-cutting TS types (layer keys, geometry + attribute maps)
+    versioning/     # @webatlas/versioning — dataset versions, activation, river hierarchy, feature loading (used by api and atlas-data)
     atlas-data/     # @webatlas/atlas-data — dataset registry + build pipeline (atlas:up / atlas:build / atlas:status / atlas:verify)
   infra/
     docker-compose.yml   # PostGIS + GeoServer, plus the atlas-tools image the pipeline runs its scripts in
@@ -153,6 +154,7 @@ write is recorded in `app.audit_log`; geometry is validated in PostGIS before wr
 | `npm run seed` | Seed the `water.*` thematic layers — superseded by `atlas:build`; kept until Plan C |
 | `npm run publish:geoserver` | Publish the WFS layers in GeoServer — superseded by `atlas:build`; kept until Plan C |
 | `npm run test:api` | Run the API test suite (needs the DB stack up) |
+| `npm run test:versioning` | Run the versioning package's tests (needs the DB stack up and seeded) |
 | `npm run test:api:live` | API tests that call the real LLM (needs an API key) |
 | `npm run test:web` | Run the frontend tests |
 

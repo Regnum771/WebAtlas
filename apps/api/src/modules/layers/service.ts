@@ -3,7 +3,7 @@ import { getLayer, type LayerDef } from '../../layers/registry';
 import { featuresRepository, type FeatureFilter, type FeatureRow } from './repository';
 import { assertGeometry, assertValidInPg } from './geometry';
 import { auditService, type EditSource } from '../audit/service';
-import { versionsService } from '../versions/service';
+import { versionsService } from '@webatlas/versioning';
 import { validate } from '../../lib/validate';
 import { ConflictError, NotFoundError } from '../../errors';
 

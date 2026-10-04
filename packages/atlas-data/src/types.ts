@@ -1,10 +1,7 @@
 import type { Pool } from 'pg';
+import type { ColumnMap } from '@webatlas/shared';
 
-/** Map a GeoJSON feature's properties to { column: value }, excluding geometry. */
-export type ColumnMap = (
-  props: Record<string, unknown>,
-  index: number
-) => Record<string, unknown>;
+export type { ColumnMap } from '@webatlas/shared';
 
 /** Declared upstream provenance. ISO 19115 LI_Source. */
 export interface LineageSource {

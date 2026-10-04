@@ -1,5 +1,6 @@
 import fp from 'fastify-plugin';
-import { AppError, InternalError, NotFoundError } from '../errors';
+import { AppError, ConflictError, InternalError, NotFoundError } from '../errors';
+import { ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError } from '@webatlas/versioning';
 
 export default fp(async (app) => {
   app.setNotFoundHandler((_req, reply) => {
@@ -11,6 +12,12 @@ export default fp(async (app) => {
     let appErr: AppError;
     if (err instanceof AppError) {
       appErr = err;
+    } else if (err instanceof VersioningNotFoundError) {
+      // The versioning package throws its own, HTTP-free classes; they keep the responses the
+      // versions service gave when it lived here and threw the API's.
+      appErr = new NotFoundError(err.message);
+    } else if (err instanceof VersioningConflictError) {
+      appErr = new ConflictError(err.message);
     } else if ((err as { statusCode?: number }).statusCode === 429) {
       appErr = new AppError(429, 'RATE_LIMITED', 'Quá nhiều yêu cầu, vui lòng thử lại sau.');
     } else {
@@ -22,5 +29,4 @@ export default fp(async (app) => {
       error: { code: appErr.code, message: appErr.message, ...(appErr.details ? { details: appErr.details } : {}) },
     });
   });
-  void NotFoundError; // referenced by modules; keep import tree-shake-safe
 });

@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { resolve as resolvePath } from 'node:path';
 import { getPool, closePool } from '../pool';
-import { versionsService } from '../../modules/versions/service';
-import { loadLayerFeatures } from './run';
+import { loadFeatures, versionsService } from '@webatlas/versioning';
 import type { SeedLayer } from './registry';
+import { RIVER_WAY_COLUMNS } from '@webatlas/shared';
 import { REACHES_LAYER } from './ingestReaches';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -23,15 +23,7 @@ export const RIVERS_HYDRO_LAYER: SeedLayer = {
   file: resolvePath(here, 'data/osm-rivers-region.geojson'),
   source: HYDRORIVERS_SOURCE,
   multiLine: true,
-  columns: (p) => ({
-    // 'osm:' so an OSM way id can never be mistaken for a HYRIV_ID (migration 18).
-    external_id: `osm:${String(p.osmId)}`,
-    code: p.waterway,
-    name: p.name,
-    stream_order: p.streamOrder,
-    // Độ dài do build-osm-seeds.mjs tính từ hình học (OSM không có sẵn trường này).
-    length_m: p.lengthM,
-  }),
+  columns: RIVER_WAY_COLUMNS,
 };
 
 /**
@@ -85,8 +77,8 @@ export async function ingestHydroRivers(): Promise<{ versionId: string; count: n
     // kind/parent constraint gives an ingest version no parent, so rivers_active
     // resolves its chain to this version alone. Loading the reaches into a separate
     // ingest version would make every OSM way vanish from the map.
-    await loadLayerFeatures(client, RIVERS_HYDRO_LAYER, versionId);
-    await loadLayerFeatures(client, REACHES_LAYER, versionId);
+    await loadFeatures(client, RIVERS_HYDRO_LAYER, versionId);
+    await loadFeatures(client, REACHES_LAYER, versionId);
     // Dựng phân cấp sông, chạy cổng kích hoạt và đóng dấu mã hành chính đều là nghĩa vụ
     // của svc.activate() (xem versions/service.ts), không gọi tường minh ở đây. Vẫn cùng
     // giao dịch ingest, nên cổng thất bại thì ROLLBACK xoá sạch cả version.
