@@ -12,7 +12,7 @@ describe('executor table', () => {
   it('reports a stage type with no executor by name', async () => {
     const pool = { query: vi.fn() } as unknown as Pool;
     await expect(
-      executeStage(pool, { type: 'load-geojson', file: 'f', table: 't', columns: () => ({}) }, ctx)
+      executeStage(pool, { type: 'load-geojson', layer: 'dams', versioned: true, files: [{ file: 'f.geojson', columns: () => ({}) }] }, ctx)
     ).rejects.toThrow(/"load-geojson" has no executor/);
   });
 

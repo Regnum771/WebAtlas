@@ -140,7 +140,29 @@ describe('stage variants reject unknown keys', () => {
   it('sql and load-geojson stages reject stray keys too', () => {
     expect(() => defineDataset(withStage({ type: 'sql', statement: 'SELECT 1', stmt: 'x' }))).toThrow();
     expect(() =>
-      defineDataset(withStage({ type: 'load-geojson', file: 'a.geojson', table: 't', columns: () => ({}), colums: 1 }))
+      defineDataset(withStage({ type: 'load-geojson', layer: 'dams', versioned: true, files: [{ file: 'a.geojson', columns: () => ({}) }], c: 1 }))
     ).toThrow();
+  });
+
+  describe('load-geojson', () => {
+    const base = { type: 'load-geojson' as const, layer: 'dams', versioned: true };
+    const file = { file: 'seeds/dams.geojson', columns: () => ({}) };
+    it('accepts a versioned layer with one file', () => {
+      expect(() => defineDataset(withStage({ ...base, files: [file], legacySource: 'thuydienvietnam.geojson' }))).not.toThrow();
+    });
+    it('rejects no files, a stray key, and a path that leaves its root', () => {
+      expect(() => defineDataset(withStage({ ...base, files: [] }))).toThrow();
+      expect(() => defineDataset(withStage({ ...base, files: [file], tabel: 't' }))).toThrow();
+      expect(() => defineDataset(withStage({ ...base, files: [{ ...file, colums: 1 }] }))).toThrow();
+      expect(() => defineDataset(withStage({ ...base, files: [{ ...file, file: '../x.geojson' }] }))).toThrow();
+      expect(() => defineDataset(withStage({ ...base, files: [{ ...file, file: '/abs/x.geojson' }] }))).toThrow();
+      expect(() => defineDataset(withStage({ ...base, layer: 'dams; DROP', files: [file] }))).toThrow();
+    });
+    it('a versioned stage may not name a target table, and a non-versioned one must', () => {
+      expect(() => defineDataset(withStage({ ...base, files: [{ ...file, target: 'admin.provinces' }] }))).toThrow(/target/);
+      expect(() => defineDataset(withStage({ ...base, layer: 'admin', versioned: false, files: [file] }))).toThrow(/target/);
+      expect(() => defineDataset(withStage({ ...base, layer: 'admin', versioned: false, files: [{ ...file, target: 'admin.provinces' }] }))).not.toThrow();
+      expect(() => defineDataset(withStage({ ...base, layer: 'admin', versioned: false, files: [{ ...file, target: 'provinces; DROP' }] }))).toThrow();
+    });
   });
 });

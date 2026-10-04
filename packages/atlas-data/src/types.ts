@@ -3,6 +3,20 @@ import type { ColumnMap } from '@webatlas/shared';
 
 export type { ColumnMap } from '@webatlas/shared';
 
+/** One GeoJSON file of a load-geojson stage. */
+export interface LoadGeojsonFile {
+  /** Relative path: under packages/atlas-data/data by default, under the repo root when `root` is 'repo'. */
+  file: string;
+  root?: 'data' | 'repo';
+  columns: ColumnMap;
+  /** Non-versioned mode only: the schema-qualified table the file replaces, e.g. `admin.provinces`. */
+  target?: string;
+  /** Normalise a LineString or MultiLineString as MultiLineString. */
+  multiLine?: boolean;
+  /** Wrap a single Polygon as MultiPolygon. */
+  multiPolygon?: boolean;
+}
+
 /** Declared upstream provenance. ISO 19115 LI_Source. */
 export interface LineageSource {
   citation: string;
@@ -26,7 +40,16 @@ export type Stage =
       into: string;
       sha256?: string;
     }
-  | { type: 'load-geojson'; file: string; table: string; columns: ColumnMap }
+  | {
+      type: 'load-geojson';
+      /** The editable layer key (its table is `water.<layer>`), or a label for a non-versioned load. */
+      layer: string;
+      /** true: one ingest version per content (spec §11). false: the target tables are replaced. */
+      versioned: boolean;
+      files: LoadGeojsonFile[];
+      /** The `source` string the old seed command wrote, so atlas:adopt can re-label that version. */
+      legacySource?: string;
+    }
   | { type: 'sql'; statement: string }
   | {
       type: 'publish-geoserver';

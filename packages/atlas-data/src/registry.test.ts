@@ -60,7 +60,7 @@ describe('registry', () => {
       id: 'bad-no-executor',
       kind: 'vector',
       lineage: { statement: 's', licence: 'CC0-1.0', sources: [] },
-      stages: [{ type: 'load-geojson', file: 'f.geojson', table: 't', columns: () => ({}) }],
+      stages: [{ type: 'load-geojson', layer: 'dams', versioned: true, files: [{ file: 'f.geojson', columns: () => ({}) }] }],
     } as unknown as Dataset;
     expect(() => validateRegistry([bad])).toThrow(/bad-no-executor.*load-geojson.*no executor/s);
   });
