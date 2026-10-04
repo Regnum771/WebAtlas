@@ -84,6 +84,7 @@ Space is reused by PostgreSQL, not returned to the operating system. Nothing run
 3. Create the partial indexes.
 4. `CREATE OR REPLACE` the eight `*_active` views as the filter.
 5. Create `app.version_pins`.
+6. Set `app.dataset_versions.ingested_at`'s default to `clock_timestamp()` (added while planning): retention orders loads by `ingested_at`, and `now()` gives every version created in one transaction the same time.
 
 The backfill writes data, an exception to "migrations create tables, the pipeline populates". The flag is part of the schema change: without it the views would return nothing until each layer's next activation. The migration does not prune. `down` restores the old view definitions and drops the column, the indexes and the table.
 
