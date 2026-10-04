@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import type { FeatureLoadSpec } from '@webatlas/versioning';
-import { assignDamStatus } from './damStatus';
+import { SEED_LAYER_COLUMNS } from '@webatlas/shared';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // apps/api/src/db/seeds -> repo root is five levels up
@@ -17,48 +17,39 @@ export const SEED_LAYERS: SeedLayer[] = [
     table: 'dams',
     file: resolve(webPublic, 'thuydienvietnam.geojson'),
     source: 'thuydienvietnam.geojson',
-    columns: (p) => ({
-      external_id: p.ID,
-      name: p.Vietnamese,
-      name_en: p.English_hy,
-      wattage_mw: p.Wattage_PL,
-      annual_output: p['Quantity_('],
-      year_launched: p.Year_of_la,
-      year_operational: p.Year_of_op,
-      status: assignDamStatus(p.ID),
-    }),
+    columns: SEED_LAYER_COLUMNS.dams,
   },
   {
     table: 'stations',
     file: resolve(seedData, 'stations.geojson'),
     source: 'stations.geojson',
-    columns: (p) => ({ external_id: p.id, name: p.name, station_type: p.type, status: p.status, value: p.value }),
+    columns: SEED_LAYER_COLUMNS.stations,
   },
   {
     table: 'flood_zones',
     file: resolve(seedData, 'flood_zones.geojson'),
     source: 'flood_zones.geojson',
     multiPolygon: true,
-    columns: (p) => ({ external_id: p.id, name: p.name, hazard_type: p.type, area: p.area, risk_level: p.riskLevel }),
+    columns: SEED_LAYER_COLUMNS.flood_zones,
   },
   {
     table: 'drought_points',
     file: resolve(seedData, 'drought_points.geojson'),
     source: 'drought_points.geojson',
-    columns: (p) => ({ external_id: p.id, name: p.name, risk_level: p.riskLevel, status: p.status, survey_date: p.surveyDate }),
+    columns: SEED_LAYER_COLUMNS.drought_points,
   },
   {
     table: 'saltwater_intrusion',
     file: resolve(seedData, 'saltwater_intrusion.geojson'),
     source: 'saltwater_intrusion.geojson',
-    columns: (p) => ({ external_id: p.id, name: p.name, salinity: p.salinity, risk_level: p.riskLevel, status: p.status }),
+    columns: SEED_LAYER_COLUMNS.saltwater_intrusion,
   },
   {
     table: 'flood_generation',
     file: resolve(seedData, 'flood_generation.geojson'),
     source: 'flood_generation.geojson',
     multiPolygon: true,
-    columns: (p) => ({ external_id: p.id, name: p.name, risk_level: p.riskLevel, area: p.area, flow_rate: p.flowRate }),
+    columns: SEED_LAYER_COLUMNS.flood_generation,
   },
   {
     table: 'lakes',
@@ -67,13 +58,6 @@ export const SEED_LAYERS: SeedLayer[] = [
     // Đánh đổi: mất Vol_total/Shore_len — OSM không có hai trường này.
     source: 'OSM water bodies',
     multiPolygon: true,
-    columns: (p) => ({
-      external_id: p.osmId,
-      name: p.name,
-      lake_type: p.lakeType,
-      area_km2: null,
-      volume_mcm: null,
-      shore_len_km: null,
-    }),
+    columns: SEED_LAYER_COLUMNS.lakes,
   },
 ];

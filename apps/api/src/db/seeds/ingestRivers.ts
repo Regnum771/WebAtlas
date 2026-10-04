@@ -3,6 +3,7 @@ import { resolve as resolvePath } from 'node:path';
 import { getPool, closePool } from '../pool';
 import { loadFeatures, versionsService } from '@webatlas/versioning';
 import type { SeedLayer } from './registry';
+import { RIVER_WAY_COLUMNS } from '@webatlas/shared';
 import { REACHES_LAYER } from './ingestReaches';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -22,15 +23,7 @@ export const RIVERS_HYDRO_LAYER: SeedLayer = {
   file: resolvePath(here, 'data/osm-rivers-region.geojson'),
   source: HYDRORIVERS_SOURCE,
   multiLine: true,
-  columns: (p) => ({
-    // 'osm:' so an OSM way id can never be mistaken for a HYRIV_ID (migration 18).
-    external_id: `osm:${String(p.osmId)}`,
-    code: p.waterway,
-    name: p.name,
-    stream_order: p.streamOrder,
-    // Độ dài do build-osm-seeds.mjs tính từ hình học (OSM không có sẵn trường này).
-    length_m: p.lengthM,
-  }),
+  columns: RIVER_WAY_COLUMNS,
 };
 
 /**

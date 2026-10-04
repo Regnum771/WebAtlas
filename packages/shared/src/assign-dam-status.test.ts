@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assignDamStatus } from './damStatus';
-import { DAM_STATUS_SLUGS } from '@webatlas/shared';
+import { assignDamStatus, DAM_STATUS_SLUGS } from './dam-status';
 
 describe('assignDamStatus', () => {
   it('is deterministic (same id -> same slug)', () => {

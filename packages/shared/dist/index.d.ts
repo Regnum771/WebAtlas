@@ -9,6 +9,7 @@ export { LAYER_GEOMETRY, type OgcGeometryType } from './layer-geometry.js';
 export * from './layer-attributes.js';
 export * from './feature-properties.js';
 export * from './dam-status.js';
+export * from './seed-columns.js';
 export * from './region.js';
 export * from './osm-water.js';
 export * from './map-commands.js';

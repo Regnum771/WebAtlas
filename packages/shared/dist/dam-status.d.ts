@@ -9,3 +9,8 @@ export declare const DAM_STATUS_DISPLAY: Record<DamStatusSlug, DamStatusDisplay>
 export declare function toDamStatusSlug(v: unknown): DamStatusSlug;
 /** slug/value -> { label, color }, with the safe default. */
 export declare function damStatusDisplay(v: unknown): DamStatusDisplay;
+/**
+ * Deterministically assign a dam status slug from its external id.
+ * Weighted ~70/18/12 (normal/xa_lu/nguy_hiem). Same id -> same slug (idempotent seed).
+ */
+export declare function assignDamStatus(externalId: unknown): DamStatusSlug;
