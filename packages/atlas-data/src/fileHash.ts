@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import type { Stage } from './types';
 import { resolveStageFile } from './paths';
@@ -18,6 +18,15 @@ export const sha256OfFile: FileHasher = (absolutePath) => {
   }
   return createHash('sha256').update(content).digest('hex');
 };
+
+/**
+ * For PLANNING (the stage hash plan that status, verify, adopt and build all compute for every
+ * dataset): a file that is not there hashes as `missing` instead of throwing. One absent seed file
+ * then makes its own stage stale, and the load fails on it by name when it runs, instead of
+ * taking every command down before it can say anything about the other datasets.
+ */
+export const plannedHashOfFile: FileHasher = (absolutePath) =>
+  existsSync(absolutePath) ? sha256OfFile(absolutePath) : 'missing';
 
 /** The content hash of each file of the stage, in the stage's order. */
 export function stageFileHashes(stage: LoadStage, hash: FileHasher = sha256OfFile): string[] {

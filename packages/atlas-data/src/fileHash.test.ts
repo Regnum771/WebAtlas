@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { sha256OfFile, stageFileHashes, versionSource } from './fileHash';
+import { plannedHashOfFile, sha256OfFile, stageFileHashes, versionSource } from './fileHash';
+import { stageInputHash } from './state';
 import { resolveStageFile, DATA_DIR, REPO_ROOT } from './paths';
 import type { Stage } from './types';
 
@@ -28,6 +29,18 @@ describe('file hashing for load-geojson', () => {
 
   it('fails with the path when a file is missing', () => {
     expect(() => sha256OfFile(join(dir, 'nope.geojson'))).toThrow(/nope\.geojson/);
+  });
+
+  it('planning tolerates a missing file: it hashes as missing, so only its own stage goes stale', () => {
+    const f = join(dir, 'planned.geojson');
+    writeFileSync(f, '{}');
+    expect(plannedHashOfFile(f)).toBe(sha256OfFile(f));
+    expect(plannedHashOfFile(join(dir, 'nope.geojson'))).toBe('missing');
+    // The default of the stage hash: status, verify and build plan every dataset before running any.
+    const stage = { type: 'load-geojson' as const, layer: 'dams', versioned: true, files: [{ file: 'seeds/__not_there__.geojson', columns: () => ({}) }] };
+    expect(() => stageInputHash(stage, [])).not.toThrow();
+    // Loading it is another matter: that needs the bytes, and says which file it could not read.
+    expect(() => versionSource(stage)).toThrow(/__not_there__\.geojson/);
   });
 
   it('resolves a stage file under data/ by default and under the repo root when asked', () => {

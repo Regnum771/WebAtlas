@@ -63,6 +63,7 @@ const stageSchema = z.discriminatedUnion('type', [
       url: z.string().url(),
       into: cacheRelativePath,
       sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+      supersedes: z.string().min(1).optional(),
     })
     .strict(),
   z
@@ -126,6 +127,24 @@ export const datasetSchema = z
   // a discriminated union must stay a plain object schema.
   .superRefine((d, ctx) => {
     for (const [si, s] of d.stages.entries()) {
+      if (s.type === 'fetch-http' && s.supersedes !== undefined) {
+        const fail = (message: string): void => {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['stages', si, 'supersedes'], message });
+        };
+        // It decides which files get deleted from the cache, so it must say exactly which: whole
+        // file names, of the family this stage's own file belongs to.
+        const own = s.into.split('/').pop()!;
+        let pattern: RegExp | undefined;
+        try {
+          pattern = new RegExp(s.supersedes);
+        } catch {
+          fail('is not a regular expression');
+        }
+        if (pattern) {
+          if (!s.supersedes.startsWith('^') || !s.supersedes.endsWith('$')) fail('must be anchored: ^…$');
+          else if (!pattern.test(own)) fail(`must match this stage's own file name ("${own}")`);
+        }
+      }
       if (s.type !== 'load-geojson') continue;
       for (const [fi, f] of s.files.entries()) {
         if (s.versioned && f.target !== undefined) {

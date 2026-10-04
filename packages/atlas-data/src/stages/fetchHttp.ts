@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, resolve, sep } from 'node:path';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, resolve, sep } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
@@ -49,6 +49,22 @@ async function sha256File(path: string): Promise<string> {
  *   is refreshed with --force; a pinned one (the basemap, spec C-10) by changing its url and
  *   sha256 in the descriptor.
  */
+/**
+ * Remove the earlier downloads `stage.supersedes` names, with their sidecars and any part file.
+ * Only called once the stage's own file is in place and verified, so a failed download never
+ * costs the copy that still worked.
+ */
+async function removeSuperseded(stage: FetchStage, target: string, ctx: StageContext): Promise<void> {
+  if (!stage.supersedes) return;
+  const pattern = new RegExp(stage.supersedes);
+  const dir = dirname(target);
+  for (const name of await readdir(dir)) {
+    if (name === basename(target) || !pattern.test(name)) continue;
+    for (const file of [name, `${name}.source`, `${name}.part`]) await rm(resolve(dir, file), { force: true });
+    ctx.log(`[${ctx.datasetId}] removed ${name} from the cache: superseded by ${basename(target)}`);
+  }
+}
+
 export async function executeFetchHttp(
   _pool: Pool,
   stage: FetchStage,
@@ -77,6 +93,7 @@ export async function executeFetchHttp(
             ? `[${ctx.datasetId}] ${stage.into} matches its pin; reused although forced`
             : `[${ctx.datasetId}] ${stage.into} already present (sha256 ${have.slice(0, 12)})`
         );
+        await removeSuperseded(stage, target, ctx);
         return { summary: `sha256:${have} ${stage.url} (reused)` };
       }
       ctx.log(`[${ctx.datasetId}] ${stage.into} does not match its pin; downloading again`);
@@ -141,6 +158,7 @@ export async function executeFetchHttp(
     await rm(sidecar, { force: true });
     await rename(part, target);
     await writeFile(sidecar, stage.url, 'utf8');
+    await removeSuperseded(stage, target, ctx);
     return { summary: `sha256:${got} ${stage.url}` };
   } catch (err) {
     if (idled) throw idleError();

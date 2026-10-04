@@ -164,6 +164,47 @@ describe('fetch-http', () => {
     expect(await readdir(join(cache, 'basemap'))).toEqual([]);
   });
 
+  describe('supersedes: earlier downloads this one replaces', () => {
+    const pinned = (over: Record<string, unknown> = {}) =>
+      stage({ url: `${base}/v-261001.zip`, into: 'basemap/v-261001.zip', sha256: SHA, supersedes: String.raw`^v-\d{6}\.zip$`, ...over });
+    const old = async (): Promise<void> => {
+      for (const f of ['v-260901.zip', 'v-260901.zip.source', 'v-260801.zip.part', 'other.zip', 'other.zip.source']) {
+        await writeFile(join(cache, 'basemap', f), 'old');
+      }
+    };
+
+    it('removes them, with sidecars and part files, once the new file is in place', async () => {
+      await old();
+      const lines: string[] = [];
+      await executeFetchHttp(pool, pinned(), { ...ctx(), log: (l: string) => lines.push(l) }, cache);
+      // The 260801 part file stays: no file of that name was ever completed, so nothing matched.
+      expect((await readdir(join(cache, 'basemap'))).sort()).toEqual(
+        ['other.zip', 'other.zip.source', 'v-260801.zip.part', 'v-261001.zip', 'v-261001.zip.source']);
+      expect(lines.join('\n')).toMatch(/removed v-260901\.zip from the cache: superseded by v-261001\.zip/);
+    });
+
+    it('also when the file was already there: that is the run after a pin moved back and forth', async () => {
+      await executeFetchHttp(pool, pinned(), ctx(), cache);
+      await old();
+      await executeFetchHttp(pool, pinned(), ctx(), cache);
+      expect(hits).toBe(1);
+      expect(await readdir(join(cache, 'basemap'))).not.toContain('v-260901.zip');
+    });
+
+    it('keeps them when the download fails: the old copy is the only one that works', async () => {
+      await old();
+      mode = 'missing';
+      await expect(executeFetchHttp(pool, pinned(), ctx(), cache)).rejects.toThrow(/404/);
+      expect(await readdir(join(cache, 'basemap'))).toContain('v-260901.zip');
+    });
+
+    it('removes nothing without it', async () => {
+      await old();
+      await executeFetchHttp(pool, pinned({ supersedes: undefined }), ctx(), cache);
+      expect(await readdir(join(cache, 'basemap'))).toContain('v-260901.zip');
+    });
+  });
+
   it('refuses a path that escapes the cache even if validation was bypassed', async () => {
     await expect(executeFetchHttp(pool, stage({ into: '../escape.zip' }), ctx(), cache)).rejects.toThrow(/escapes/);
   });

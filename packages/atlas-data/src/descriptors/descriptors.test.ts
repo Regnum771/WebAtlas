@@ -177,6 +177,15 @@ describe('registered datasets', () => {
     expect(fetch.url).toMatch(/vietnam-\d{4}01-free\.shp\.zip$/);
   });
 
+  it('the basemap fetch clears earlier pins of the same extract out of the cache, and nothing else', () => {
+    const bm = byId('basemap').stages;
+    const fetch = bm.find((s) => s.type === 'fetch-http') as Extract<(typeof bm)[number], { type: 'fetch-http' }>;
+    const pattern = new RegExp(fetch.supersedes!);
+    expect(pattern.test('vietnam-260901-free.shp.zip')).toBe(true);
+    expect(pattern.test('vietnam-latest-free.shp.zip')).toBe(false);
+    expect(pattern.test('vietnam-260901-free.shp.zip.source')).toBe(false);
+  });
+
   it('the basemap probe checks exactly the layer groups the web app requests and the script publishes', () => {
     // Three places name these groups. A fresh clone once passed verify with one of the five: the
     // other four existed only on the developer's GeoServer, created by hand.

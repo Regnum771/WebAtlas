@@ -39,6 +39,13 @@ export type Stage =
       /** A relative path inside packages/atlas-data/data/cache. */
       into: string;
       sha256?: string;
+      /**
+       * A regular expression (source text, anchored) over file names in the target's directory:
+       * earlier downloads that this one replaces, removed once this one is in place. For a pinned
+       * source whose file name carries the pin, so that moving the pin does not leave the old
+       * file in the cache for good. Housekeeping only: it is not part of the stage's hash.
+       */
+      supersedes?: string;
     }
   | {
       type: 'load-geojson';
