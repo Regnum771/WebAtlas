@@ -93,6 +93,16 @@ export function resolveLicences(datasets: Dataset[], id: string): string[] {
 
 const STEP_CAP = 200;
 
+function capped(text: string): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim();
+  return collapsed.length > STEP_CAP ? `${collapsed.slice(0, STEP_CAP - 1)}…` : collapsed;
+}
+
+/** The process step atlas:adopt appends: no stage ran, the probe said the output already exists. */
+export function adoptionStep(detail: string): { description: string; tool: string } {
+  return { description: capped(`adopted without executing · ${detail}`), tool: 'atlas:adopt' };
+}
+
 /**
  * The ISO 19115 process step for one executed stage (I4): which stage, the first 12 characters
  * of the input hash that ties it to the exact descriptor configuration, and what it did.
@@ -104,9 +114,7 @@ export function processStep(
   inputHash: string,
   summary: string
 ): { description: string; tool: string } {
-  const collapsed = summary.replace(/\s+/g, ' ').trim();
-  let description = `stage ${key} · ${inputHash.slice(0, 12)} · ${collapsed}`;
-  if (description.length > STEP_CAP) description = `${description.slice(0, STEP_CAP - 1)}…`;
+  const description = capped(`stage ${key} · ${inputHash.slice(0, 12)} · ${summary}`);
   const tool = stage.type === 'run' ? stage.argv.join(' ') : stage.type;
   return { description, tool };
 }

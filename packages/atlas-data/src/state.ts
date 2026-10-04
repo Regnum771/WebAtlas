@@ -131,7 +131,8 @@ export async function writeStageState(
 /**
  * I3: forget the state of a dataset's later stages and of every stage of its transitive
  * dependents, in one statement, BEFORE a stage executes. Written first so a crash at any point
- * can only leave downstream stages missing, never falsely ok.
+ * can only leave downstream stages missing, never falsely ok. (The executing stage's own row is
+ * the runner's business: it writes `failed` there before running it.)
  *
  * The SQL deliberately begins with "DELETE FROM app.dataset_stage_state": runner.test.ts's
  * in-memory pool dispatches on that prefix.
@@ -139,13 +140,13 @@ export async function writeStageState(
 export async function invalidateStageState(
   pool: Pool,
   datasetId: string,
-  laterStages: string[],
+  stages: string[],
   dependentIds: string[]
 ): Promise<void> {
   await pool.query(
     `DELETE FROM app.dataset_stage_state
       WHERE (dataset_id = $1 AND stage = ANY($2::text[]))
          OR dataset_id = ANY($3::text[])`,
-    [datasetId, laterStages, dependentIds]
+    [datasetId, stages, dependentIds]
   );
 }

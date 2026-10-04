@@ -1,0 +1,12 @@
+# Pinned so every machine's atlas-tools image is the same. pyogrio is geopandas' read engine
+# (load_basemap.py passes columns=, which only pyogrio supports).
+geopandas==1.0.1
+pyogrio==0.10.0
+shapely==2.0.6
+pyproj==3.7.0
+pandas==2.2.3
+SQLAlchemy==2.0.36
+GeoAlchemy2==0.16.0
+psycopg2-binary==2.9.10
+rasterio==1.4.3
+requests==2.32.3

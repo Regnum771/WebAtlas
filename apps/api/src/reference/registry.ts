@@ -8,7 +8,7 @@ import { REFERENCE_LAYER_KEYS, type ReferenceLayerKey } from '@webatlas/shared';
  *
  * These are NOT the editable water layers. They are unversioned, have no
  * `external_id` and no `deleted` column, name their geometry column `geometry`
- * rather than `geom`, and are created by `apps/api/scripts/basemap/load_basemap.py`
+ * rather than `geom`, and are created by `packages/atlas-data/tools/basemap/load_basemap.py`
  * rather than by a migration. They get their own read-only path, and this file is
  * the only place a reference layer key becomes SQL — the same rule `layerTable()`
  * follows for water.

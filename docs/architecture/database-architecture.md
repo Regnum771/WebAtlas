@@ -103,7 +103,7 @@ schema rather than mixed with imported reference data.
 One table in `basemap` departs from that governance rule and is written by the application rather than by a loader
 script: `basemap.reference_entities`, described in §10.2. It shares the schema for locality — it is derived
 entirely from the other `basemap` tables and has no reason to live elsewhere — but it is rebuilt by a dedicated
-script (`npm run reference:build`), not by `load_basemap.py`, and it deliberately does not share that script's
+script (`npm run reference:build`, run by the `reference_entities` registry dataset), not by `load_basemap.py`, and it deliberately does not share that script's
 lifecycle, because that lifecycle destroys indexes.
 
 ---
@@ -509,7 +509,7 @@ Measured on a full build against the live dataset (5.6 s for all five layers):
 
 **Why the trigram indexes are on this table, not on the raw `basemap` tables.** This is a deliberate departure from
 treating reference layers exactly as they arrive from the loader, and it is the least obvious property of this
-design. `apps/api/scripts/basemap/load_basemap.py` loads each raw table with GeoPandas'
+design. `packages/atlas-data/tools/basemap/load_basemap.py` loads each raw table with GeoPandas'
 `to_postgis(..., if_exists="replace")`, which **drops and recreates** the table on every run. An index created on
 `basemap.roads_region` by a migration would therefore vanish silently the next time the basemap is reloaded, with
 nothing to signal that search had quietly stopped using it. `basemap.reference_entities` is never touched by the
@@ -572,8 +572,9 @@ the map popup can offer the whole road as a region of interest; the GIN index of
 `basemap.reference_entities` is derived from the raw `basemap` tables, and `load_basemap.py` replaces every one of
 those tables wholesale on each run (§10.2). The dissolved entities are therefore stale — referring to rows that may
 no longer exist, or missing rows that now do — from the moment a basemap load finishes until `npm run reference:build
--w @webatlas/api` is run again. The runbook (`docs/runbooks/README.md`) accordingly places the rebuild immediately
-after the basemap load, not as an independent, skippable step.
+-w @webatlas/api` is run again. The registry now enforces the ordering: `reference_entities` `dependsOn` `basemap`, so
+`npm run atlas:build` (and `atlas:up`) rebuilds it immediately after every basemap load, not as an independent, skippable
+step (`docs/runbooks/README.md`).
 
 ---
 
@@ -672,6 +673,16 @@ revision 1.3 (§4, §7, §9). The region-of-interest model and the analysis tool
 revision (§8, §10.2.1). The remaining designed elements are introduced in the following order, each independently
 useful: cross-entity relationships (§10.1); and the assistant operations that consume them, including the upstream and
 downstream walks (§7.2).
+
+Registry steps 2 to 4 are implemented. The registry holds seven datasets, in order: `demo` (synthetic), `seeds`,
+`rivers` (depends on `seeds`), `basemap`, `reference_entities` (depends on `basemap`), `dem` and `contours` (depends on
+`dem`). `npm run atlas:up` is the single entry point: it checks the machine, starts PostGIS and GeoServer without
+recreating a running service, builds the `atlas-tools` image, applies the migrations, builds the datasets and verifies
+them. The `atlas-tools` image (Debian bookworm with the PGDG repository, Python 3.11, `postgresql-client-16`, PostGIS
+`raster2pgsql` 3.6.x and a virtual environment holding the Python geo stack) runs every non-Node stage, so the host needs
+only Node, Docker and git. `atlas:status`, `atlas:build`, `atlas:verify` and `atlas:adopt` manage the result. Step 5
+(Plan C) remains: it moves the versioning core into its own package and adds the `load-geojson` executor, after which the
+seed and river `run` stages, and the old `npm run seed`, `ingest:rivers` and `publish:geoserver` commands, are retired.
 
 The river ingest departs from the second half of the rule above. The design called for it to be declared as a registry
 dataset that loads its GeoJSON, but the registry has no `load-geojson` executor yet. It is therefore registered as

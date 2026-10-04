@@ -46,7 +46,7 @@ Plan 1 shipped the registry foundation. Since then the ground has moved:
 | UC-3 | **Skip the heavy part** | Skip runbook steps 7–8 by hand | `atlas:up --except dem` drops contours too, and says so. Later, `atlas:build --only dem`. |
 | UC-4 | **What state am I in?** | Discover it through an empty layer or a grey tile | `atlas:status`: each dataset's stages as ok / stale / missing / failed, with the reason |
 | UC-5 | **Does it actually work?** | Open the map and look | `atlas:verify` probes layers, feature counts and lineage the way a browser would |
-| UC-6 | **Refresh a dataset** (new OSM extract) | Re-run the basemap loader, remember `reference:build`, then publish | `atlas:build --force basemap`. The reference entities and the publish stage are rebuilt because they are downstream. |
+| UC-6 | **Refresh a dataset** (new OSM extract) | Re-run the basemap loader, remember `reference:build`, then publish | Bump the pinned extract's date and `sha256` in `descriptors/basemap.ts` (C-10), then `atlas:build`. The changed descriptor makes the basemap stale; the reference entities and the publish stage are rebuilt because they are downstream. |
 | UC-7 | **A seed file changed** (e.g. the dams GeoJSON) | `npm run seed` reloads all seven layers, one new version each | The build sees the content change and loads a new version of that one layer only |
 | UC-8 | **Steward edits exist on a layer being reloaded** | Silently hidden by the new ingest version | The build refuses, naming the layer; `--supersede-edits <id>` proceeds deliberately |
 | UC-9 | **Add a thematic dataset** | Seed registry entry, publish script entry, runbook prose | One descriptor file: `load-geojson` + `publish-geoserver`, and zero pipeline code |
@@ -146,7 +146,7 @@ The command executes either in the `atlas-tools` container or on the host (Node 
 | C-7 | **Test suites write to the dev database** through `runSeeds`, which is where the 1,212 versions came from. | After step 5, test setup calls the versioned load. An unchanged file creates no version (UC-12). The flaky wall-clock tests are a separate fix, out of scope. |
 | C-8 | **`create-admin` needs a secret.** | Not a stage. `atlas:up` ends by printing the command. |
 | C-9 | **Descriptor id `hydrorivers` vs layer key `rivers`.** | Renamed to `rivers`. Its state rows are dev-only, and adoption re-records them. |
-| C-10 | **The Geofabrik `latest` extract changes daily.** A pinned `sha256` would break every day; unpinned never refreshes. | Unpinned. The fetched file's hash is recorded in the process step (FR-4), so two machines' basemaps are distinguishable. `--force basemap` refreshes. |
+| C-10 | **The Geofabrik `latest` extract changes daily.** A pinned `sha256` would break every day; unpinned never refreshes. | **Amended 2026-09-30 (Task 12): pinned.** The descriptor fetches one dated extract (`vietnam-YYMMDD-free.shp.zip`) with its `sha256`, so every clone gets identical data. Unpinned `latest` was the first resolution, but on 2026-09-30 every `*-latest*` alias on download.geofabrik.de 301-looped to itself and failed the fresh-clone acceptance. Geofabrik also prunes dated files (dailies after about a week, first-of-month files after about three months; the 1 January files stay), so the pin is always a first-of-month file (user decision 2026-10-04; a descriptor test enforces it). Refreshing, or replacing a pruned file that now 404s, is a deliberate bump of the date and `sha256` in `descriptors/basemap.ts` followed by `atlas:build`; `--force basemap` reuses the cached pinned file (§8) and reloads it. |
 | C-11 | **Addresses differ inside and outside the container.** `DATABASE_URL` names `localhost:5432` on the host and `db:5432` in the network. | The runner derives the in-network URLs from the compose service names. `run` stages read `DATABASE_URL` / `GEOSERVER_URL` from the environment the runner sets. |
 | C-12 | **CI** (base spec §4: `atlas:build --except basemap,dem`, the `materialised()` helper) | Parked with CI/CD by the user's roadmap. Out of scope, but nothing here blocks it. |
 
@@ -262,12 +262,13 @@ The summary depends on the fetched or loaded content, so it is computed **after*
 - **`run`:**
   - Spawns per §7.
   - Streams stdout and stderr line by line with a `[<dataset>]` prefix, and prints a heartbeat every 30 s of silence.
-  - A non-zero exit fails the stage. The error carries the last 20 output lines and the command that re-runs this dataset alone (`npm run atlas:build -- --only <id>`). `--only` alone retries just the failed stage, whose state is `failed`; `--force` would also redo completed stages, including downloads.
+  - A non-zero exit fails the stage. The error carries the last 20 output lines and the command that re-runs this dataset alone (`npm run atlas:build -- --only <id>`). `--only <id>` retries the failed stage and the stages after it that never ran; datasets that depend on `<id>` stay `missing` until a full `atlas:build`. `--force` would also redo completed stages, including downloads.
 - **`fetch-http`:**
   - Downloads into `data/cache/<into>`, with the path validated to stay beneath `data/cache`. It writes `<into>.part` and renames on completion, so an interrupted download is never taken for a finished one.
   - When a `sha256` is declared, a mismatch fails the stage **before** the rename and leaves the previous file untouched.
-  - Otherwise (the Geofabrik `latest`, C-10) the fetched hash is only recorded.
+  - Otherwise the fetched hash is only recorded. (The basemap extract is pinned, C-10; no registered source is unpinned today.)
   - If the target already exists and `sha256` matches (or none is declared), the stage succeeds without downloading. Refreshing an unpinned source takes `--force`.
+  - A file that matches its declared `sha256` is reused **even when the dataset is forced**: a pinned, matching file cannot be stale, so forcing re-runs only the later stages. The log says `… matches its pin; reused although forced`, and the summary keeps `(reused)`. (Amended 2026-09-30, Task 12: forcing the pinned basemap re-downloaded the 720 MB already in the cache.)
 - **`publish-geoserver { layer, nativeName?, style? }`:**
   - The logic of `apps/api/src/geoserver/publish.ts`: it ensures the workspace and datastore, then creates or repoints the layer with `PUT`, so styling survives.
   - Every REST call fails the stage on a non-2xx response.
@@ -288,7 +289,7 @@ Each dataset may declare `probe(ctx): Promise<{ ok: boolean; detail: string }>`,
 
 | Dataset | Probe |
 |---|---|
-| `basemap` | `basemap.roads_region` has rows, and `webatlas:basemap_roads_region` answers a WMS GetMap |
+| `basemap` | Each of the eight `basemap.*` tables the loader writes has rows, and each of the five layer groups the web app requests (`basemap`, `bm_landuse`, `bm_water`, `bm_railways`, `basemap_roads`) answers a WMS GetMap (amended 2026-10-04, final review) |
 | `reference_entities` | `basemap.reference_entities` has rows for each of the five layers |
 | `dem` | `ST_Value` at Buôn Ma Thuột (108.0447, 12.6797) is between 440 and 500 m |
 | `contours` | `basemap.contours` has rows for each published interval, and its layer answers |
@@ -330,7 +331,7 @@ Every dataset with its outcome. Excluded datasets are listed with their cause ("
 |---|---|---|---|
 | `seeds` | run host `npm run seed -w @webatlas/api` → publish ×7 | — | per the licence table (§11) |
 | `rivers` (renamed from `hydrorivers`, C-9) | run host `npm run ingest:rivers -w @webatlas/api` → publish `rivers` | `seeds` | ODbL-1.0 |
-| `basemap` | fetch-http Geofabrik `vietnam-latest-free.shp.zip` → run tools `load_basemap.py` → run tools `styles.py` + `publish-basemap.sh` | — | ODbL-1.0 |
+| `basemap` | fetch-http Geofabrik `vietnam-YYMMDD-free.shp.zip`, pinned by `sha256` (C-10) → run tools `load_basemap.py` → run tools `styles.py` + `publish-basemap.sh` | — | ODbL-1.0 |
 | `reference_entities` | run host `npm run reference:build -w @webatlas/api` | `basemap` | ODbL-1.0 (inherited) |
 | `dem` | run tools `prep_dem.py --mainland` → run tools `load-dem.sh` | — | CC-BY-NC-SA-4.0 |
 | `contours` | run host `npm run contours:generate -w @webatlas/api` → run tools `styles.py` + `publish-contours.sh` | `dem` | CC-BY-NC-SA-4.0 (inherited) |

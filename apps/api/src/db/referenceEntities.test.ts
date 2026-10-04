@@ -60,6 +60,37 @@ describe('reference entity dissolve', () => {
     expect(Number(rows[0].n)).toBe(0);
   });
 
+  it('numbers the clusters of one key from 0 with no gaps', async () => {
+    const { rows } = await pool.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM (
+         SELECT 1 FROM basemap.reference_entities
+          GROUP BY layer_key, entity_key
+         HAVING min(cluster_id) <> 0 OR max(cluster_id) <> count(*) - 1
+       ) x`
+    );
+    expect(Number(rows[0].n)).toBe(0);
+  });
+
+  it('orders the clusters of one key by their smallest member id, not by table row order', async () => {
+    // DBSCAN numbers clusters in the order rows reach its window, which follows the table's
+    // physical order. The same data loaded in another order then produced other entity ids
+    // (measured 2026-10-04: 11,005 road member rows numbered differently). Ties on the member id
+    // are broken by geometry, so they are sorted by cluster_id here and cannot count as violations.
+    const { rows } = await pool.query<{ n: string }>(
+      `WITH e AS (
+         SELECT layer_key, entity_key, cluster_id,
+                (SELECT min(m COLLATE "C") FROM unnest(member_ids) AS m) AS first_member
+           FROM basemap.reference_entities
+       ), o AS (
+         SELECT cluster_id,
+                lag(cluster_id) OVER (PARTITION BY layer_key, entity_key ORDER BY first_member, cluster_id) AS prev
+           FROM e
+       )
+       SELECT count(*)::text AS n FROM o WHERE prev IS NOT NULL AND cluster_id < prev`
+    );
+    expect(Number(rows[0].n)).toBe(0);
+  });
+
   it('dissolves a multi-segment national road into one entity per cluster', async () => {
     // Quốc lộ 14 runs the length of the Central Highlands: many OSM ways, one ref.
     // Note the dot — the live values are 'QL.14', not 'QL14'.

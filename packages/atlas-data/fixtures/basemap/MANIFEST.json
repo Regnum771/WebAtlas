@@ -1,0 +1,112 @@
+{
+  "description": "Every named feature of the six working-region provinces, for the api CI job. See README.md beside this file.",
+  "source": {
+    "extract": "vietnam-261001-free.shp.zip",
+    "licence": "ODbL-1.0",
+    "attribution": "© OpenStreetMap contributors, via Geofabrik"
+  },
+  "schema": {
+    "file": "schema.sql",
+    "sha256": "011a131fabc50a45a046f0b64bc60fb02582f15fac689da05d60a9e6bae4cded"
+  },
+  "files": [
+    {
+      "table": "basemap.roads_region",
+      "file": "roads_region.copy.gz",
+      "rule": "name IS NOT NULL OR ref IS NOT NULL",
+      "columns": [
+        "bridge",
+        "code",
+        "fclass",
+        "maxspeed",
+        "name",
+        "oneway",
+        "osm_id",
+        "ref",
+        "tunnel",
+        "geometry"
+      ],
+      "rows": 33637,
+      "sha256": "5fdd0c7976d37f9660a01629ad28a671f2a7da50d16e50de4d92494688dc89bf"
+    },
+    {
+      "table": "basemap.water_region",
+      "file": "water_region.copy.gz",
+      "rule": "name IS NOT NULL",
+      "columns": [
+        "code",
+        "fclass",
+        "name",
+        "osm_id",
+        "geometry"
+      ],
+      "rows": 680,
+      "sha256": "107b9c7434202a2f24d350d3143d6d4931555f6f3570252f7cd8ccf8ca1fc6eb"
+    },
+    {
+      "table": "basemap.landuse_region",
+      "file": "landuse_region.copy.gz",
+      "rule": "name IS NOT NULL",
+      "columns": [
+        "code",
+        "fclass",
+        "name",
+        "osm_id",
+        "geometry"
+      ],
+      "rows": 812,
+      "sha256": "594cc4f9a458d0e1cf3de8a6e21e091e5eab2afb78029301e2c62ad9e5bb0d4f"
+    },
+    {
+      "table": "basemap.railways_vn",
+      "file": "railways_vn.copy.gz",
+      "rule": "TRUE",
+      "columns": [
+        "code",
+        "fclass",
+        "name",
+        "osm_id",
+        "geometry"
+      ],
+      "rows": 3764,
+      "sha256": "f87b3c13e963ecad2cce66e80359cab808b58b1b28139b52e17a8ea61aa368e6"
+    },
+    {
+      "table": "basemap.places_region",
+      "file": "places_region.copy.gz",
+      "rule": "TRUE",
+      "columns": [
+        "code",
+        "fclass",
+        "name",
+        "osm_id",
+        "population",
+        "geometry"
+      ],
+      "rows": 6040,
+      "sha256": "b2d63ab6d8b3db667aa1e43239d4ec3f19501b45932b365eac58d65eee5450d7"
+    }
+  ],
+  "referenceEntities": {
+    "landuse": {
+      "count": 794,
+      "sha256": "08f11c6d57c3de84f8a38e181f13ab09d29ba12303a93443b0f951017f8cb474"
+    },
+    "places": {
+      "count": 5878,
+      "sha256": "c31918ce46e2cfb06ab97989beca42876105709a454a6a0999cd777ad48f2eef"
+    },
+    "railways": {
+      "count": 203,
+      "sha256": "94112f38f9596b8c2703bacc5c2a586fb685daa6fa619f7a3b01a272caf52502"
+    },
+    "roads": {
+      "count": 13658,
+      "sha256": "32833868517c5476242a2313493df93bc012c56fbefedeeb8220761fd219d98b"
+    },
+    "water": {
+      "count": 601,
+      "sha256": "e79e9ee3b70902a0ca824bf2d8d9a981f202957e880265ce8238c97cd26b94b1"
+    }
+  }
+}

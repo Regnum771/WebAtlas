@@ -6,7 +6,7 @@ import { REFERENCE_LAYER_KEYS, type ReferenceLayerKey } from '../reference/regis
 /**
  * Rebuilds basemap.reference_entities.
  *
- * RUN THIS AFTER scripts/basemap/load_basemap.py. The loader replaces its own
+ * RUN THIS AFTER packages/atlas-data/tools/basemap/load_basemap.py. The loader replaces its own
  * tables wholesale, so every entity here is stale the moment it finishes.
  *
  * Usage:

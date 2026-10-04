@@ -42,8 +42,8 @@ export interface BuildOptions {
  *
  * Invalidation before execute (I3): just before a stage runs, the recorded state of that
  * dataset's later stages and of every transitive dependent (computed over `options.universe`,
- * the whole registry) is deleted. If that deletion fails the stage does not run. A skip
- * invalidates nothing.
+ * the whole registry) is deleted, and the stage's own row is written `failed` until it
+ * succeeds. If either write fails the stage does not run. A skip invalidates nothing.
  *
  * `options.force` names datasets whose every stage runs regardless of the skip rule; the
  * cascade then applies as for any execution.
@@ -104,6 +104,12 @@ export async function runBuild(
           // an upstream must not execute while its dependents still look current.
           const later = d.stages.slice(i + 1).map((s, j) => stageKey(i + 1 + j, s));
           await invalidateStageState(pool, d.id, later, dependents);
+          // The stage's own row is marked failed up front. If the runner is killed mid-stage the
+          // catch below never runs: a surviving `ok` row (a forced stage re-runs at an unchanged
+          // hash) would make the next plain build skip a half-done stage, and a deleted row can
+          // leave the dataset with no rows at all, which atlas:adopt takes for an untracked
+          // machine and records as built. `failed` re-runs on the next build and blocks adopt.
+          await writeStageState(pool, d.id, key, hash, 'failed');
           ({ summary } = await executeStage(pool, stage, { datasetId: d.id, forced, log }));
           stageExecuted = true;
         } catch (err) {

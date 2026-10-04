@@ -47,7 +47,7 @@ công cụ bản đồ gọi, chỉ khác đường vào:
 
 **Giới hạn đã biết:** `elevation_profile` và `zonal_elevation` (cũng như
 `elevation_at_point` có từ trước) trả lời "Không có dữ liệu" cho tới khi
-`scripts/load-dem.sh` đã được chạy trên triển khai đó — DEM không đi kèm migration
+`packages/atlas-data/tools/load-dem.sh` đã được chạy trên triển khai đó — DEM không đi kèm migration
 hay seed, phải nạp riêng.
 
 ## Cập nhật dữ liệu qua trợ lý (chỉ quản trị viên)
@@ -161,7 +161,7 @@ Ghi ra đây để người sau không phải tự phát hiện:
 - **Năm trong tám lớp chuyên đề vẫn là dữ liệu giả 2 bản ghi** (trạm quan trắc và bốn
   lớp hiểm họa). Trợ lý trả lời trung thực theo những gì có trong cơ sở dữ liệu, nên
   câu trả lời về các lớp đó đúng về mặt truy vấn nhưng vô nghĩa về mặt thực tế.
-- **Các công cụ DEM trả lời "Không có dữ liệu" cho tới khi đã chạy `scripts/load-dem.sh`
+- **Các công cụ DEM trả lời "Không có dữ liệu" cho tới khi đã chạy `packages/atlas-data/tools/load-dem.sh`
   trên triển khai đó.** Áp dụng cho `elevation_at_point`, `elevation_profile` và
   `zonal_elevation` — cả ba đọc bảng DEM FABDEM, không phải PostGIS nạp sẵn qua
   migration/seed. Quên bước này thì trợ lý vẫn trả lời (không lỗi), chỉ là câu trả lời

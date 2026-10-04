@@ -47,10 +47,19 @@ export function selectDatasets(
   const selectedIds = new Set(selected.map((d) => d.id));
 
   const excluded: ExclusionReason[] = [];
+  const exceptIds = new Set(except);
   for (const d of all) {
     if (selectedIds.has(d.id)) continue;
     const droppedByExcept = keptByExcept !== null && !keptByExcept.has(d.id);
-    excluded.push({ id: d.id, reason: droppedByExcept ? '--except' : 'not in --only' });
+    if (!droppedByExcept) {
+      excluded.push({ id: d.id, reason: 'not in --only' });
+    } else if (exceptIds.has(d.id)) {
+      excluded.push({ id: d.id, reason: '--except' });
+    } else {
+      // Dropped because a dependency was: name the first dependency that is itself dropped.
+      const cause = (d.dependsOn ?? []).find((dep) => !keptByExcept!.has(dep));
+      excluded.push({ id: d.id, reason: `depends on ${cause}` });
+    }
   }
 
   return { selected, excluded };

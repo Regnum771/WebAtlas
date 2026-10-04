@@ -14,6 +14,16 @@ const ds = (id: string, dependsOn?: string[]): Dataset => ({
 const graph = [ds('contours', ['dem']), ds('dem'), ds('rivers_overview', ['rivers']), ds('rivers')];
 
 describe('selectDatasets (I2)', () => {
+  it('names the direct dependency down a chain', () => {
+    const chain = [ds('a'), ds('b', ['a']), ds('c', ['b'])];
+    const { excluded } = selectDatasets(chain, { only: [], except: ['a'] });
+    expect(excluded.sort((x, y) => x.id.localeCompare(y.id))).toEqual([
+      { id: 'a', reason: '--except' },
+      { id: 'b', reason: 'depends on a' },
+      { id: 'c', reason: 'depends on b' },
+    ]);
+  });
+
   it('with no flags, selects everything and excludes nothing', () => {
     const { selected, excluded } = selectDatasets(graph, { only: [], except: [] });
     expect(selected.map((d) => d.id).sort()).toEqual(
@@ -22,11 +32,11 @@ describe('selectDatasets (I2)', () => {
     expect(excluded).toEqual([]);
   });
 
-  it('--except reports the named root AND its dependent, both reasoned "--except"', () => {
+  it('--except reports the named root AND its dependent, root reasoned "--except", dependent "depends on dem"', () => {
     const { selected, excluded } = selectDatasets(graph, { only: [], except: ['dem'] });
     expect(selected.map((d) => d.id).sort()).toEqual(['rivers', 'rivers_overview']);
     expect(excluded.sort((a, b) => a.id.localeCompare(b.id))).toEqual([
-      { id: 'contours', reason: '--except' },
+      { id: 'contours', reason: 'depends on dem' },
       { id: 'dem', reason: '--except' },
     ]);
   });

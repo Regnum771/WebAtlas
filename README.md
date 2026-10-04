@@ -28,9 +28,9 @@ webatlas/
     api/            # Fastify + TypeScript API (auth, users, layer feature CRUD, migrations, seeds)
   packages/
     shared/         # @webatlas/shared — cross-cutting TS types (layer keys, geometry + attribute maps)
-    atlas-data/     # @webatlas/atlas-data — dataset registry + build pipeline (atlas:build / atlas:status)
+    atlas-data/     # @webatlas/atlas-data — dataset registry + build pipeline (atlas:up / atlas:build / atlas:status / atlas:verify)
   infra/
-    docker-compose.yml   # PostGIS + GeoServer
+    docker-compose.yml   # PostGIS + GeoServer, plus the atlas-tools image the pipeline runs its scripts in
     postgis/init.sql     # extensions (postgis, citext) + app/water schemas
     .env.example         # copy to .env (git-ignored) before running the stack
   docs/runbooks/    # data setup order + per-dataset runbooks (start at README.md)
@@ -39,81 +39,72 @@ webatlas/
     plans/          # phased implementation plans
 ```
 
-Uses **npm workspaces**. Requires **Node ≥ 22** and **npm ≥ 10**.
+Uses **npm workspaces**. Requires **Node 22** (`>=22 <23`; `atlas:up` rejects any other major) and **npm ≥ 10**.
 
 ## Getting started
 
-### 1. Install dependencies (from the repo root)
+**Prerequisites:** Node 22, npm 10, Docker (Desktop on Windows/macOS) with Compose v2, and git.
+Nothing else: the Python geo stack, GDAL and `raster2pgsql` run inside the `atlas-tools` image.
+Allow at least 6 GB free on the drive holding the repository.
 
 ```bash
 npm install
+npm run atlas:up
 ```
 
-This wires all workspaces and builds `@webatlas/shared` automatically (via its `prepare` script).
+`atlas:up` checks the machine, creates `infra/.env` and `apps/api/.env` from their examples when
+missing (local development defaults), starts PostGIS and GeoServer, builds the tools image, applies
+migrations, builds every dataset and verifies the result. The first run downloads about 1.2 GB
+(the OpenStreetMap Vietnam extract and FABDEM elevation tiles) and took **about 19 minutes** from a
+fresh clone on the reference machine, on a line that downloaded at about 55 Mbit/s. That was measured as
+one run plus resumed runs (2026-09-30), with the tools image's system packages already cached by Docker;
+a machine that has never built that image adds a few minutes. The basemap load alone takes about
+5 minutes and needs about 1 GB of memory in Docker. Re-running resumes: finished work is skipped. To skip the elevation
+data: `npm run atlas:up -- --except dem` (contours depend on it and are skipped too).
 
-### 2. Run the infrastructure stack (PostGIS + GeoServer)
+Then create an administrator (there is no default login) and start the app:
 
 ```bash
-cp infra/.env.example infra/.env          # then edit credentials for anything non-local
-docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
+npm run create-admin -w @webatlas/api -- --email you@example.com --password "…" --name "…"
+npm run dev -w @webatlas/api    # API at http://localhost:3001
+npm run dev:web                 # web app at http://localhost:5173
 ```
 
-- PostgreSQL + PostGIS → `localhost:5432` (schemas `app`, `water` created on first init).
-- GeoServer → `http://localhost:8080/geoserver/` (WFS: `/geoserver/ows?service=WFS&request=GetCapabilities`).
+Where things run (default ports; `POSTGRES_PORT` and `GEOSERVER_PORT` in `infra/.env` change the first two, and
+`apps/api/.env` must then point at them): PostgreSQL + PostGIS at `localhost:5432`, GeoServer at
+`http://localhost:8080/geoserver/` (WFS: `/geoserver/ows?service=WFS&request=GetCapabilities`), the API at
+`http://localhost:3001` (`GET /health` returns `{"status":"ok"}`), the web app at `http://localhost:5173`. Use at least
+8 characters for the administrator password: `create-admin` does not check it, but the API enforces that for the users
+it creates.
 
-Stop the stack:
+### Day-to-day
 
-```bash
-docker compose -f infra/docker-compose.yml --env-file infra/.env down
-```
+| Command | Does |
+|---|---|
+| `npm run atlas:status` | What is built, stale, missing or failed — and the one command to run next |
+| `npm run atlas:build -- --only <id>` | Build one dataset and its dependencies |
+| `npm run atlas:build -- --force <id>` | Rebuild a dataset on purpose, from the same inputs. Forcing invalidates its dependents, which rebuild only if they are in the selection: `--force basemap` alone also rebuilds `reference_entities`, while `--only basemap --force basemap` leaves it `missing` until a full build |
+| Newer OpenStreetMap extract | The basemap extract is pinned to a first-of-month Geofabrik file: bump its date and `sha256` in `packages/atlas-data/src/descriptors/basemap.ts`, then `npm run atlas:build` (see `docs/runbooks/self-hosted-basemap.md`) |
+| `npm run atlas:verify` | Check the atlas actually serves: stages, probes, layers, lineage |
+| `npm run atlas:adopt` | A machine set up before the registry: record what is already built, without re-running it |
+
+Datasets: `seeds`, `rivers`, `basemap`, `reference_entities`, `dem`, `contours` (plus the synthetic `demo`).
+The runbooks under `docs/runbooks/` describe what each dataset is and where it comes from.
+
+`atlas:up` never recreates or stops a service that is already running, so it is safe to run on a
+machine with a stack up. `npm run atlas:up -- --compose <file>` points it at another compose file, and it
+accepts the build flags `--only`, `--except` and `--force`. To run one script by hand inside the tools image:
+`docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools <argv>`.
+Scripts read the GeoServer password from the environment (`infra/.env`, through the compose service), never from argv.
+
+To stop the stack: `docker compose -f infra/docker-compose.yml --env-file infra/.env down`
+(add `-v` only if you want to delete the database).
 
 > `infra/.env` holds secrets and is git-ignored. Never commit it; only `infra/.env.example` is tracked.
-
-### 3. Set up the database (migrations + seeds)
-
-With the stack up, from the repo root:
-
-```bash
-npm run migrate            # apply DB migrations (app.users, app.audit_log, water.* tables)
-npm run seed               # load the 7 thematic layers from the source GeoJSON/mock data
-npm run publish:geoserver  # publish the water.* tables as WFS layers in GeoServer
-```
-
-These three commands give you the thematic layers only. The full app also needs the river
-network (`ingest:rivers`), the self-hosted basemap, reference layers and, optionally, the DEM
-and contours. About 1 GB of that data lives outside git, and the steps must run in a fixed
-order: follow **[docs/runbooks/README.md](docs/runbooks/README.md)**.
-
-### 4. Run the API
-
-The API needs its own env file. Copy `apps/api/.env.example` to `apps/api/.env` and set
-`JWT_SECRET` to any string ≥ 16 characters.
-
-```bash
-npm run dev -w @webatlas/api    # Fastify at http://localhost:3001 (GET /health → {"status":"ok"})
-```
-
-### 5. Create an administrator
-
-There is **no default login and no public sign-up** — admins are provisioned with the
-bootstrap script (password must be ≥ 8 characters):
-
-```bash
-npm run create-admin -w @webatlas/api -- --email you@example.com --password "your-strong-password" --name "Your Name"
-```
-
-### 6. Run the frontend
-
-```bash
-npm run dev:web      # Vite dev server at http://localhost:5173
-npm run build:web    # type-check + production build
-npm run lint:web     # oxlint
-```
-
-The public viewer works with just the frontend + GeoServer. To **log in as an admin**, the
-API (step 4) must also be running — the login modal calls `http://localhost:3001`. The API's
-CORS is locked to the web origin (`http://localhost:5173` by default; set `CORS_ORIGIN` in
-`apps/api/.env` if you change the Vite port).
+> The web app's public viewer works with just the frontend and GeoServer; to **log in as an admin** the API
+> must also be running. The API's CORS is locked to the web origin (`http://localhost:5173` by default; set
+> `CORS_ORIGIN` in `apps/api/.env` if you change the Vite port). `npm run build:web` type-checks and builds the
+> frontend; `npm run lint:web` runs oxlint.
 
 ## API surface
 
@@ -154,17 +145,20 @@ write is recorded in `app.audit_log`; geometry is validated in PostGIS before wr
 | `npm run build:shared` | Build `@webatlas/shared` |
 | `npm run test:shared` | Run `@webatlas/shared` tests (Vitest) |
 | `npm run migrate` | Apply DB migrations |
-| `npm run seed` | Seed the `water.*` thematic layers |
-| `npm run publish:geoserver` | Publish the WFS layers in GeoServer |
+| `npm run atlas:up` | Onboarding: check the machine, start the stack, build the tools image, migrate, build and verify every dataset (accepts `--compose <file>`, `--only`, `--except`, `--force`) |
+| `npm run atlas:status` | Show what is built, stale, missing or failed, and the next command |
+| `npm run atlas:build` | Build datasets (`--only <id>`, `--except <id>`, `--force <id>`) |
+| `npm run atlas:verify` | Check the atlas actually serves |
+| `npm run atlas:adopt` | Record an already-built machine in the registry without re-running it |
+| `npm run seed` | Seed the `water.*` thematic layers — superseded by `atlas:build`; kept until Plan C |
+| `npm run publish:geoserver` | Publish the WFS layers in GeoServer — superseded by `atlas:build`; kept until Plan C |
 | `npm run test:api` | Run the API test suite (needs the DB stack up) |
 | `npm run test:api:live` | API tests that call the real LLM (needs an API key) |
 | `npm run test:web` | Run the frontend tests |
-| `npm run atlas:build` | Build registered datasets in dependency order (`--only <id>` for one) |
-| `npm run atlas:status` | Show each registered dataset's stages as ok / stale / failed / missing |
 
 API-workspace scripts (run with `-w @webatlas/api`): `dev`, `start`, `create-admin`,
-`migrate:up`, `migrate:down`, `ingest:rivers`, `rivers:hierarchy`, `reference:build`,
-`contours:generate`. Pipeline tests: `npm run test -w @webatlas/atlas-data`.
+`migrate:up`, `migrate:down`, and the build steps the registry runs for you (`ingest:rivers`,
+`rivers:hierarchy`, `reference:build`, `contours:generate`). Pipeline tests: `npm run test -w @webatlas/atlas-data`.
 
 ## Regenerating administrative boundaries
 
@@ -178,7 +172,7 @@ Nguồn: [thanglequoc/vietnamese-provinces-database](https://github.com/thangleq
 Chạy lại khi ranh giới hành chính thay đổi:
 
 ```bash
-node apps/api/scripts/fetch-boundaries.mjs
+node packages/atlas-data/tools/fetch-boundaries.mjs
 ```
 
 Hình học được đơn giản hóa (Douglas–Peucker tol 0,0001 ≈ 11 m, toạ độ làm tròn
@@ -199,15 +193,18 @@ OSM là nguồn `rivers`/`lakes` duy nhất (không còn `thuyhe.geojson` — xe
 `ingest:rivers` riêng, **bắt buộc chạy sau `seed`** vì nó tạo và kích hoạt một
 version `rivers` mới đè lên bất kỳ version nào `seed` để lại active.
 
+Từ khi có sổ đăng ký, bước 6–7 dưới đây có thể chạy bằng `npm run atlas:build -- --force seeds` rồi `--force rivers`
+(`rivers` tự phụ thuộc `seeds`); các lệnh `seed` và `ingest:rivers` cũ vẫn chạy được cho đến Plan C.
+
 Toàn bộ pipeline tái tạo dữ liệu OSM, theo đúng thứ tự (có các ràng buộc thứ tự
 bắt buộc — xem danh sách ngay dưới):
 
 ```bash
-node apps/api/scripts/fetch-osm-waterways.mjs      # 1. tải thô từ Overpass (không commit)
-node apps/api/scripts/explore-osm.mjs              # 2. xem phân bố tag đã đổi chưa
-node apps/api/scripts/report-dam-crosscheck.mjs    # 3. đối chiếu đập OSM vs danh mục (chỉ sinh báo cáo)
-node apps/api/scripts/build-osm-seeds.mjs          # 4. chuyển thành file seed
-node apps/api/scripts/clip-to-region.mjs           # 5. cắt xuống vùng công tác
+node packages/atlas-data/tools/fetch-osm-waterways.mjs      # 1. tải thô từ Overpass (không commit)
+node packages/atlas-data/tools/explore-osm.mjs              # 2. xem phân bố tag đã đổi chưa
+node packages/atlas-data/tools/report-dam-crosscheck.mjs    # 3. đối chiếu đập OSM vs danh mục (chỉ sinh báo cáo)
+node packages/atlas-data/tools/build-osm-seeds.mjs          # 4. chuyển thành file seed
+node packages/atlas-data/tools/clip-to-region.mjs           # 5. cắt xuống vùng công tác
 npm run seed -w @webatlas/api                      # 6. nạp lại các layer chuyên đề khác
 npm run ingest:rivers -w @webatlas/api             # 7. nạp OSM rivers làm version active
 ```
@@ -233,7 +230,7 @@ version cũ nào đó đang active (để không xoá nhầm dữ liệu đang p
 sau bước 7, không bắt buộc:
 
 ```bash
-node apps/api/scripts/prune-hydrosheds-versions.mjs
+node packages/atlas-data/tools/prune-hydrosheds-versions.mjs
 ```
 
 ## Regenerating HydroSHEDS seed data
@@ -254,14 +251,12 @@ To regenerate:
      (direct: `https://data.hydrosheds.org/file/hydrolakes/HydroLAKES_polys_v10_shp.zip`, ~800 MB)
    - **HydroRIVERS v1.0 (Asia region)** — https://www.hydrosheds.org/products/hydrorivers
      (direct: `https://data.hydrosheds.org/file/HydroRIVERS/HydroRIVERS_v10_as_shp.zip`, ~90 MB)
-2. Unzip both, then install the Python geo toolchain used by the clipper (no system GDAL
-   required):
-   ```bash
-   pip install geopandas shapely pyproj fiona
-   ```
+2. Unzip both. The clipper needs the Python geo toolchain, which lives in the `atlas-tools` image; if you
+   run the script directly on the host instead, install it there first (`pip install geopandas shapely pyproj fiona`,
+   **only for running this maintainer script outside the container**).
 3. Run the prep script against the unzipped `.shp` files:
    ```bash
-   apps/api/scripts/prep-hydrosheds.sh /path/to/HydroLAKES_polys_v10.shp /path/to/HydroRIVERS_v10_as.shp
+   packages/atlas-data/tools/prep-hydrosheds.sh /path/to/HydroLAKES_polys_v10.shp /path/to/HydroRIVERS_v10_as.shp
    ```
    This writes `hydrolakes-vn.geojson` and `hydrorivers-region.geojson` into
    `apps/api/src/db/seeds/data/`. Lakes carry `Hylak_id, Lake_name, Lake_type, Lake_area,
@@ -291,7 +286,7 @@ The build-out is phased. Each plan produces working, testable software on its ow
 - [x] **Đường đồng mức và DEM** (độ cao theo con trỏ, ô đọc số trên bản đồ, `elevation_profile` / `zonal_elevation`). Xem [runbook DEM](docs/runbooks/elevation-dem.md) và [đường đồng mức](docs/runbooks/terrain-contours.md).
 - [x] **Phản hồi giám sát** (chỉ quản trị viên được ghi, cập nhật dữ liệu qua trợ lý, thao tác phân tích, in ấn, hệ quy chiếu).
 - [x] **Mô hình thực thể, giai đoạn 1–4**: ranh giới hành chính và đóng dấu mã tỉnh/xã lên mọi đối tượng; lớp tham chiếu, thực thể có tên và tìm kiếm; topology sông và phân cấp ba cấp; vùng phân tích (ROI) là đối tượng hạng nhất cùng thanh công cụ phân tích ([hướng dẫn](docs/runbooks/vung-phan-tich.md)). Giai đoạn 5 chưa làm.
-- [x] **Sổ đăng ký dữ liệu — kế hoạch 1 và kế hoạch A** (`packages/atlas-data`: `atlas:build` / `atlas:status`, dựng lại theo chuỗi phụ thuộc, các stage `run` / `fetch-http` / `publish-geoserver`). Kế hoạch B (ảnh Docker công cụ, `atlas:up` dựng mọi thứ từ bản clone mới) đang làm; tới khi xong, dữ liệu vẫn dựng theo [runbook](docs/runbooks/README.md).
+- [x] **Sổ đăng ký dữ liệu — kế hoạch 1, A và B** (`packages/atlas-data`: `atlas:build` / `atlas:status`, dựng lại theo chuỗi phụ thuộc, các stage `run` / `fetch-http` / `publish-geoserver`; ảnh Docker công cụ, `atlas:up` dựng và kiểm chứng mọi thứ từ bản clone mới, `atlas:verify`, `atlas:adopt`). Các [runbook](docs/runbooks/README.md) mô tả từng tập dữ liệu. Kế hoạch C (`packages/versioning`, `load-geojson`, bỏ các lệnh cũ) là bước kế tiếp.
 - [ ] **Tài liệu hoá lại kho** ([docs/superpowers/plans/2026-09-07-repo-redocumentation.md](docs/superpowers/plans/2026-09-07-repo-redocumentation.md)) — mốc kế tiếp.
 
 ## Documentation

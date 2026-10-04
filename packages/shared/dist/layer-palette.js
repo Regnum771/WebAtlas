@@ -11,7 +11,7 @@ export const LAYER_PALETTE = {
     layer_provinces_2026: { color: '#4338ca' },
     layer_wards_2026: { color: '#6b7280' },
     // Basemap context layers (raster, rendered by GeoServer from OSM data).
-    // SOURCE OF TRUTH for the SLD colours too: apps/api/scripts/basemap/styles.py
+    // SOURCE OF TRUTH for the SLD colours too: packages/atlas-data/tools/basemap/styles.py
     // parses these values out of this file rather than keeping its own copy — a
     // second hand-typed list is what caused the terrain/dem and legend-colour
     // drift this palette exists to prevent, and a Python/TypeScript split would

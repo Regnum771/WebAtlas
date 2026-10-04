@@ -2,6 +2,8 @@
 
 **Run this when:** the street basemap needs rebuilding, or you want fresher OpenStreetMap data under the map.
 
+**How:** `npm run atlas:up` builds it on a fresh machine; `npm run atlas:build -- --force basemap` rebuilds it from the same pinned extract. Fresher OpenStreetMap data means bumping the pinned extract (see "Refreshing to a newer extract" below). The `basemap` dataset runs five stages, in this order: fetch the Geofabrik extract, `load_basemap.py <zip>`, `publish-basemap.sh featuretypes`, `styles.py`, `publish-basemap.sh group`. Every tool runs inside the `atlas-tools` image (Python geo stack, `psql`, GDAL), so nothing needs installing on the host.
+
 The rendered tiles live in PostGIS + GeoServer, not in git. Nothing here needs to run for day-to-day development *provided* the `basemap` schema is already populated and the `webatlas:basemap` layer group exists on your GeoServer.
 
 ## Why this exists
@@ -43,28 +45,42 @@ Their ids live in `BASEMAP_CONTEXT_LAYER_STATE_IDS` (`packages/shared`), so `lay
 
 ## Rebuilding
 
-### 1. Download the extract (~684 MB)
+```bash
+npm run atlas:build -- --force basemap
+```
+
+`--force` is for a deliberate rebuild of the same pinned extract (for example after hand-editing GeoServer): without it a finished basemap is skipped. It also rebuilds `reference_entities`, which depends on `basemap` (see 3b). The stages below are what the dataset does, in order, and how to run one by hand inside the tools image:
 
 ```bash
-curl -L -o vietnam-free.shp.zip https://download.geofabrik.de/asia/vietnam-latest-free.shp.zip
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools <argv>
 ```
+
+The GeoServer password reaches the scripts through the environment (from `infra/.env`, via the compose service), never as an argument.
+
+### Refreshing to a newer extract
+
+The extract is **pinned** (spec C-10): `packages/atlas-data/src/descriptors/basemap.ts` names one dated Geofabrik file, `vietnam-YYMMDD-free.shp.zip`, and its `sha256`, so every clone gets identical data. Geofabrik's `-latest` aliases are not used: on 2026-09-30 every one of them 301-looped to itself. To refresh:
+
+1. Pick a current **first-of-month** file (`YYMM01`) from <https://download.geofabrik.de/asia/vietnam.html> ("see and download older files"). Dailies are pruned after about a week and first-of-month files after about three months; the 1 January files stay. A daily pin would break fresh clones within a week, so a descriptor test rejects one.
+2. Download it, check it against the `.md5` Geofabrik publishes next to monthly files (`<file>.md5`), and compute its sha256 (`sha256sum`, or `Get-FileHash` in PowerShell).
+3. Change `DATE` and `SHA256` together in `descriptors/basemap.ts`, then `npm run atlas:build`. The changed descriptor makes `basemap` stale, and `reference_entities` rebuilds after it.
+
+Do the same if the pinned file has been pruned and the fetch fails with a 404. The current pin, `261001`, should last until about early January 2027; `270101` will then be a pin that never expires.
+
+### 1. Download the extract (~720 MB)
+
+The registry fetches the pinned file (`vietnam-YYMMDD-free.shp.zip`, the `DATE` in `descriptors/basemap.ts`; `261001` today) from `https://download.geofabrik.de/asia/` into `packages/atlas-data/data/cache/basemap/` and checks its `sha256` before keeping it. A file already in the cache with the right hash is reused without a request.
 
 Geofabrik, OpenStreetMap-derived, ODbL. **Do not unzip it** — the loader reads through GDAL's `/vsizip/`, so ~1.1 GB of shapefiles never hit disk.
 
-### 2. Install the Python geo stack
+### 2. Load into PostGIS
 
 ```bash
-pip install geopandas shapely pyproj psycopg2-binary geoalchemy2
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools \
+  python3 packages/atlas-data/tools/basemap/load_basemap.py packages/atlas-data/data/cache/basemap/vietnam-261001-free.shp.zip   # the file the descriptor pins today; older pins stay in the cache, so check the date
 ```
 
-`geopandas` and `shapely` are already required by `prep-hydrosheds.sh`; `psycopg2-binary` and `geoalchemy2` are the PostGIS write path. No system GDAL/`ogr2ogr` needed — which matters, because this repo has none.
-
-### 3. Load into PostGIS
-
-```bash
-cd apps/api/scripts/basemap
-BASEMAP_ZIP=/path/to/vietnam-free.shp.zip python load_basemap.py
-```
+The Python geo stack (`geopandas`, `shapely`, `pyproj`, `psycopg2-binary`, `geoalchemy2`) is in the tools image, pinned in `packages/atlas-data/tools/requirements.txt`; there is nothing to install. No system GDAL on the host either, which matters, because this repo has none.
 
 Creates the `basemap` schema and 8 tables. Expect roughly:
 
@@ -81,34 +97,47 @@ Creates the `basemap` schema and 8 tables. Expect roughly:
 
 `places_*` are loaded but **not** in the layer group — see "no labels" above.
 
+### 3. Publish the feature types
+
+```bash
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools \
+  bash packages/atlas-data/tools/basemap/publish-basemap.sh featuretypes
+```
+
+Creates the datastore and publishes the feature types, so that styles have layers to attach to.
+
 ### 3b. Rebuild the dissolved reference entities
 
 ```bash
-npm run reference:build -w @webatlas/api
+npm run atlas:build -- --only reference_entities
 ```
 
-Step 3 loads every `basemap` table with GeoPandas `to_postgis(..., if_exists="replace")`, which **drops and
+(the `reference_entities` dataset; it runs `npm run reference:build -w @webatlas/api`, which still works until Plan C.)
+
+Step 2 loads every `basemap` table with GeoPandas `to_postgis(..., if_exists="replace")`, which **drops and
 recreates** each table it touches. `basemap.reference_entities` — the dissolved, named, searchable roads, railways,
 water bodies, land use and places that `GET /api/reference/*` and the `ref:*` sources on `GET /api/search` actually
 read — is built from those raw tables by a separate script, not by the loader, and is therefore stale the moment
-step 3 finishes: it can point at `osm_id`s that no longer exist and miss ones that now do. Run this before moving on
-to styles/publish, and every time step 3 is re-run. See `docs/architecture/database-architecture.md` §10.2 for why
+step 2 finishes: it can point at `osm_id`s that no longer exist and miss ones that now do. The registry runs it after
+`basemap` for you (`dependsOn`); do it by hand only after loading the basemap outside the registry. See `docs/architecture/database-architecture.md` §10.2 for why
 the search index lives on this derived table rather than on `roads_region` and friends.
 
-The river hierarchy (`water.rivers`, built by `npm run ingest:rivers`) is independent of all of this: it reads only
+The river hierarchy (`water.rivers`, built by the `rivers` dataset) is independent of all of this: it reads only
 the committed OSM waterways and HydroRIVERS seeds, never a `basemap` table, so reloading the basemap or rebuilding
 the reference entities neither requires nor invalidates a river re-ingest, and the two orderings do not interact.
 
-### 4. Upload styles, then publish
+### 4. Upload styles, then publish the layer group
 
 ```bash
-python styles.py "$GEOSERVER_ADMIN_PASSWORD"
-GEOSERVER_ADMIN_PASSWORD=... bash publish-basemap.sh
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools \
+  python3 packages/atlas-data/tools/basemap/styles.py
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools \
+  bash packages/atlas-data/tools/basemap/publish-basemap.sh group
 ```
 
-`styles.py` generates the SLDs (muted Positron-lineage palette, scale-dependent rules) and assigns them. `publish-basemap.sh` creates the datastore, publishes the feature types, builds the `webatlas:basemap` layer group, and truncates the tile cache.
+`styles.py` generates the SLDs (muted Positron-lineage palette, scale-dependent rules) and assigns them. `publish-basemap.sh group` builds the five layer groups in the table above (the land-only `webatlas:basemap` and the four context groups), refuses to start if a style they name is missing, and truncates their tile cache.
 
-**Order matters:** styles before publish, or the layer group references styles that do not exist yet.
+**Order matters:** feature types, then styles, then the group: `styles.py` assigns styles to layers that must already exist, and the layer group references styles that must exist first.
 
 ### 5. Verify
 
@@ -118,7 +147,7 @@ curl -s -o out.png "http://localhost:8080/geoserver/webatlas/wms?service=WMS&ver
 &bbox=107.2,11.0,109.6,16.2&width=400&height=800&bgcolor=0xDCE7EF&transparent=false"
 ```
 
-Open it. Land should be near-white on a pale blue sea, with the coastal highway visible. A blank image means the layer group is empty or the styles failed to assign.
+Open it. Land should be near-white on a pale blue sea, and nothing else: the base group is land only. Repeat with `layers=webatlas:basemap_roads` (and `bm_water`, `bm_railways`, `bm_landuse`) to see each context layer on a transparent background; the coastal highway should be visible in the roads group. A blank base image means the layer group is empty or the styles failed to assign. `npm run atlas:verify` checks that all five groups render.
 
 ## Gotchas
 

@@ -17,7 +17,7 @@ let server: Server;
 let base: string;
 let cache: string;
 let hits: number;
-let mode: 'ok' | 'cut' | 'missing' | 'stall';
+let mode: 'ok' | 'cut' | 'missing' | 'stall' | 'loop';
 
 beforeEach(async () => {
   hits = 0;
@@ -26,6 +26,13 @@ beforeEach(async () => {
   server = createServer((req, res) => {
     hits++;
     if (mode === 'missing') { res.writeHead(404).end('no'); return; }
+    // What download.geofabrik.de answered for every *-latest* file on 2026-09-30 (Task 12): a 301 to
+    // the same path plus a slash, which 301s to itself again.
+    if (mode === 'loop') {
+      const path = req.url!.endsWith('/') ? req.url! : `${req.url}/`;
+      res.writeHead(301, { Location: path }).end();
+      return;
+    }
     res.writeHead(200, { 'Content-Length': String(BODY.length) });
     if (mode === 'stall') {
       res.write(BODY.subarray(0, 1000)); // headers + a few bytes, then silence
@@ -70,10 +77,15 @@ describe('fetch-http', () => {
   it('aborts a stalled download after the idle timeout, leaving no target and no .part', async () => {
     mode = 'stall';
     await expect(executeFetchHttp(pool, stage(), ctx(), cache, 200)).rejects.toThrow(
-      /fetch-http: no data from .*\/a\.zip for \d+ s — aborted/
+      /fetch-http: no data from .*\/a\.zip for [\d.]+ s — aborted/
     );
     expect(existsSync(join(cache, 'basemap/a.zip'))).toBe(false);
     expect(await readdir(join(cache, 'basemap'))).toEqual([]);
+  });
+
+  it('reports sub-second idle timeouts with one decimal, not "0 s"', async () => {
+    mode = 'stall';
+    await expect(executeFetchHttp(pool, stage(), ctx(), cache, 200)).rejects.toThrow(/for 0\.2 s/);
   });
 
   it('a sha256 mismatch fails before the rename and keeps the previous file', async () => {
@@ -84,13 +96,24 @@ describe('fetch-http', () => {
     expect(await readFile(join(cache, 'basemap/a.zip'), 'utf8')).toBe('previous');
   });
 
-  it('an existing file is reused without a request, unless forced', async () => {
+  it('an existing unpinned file is reused without a request, unless forced', async () => {
     await executeFetchHttp(pool, stage(), ctx(), cache);
     expect(hits).toBe(1);
     await executeFetchHttp(pool, stage(), ctx(), cache);
     expect(hits).toBe(1);
     await executeFetchHttp(pool, stage(), ctx(true), cache);
     expect(hits).toBe(2);
+  });
+
+  it('an existing file that matches its pin is reused even when forced: it cannot be stale', async () => {
+    const pinned = stage({ sha256: SHA });
+    await executeFetchHttp(pool, pinned, ctx(), cache);
+    expect(hits).toBe(1);
+    const logged: string[] = [];
+    const r = await executeFetchHttp(pool, pinned, { datasetId: 'basemap', forced: true, log: (l: string) => logged.push(l) }, cache);
+    expect(hits).toBe(1);
+    expect(r.summary).toBe(`sha256:${SHA} ${base}/a.zip (reused)`);
+    expect(logged).toEqual(['[basemap] basemap/a.zip matches its pin; reused although forced']);
   });
 
   it('records the source URL in a sidecar after a successful download', async () => {
@@ -132,6 +155,13 @@ describe('fetch-http', () => {
   it('fails on a non-2xx response', async () => {
     mode = 'missing';
     await expect(executeFetchHttp(pool, stage(), ctx(), cache)).rejects.toThrow(/404/);
+  });
+
+  it('a network failure names the URL and the underlying cause, not just "fetch failed"', async () => {
+    mode = 'loop';
+    const err = await executeFetchHttp(pool, stage(), ctx(), cache).then(() => null, (e: unknown) => e as Error);
+    expect(err?.message).toBe(`fetch-http: GET ${base}/a.zip failed: fetch failed (redirect count exceeded)`);
+    expect(await readdir(join(cache, 'basemap'))).toEqual([]);
   });
 
   it('refuses a path that escapes the cache even if validation was bypassed', async () => {

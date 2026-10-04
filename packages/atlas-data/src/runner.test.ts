@@ -21,7 +21,13 @@ const ds = (id: string, statement: string, dependsOn?: string[]): Dataset => ({
  * resolves to a client whose `query` is the SAME handler as the pool's `query`, so SQL
  * routed through the client is recognised identically, with a no-op `release`.
  */
-function memoryPool(opts: { failDelete?: boolean; failStatement?: string } = {}) {
+function memoryPool(
+  opts: {
+    failDelete?: boolean;
+    failStatement?: string;
+    onExecute?: (sql: string, state: Map<string, { input_hash: string; status: string }>) => void;
+  } = {}
+) {
   const state = new Map<string, { input_hash: string; status: string }>();
   const steps: string[] = [];
   const executed: string[] = [];
@@ -52,7 +58,10 @@ function memoryPool(opts: { failDelete?: boolean; failStatement?: string } = {})
       return { rows: [] };
     }
     if (opts.failStatement && sql === opts.failStatement) throw new Error('boom');
-    if (sql.startsWith('SELECT') || sql.startsWith('REFRESH')) executed.push(sql);
+    if (sql.startsWith('SELECT') || sql.startsWith('REFRESH')) {
+      opts.onExecute?.(sql, state);
+      executed.push(sql);
+    }
     return { rows: [] };
   });
   const connect = vi.fn(async () => ({ query, release: vi.fn() }));
@@ -314,9 +323,12 @@ describe('runBuild', () => {
   });
 
   it('keeps the original execution error when the best-effort failed-state write also throws', async () => {
+    // The first `failed` write is the one made before the stage runs; it succeeds. The second is
+    // the best-effort write in the catch, after the stage threw.
+    let failedWrites = 0;
     const query = vi.fn(async (sql: string, params?: unknown[]) => {
       if (sql === 'FAIL ME') throw new Error('original boom');
-      if (sql.includes('INTO app.dataset_stage_state') && params?.[3] === 'failed') {
+      if (sql.includes('INTO app.dataset_stage_state') && params?.[3] === 'failed' && ++failedWrites > 1) {
         throw new Error('state write also boom');
       }
       return { rows: [] };
@@ -327,6 +339,25 @@ describe('runBuild', () => {
     const report = await runBuild(pool, [ds('a', 'FAIL ME')]);
     expect(report.failed).toEqual(['a/0:sql']);
     expect(report.errors['a/0:sql']).toBe('original boom');
+    expect(failedWrites).toBe(2);
+  });
+
+  it('does not execute a stage whose state cannot be marked failed first', async () => {
+    const executed: string[] = [];
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('INTO app.dataset_stage_state') && params?.[3] === 'failed') {
+        throw new Error('state write boom');
+      }
+      if (sql === 'SELECT 7') executed.push(sql);
+      return { rows: [] };
+    });
+    const connect = vi.fn(async () => ({ query, release: vi.fn() }));
+    const pool = { query, connect } as unknown as Pool;
+
+    const report = await runBuild(pool, [ds('a', 'SELECT 7')]);
+    expect(executed).toEqual([]);
+    expect(report.failed).toEqual(['a/0:sql']);
+    expect(report.errors['a/0:sql']).toBe('state write boom');
   });
 
   it('blocks transitively through a chain of dependents', async () => {
@@ -381,6 +412,24 @@ describe('runBuild', () => {
       expect(report.failed).toEqual(['dem/1:sql']);
       expect(report.blocked).toContain('contours/0:sql');
       expect(failing.state.has('contours|0:sql')).toBe(false);
+    });
+
+    it('marks the running stage failed before it executes, so a killed runner cannot leave it ok or untracked', async () => {
+      // A forced stage re-runs at an unchanged hash. If the runner dies mid-stage (Ctrl-C during a
+      // five-minute load) nothing runs the catch below, so the row must already say `failed`:
+      // left `ok`, the next plain build skips a half-done stage; deleted, the dataset can end up
+      // with no rows at all, which is exactly what atlas:adopt records as built.
+      const during: Array<string | undefined> = [];
+      const p = memoryPool({
+        onExecute: (sql, state) => {
+          if (sql === 'SELECT 1') during.push(state.get('dem|0:sql')?.status);
+        },
+      });
+      await runBuild(p.pool, [dem()]);
+      await runBuild(p.pool, [dem()], { force: ['dem'] });
+      // First build (no prior row) and forced rebuild (prior row `ok`) alike.
+      expect(during).toEqual(['failed', 'failed']);
+      expect(p.state.get('dem|0:sql')?.status).toBe('ok');
     });
 
     it('does not execute a stage whose invalidation failed', async () => {

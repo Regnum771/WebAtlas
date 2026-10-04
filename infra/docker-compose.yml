@@ -39,6 +39,39 @@ services:
     volumes:
       - geoserver_data:/opt/geoserver_data
 
+  # Tooling for the dataset registry's `tools` stages (spec §7). Never started by a plain
+  # `docker compose up`: the profile keeps it out until the runner asks for it with
+  # `docker compose --profile tools run --rm -T --no-deps tools <argv>`.
+  tools:
+    profiles: ["tools"]
+    build:
+      context: ../packages/atlas-data/tools
+    image: webatlas-atlas-tools
+    working_dir: /repo
+    volumes:
+      - ..:/repo
+    environment:
+      # `run -T` gives Python a pipe, which it block-buffers: without this a long load prints
+      # nothing until it exits, and only the runner's heartbeat shows it is alive.
+      PYTHONUNBUFFERED: "1"
+      # In-network addresses (spec C-11): inside the network the database is `db:5432`, not localhost.
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      BASEMAP_DB_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      GEOSERVER_URL: http://geoserver:8080/geoserver
+      GEOSERVER_ADMIN_USER: ${GEOSERVER_ADMIN_USER}
+      GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD}
+      GEOSERVER_WORKSPACE: webatlas
+      GEOSERVER_DB_HOST: db
+      GEOSERVER_DB_PORT: "5432"
+      GEOSERVER_DB_NAME: ${POSTGRES_DB}
+      GEOSERVER_DB_USER: ${POSTGRES_USER}
+      GEOSERVER_DB_PASSWORD: ${POSTGRES_PASSWORD}
+
 volumes:
   db_data:
   geoserver_data:

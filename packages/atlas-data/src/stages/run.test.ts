@@ -49,7 +49,7 @@ describe('commandFor', () => {
     expect(c.file).toBe('docker');
     expect(c.args).toEqual([
       'compose', '-f', join('/repo', 'infra', 'docker-compose.yml'), '--profile', 'tools',
-      'run', '--rm', 'tools', 'python', 'prep_dem.py', '--mainland',
+      'run', '--rm', '-T', '--no-deps', 'tools', 'python', 'prep_dem.py', '--mainland',
     ]);
   });
 });
@@ -79,4 +79,20 @@ describe('executeRun', () => {
     await executeRun(pool, stage({ argv: ['--version'] }), ctx(lines));
     expect(lines.some((l) => /^\[rivers\] \d+\.\d+\.\d+$/.test(l))).toBe(true);
   }, 30_000);
+  it("a tools stage's process does not see the interpolated compose keys", async () => {
+    const saved = process.env.POSTGRES_PASSWORD;
+    process.env.POSTGRES_PASSWORD = 'from-apps-api-env';
+    try {
+      const lines: string[] = [];
+      await executeRun(
+        pool,
+        stage({ in: 'tools', argv: ['x'] }),
+        ctx(lines),
+        () => ({ file: process.execPath, args: ['-e', 'console.log(process.env.POSTGRES_PASSWORD ?? "unset")'], cwd: process.cwd() })
+      );
+      expect(lines).toContain('[rivers] unset');
+    } finally {
+      if (saved === undefined) delete process.env.POSTGRES_PASSWORD; else process.env.POSTGRES_PASSWORD = saved;
+    }
+  });
 });

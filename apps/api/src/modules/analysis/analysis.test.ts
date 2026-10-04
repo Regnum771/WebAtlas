@@ -396,13 +396,18 @@ describe('analysis with a reference-entity ROI', () => {
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    // The length comes back regardless of DEM availability (pure PostGIS on the
-    // input line, see elevationProfileOp's comment on why it runs first); the
-    // per-sample elevation data additionally requires a loaded DEM.
-    expect(body.summary['Chiều dài (km)']).toBeGreaterThan(0);
+    // What comes back regardless of DEM availability is the line itself (pure PostGIS on
+    // the input, see elevationProfileOp's comment on why it runs first). The length and the
+    // per-sample data need a loaded DEM; without one the op says so. Until demAvailable meant
+    // "has rows" this asserted the length unconditionally, which only held because an empty
+    // DEM table counted as loaded.
+    expect(body.geometries.length).toBeGreaterThan(0);
     if (await demAvailable(getPool())) {
+      expect(body.summary['Chiều dài (km)']).toBeGreaterThan(0);
       expect(Array.isArray(body.profile)).toBe(true);
       expect(body.profile.length).toBe(10);
+    } else {
+      expect(body.summary['Trạng thái']).toBe('Chưa nạp dữ liệu độ cao');
     }
   });
 

@@ -7,7 +7,10 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "atlas:build": "tsx src/cli/build.ts",
-    "atlas:status": "tsx src/cli/status.ts"
+    "atlas:up": "tsx src/cli/up.ts",
+    "atlas:adopt": "tsx src/cli/adopt.ts",
+    "atlas:status": "tsx src/cli/status.ts",
+    "atlas:verify": "tsx src/cli/verify.ts"
   },
   "dependencies": {
     "pg": "^8.13.1",

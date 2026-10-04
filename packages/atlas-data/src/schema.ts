@@ -95,6 +95,7 @@ export const datasetSchema = z.object({
   editable: z.boolean().optional(),
   // At least one: a dataset with no stages can never be materialised.
   stages: z.array(stageSchema).min(1),
+  probe: z.function().optional(),
 });
 
 /** Validate a descriptor at module load. Throws ZodError on invalid input. */
