@@ -395,6 +395,7 @@ describe('featuresService edit sessions (§7)', () => {
         `SELECT before, after FROM app.audit_log WHERE feature_id = $1 AND action = 'update'`, [f.id]
       );
       const second = audit.rows.find((r) => Number(r.after.properties.wattage_mw) === 20);
+      expect(second).toBeDefined();
       expect(second.before.properties.status).toBe('built');
       expect(Number(second.before.properties.wattage_mw)).toBe(10);
     } finally {
@@ -410,6 +411,11 @@ describe('featuresService edit sessions (§7)', () => {
       await x.commit();
       await svc().remove('dams', f.id);
       expect(await activeRow(f.id)).toBeUndefined();
+      const del = await getPool().query(
+        `SELECT before FROM app.audit_log WHERE feature_id = $1 AND action = 'delete'`, [f.id]
+      );
+      expect(del.rows).toHaveLength(1);
+      expect(del.rows[0].before.properties.status).toBe('built');
     } finally {
       await getPool().query(`DELETE FROM app.audit_log WHERE feature_id = $1`, [f.id]);
     }
@@ -420,6 +426,72 @@ describe('featuresService edit sessions (§7)', () => {
     try {
       await svc().remove('dams', f.id);
       await expect(svc().update('dams', f.id, { properties: { status: 'x' } })).rejects.toBeInstanceOf(NotFoundError);
+    } finally {
+      await getPool().query(`DELETE FROM app.audit_log WHERE feature_id = $1`, [f.id]);
+    }
+  });
+
+  it('a remove naming the original row of a feature deleted meanwhile is a NotFoundError', async () => {
+    const f = await createCommitted('svc-test-remove-deleted@webatlas.test', {});
+    try {
+      await svc().remove('dams', f.id);
+      await expect(svc().remove('dams', f.id)).rejects.toBeInstanceOf(NotFoundError);
+    } finally {
+      await getPool().query(`DELETE FROM app.audit_log WHERE feature_id = $1`, [f.id]);
+    }
+  });
+
+  it('a stale-commit retry of an update keeps both values and audits once', async () => {
+    const f = await createCommitted('svc-test-retry-update@webatlas.test', { wattage_mw: 10, status: 'planned' });
+    let attempts = 0;
+    try {
+      await svc().singleChange('dams', undefined, async (s) => {
+        attempts += 1;
+        if (attempts === 1) {
+          const other = await svc().editSession('dams');
+          await other.update(f.id, { properties: { status: 'built' } });
+          await other.commit();
+        }
+        return s.update(f.id, { properties: { wattage_mw: 20 } });
+      });
+      expect(attempts).toBe(2);
+      expect(await activeRow(f.id)).toMatchObject({ status: 'built', wattage_mw: 20 });
+      const audit = await getPool().query(
+        `SELECT after FROM app.audit_log WHERE feature_id = $1 AND action = 'update'`, [f.id]
+      );
+      // One row from the other user's change, exactly one from this request.
+      expect(audit.rows.filter((r) => Number(r.after.properties.wattage_mw) === 20)).toHaveLength(1);
+      expect(audit.rows).toHaveLength(2);
+    } finally {
+      await getPool().query(`DELETE FROM app.audit_log WHERE feature_id = $1`, [f.id]);
+    }
+  });
+
+  it('two updates naming the original row in one session produce a single draft row with both changes', async () => {
+    const f = await createCommitted('svc-test-two-updates@webatlas.test', { wattage_mw: 10, status: 'planned' });
+    try {
+      const s = await svc().editSession('dams');
+      await s.update(f.id, { properties: { status: 'built' } });
+      await s.update(f.id, { properties: { wattage_mw: 20 } });
+      await s.commit();
+      expect(await activeRow(f.id)).toMatchObject({ status: 'built', wattage_mw: 20 });
+      const rows = await getPool().query(
+        `SELECT count(*)::int AS n FROM water.dams WHERE dataset_version_id = (
+           SELECT dataset_version_id FROM water.dams_active WHERE external_id =
+             (SELECT external_id FROM water.dams WHERE id = $1))`, [f.id]
+      );
+      expect(rows.rows[0].n).toBe(1);
+    } finally {
+      await getPool().query(`DELETE FROM app.audit_log WHERE feature_id = $1`, [f.id]);
+    }
+  });
+
+  it('editing a feature deleted earlier in the same session is a NotFoundError', async () => {
+    const f = await createCommitted('svc-test-edit-after-delete@webatlas.test', {});
+    try {
+      const s = await svc().editSession('dams');
+      await s.remove(f.id);
+      await expect(s.update(f.id, { properties: { status: 'x' } })).rejects.toBeInstanceOf(NotFoundError);
     } finally {
       await getPool().query(`DELETE FROM app.audit_log WHERE feature_id = $1`, [f.id]);
     }

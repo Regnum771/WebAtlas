@@ -216,15 +216,20 @@ export function featuresRepository(pg: Pool) {
       id: string
     ): Promise<EditSource> {
       const named = await client.query(
-        `SELECT external_id, dataset_version_id FROM ${def.table} WHERE id = $1`, [id]
+        `SELECT external_id, dataset_version_id, deleted FROM ${def.table} WHERE id = $1`, [id]
       );
       if (!named.rows[0]) throw new NotFoundError('Feature not found');
-      if (named.rows[0].dataset_version_id === draftId) return { rowId: id, inDraft: true };
+      // A tombstone in the draft means the feature was deleted earlier in this session.
+      if (named.rows[0].dataset_version_id === draftId) {
+        if (named.rows[0].deleted) throw new NotFoundError('Feature not found');
+        return { rowId: id, inDraft: true };
+      }
       const externalId = named.rows[0].external_id;
       const inDraft = await client.query(
-        `SELECT id FROM ${def.table} WHERE dataset_version_id = $1 AND external_id = $2`,
+        `SELECT id, deleted FROM ${def.table} WHERE dataset_version_id = $1 AND external_id = $2`,
         [draftId, externalId]
       );
+      if (inDraft.rows[0]?.deleted) throw new NotFoundError('Feature not found');
       if (inDraft.rows[0]) return { rowId: inDraft.rows[0].id, inDraft: true };
       const current = await client.query(
         `SELECT id FROM ${def.table} WHERE external_id = $1 AND is_current`, [externalId]

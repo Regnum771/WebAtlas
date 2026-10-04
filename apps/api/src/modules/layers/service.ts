@@ -113,6 +113,8 @@ export function featuresService(pg: Pool) {
           if (!before) throw new NotFoundError('Feature not found');
           const { attrs, geometryJson } = await prepare(pg, def, input, false);
           const after = await repo.upsertChangeInVersion(client, def, draftId, source, { attrs, geometryJson, actorId });
+          // feature_id is the id the request named; before.id / after.id are the rows actually
+          // read and written; the stable feature key is external_id.
           await audit.record({ userId: actorId, action: 'update', tableName: def.table, featureId: id, before, after, source: input.source }, client);
           return after;
         } catch (e) { return fail(e); }
@@ -125,6 +127,8 @@ export function featuresService(pg: Pool) {
           const before = await repo.findByIdOnClient(client, def, source.rowId);
           if (!before) throw new NotFoundError('Feature not found');
           await repo.tombstoneInVersion(client, def, draftId, source);
+          // feature_id is the id the request named; before.id / after.id are the rows actually
+          // read and written; the stable feature key is external_id.
           await audit.record({ userId: actorId, action: 'delete', tableName: def.table, featureId: id, before }, client);
         } catch (e) { return fail(e); }
       },
@@ -161,9 +165,15 @@ export function featuresService(pg: Pool) {
         settled = true;
         try {
           await client.query('ROLLBACK');
-        } finally {
-          release();
+        } catch (e) {
+          // A failed ROLLBACK leaves the connection in an unknown state: hand it back to the
+          // pool with the error so the pool destroys it instead of reusing it. Not rethrown:
+          // discard() runs on error paths and must not mask the caller's original error.
+          released = true;
+          client.release(e as Error);
+          return;
         }
+        release();
       },
     };
   }
