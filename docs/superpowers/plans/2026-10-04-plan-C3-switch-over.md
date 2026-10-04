@@ -684,3 +684,61 @@ New, from Plan C:
 
 - `packages/shared/dist` is ignored and tracked at once; two tracked outputs (`attribute-schema`, `map-view`) have no source.
 - A forced `rivers` rebuild with unchanged content re-stamps and does not rebuild the hierarchy; after a change to the hierarchy algorithm the version has to be deleted first.
+
+---
+
+## Execution notes (2026-10-04, inline in the controller session)
+
+| Task | Commit | Result |
+|---|---|---|
+| 1. `ensureSeeded`, `atlas:seed` | `48a67a1` | 5 database tests |
+| 2. API tests seed through the loader | `02a193c` | `test:api` 434 |
+| 3. Remove the old commands | `7e27e20` | six source files, three scripts, two root aliases |
+| 4. Documents | `2d549f5` | |
+| 5. Acceptance | (this commit: README figure) | passed on the first run |
+| 6. PR #22 | run 37197598921 | `shared`, `web`, `atlas-data`, `api` all pass |
+
+**Criterion 1: a second API test run adds no versions.** On the dev stack `app.dataset_versions` held 241 rows before, 241 after the first `npm run test:api`, 241 after the second. Before this plan one run added 22.
+
+On the dev machine the first `npm run atlas:seed` printed `unchanged admin_boundaries` and `relabelled` for the eight layers (their active versions carried the old labels again after earlier test runs), with the count at 241 before and after; the second printed nine `unchanged`.
+
+**Criterion 2: fresh-clone acceptance.** Clean clone of `feat/registry-plan-c3` at `2d549f5`, compose project `webatlas_accept_c3`, PostgreSQL on 45432 and GeoServer on 48080, nothing copied into `data/cache`. One run of `npm run atlas:up`: START 18:05:38, `EXIT 0` 18:24:43, **19 min 5 s**; `executed 31, skipped 0`; `all 50 checks passed`.
+
+| Step | Time |
+|---|---|
+| preflight | 2 s |
+| stack up, db and GeoServer ready | 39 s |
+| atlas-tools image (cached) | 7 s |
+| migrations | not measured, see below |
+| `admin_boundaries` and the seven layers (load + publish) | 3 s |
+| `rivers` (23,119 features in one version, hierarchy and gates, 2 publishes) | 43 s |
+| basemap fetch (688 MB) | 1 min 45 s |
+| basemap load (peak 990 MB) | 5 min 16 s |
+| basemap feature types, styles, five groups | 13 s |
+| `reference_entities` | 8 s |
+| `dem` (18 tiles: download and clip 1 min 56 s, load 1 min 22 s) | 3 min 20 s |
+| `contours` | 4 min 58 s |
+| verify | 8 s |
+
+The thematic data, which Plan B's acceptance loaded in 23 s (seeds) plus 73 s (rivers) through the old commands, now loads in 46 s.
+
+*Measurement caveat.* The log was timestamped by a shell loop that calls `date` once per line. On this machine that is slow enough to hold back a process that prints fast: the 1,180 lines of migration output took 86 s to pass through it, where the same migrations took 6 s in Plan B's run. So the migration row is not a measurement, and the 19 min 5 s total includes about a minute of overhead from the logging itself. The other steps print little and are not affected.
+
+Then, in the clone:
+
+- `atlas:status`: all fourteen datasets `ok`. `atlas:verify`: `all 50 checks passed`.
+- A second `atlas:up`: `executed 0, skipped 31`, `all 50 checks passed`; 15 version rows before and after.
+- `atlas:seed`: nine `unchanged`; 15 rows.
+- Active versions: `dams` 151, `drought_points` 2, `flood_generation` 2, `flood_zones` 2, `lakes` 3868, `rivers` 23119, `saltwater_intrusion` 2, `stations` 2, each with a `…@sha256:` source.
+- The 15 rows are those eight plus seven empty `seed:<layer>` placeholders (label `version 1`, `feature_count` 0, inactive) that migration `1000000000004_dataset-versions` inserts on any new database. That is why the loaded versions are labelled `version 2` (`lakes`, added by a later migration, `version 1`). The old commands behaved the same.
+- Cache in the clone: 1.4 GB.
+
+**CI (run 37197598921).** On the empty database `atlas:seed` printed `replaced admin_boundaries` and `loaded` for the eight layers, with the same content hashes as the dev machine. Then: `test:versioning` 51; the three atlas-data database test files 17; `test:api` 420 passed and 14 skipped, with no `[seed]` line from its global setup (nothing left to do).
+
+**Final numbers, dev stack.** `test:api` 434; `test:versioning` 51; `test:shared` 119; atlas-data 350 passed and 43 skipped, plus 17 database tests; `test:web` 543. `npm run seed`, `npm run ingest:rivers -w @webatlas/api` and `npm run publish:geoserver` each answer `Missing script`. `rivers:hierarchy` exits 0 (588 rivers, 439 names, 4,716 named reaches). `atlas:verify` 50 of 50.
+
+**Deviations from this plan**
+
+- Task 3: `ensureSeeded.db.test.ts` was added to the CI step that runs the atlas-data database tests. The two `run`-stage test literals now use `reference:build`. A comment in `ensureSeeded.ts` named the removed command; reworded.
+- Task 2: `test:api` ends at 434, not 435: the three `nativeNameFor` tests, the second-seed-run test and the `loadAdminBoundaries` idempotency test went (5); two tests were replaced one for one.
+- Task 5 Step 5 (tear-down) waits for the user's word.

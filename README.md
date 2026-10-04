@@ -57,8 +57,8 @@ npm run atlas:up
 missing (local development defaults), starts PostGIS and GeoServer, builds the tools image, applies
 migrations, builds every dataset and verifies the result. The first run downloads about 1.2 GB
 (the OpenStreetMap Vietnam extract and FABDEM elevation tiles) and took **about 19 minutes** from a
-fresh clone on the reference machine, on a line that downloaded at about 55 Mbit/s. That was measured as
-one run plus resumed runs (2026-09-30), with the tools image's system packages already cached by Docker;
+fresh clone on the reference machine, on a line that downloaded at about 52 Mbit/s. That was measured in
+one uninterrupted run (2026-10-04), with the tools image already cached by Docker;
 a machine that has never built that image adds a few minutes. The basemap load alone takes about
 5 minutes and needs about 1 GB of memory in Docker. Re-running resumes: finished work is skipped. To skip the elevation
 data: `npm run atlas:up -- --except dem` (contours depend on it and are skipped too).
