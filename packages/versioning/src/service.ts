@@ -144,6 +144,27 @@ export function versionsService(pg: Pool) {
 
     // Publish the draft: record what it stores, then make it the layer's active version.
     async commitEditDraft(client: PoolClient, layerKey: string, draftId: string): Promise<void> {
+      // Edit sessions on one layer can overlap and nothing serialises them. A draft opened on
+      // a version that is no longer active would, when activated, drop the intervening
+      // version from the map -- and retention would then delete that version for good. Lock
+      // the active row so no other commit can move the pointer meanwhile, and refuse a stale
+      // draft instead.
+      const active = await client.query<{ id: string }>(
+        `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND is_active FOR NO KEY UPDATE`,
+        [layerKey]
+      );
+      const activeId = active.rows[0]?.id;
+      const draft = await client.query<{ parent: string | null }>(
+        `SELECT parent_version_id AS parent FROM app.dataset_versions WHERE id = $1 AND layer_key = $2`,
+        [draftId, layerKey]
+      );
+      if (!draft.rows[0]) throw new NotFoundError(`Version ${draftId} not found for layer ${layerKey}`);
+      const parent = draft.rows[0].parent;
+      if (parent !== activeId) {
+        throw new ConflictError(
+          `layer ${layerKey} changed since this edit session started (its draft ${draftId} was opened on ${parent}; the active version is now ${activeId}). Reopen the session and redo the edits.`
+        );
+      }
       await svc.activate(client, layerKey, draftId);
       // feature_count for an edit version is the number of rows it stores (the changed
       // features, tombstones included) — not the resolved total, which is inherited.

@@ -37,6 +37,11 @@ export async function pruneVersions(
   client: PoolClient,
   layerKey: EditableLayerKey
 ): Promise<{ versions: number; rows: number }> {
+  // Take the layer's version rows ourselves instead of trusting every caller to hold them:
+  // the plan below must not go stale before the DELETE (a concurrent activation or edit
+  // would otherwise change what is kept). NO KEY UPDATE so open edit drafts, which hold a
+  // KEY SHARE on their parent version, are not waited on.
+  await client.query(`SELECT id FROM app.dataset_versions WHERE layer_key = $1 FOR NO KEY UPDATE`, [layerKey]);
   const { rows: all } = await client.query<{ id: string; parent: string | null; doomed: boolean; active: boolean }>(
     `WITH RECURSIVE
        active_chain AS (
@@ -78,6 +83,14 @@ export async function pruneVersions(
 
   // Rows first: water.<layer>.dataset_version_id has no cascade.
   const removedRows = await client.query(`DELETE FROM water.${layerKey} WHERE dataset_version_id = ANY($1::uuid[])`, [doomed]);
-  await client.query(`DELETE FROM app.dataset_versions WHERE id = ANY($1::uuid[])`, [doomed]);
+  // NOT is_active is defence in depth: the active version is always in the kept set. If the
+  // count differs from the plan, abort so the caller's transaction rolls everything back.
+  const removedVersions = await client.query(
+    `DELETE FROM app.dataset_versions WHERE id = ANY($1::uuid[]) AND NOT is_active`,
+    [doomed]
+  );
+  if (removedVersions.rowCount !== doomed.length) {
+    throw new Error(`${layerKey}: removed ${removedVersions.rowCount} versions but ${doomed.length} were planned`);
+  }
   return { versions: doomed.length, rows: removedRows.rowCount ?? 0 };
 }

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { Pool } from 'pg';
-import type { EditableLayerKey } from '@webatlas/shared';
+import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import { pruneVersions } from '@webatlas/versioning';
 import type { Dataset, Stage } from './types';
 import { topologicalOrder } from './graph';
@@ -54,11 +54,15 @@ async function seedOne(
         // ones, so take the loader's re-stamp path, as a build would through the cascade.
         const stamped = restamp ? (await applyLoadGeojson(pool, client, load, { supersedeEdits: false })).summary : null;
         // The loader prunes on its re-stamp path; without a re-stamp, retention runs here.
-        if (!restamp) await pruneVersions(client, stage.layer as EditableLayerKey);
+        let pruned = '';
+        if (!restamp && (EDITABLE_LAYER_KEYS as readonly string[]).includes(stage.layer)) {
+          const p = await pruneVersions(client, stage.layer as EditableLayerKey);
+          if (p.versions > 0) pruned = `; pruned ${p.versions} old version${p.versions === 1 ? '' : 's'} (${p.rows} rows)`;
+        }
         result =
           adoption.result === 'current'
-            ? { action: 'unchanged', detail: stamped ?? `${stage.layer}: already loaded` }
-            : { action: 'relabelled', detail: stamped ?? `${stage.layer}: existing version re-labelled with its content source` };
+            ? { action: 'unchanged', detail: stamped ?? `${stage.layer}: already loaded${pruned}` }
+            : { action: 'relabelled', detail: stamped ?? `${stage.layer}: existing version re-labelled with its content source${pruned}` };
       } else {
         // Missing, or different content. Never over steward edits: the loader refuses, and the
         // caller sees its message.

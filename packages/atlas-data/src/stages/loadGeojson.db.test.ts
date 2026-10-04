@@ -51,7 +51,7 @@ async function inRollback<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise
   try {
     await client.query('BEGIN');
     // Keep the layer's existing versions out of retention, so version counts measure only this test.
-    await client.query(`INSERT INTO app.version_pins (version_id, holder) SELECT id, 'test' FROM app.dataset_versions`);
+    await client.query(`INSERT INTO app.version_pins (version_id, holder) SELECT id, 'test' FROM app.dataset_versions FOR KEY SHARE`);
     return await fn(client);
   } finally {
     await client.query('ROLLBACK');

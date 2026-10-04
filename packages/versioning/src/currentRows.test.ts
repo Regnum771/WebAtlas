@@ -28,7 +28,7 @@ async function inRollback(fn: (c: pg.PoolClient) => Promise<void>): Promise<void
   try {
     await c.query('BEGIN');
     // Keep the layer's existing versions out of retention (Task 3), so only this test's rows move.
-    await c.query(`INSERT INTO app.version_pins (version_id, holder) SELECT id, 'currentRows.test' FROM app.dataset_versions`);
+    await c.query(`INSERT INTO app.version_pins (version_id, holder) SELECT id, 'currentRows.test' FROM app.dataset_versions FOR KEY SHARE`);
     await fn(c);
   } finally {
     await c.query('ROLLBACK');

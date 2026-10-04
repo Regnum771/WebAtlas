@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type pg from 'pg';
 import { getPool, closePool } from './testPool';
-import { assertPrunable, EARLIER_LOADS_KEPT, loadFeatures, versionsService } from './index';
+import { assertPrunable, EARLIER_LOADS_KEPT, loadFeatures, pruneVersions, versionsService } from './index';
+import { ConflictError } from './errors';
 
 // The real stations layer, inside transactions that are rolled back. Unlike the other suites,
 // existing versions are NOT pinned here: pruning them inside the transaction is the point.
@@ -88,8 +89,57 @@ describe('retention', () => {
   it('the active state is unchanged by pruning', async () => {
     await inRollback(async (c) => {
       for (const label of ['L1', 'L2', 'L3', 'L4']) await load(c, label);
+      // Unactivated loads add versions retention would remove; the active view must not move.
+      const extra = [await svc().createIngestVersion(c, { layerKey: 'stations', source: 'retention.test', label: 'X1' }),
+        await svc().createIngestVersion(c, { layerKey: 'stations', source: 'retention.test', label: 'X2' }),
+        await svc().createIngestVersion(c, { layerKey: 'stations', source: 'retention.test', label: 'X3' })];
+      const activeIds = async () =>
+        (await c.query<{ id: string }>(`SELECT id::text AS id FROM water.stations_active ORDER BY id`)).rows.map((r) => r.id);
+      const before = await activeIds();
+      expect(before.length).toBeGreaterThan(0);
+      const pruned = await pruneVersions(c, 'stations');
+      expect(pruned.versions).toBeGreaterThan(0);
+      expect(await stationVersions(c)).not.toEqual(expect.arrayContaining(extra));
+      expect(await activeIds()).toEqual(before);
       const { rows } = await c.query(`SELECT name FROM water.stations_active WHERE external_id = 'rt-1'`);
       expect(rows).toEqual([{ name: 'R' }]);
+    });
+  });
+
+  it('a layer with no active version is left alone', async () => {
+    await inRollback(async (c) => {
+      for (const label of ['L1', 'L2', 'L3', 'L4']) await load(c, label);
+      await c.query(`UPDATE app.dataset_versions SET is_active = false WHERE layer_key = 'stations'`);
+      const before = await stationVersions(c);
+      expect(await pruneVersions(c, 'stations')).toEqual({ versions: 0, rows: 0 });
+      expect(await stationVersions(c)).toEqual(before);
+    });
+  });
+});
+
+describe('commitEditDraft on a stale draft', () => {
+  it('refuses the second of two drafts opened on the same version and keeps the first active', async () => {
+    await inRollback(async (c) => {
+      await load(c, 'L1');
+      const a = await svc().openEditDraft(c, 'stations');
+      const b = await svc().openEditDraft(c, 'stations');
+      // Real sessions run in separate transactions, so a's prune cannot see b's uncommitted draft;
+      // here both share one, so pin b to keep it out of a's prune.
+      await c.query(`INSERT INTO app.version_pins (version_id, holder) VALUES ($1, 'stale-draft:test')`, [b]);
+      await svc().commitEditDraft(c, 'stations', a);
+      await c.query('SAVEPOINT stale');
+      await expect(svc().commitEditDraft(c, 'stations', b)).rejects.toThrow(ConflictError);
+      await c.query('ROLLBACK TO SAVEPOINT stale');
+      const active = await c.query<{ id: string }>(
+        `SELECT id::text AS id FROM app.dataset_versions WHERE layer_key = 'stations' AND is_active`
+      );
+      expect(active.rows.map((r) => r.id)).toEqual([a]);
+      const cur = await c.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM water.stations_active WHERE external_id = 'rt-1'`
+      );
+      expect(cur.rows[0].n).toBe(1);
+      // The first draft's version still exists: nothing was pruned away by the refused commit.
+      expect(await stationVersions(c)).toContain(a);
     });
   });
 });

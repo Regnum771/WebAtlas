@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from '../../db/pool';
 import { featuresService } from './service';
-import { refreshCurrentRows, versionsService } from '@webatlas/versioning';
+import { ConflictError as VersioningConflictError, refreshCurrentRows, versionsService } from '@webatlas/versioning';
 import { ConflictError, GeometryError, NotFoundError } from '../../errors';
 
 const TEST_NAME = 'svc-test-dam@webatlas.test';
@@ -310,14 +310,17 @@ describe('featuresService edit sessions (§7)', () => {
     });
     await a.commit();
     const rowB = await rowBPromise;
-    await b.commit();
 
-    const ext = await getPool().query(
-      `SELECT id, external_id FROM water.dams WHERE id = ANY($1)`, [[rowA.id, rowB.id]]
-    );
-    expect(ext.rows).toHaveLength(2);
-    const values = ext.rows.map((r) => Number(r.external_id));
-    expect(new Set(values).size).toBe(2);
+    // b's mint waited for a's commit and then scanned a max that includes a's row, so a's id is
+    // visible and committed while b's is not (it lives in b's open transaction). b's draft was
+    // opened on the version a has just replaced, so committing it is now refused (the API's
+    // error handler turns this ConflictError into a 409) rather than dropping a's version.
+    expect(rowB.id).not.toBe(rowA.id);
+    const extA = await getPool().query(`SELECT external_id FROM water.dams WHERE id = $1`, [rowA.id]);
+    expect(extA.rows).toHaveLength(1);
+    const activeAfterA = await activeVersionId('dams');
+    await expect(b.commit()).rejects.toBeInstanceOf(VersioningConflictError);
+    expect(await activeVersionId('dams')).toBe(activeAfterA);
   });
 
   it('rejects an update to a feature that does not exist', async () => {
