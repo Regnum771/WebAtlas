@@ -110,7 +110,7 @@ describe('fetch-http', () => {
     await executeFetchHttp(pool, pinned, ctx(), cache);
     expect(hits).toBe(1);
     const logged: string[] = [];
-    const r = await executeFetchHttp(pool, pinned, { datasetId: 'basemap', forced: true, log: (l: string) => logged.push(l) }, cache);
+    const r = await executeFetchHttp(pool, pinned, { datasetId: 'basemap', forced: true, supersedeEdits: false, log: (l: string) => logged.push(l) }, cache);
     expect(hits).toBe(1);
     expect(r.summary).toBe(`sha256:${SHA} ${base}/a.zip (reused)`);
     expect(logged).toEqual(['[basemap] basemap/a.zip matches its pin; reused although forced']);

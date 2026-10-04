@@ -75,3 +75,9 @@ export declare const RIVER_WAY_COLUMNS: ColumnMap;
  * `code` (the OSM waterway type at level 3) would make a column's meaning depend on the row's level.
  */
 export declare const RIVER_REACH_COLUMNS: ColumnMap;
+/**
+ * The administrative boundaries, from the same two files the browser loads
+ * (apps/web/public/provinces-34.geojson, wards-region.geojson). Codes are text: '01' is not 1.
+ */
+export declare const ADMIN_PROVINCE_COLUMNS: ColumnMap;
+export declare const ADMIN_WARD_COLUMNS: ColumnMap;

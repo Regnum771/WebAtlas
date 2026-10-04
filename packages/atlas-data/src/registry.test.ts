@@ -60,9 +60,11 @@ describe('registry', () => {
       id: 'bad-no-executor',
       kind: 'vector',
       lineage: { statement: 's', licence: 'CC0-1.0', sources: [] },
-      stages: [{ type: 'load-geojson', layer: 'dams', versioned: true, files: [{ file: 'f.geojson', columns: () => ({}) }] }],
+      stages: [{ type: 'no-such-stage' }],
     } as unknown as Dataset;
-    expect(() => validateRegistry([bad])).toThrow(/bad-no-executor.*load-geojson.*no executor/s);
+    // Every declared stage type has an executor now, so an unknown type is refused by the schema
+    // before the executor check is reached. Either way it must be at load time, naming the dataset.
+    expect(() => validateRegistry([bad])).toThrow(/bad-no-executor/);
   });
 
   it('rivers ingests on the host and then publishes rivers_detail', () => {

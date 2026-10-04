@@ -110,7 +110,7 @@ export async function runBuild(
           // leave the dataset with no rows at all, which atlas:adopt takes for an untracked
           // machine and records as built. `failed` re-runs on the next build and blocks adopt.
           await writeStageState(pool, d.id, key, hash, 'failed');
-          ({ summary } = await executeStage(pool, stage, { datasetId: d.id, forced, log }));
+          ({ summary } = await executeStage(pool, stage, { datasetId: d.id, forced, supersedeEdits: false, log }));
           stageExecuted = true;
         } catch (err) {
           report.failed.push(current);

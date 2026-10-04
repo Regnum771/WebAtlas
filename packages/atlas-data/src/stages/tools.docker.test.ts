@@ -10,7 +10,7 @@ import { composeArgs, composeEnv } from '../compose';
  */
 const ON = process.env.ATLAS_TOOLS_TESTS === '1';
 const lines: string[] = [];
-const ctx = { datasetId: 'tools', forced: false, log: (l: string) => lines.push(l) };
+const ctx = { datasetId: 'tools', forced: false, supersedeEdits: false, log: (l: string) => lines.push(l) };
 const tools = (argv: string[]) =>
   ({ type: 'run' as const, in: 'tools' as const, argv, produces: 'p', promoteTo: 'x', promoteBy: '2099-01-01' });
 

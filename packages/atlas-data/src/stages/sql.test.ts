@@ -19,7 +19,7 @@ const fakePool = () => {
   return { pool: pool as unknown as Pool, client };
 };
 
-const ctx = { datasetId: 't', forced: false, log: () => {} };
+const ctx = { datasetId: 't', forced: false, supersedeEdits: false, log: () => {} };
 
 describe('executeSql', () => {
   it('runs the statement on the pool', async () => {

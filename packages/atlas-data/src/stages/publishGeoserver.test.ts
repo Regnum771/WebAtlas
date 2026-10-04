@@ -25,7 +25,7 @@ describe('executePublishGeoserver', () => {
       'POST /reset': { status: 200 },
     });
     const lines: string[] = [];
-    const ctx = { datasetId: 'dams', forced: false, log: (l: string) => lines.push(l) };
+    const ctx = { datasetId: 'dams', forced: false, supersedeEdits: false, log: (l: string) => lines.push(l) };
     const r = await executePublishGeoserver(pool, { type: 'publish-geoserver', layer: 'dams' }, ctx, env, f);
     expect(r.summary).toBe('webatlas:dams → dams_active (unchanged)');
     expect(lines).toEqual(['[dams] webatlas:dams unchanged']);
