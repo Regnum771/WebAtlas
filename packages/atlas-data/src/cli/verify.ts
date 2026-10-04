@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { loadDevEnv } from './env';
+import { unexpectedArgument } from './composeFlag';
 import { ALL_DATASETS, validateRegistry } from '../registry';
 import { verifyAtlas, formatVerify } from '../verify';
 import { probeContext } from '../probes';
@@ -9,7 +10,7 @@ async function main(): Promise<void> {
   if (envFile) console.log(`(environment from ${envFile})`);
   validateRegistry();
   if (process.argv.length > 2) {
-    console.error(`atlas:verify: unexpected argument "${process.argv[2]}" (atlas:verify takes no arguments)`);
+    console.error(unexpectedArgument('atlas:verify', process.argv[2]));
     process.exitCode = 1;
     return;
   }

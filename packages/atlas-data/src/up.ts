@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export interface ExecResult {
   code: number | null;
@@ -26,6 +26,10 @@ export interface UpConfig {
   nodeVersion: string;
   /** `['compose', '-f', <file>]` (composeArgs). */
   docker: string[];
+  /** The compose file itself (composeFile), to tell this checkout's stack from another's. */
+  composeFile: string;
+  /** ATLAS_SHARED_STACK=1: building into a stack another checkout started is intended. */
+  allowSharedStack?: boolean;
   /** composeEnv(): infra/.env governs interpolation. */
   dockerEnv: NodeJS.ProcessEnv;
   /** node + npm-cli.js (npmCli), so `npm` never goes through a shell. */
@@ -76,6 +80,80 @@ export async function preflight(sys: UpSystem, cfg: UpConfig): Promise<void> {
     'first build: downloads about 1.2 GB (OpenStreetMap extract 720 MB, FABDEM tiles 512 MB) and takes a while — ' +
       'see README "Getting started" for the measured time. Re-running resumes; finished work is skipped.'
   );
+}
+
+const CONFIG_FILES_LABEL = 'com.docker.compose.project.config_files';
+
+/** The same file, however it was spelled: Windows paths differ in case and separators. */
+function samePath(a: string, b: string, platform: NodeJS.Platform = process.platform): boolean {
+  const norm = (p: string): string => {
+    const r = resolve(p);
+    return platform === 'win32' ? r.replace(/\//g, '\\').toLowerCase() : r;
+  };
+  return norm(a) === norm(b);
+}
+
+/**
+ * A second clone keeps the compose project name, so its `docker compose` talks to the FIRST
+ * clone's containers, and its fresh apps/api/.env points at the same ports. atlas:up there would
+ * migrate and build into the other checkout's database without a word. Docker records which
+ * compose file created each container; if this project's containers came from another file, stop.
+ */
+export async function assertOwnStack(sys: UpSystem, cfg: UpConfig): Promise<void> {
+  if (cfg.allowSharedStack) return;
+  const r = await sys.exec(
+    'docker',
+    [...cfg.docker, 'ps', '-a', '--format', `{{.Label "${CONFIG_FILES_LABEL}"}}`],
+    { env: cfg.dockerEnv, quiet: true }
+  );
+  // No answer is no evidence: startStack reports a Docker that really cannot run compose.
+  if (r.code !== 0) return;
+  // A project started with several -f files lists them comma-separated; this command uses one.
+  const other = r.tail
+    .flatMap((line) => line.split(','))
+    .map((f) => f.trim())
+    .find((f) => /\.ya?ml$/i.test(f) && !samePath(f, cfg.composeFile));
+  if (!other) return;
+  throw new UpError(
+    [
+      'this compose project is already running from another checkout:',
+      `  its containers were created from ${other}`,
+      `  this checkout uses              ${cfg.composeFile}`,
+      'atlas:up here would migrate and build into that stack. For a separate stack, give this checkout its own',
+      'project name and ports (docs/runbooks/README.md, "A second stack on one machine"). If sharing the stack is',
+      'what you want (for example the repository was moved), run it again with ATLAS_SHARED_STACK=1.',
+    ].join('\n')
+  );
+}
+
+/** What atlas:up prints last. Pure, so every ending is tested. */
+export function closingLines(run: {
+  ok: boolean;
+  /** The arguments as the user typed them. */
+  argv: string[];
+  /** The same without --only/--except/--force/--supersede-edits: the command for the whole atlas. */
+  composeArgv: string[];
+  selected: string[];
+  all: string[];
+}): string[] {
+  const command = (args: string[]): string => (args.length ? `npm run atlas:up -- ${args.join(' ')}` : 'npm run atlas:up');
+  if (!run.ok) {
+    return ['', `atlas:up did not complete — fix the error above and run ${command(run.argv)} again (finished work is skipped)`];
+  }
+  if (run.selected.length < run.all.length) {
+    const left = run.all.filter((id) => !run.selected.includes(id));
+    return [
+      '',
+      `built and verified ${run.selected.length} of ${run.all.length} datasets; not built by this run: ${left.join(', ')}`,
+      `the atlas is complete only after ${command(run.composeArgv)}   (npm run atlas:status shows what is there)`,
+    ];
+  }
+  return [
+    '',
+    'next: create an administrator (there is no default login):',
+    '  npm run create-admin -w @webatlas/api -- --email you@example.com --password "…" --name "…"',
+    'then: npm run dev -w @webatlas/api   and   npm run dev:web',
+  ];
 }
 
 /** Up, never down (spec §4): starting an already-running stack is a no-op, and no volume is ever touched. */

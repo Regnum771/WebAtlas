@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { join } from 'node:path';
-import { buildTools, ENV_FILES, migrate, preflight, startStack, UpError, waitReady, type UpConfig, type UpSystem } from './up';
+import {
+  assertOwnStack, buildTools, closingLines, ENV_FILES, migrate, preflight, startStack, UpError, waitReady,
+  type UpConfig, type UpSystem,
+} from './up';
 
 const GiB = 1024 ** 3;
 
 function fakeSystem(over: {
   exec?: (file: string, args: string[]) => number;
+  tail?: (file: string, args: string[]) => string[];
   free?: number;
   existing?: string[];
   statuses?: number[];
@@ -18,7 +22,7 @@ function fakeSystem(over: {
   const sys: UpSystem = {
     async exec(file, args) {
       calls.push([file, ...args].join(' '));
-      return { code: over.exec ? over.exec(file, args) : 0, tail: ['last line'] };
+      return { code: over.exec ? over.exec(file, args) : 0, tail: over.tail ? over.tail(file, args) : ['last line'] };
     },
     async freeBytes() { return over.free ?? 50 * GiB; },
     exists: (p) => (over.existing ?? []).some((e) => p.endsWith(e)),
@@ -36,6 +40,7 @@ const cfg: UpConfig = {
   cacheDir: '/repo/packages/atlas-data/data/cache',
   nodeVersion: '22.13.1',
   docker: ['compose', '-f', '/repo/infra/docker-compose.yml'],
+  composeFile: '/repo/infra/docker-compose.yml',
   dockerEnv: {},
   npm: { file: '/usr/bin/node', args: ['/npm/bin/npm-cli.js'] },
   readyTimeoutMs: 10_000,
@@ -85,6 +90,81 @@ describe('preflight (spec F-1, U-6, U-7)', () => {
   it('refuses below the free-space floor, with the number', async () => {
     const f = fakeSystem({ existing: ENV_FILES, free: 2 * GiB });
     await expect(preflight(f.sys, cfg)).rejects.toThrow(/only 2\.0 GB free .* needs at least 6 GB/);
+  });
+});
+
+describe('assertOwnStack: a second clone shares the compose project name', () => {
+  const containersFrom = (...files: string[]) => fakeSystem({ tail: () => files });
+
+  it('asks Docker which compose file created this project\'s containers', async () => {
+    const f = containersFrom('/repo/infra/docker-compose.yml', '/repo/infra/docker-compose.yml');
+    await assertOwnStack(f.sys, cfg);
+    expect(f.calls).toEqual([
+      'docker compose -f /repo/infra/docker-compose.yml ps -a --format {{.Label "com.docker.compose.project.config_files"}}',
+    ]);
+  });
+
+  it('passes when nothing is running yet', async () => {
+    await expect(assertOwnStack(containersFrom().sys, cfg)).resolves.toBeUndefined();
+    await expect(assertOwnStack(containersFrom('').sys, cfg)).resolves.toBeUndefined();
+  });
+
+  it('refuses when they came from another checkout, naming both files and both ways out', async () => {
+    const err = await assertOwnStack(containersFrom('/other/clone/infra/docker-compose.yml').sys, cfg).then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(UpError);
+    const message = (err as Error).message;
+    expect(message).toContain('/other/clone/infra/docker-compose.yml');
+    expect(message).toContain('/repo/infra/docker-compose.yml');
+    expect(message).toMatch(/would migrate and build into that stack/);
+    expect(message).toMatch(/A second stack on one machine/);
+    expect(message).toMatch(/ATLAS_SHARED_STACK=1/);
+  });
+
+  it('proceeds when the sharing is declared', async () => {
+    const f = containersFrom('/other/clone/infra/docker-compose.yml');
+    await expect(assertOwnStack(f.sys, { ...cfg, allowSharedStack: true })).resolves.toBeUndefined();
+    expect(f.calls).toEqual([]);
+  });
+
+  it('does not take a Docker that cannot answer for another checkout', async () => {
+    const f = fakeSystem({ exec: () => 1, tail: () => ['error during connect: /other/thing.yml'] });
+    await expect(assertOwnStack(f.sys, cfg)).resolves.toBeUndefined();
+  });
+
+  it.runIf(process.platform === 'win32')('on Windows the same file may be spelled with other case and separators', async () => {
+    const f = containersFrom('c:\\Repo\\infra\\docker-compose.yml');
+    await expect(assertOwnStack(f.sys, { ...cfg, composeFile: 'C:/repo/infra/docker-compose.yml' })).resolves.toBeUndefined();
+  });
+});
+
+describe('closingLines', () => {
+  const all = ['admin_boundaries', 'dams', 'basemap', 'dem'];
+  const base = { ok: true, argv: [], composeArgv: [], selected: all, all };
+
+  it('a complete atlas: create an administrator, then run the app', () => {
+    expect(closingLines(base).join('\n')).toMatch(/create an administrator[\s\S]*npm run dev -w @webatlas\/api/);
+  });
+
+  it('a partial build does not say the atlas is ready', () => {
+    const text = closingLines({ ...base, argv: ['--only', 'dams'], selected: ['admin_boundaries', 'dams'] }).join('\n');
+    expect(text).toContain('built and verified 2 of 4 datasets; not built by this run: basemap, dem');
+    expect(text).toContain('the atlas is complete only after npm run atlas:up ');
+    expect(text).not.toMatch(/create an administrator/);
+  });
+
+  it('a failure repeats the command as it was typed, --compose included', () => {
+    const argv = ['--compose', 'infra/other.yml', '--except', 'dem'];
+    expect(closingLines({ ...base, ok: false, argv, composeArgv: argv.slice(0, 2) })[1]).toBe(
+      'atlas:up did not complete — fix the error above and run npm run atlas:up -- --compose infra/other.yml --except dem again (finished work is skipped)'
+    );
+    expect(closingLines({ ...base, ok: false })[1]).toMatch(/run npm run atlas:up again/);
+  });
+
+  it('the whole-atlas command of a partial build keeps --compose and drops the selection', () => {
+    const text = closingLines({
+      ...base, argv: ['--compose', 'x.yml', '--only', 'dams'], composeArgv: ['--compose', 'x.yml'], selected: ['dams'],
+    }).join('\n');
+    expect(text).toContain('only after npm run atlas:up -- --compose x.yml ');
   });
 });
 

@@ -4,6 +4,8 @@ import { ALL_DATASETS, validateRegistry } from '../registry';
 import { runBuild } from '../runner';
 import { printBuildReport } from './report';
 import { parseBuildArgs } from './args';
+import { applyCompose } from './composeFlag';
+import { BuildLockedError, withBuildLock } from '../buildLock';
 import { selectDatasets, assertForceSelected, assertSupersedeSelected, type ExclusionReason } from './select';
 
 async function main(): Promise<void> {
@@ -19,7 +21,7 @@ async function main(): Promise<void> {
   let force: string[] = [];
   let supersedeEdits: string[] = [];
   try {
-    const { only, except, force: forced, supersedeEdits: superseded } = parseBuildArgs(process.argv.slice(2));
+    const { only, except, force: forced, supersedeEdits: superseded } = parseBuildArgs(applyCompose(process.argv.slice(2), 'atlas:build').rest);
     ({ selected: datasets, excluded } = selectDatasets(ALL_DATASETS, { only, except }));
     if (datasets.length === 0) {
       throw new Error('atlas:build: no datasets selected (--only/--except excluded everything)');
@@ -43,8 +45,14 @@ async function main(): Promise<void> {
   const pool = new pg.Pool({ connectionString });
 
   try {
-    const report = await runBuild(pool, datasets, { universe: ALL_DATASETS, force, supersedeEdits });
+    const report = await withBuildLock(pool, 'atlas:build', () =>
+      runBuild(pool, datasets, { universe: ALL_DATASETS, force, supersedeEdits })
+    );
     printBuildReport(report);
+  } catch (err) {
+    if (!(err instanceof BuildLockedError)) throw err;
+    console.error(err.message);
+    process.exitCode = 1;
   } finally {
     await pool.end();
   }

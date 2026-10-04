@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { loadDevEnv } from './env';
+import { unexpectedArgument } from './composeFlag';
 import { ALL_DATASETS, validateRegistry } from '../registry';
 import { computeStatus, formatStatus } from '../status';
 
@@ -12,7 +13,7 @@ async function main(): Promise<void> {
   // rejected rather than silently ignored, and rejected before the pool exists.
   const argv = process.argv.slice(2);
   if (argv.length > 0) {
-    console.error(`atlas:status: unexpected argument "${argv[0]}" (atlas:status takes no arguments)`);
+    console.error(unexpectedArgument('atlas:status', argv[0]));
     process.exitCode = 1;
     return;
   }

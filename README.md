@@ -98,7 +98,7 @@ The runbooks under `docs/runbooks/` describe what each dataset is and where it c
 
 `atlas:up` never recreates or stops a service that is already running, so it is safe to run on a
 machine with a stack up. `npm run atlas:up -- --compose <file>` points it at another compose file, and it
-accepts the build flags `--only`, `--except`, `--force` and `--supersede-edits`. To run one script by hand inside the tools image:
+accepts the build flags `--only`, `--except`, `--force` and `--supersede-edits` (`atlas:build` takes `--compose` too). A second clone on the same machine needs its own compose project name and ports first: see "A second stack on one machine" in `docs/runbooks/README.md`. To run one script by hand inside the tools image:
 `docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools <argv>`.
 Scripts read the GeoServer password from the environment (`infra/.env`, through the compose service), never from argv.
 
@@ -152,7 +152,7 @@ write is recorded in `app.audit_log`; geometry is validated in PostGIS before wr
 | `npm run migrate` | Apply DB migrations |
 | `npm run atlas:up` | Onboarding: check the machine, start the stack, build the tools image, migrate, build and verify every dataset (accepts `--compose <file>`, `--only`, `--except`, `--force`, `--supersede-edits`) |
 | `npm run atlas:status` | Show what is built, stale, missing or failed, and the next command |
-| `npm run atlas:build` | Build datasets (`--only <id>`, `--except <id>`, `--force <id>`, `--supersede-edits <layer>`) |
+| `npm run atlas:build` | Build datasets (`--only <id>`, `--except <id>`, `--force <id>`, `--supersede-edits <layer>`, `--compose <file>`); one build per database at a time |
 | `npm run atlas:verify` | Check the atlas actually serves |
 | `npm run atlas:adopt` | Record an already-built machine in the registry without re-running it |
 | `npm run atlas:seed` | Load the committed seed data without building: for CI and a test database (no GeoServer, no build state). The API test run does this itself |
