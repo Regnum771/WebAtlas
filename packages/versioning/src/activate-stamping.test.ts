@@ -1,6 +1,7 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from './testPool';
 import { versionsService } from './service';
+import { refreshCurrentRows } from './currentRows';
 
 // Regression guard for the failure mode recorded in docs/architecture/database-architecture.md
 // §9: a derived value whose refresh obligation lives in a call site rather than in a contract
@@ -26,6 +27,13 @@ afterAll(async () => {
     await pool.query(`UPDATE app.dataset_versions SET is_active = false WHERE id = $1`, [versionId]);
     if (priorActive) {
       await pool.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
+      // Raw flip instead of activate(): move the current flag with it.
+      const client = await pool.connect();
+      try {
+        await refreshCurrentRows(client, LAYER, priorActive);
+      } finally {
+        client.release();
+      }
     }
     await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = $1`, [versionId]);
     await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [versionId]);

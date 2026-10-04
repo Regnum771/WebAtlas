@@ -2,8 +2,8 @@ import type pg from 'pg';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 
 /**
- * Khoá lớp là giá trị DUY NHẤT được nội suy vào SQL ở đây, và chỉ sau khi qua danh sách
- * cho phép. Mọi thứ khác là tham số ràng buộc.
+ * The layer key is the ONLY value interpolated into SQL here, and only after passing the
+ * allowlist. Everything else is a bound parameter.
  */
 function assertKnownLayer(layerKey: EditableLayerKey): void {
   if (!(EDITABLE_LAYER_KEYS as readonly string[]).includes(layerKey)) {
@@ -12,14 +12,17 @@ function assertKnownLayer(layerKey: EditableLayerKey): void {
 }
 
 /**
- * Tính lại mã tỉnh/xã cho toàn bộ hàng thuộc một phiên bản.
+ * Recompute the province/ward codes for every row of one version, writing only the rows whose
+ * codes actually change (each rewrite also maintains the partial indexes, so unchanged rows are
+ * left alone).
  *
- * Chạy trong giao dịch của người gọi: khi nạp dữ liệu thì cùng giao dịch với phiên bản
- * ingest, khi biên tập thì cùng giao dịch với bản nháp — nên không bao giờ tồn tại trạng
- * thái "đã có đối tượng nhưng chưa có mã".
+ * Runs in the caller's transaction: on ingest it shares the transaction of the ingest version, on
+ * edit the transaction of the draft, so the state "feature exists but has no codes" never exists.
  *
- * Truy vấn con tương quan chứ không JOIN gộp: mỗi hàng tra chỉ mục GiST của
- * admin.provinces/admin.wards một lần, và mảng giữ được thứ tự ổn định nhờ ORDER BY.
+ * Correlated subqueries rather than one aggregating JOIN: each row probes the GiST index of
+ * admin.provinces/admin.wards once, and the arrays keep a stable order thanks to ORDER BY.
+ *
+ * Returns the number of rows of the version that were examined (not the number rewritten).
  */
 export async function stampAdminCodes(
   client: pg.PoolClient,
@@ -27,18 +30,29 @@ export async function stampAdminCodes(
   versionId: string
 ): Promise<number> {
   assertKnownLayer(layerKey);
-  const result = await client.query(
-    `UPDATE water.${layerKey} t
-        SET province_codes = coalesce((
-              SELECT array_agg(p.code ORDER BY p.code)
-                FROM admin.provinces p
-               WHERE t.geom IS NOT NULL AND ST_Intersects(t.geom, p.geom)), '{}'),
-            ward_codes = coalesce((
-              SELECT array_agg(w.code ORDER BY w.code)
-                FROM admin.wards w
-               WHERE t.geom IS NOT NULL AND ST_Intersects(t.geom, w.geom)), '{}')
-      WHERE t.dataset_version_id = $1`,
+  const result = await client.query<{ examined: number }>(
+    `WITH s AS (
+       SELECT t.id,
+              coalesce((
+                SELECT array_agg(p.code ORDER BY p.code)
+                  FROM admin.provinces p
+                 WHERE t.geom IS NOT NULL AND ST_Intersects(t.geom, p.geom)), '{}') AS p,
+              coalesce((
+                SELECT array_agg(w.code ORDER BY w.code)
+                  FROM admin.wards w
+                 WHERE t.geom IS NOT NULL AND ST_Intersects(t.geom, w.geom)), '{}') AS w
+         FROM water.${layerKey} t
+        WHERE t.dataset_version_id = $1
+     ), u AS (
+       UPDATE water.${layerKey} t
+          SET province_codes = s.p, ward_codes = s.w
+         FROM s
+        WHERE t.id = s.id
+          AND (t.province_codes IS DISTINCT FROM s.p OR t.ward_codes IS DISTINCT FROM s.w)
+       RETURNING 1
+     )
+     SELECT (SELECT count(*) FROM s)::int AS examined`,
     [versionId]
   );
-  return result.rowCount ?? 0;
+  return result.rows[0]?.examined ?? 0;
 }

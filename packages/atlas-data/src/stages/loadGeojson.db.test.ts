@@ -50,6 +50,8 @@ async function inRollback<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Keep the layer's existing versions out of retention, so version counts measure only this test.
+    await client.query(`INSERT INTO app.version_pins (version_id, holder) SELECT id, 'test' FROM app.dataset_versions FOR KEY SHARE`);
     return await fn(client);
   } finally {
     await client.query('ROLLBACK');
@@ -226,6 +228,26 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
       } finally {
         other.release();
       }
+    });
+  });
+
+  it('prunes a layer it finds unchanged, keeping the two most recent earlier loads', async () => {
+    const stage = ALL_DATASETS.find((d) => d.id === 'stations')!.stages.find((s) => s.type === 'load-geojson')!;
+    if (stage.type !== 'load-geojson') throw new Error('unreachable');
+    await inRollback(async (c) => {
+      // Three loads that were never activated, newer than every (pinned) existing version.
+      const svc = versionsService(pool);
+      const made: string[] = [];
+      for (const label of ['old-1', 'old-2', 'old-3']) {
+        made.push(await svc.createIngestVersion(c, { layerKey: 'stations', source: 'prune test', label }));
+      }
+      const out = await applyLoadGeojson(pool, c, resolveLoad(stage), { supersedeEdits: false });
+      expect(out.action).toBe('restamped');
+      const { rows } = await c.query<{ id: string }>(
+        `SELECT id::text AS id FROM app.dataset_versions WHERE id = ANY($1::uuid[])`, [made]
+      );
+      // The two newest earlier loads stay; the oldest of the three goes.
+      expect(rows.map((r) => r.id).sort()).toEqual([made[1], made[2]].sort());
     });
   });
 

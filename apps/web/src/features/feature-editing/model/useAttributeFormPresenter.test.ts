@@ -101,6 +101,16 @@ describe('useAttributeFormPresenter (edit mode)', () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  it('maps STALE_EDIT to the try-again message, ahead of the generic 409', async () => {
+    updateFeature.mockRejectedValue(new ApiError(409, 'STALE_EDIT', 'layer changed'));
+    const { result } = renderHook(() => useAttributeFormPresenter({
+      layerKey: 'dams', attributes: ['name'], geometry: null,
+      mode: 'edit', featureId: 'f1', initialValues: { name: 'A' }, onSaved: vi.fn(),
+    }));
+    await act(async () => { await result.current.submit(); });
+    expect(result.current.error).toBe('Someone else changed this layer while you were saving. Please try again.');
+  });
+
   it('maps a 404 to a friendly message', async () => {
     updateFeature.mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'gone'));
     const { result } = renderHook(() => useAttributeFormPresenter({

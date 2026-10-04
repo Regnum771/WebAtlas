@@ -50,6 +50,46 @@ async function codes(name: string) {
   return rows[0];
 }
 
+describe('stampAdminCodes writes only what changes', () => {
+  const rowsOf = async (c: import('pg').PoolClient) =>
+    (await c.query<{ name: string; ctid: string; province_codes: string[] }>(
+      `SELECT name, ctid::text AS ctid, province_codes FROM water.dams WHERE dataset_version_id = $1 ORDER BY name`, [versionId]
+    )).rows;
+
+  it('a second stamp leaves every row in place and still reports the version row count', async () => {
+    const c = await getPool().connect();
+    try {
+      await c.query('BEGIN');
+      expect(await stampAdminCodes(c, 'dams', versionId)).toBe(FIXTURES.length);
+      const before = await rowsOf(c);
+      expect(await stampAdminCodes(c, 'dams', versionId)).toBe(FIXTURES.length);
+      expect((await rowsOf(c)).map((r) => r.ctid)).toEqual(before.map((r) => r.ctid));
+    } finally {
+      await c.query('ROLLBACK');
+      c.release();
+    }
+  });
+
+  it('rewrites the codes of a row whose geometry moved to another province', async () => {
+    const c = await getPool().connect();
+    try {
+      await c.query('BEGIN');
+      await stampAdminCodes(c, 'dams', versionId);
+      const before = (await rowsOf(c)).find((r) => r.name === 'stamp-sea')!;
+      expect(before.province_codes).toEqual([]);
+      await c.query(
+        `UPDATE water.dams SET geom = ST_SetSRID(ST_MakePoint(108.05, 12.68), 4326) WHERE name = 'stamp-sea' AND dataset_version_id = $1`,
+        [versionId]
+      );
+      expect(await stampAdminCodes(c, 'dams', versionId)).toBe(FIXTURES.length);
+      expect((await rowsOf(c)).find((r) => r.name === 'stamp-sea')!.province_codes).toEqual(['66']);
+    } finally {
+      await c.query('ROLLBACK');
+      c.release();
+    }
+  });
+});
+
 describe('stampAdminCodes', () => {
   it('stamps the province and ward containing a point, and reports the rows touched', async () => {
     const client = await getPool().connect();

@@ -1,6 +1,6 @@
 import fp from 'fastify-plugin';
 import { AppError, ConflictError, InternalError, NotFoundError } from '../errors';
-import { ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError } from '@webatlas/versioning';
+import { ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError, StaleDraftError } from '@webatlas/versioning';
 
 export default fp(async (app) => {
   app.setNotFoundHandler((_req, reply) => {
@@ -16,6 +16,9 @@ export default fp(async (app) => {
       // The versioning package throws its own, HTTP-free classes; they keep the responses the
       // versions service gave when it lived here and threw the API's.
       appErr = new NotFoundError(err.message);
+    } else if (err instanceof StaleDraftError) {
+      // Distinct code so a client can tell "someone else saved first" from other 409s.
+      appErr = new AppError(409, 'STALE_EDIT', err.message);
     } else if (err instanceof VersioningConflictError) {
       appErr = new ConflictError(err.message);
     } else if ((err as { statusCode?: number }).statusCode === 429) {

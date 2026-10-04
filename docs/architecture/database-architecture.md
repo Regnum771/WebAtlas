@@ -251,15 +251,39 @@ view causes the entire layer to be scanned and de-duplicated before the predicat
 index therefore apply their predicate to the base table first, to obtain candidate business keys, and resolve the
 version chain only for those candidates.
 
-Two obligations follow, and both have produced defects when neglected:
+Until migration 22 this was the rule, and two obligations followed from it: the candidate step ran across all versions
+and so returned a superset, which had to be re-filtered (real predicate plus deletion test) after resolution; and two
+independent chains in one statement needed distinct relation aliases. Both are history: the views are now plain
+filters, so neither applies (see 'How the active state is stored').
 
-1. The candidate step runs across all versions and therefore returns a superset. The real predicate, together with the
-   deletion test, **must** be re-applied after resolution.
-2. Two independent chains in one statement require distinct relation aliases.
+### How the active state is stored (since migration 22)
+
+Each thematic table carries `is_current`: true exactly for the rows the layer's active
+version chain resolves to, tombstones excluded. `versionsService.activate()` in
+`packages/versioning` is the only writer. It moves the flag in the same transaction as the
+active pointer, using `resolvedSql`, the one definition of what a version resolves to. Each
+`water.<layer>_active` view is a plain `WHERE is_current` filter with partial indexes behind
+it (geometry, admin codes, name trigram, `external_id`), so read the active state through the
+views and never resolve the chain by hand.
+
+Retention: after every activation, and when the loader finds a layer unchanged,
+`pruneVersions` keeps the active chain, the two most recent earlier loads with their edits, and
+every version listed in `app.version_pins` with its chain to the root; everything else goes,
+rows first. Scenarios (S4) pin the versions they branched from.
+
+Committing an edit session whose draft was opened on a version that is no longer active is now
+refused (`StaleDraftError`, a `ConflictError`; HTTP 409 with code `STALE_EDIT`) instead of silently dropping the
+intervening version. The API's one-shot writes retry such a commit once on a fresh session.
+
+Deploying migration 22: run `npm run atlas:seed` (or `npm run atlas:build`) right after `npm run migrate`. The
+first activation prunes the whole backlog of every layer inside its transaction (on the dev database about 127k
+`lakes` rows), which should not happen inside a steward's web edit. This also assumes a single-instance deploy: old
+code activating after the migration would move the pointer without moving the flag.
 
 ### 5.4 Operational note on version accumulation
 
-Repeated ingests accumulate versions. In the development database at revision 1.0, 2,647 versions had accumulated, of
+Until migration 22, repeated ingests accumulated versions with nothing to remove them; retention is now automatic (see
+'How the active state is stored'). The figures below are from that period. In the development database at revision 1.0, 2,647 versions had accumulated, of
 which nine were reachable from an active version; the unreachable remainder accounted for approximately 1.4 GB, or 63%
 of the database. Pruning must retain the complete ancestor chain of each active version, not merely the active version
 itself, because a resolved view inherits rows from its ancestors.
@@ -328,6 +352,8 @@ that will consume them (§14).
 The resolution view is an optimiser fence (§5.3), and it applies here with force: joining reaches to named ways through
 `water.rivers_active` did not finish within 120 s, and the same join over a materialised copy of the resolved rows took
 10.9 s. Every builder over the network therefore materialises its resolved input into indexed temporary tables first.
+
+This was true until migration 22; the views are now plain filters (see 'How the active state is stored').
 
 ### 7.3 Deferred road topology
 

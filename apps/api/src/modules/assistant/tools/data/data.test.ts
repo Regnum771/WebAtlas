@@ -72,10 +72,9 @@ describe('features_in_view', () => {
   });
 
   // Catches a rewrite that is fast but wrong: the tool's count now comes from
-  // a candidate-then-resolve CTE chain (see helpers.ts's candidateCtes) built
-  // to reach the geometry index, rather than the water.rivers_active view
-  // directly. A plain count against that view is the ground truth it must
-  // still agree with -- at level 1: rivers_active holds rivers, reaches and
+  // a query built through layerView (helpers.ts), which reads the
+  // water.<layer>_active views. A plain count against the view is the ground
+  // truth it must still agree with -- at level 1: rivers_active holds rivers, reaches and
   // OSM ways, and "rivers in view" means the rivers.
   it('counts the same as a plain scan of the active view', async () => {
     const { ctx } = makeCtx();
@@ -110,11 +109,9 @@ describe('nearest_features', () => {
     expect(records).toHaveLength(0);
   });
 
-  // Catches a rewrite that is fast but wrong: the tool now finds nearest
-  // candidates off the base table with planar `<->` (so the GiST index can
-  // serve the KNN), resolves the version chain for just those, then
-  // re-orders by true ::geography distance (see helpers.ts's candidateCtes
-  // and NEAREST_OVERFETCH_FACTOR). The feature ids and order it returns must
+  // Catches a rewrite that is fast but wrong: the tool's nearest query reads
+  // the water.<layer>_active views through layerView (helpers.ts), ordered by
+  // true ::geography distance. The feature ids and order it returns must
   // still match a straightforward exact query against water.rivers_active
   // for the same point, over the level-1 rivers (not their reaches and ways).
   it('returns the same feature ids in the same order as an exact query against the active view', async () => {

@@ -1,4 +1,4 @@
-// Xem zoomToRegion.ts: 'zod/v4' là bắt buộc do betaZodTool.
+// See zoomToRegion.ts: 'zod/v4' is required because of betaZodTool.
 import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
@@ -50,29 +50,15 @@ export const filterByAttributeTool: ToolFactory = (ctx) =>
       }
 
       // input.column is a member of the allowlist above, never raw model
-      // text — the same rule layerView/layerTable enforce for layer keys.
+      // text — the same rule layerView enforces for layer keys.
       //
-      // Deliberately NOT using candidateCtes here, unlike this file's three
-      // siblings. That pattern only pays off when the candidate predicate is
-      // index-servable (a GiST hit for geometry, a primary-key hit for
-      // `id = $1`) so the candidate step is cheap and shrinks the set before
-      // the expensive recursive resolve runs. Here the predicate is `ILIKE`
-      // on an arbitrary text column, and none of FILTERABLE_COLUMNS is
-      // trigram- or btree-indexed — so the "candidate" step would itself be
-      // a full unindexed scan of the base table, and that table would then
-      // be scanned a second time inside resolved's join, where querying the
-      // view directly scans it once. Measured with EXPLAIN ANALYZE against
-      // water.dams: the view form runs ~43ms regardless of match; the
-      // candidate-then-resolve form ran 82-130ms for the same queries. If an
-      // index is ever added on one of these columns, this call site is where
-      // the candidate form would start earning its keep again — but adding
-      // that index is a separate decision with its own migration and
-      // write-path cost.
+      // ILIKE on an unindexed text column: the view is scanned once whatever the match, which
+      // is cheap now that the view is a plain filter on is_current.
       const [{ rows: allRows }, datasetVersion] = await Promise.all([
         ctx.pool.query(
           `SELECT id::text AS "featureId", name, ${input.column}::text AS "matchedValue", ${POINT_SQL}
              FROM ${layerView(input.layerKey)}
-            WHERE NOT deleted AND ${input.column}::text ILIKE $1 AND ${entityPredicate(input.layerKey)}
+            WHERE ${input.column}::text ILIKE $1 AND ${entityPredicate(input.layerKey)}
             ORDER BY name NULLS LAST
             LIMIT ${ROW_LIMIT + 1}`,
           [`%${input.value}%`]

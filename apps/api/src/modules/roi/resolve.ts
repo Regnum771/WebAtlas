@@ -10,7 +10,7 @@ import {
 } from '@webatlas/shared';
 import { NotFoundError, ValidationError } from '../../errors';
 import { simplifiedGeoJsonSql } from '../../lib/resultGeometry';
-import { candidateCtes, resolveFeature, type Queryable } from '../assistant/tools/data/helpers';
+import { resolveFeature, type Queryable } from '../assistant/tools/data/helpers';
 import {
   MAX_ROI_AREA_KM2,
   MAX_SOURCE_ENTITY_PARTS,
@@ -63,19 +63,15 @@ async function featureSource(db: Queryable, layerKey: EditableLayerKey, featureI
 
 /** The level-1 river a way belongs to (FR-13), or the way itself when it has none. */
 async function wholeRiverSource(db: Queryable, wayId: string): Promise<Source> {
-  const way = candidateCtes('rivers', `SELECT external_id FROM water.rivers WHERE id = $1`);
   const { rows: [w] } = await db.query<{ parent: string | null }>(
-    `WITH RECURSIVE ${way}
-     SELECT parent_external_id AS parent FROM resolved WHERE id = $1 AND NOT deleted`,
+    `SELECT parent_external_id AS parent FROM water.rivers_active WHERE id = $1`,
     [wayId]
   );
   if (!w) throw new NotFoundError('Đối tượng không còn tồn tại');
 
   if (w.parent) {
-    const river = candidateCtes('rivers', `SELECT external_id FROM water.rivers WHERE external_id = $1`);
     const { rows: [r] } = await db.query<{ id: string }>(
-      `WITH RECURSIVE ${river}
-       SELECT id::text AS id FROM resolved WHERE external_id = $1 AND NOT deleted AND feature_level = 1`,
+      `SELECT id::text AS id FROM water.rivers_active WHERE external_id = $1 AND feature_level = 1`,
       [w.parent]
     );
     if (r) return featureSource(db, 'rivers', r.id);

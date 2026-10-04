@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from '../../db/pool';
 import { featuresService } from './service';
-import { versionsRepository, versionsService } from '@webatlas/versioning';
+import { ConflictError as VersioningConflictError, StaleDraftError, refreshCurrentRows, versionsService } from '@webatlas/versioning';
 import { ConflictError, GeometryError, NotFoundError } from '../../errors';
 
 const TEST_NAME = 'svc-test-dam@webatlas.test';
@@ -33,7 +33,7 @@ describe('featuresService edit sessions (§7)', () => {
     // Drop the edit-versions these tests published, restoring the seeded ingest
     // version as active so the suite leaves the database as it found it. Feature
     // rows cascade away with their version; the tombstones do too.
-    for (const layer of ['dams', 'stations']) {
+    for (const layer of ['dams', 'stations'] as const) {
       await getPool().query(
         `DELETE FROM water.${layer} WHERE dataset_version_id IN
            (SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND kind = 'edit')`,
@@ -42,13 +42,23 @@ describe('featuresService edit sessions (§7)', () => {
       await getPool().query(
         `DELETE FROM app.dataset_versions WHERE layer_key = $1 AND kind = 'edit'`, [layer]
       );
-      await getPool().query(
+      const restored = await getPool().query(
         `UPDATE app.dataset_versions SET is_active = true
          WHERE id = (SELECT id FROM app.dataset_versions
                      WHERE layer_key = $1 AND kind = 'ingest'
-                     ORDER BY ingested_at DESC LIMIT 1)`,
+                     ORDER BY ingested_at DESC LIMIT 1)
+         RETURNING id`,
         [layer]
       );
+      // Raw flip instead of activate(): move the current flag with it.
+      if (restored.rows[0]) {
+        const client = await getPool().connect();
+        try {
+          await refreshCurrentRows(client, layer, restored.rows[0].id);
+        } finally {
+          client.release();
+        }
+      }
     }
     await getPool().query(`DELETE FROM water.dams WHERE name = $1`, [TEST_NAME]);
     await getPool().query(`DELETE FROM water.stations WHERE name = $1`, [TEST_STATION]);
@@ -283,10 +293,10 @@ describe('featuresService edit sessions (§7)', () => {
     expect(orphan.rows[0].n).toBe(0);
   });
 
-  // Two sessions minting concurrently must not land on the same external_id: they write
-  // into different draft versions, so the per-version unique index cannot catch a
-  // duplicate, and the resolver's DISTINCT ON would later collapse the pair.
-  it('two concurrent sessions on an integer-typed layer cannot mint the same external_id', async () => {
+  // Two sessions on one layer: the second one's mint waits for the first's mint lock, and
+  // because its draft was opened on the version the first has since replaced, its commit
+  // is refused as stale instead of dropping the first's version.
+  it("two concurrent sessions on one layer: the second waits for the first to mint, and its stale commit is refused", async () => {
     const a = await svc().editSession('dams');
     const b = await svc().editSession('dams');
 
@@ -299,29 +309,57 @@ describe('featuresService edit sessions (§7)', () => {
       geometry: { type: 'Point', coordinates: [105.22, 20.42] }, properties: { name: TEST_NAME },
     });
     await a.commit();
-    const rowB = await rowBPromise;
-    await b.commit();
+    await rowBPromise;
 
-    const ext = await getPool().query(
-      `SELECT id, external_id FROM water.dams WHERE id = ANY($1)`, [[rowA.id, rowB.id]]
-    );
-    expect(ext.rows).toHaveLength(2);
-    const values = ext.rows.map((r) => Number(r.external_id));
-    expect(new Set(values).size).toBe(2);
+    // b's mint waited for a's commit and then scanned a max that includes a's row, so a's id is
+    // visible and committed while b's is not (it lives in b's open transaction). b's draft was
+    // opened on the version a has just replaced, so committing it is now refused (the API's
+    // error handler turns this ConflictError into a 409) rather than dropping a's version.
+    const extA = await getPool().query(`SELECT external_id FROM water.dams WHERE id = $1`, [rowA.id]);
+    expect(extA.rows).toHaveLength(1);
+    const activeAfterA = await activeVersionId('dams');
+    await expect(b.commit()).rejects.toBeInstanceOf(StaleDraftError);
+    expect(await activeVersionId('dams')).toBe(activeAfterA);
+  });
 
-    // Distinct ids mean the resolver can keep both. (b branched off the version that
-    // was active when it opened, so a's version is not in b's chain — that is ordinary
-    // branch semantics, not id collision. Resolve over a chain containing both drafts
-    // to prove DISTINCT ON keeps two rows rather than collapsing them into one.)
-    const both = await getPool().query(
-      versionsRepository(getPool()).resolvedSql('dams', [
-        (await getPool().query(`SELECT dataset_version_id FROM water.dams WHERE id = $1`, [rowB.id])).rows[0].dataset_version_id,
-        (await getPool().query(`SELECT dataset_version_id FROM water.dams WHERE id = $1`, [rowA.id])).rows[0].dataset_version_id,
-      ])
-    );
-    const resolved = both.rows.map((r) => r.id as string);
-    expect(resolved).toContain(rowA.id);
-    expect(resolved).toContain(rowB.id);
+  it('a one-shot change whose first commit is refused as stale is retried and lands once, with one audit row', async () => {
+    const name = 'svc-test-retry@webatlas.test';
+    let attempts = 0;
+    let created: { id: string } | undefined;
+    try {
+      const row = await svc().singleChange('dams', undefined, async (s) => {
+        attempts += 1;
+        if (attempts === 1) {
+          // Another edit lands after this session opened: its commit moves the active version.
+          const other = await svc().editSession('dams');
+          await other.commit();
+        }
+        created = await s.create({ geometry: { type: 'Point', coordinates: [105.31, 20.51] }, properties: { name } });
+        return created;
+      });
+      expect(attempts).toBe(2);
+      expect(await resolvedIds('dams')).toContain(row.id);
+      const audit = await getPool().query(`SELECT count(*)::int AS n FROM app.audit_log WHERE feature_id = $1`, [row.id]);
+      expect(audit.rows[0].n).toBe(1);
+      // The refused attempt's row was never audited, whatever id it had.
+      const byName = await getPool().query(
+        `SELECT count(*)::int AS n FROM app.audit_log WHERE table_name LIKE '%dams' AND after::text LIKE '%' || $1 || '%'`, [name]
+      );
+      expect(byName.rows[0].n).toBe(1);
+    } finally {
+      await getPool().query(`DELETE FROM app.audit_log WHERE table_name LIKE '%dams' AND after::text LIKE '%' || $1 || '%'`, [name]);
+    }
+  });
+
+  it('a second stale refusal propagates instead of retrying forever', async () => {
+    let attempts = 0;
+    await expect(svc().singleChange('dams', undefined, async (s) => {
+      attempts += 1;
+      const other = await svc().editSession('dams');
+      await other.commit();
+      return s.create({ geometry: { type: 'Point', coordinates: [105.32, 20.52] }, properties: { name: TEST_NAME } });
+    })).rejects.toBeInstanceOf(StaleDraftError);
+    expect(attempts).toBe(2);
   });
 
   it('rejects an update to a feature that does not exist', async () => {

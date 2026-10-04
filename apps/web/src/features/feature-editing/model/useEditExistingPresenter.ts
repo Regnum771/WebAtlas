@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { LAYER_ATTRIBUTE_MAP, denormalizeFeatureProperties, type EditableLayerKey } from '@webatlas/shared';
 import { useMapEditing, type EditSelection, type GeoJSONGeometry } from '../../map/model/mapEditing';
+import { ApiError } from '../../../shared/api/apiClient';
 import { deleteFeature } from '../api/features.api';
 
 interface SelectionVM {
@@ -67,8 +68,10 @@ export function useEditExistingPresenter() {
       await deleteFeature(selection.layerKey, selection.featureId);
       refreshLayer(LAYER_ATTRIBUTE_MAP[selection.layerKey].layerStateId);
       reset();
-    } catch {
-      setError('Could not delete — please try again');
+    } catch (e) {
+      setError(e instanceof ApiError && e.code === 'STALE_EDIT'
+        ? 'Someone else changed this layer while you were saving. Please try again.'
+        : 'Could not delete — please try again');
     } finally {
       setDeleting(false);
     }

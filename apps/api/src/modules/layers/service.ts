@@ -3,7 +3,7 @@ import { getLayer, type LayerDef } from '../../layers/registry';
 import { featuresRepository, type FeatureFilter, type FeatureRow } from './repository';
 import { assertGeometry, assertValidInPg } from './geometry';
 import { auditService, type EditSource } from '../audit/service';
-import { versionsService } from '@webatlas/versioning';
+import { versionsService, StaleDraftError } from '@webatlas/versioning';
 import { validate } from '../../lib/validate';
 import { ConflictError, NotFoundError } from '../../errors';
 
@@ -97,7 +97,7 @@ export function featuresService(pg: Pool) {
           const row = await repo.insertIntoVersion(client, def, draftId, {
             attrs, geometryJson: geometryJson ?? null, actorId,
           });
-          await audit.record({ userId: actorId, action: 'create', tableName: def.table, featureId: row.id, after: row, source: input.source });
+          await audit.record({ userId: actorId, action: 'create', tableName: def.table, featureId: row.id, after: row, source: input.source }, client);
           return row;
         } catch (e) { return fail(e); }
       },
@@ -110,7 +110,7 @@ export function featuresService(pg: Pool) {
           if (!before) throw new NotFoundError('Feature not found');
           const { attrs, geometryJson } = await prepare(pg, def, input, false);
           const after = await repo.upsertChangeInVersion(client, def, draftId, id, { attrs, geometryJson, actorId });
-          await audit.record({ userId: actorId, action: 'update', tableName: def.table, featureId: id, before, after, source: input.source });
+          await audit.record({ userId: actorId, action: 'update', tableName: def.table, featureId: id, before, after, source: input.source }, client);
           return after;
         } catch (e) { return fail(e); }
       },
@@ -121,7 +121,7 @@ export function featuresService(pg: Pool) {
           const before = await repo.findByIdOnClient(client, def, id);
           if (!before) throw new NotFoundError('Feature not found');
           await repo.tombstoneInVersion(client, def, draftId, id);
-          await audit.record({ userId: actorId, action: 'delete', tableName: def.table, featureId: id, before });
+          await audit.record({ userId: actorId, action: 'delete', tableName: def.table, featureId: id, before }, client);
         } catch (e) { return fail(e); }
       },
 
@@ -132,9 +132,9 @@ export function featuresService(pg: Pool) {
         // failing COMMIT must not be followed by a second ROLLBACK attempt from fail().
         settled = true;
         try {
-          // Giá trị dẫn xuất được dựng lại bởi chính đường ghi (tài liệu kiến trúc §9):
-          // commitEditDraft() gọi versions.activate(), và đóng dấu mã hành chính giờ là
-          // nghĩa vụ của activate() chính nó — không còn gọi tường minh ở đây.
+          // Derived values are rebuilt by the write path itself (architecture doc §9):
+          // commitEditDraft() calls versions.activate(), and stamping administrative codes
+          // is activate()'s own obligation, so nothing is called explicitly here.
           await versions.commitEditDraft(client, def.key, draftId);
           await client.query('COMMIT');
         } catch (e) {
@@ -167,18 +167,28 @@ export function featuresService(pg: Pool) {
 
   // Run one change in its own session, committing on success and discarding on failure
   // so a rejected single change never leaves a dangling draft or a checked-out client.
+  // A stale commit (another edit landed between open and commit) is only seconds old here,
+  // and redoing the change on a fresh session equals the two requests arriving a moment
+  // apart, so it is retried once; a second refusal propagates. The audit rows are written on
+  // the session's transaction, so the refused attempt leaves none behind.
   async function singleChange<T>(key: string, actorId: string | undefined, apply: (s: EditSession) => Promise<T>): Promise<T> {
-    const session = await editSession(key, actorId);
-    let result: T;
-    try {
-      result = await apply(session);
-    } catch (e) {
-      // A failed operation already rolled back and released; discard() is a no-op then.
-      await session.discard();
-      throw e;
+    for (let attempt = 1; ; attempt++) {
+      const session = await editSession(key, actorId);
+      let result: T;
+      try {
+        result = await apply(session);
+      } catch (e) {
+        // A failed operation already rolled back and released; discard() is a no-op then.
+        await session.discard();
+        throw e;
+      }
+      try {
+        await session.commit();
+        return result;
+      } catch (e) {
+        if (!(e instanceof StaleDraftError) || attempt >= 2) throw e;
+      }
     }
-    await session.commit();
-    return result;
   }
 
   return {
@@ -187,6 +197,7 @@ export function featuresService(pg: Pool) {
     },
     async get(key: string, id: string): Promise<FeatureRow | null> { return repo.findById(getLayer(key), id); },
     editSession,
+    singleChange,
 
     // Single-change helpers: each opens a session, applies one change, and commits — so
     // no caller writes the active version in place. Each publishes its own edit-version.

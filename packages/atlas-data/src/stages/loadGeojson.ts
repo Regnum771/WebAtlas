@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { Pool, PoolClient } from 'pg';
 import { EDITABLE_LAYER_KEYS, type ColumnMap, type EditableLayerKey } from '@webatlas/shared';
-import { loadFeatures, stampAdminCodes, versionsService } from '@webatlas/versioning';
+import { loadFeatures, pruneVersions, stampAdminCodes, versionsService } from '@webatlas/versioning';
 import type { Stage } from '../types';
 import type { StageContext, StageResult } from './index';
 import { resolveStageFile } from '../paths';
@@ -92,14 +92,19 @@ async function loadVersioned(
   // Unchanged: create nothing, activate nothing. The boundaries may have changed (they are upstream
   // of every layer), so every version of the chain gets its administrative codes again (spec C-5).
   if (adoption.result !== 'mismatch') {
+    let pruned = '';
     if (isEditable(load.layer)) {
       for (const v of chain) await stampAdminCodes(client, load.layer, v.id);
+      // Nothing is activated here, so retention would otherwise wait for the next real load: an
+      // existing machine's backlog goes on its next build instead. Under the layer lock taken above.
+      const p = await pruneVersions(client, load.layer);
+      if (p.versions > 0) pruned = `; pruned ${p.versions} old version${p.versions === 1 ? '' : 's'} (${p.rows} rows)`;
     }
     const relabelled = adoption.result === 'relabelled' ? ' (existing version re-labelled)' : '';
     return {
       action: 'restamped',
       versionId: adoption.versionId,
-      summary: `${load.layer}: content unchanged${relabelled}; re-stamped ${chain.length} version${chain.length === 1 ? '' : 's'}`,
+      summary: `${load.layer}: content unchanged${relabelled}; re-stamped ${chain.length} version${chain.length === 1 ? '' : 's'}${pruned}`,
     };
   }
 

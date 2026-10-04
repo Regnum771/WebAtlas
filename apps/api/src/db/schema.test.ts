@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { getPool, closePool } from './pool';
+import { refreshCurrentRows } from '@webatlas/versioning';
 
 afterAll(async () => {
   await closePool();
@@ -142,6 +143,8 @@ describe('active-version views (§5)', () => {
       );
       await client.query(`UPDATE app.dataset_versions SET is_active=false WHERE layer_key='dams' AND is_active`);
       await client.query(`UPDATE app.dataset_versions SET is_active=true WHERE id=$1`, [edit.rows[0].id]);
+      // Raw flip instead of activate(): move the current flag too, as activate() would.
+      await refreshCurrentRows(client, 'dams', edit.rows[0].id);
       await client.query('COMMIT');
     } finally {
       client.release();
@@ -155,6 +158,12 @@ describe('active-version views (§5)', () => {
       // even if the assertion above failed.
       await getPool().query(`UPDATE app.dataset_versions SET is_active=false WHERE layer_key='dams' AND is_active`);
       await getPool().query(`UPDATE app.dataset_versions SET is_active=true WHERE id=$1`, [active.rows[0].id]);
+      const restore = await getPool().connect();
+      try {
+        await refreshCurrentRows(restore, 'dams', active.rows[0].id);
+      } finally {
+        restore.release();
+      }
       await getPool().query(`DELETE FROM water.dams WHERE name=$1`, [NAME]);
       if (editId) {
         await getPool().query(`DELETE FROM app.dataset_versions WHERE id=$1`, [editId]);

@@ -11,7 +11,7 @@ import { REFERENCE_LAYER_KEYS, type ReferenceLayerKey } from '@webatlas/shared';
  * rather than `geom`, and are created by `packages/atlas-data/tools/basemap/load_basemap.py`
  * rather than by a migration. They get their own read-only path, and this file is
  * the only place a reference layer key becomes SQL — the same rule `layerTable()`
- * follows for water.
+ * follows for water (queries go through `layerView` and the `*_active` views).
  *
  * Out of scope on purpose: `dem_region` and `contours` (raster/derived, already
  * served by the elevation ops), and the `*_vn` national duplicates `roads_vn` /

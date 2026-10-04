@@ -1,18 +1,13 @@
 import type { AnalysisResult, EditableLayerKey, ResultGeometry, Roi } from '@webatlas/shared';
 import {
-  LAYER_LABELS, POINT_SQL, candidateCtes, entityPredicate, layerTable, layerView, type Queryable,
+  LAYER_LABELS, POINT_SQL, entityPredicate, layerView, type Queryable,
 } from '../../assistant/tools/data/helpers';
 import { resolveRoi } from '../../roi/resolve';
 import type { NearestInput } from '../schemas';
 
-// How many nearest-by-planar-distance candidates to pull off the base table
-// per requested result, before resolving the version chain and re-ordering
-// by true geography distance. KNN has no simple indexable predicate the way
-// a bbox test does, so this is a bounded over-fetch rather than an exact
-// filter — generous enough that in practice (one active ingest version per
-// layer) the resolved set always has at least `limit` rows, but a layer with
-// many edit-versions could starve the candidate set, hence the fallback
-// below rather than trusting the over-fetch blindly.
+// How many nearest-by-planar-distance candidates to take per requested result before
+// re-ordering by geodesic distance. Planar and geodesic order differ only slightly at this
+// latitude, so 20x is generous.
 const NEAREST_OVERFETCH_FACTOR = 20;
 
 export interface NearestRow { featureId: string; name: string | null; lon: number; lat: number; distanceKm: number }
@@ -27,52 +22,28 @@ export async function queryNearest(
 ): Promise<NearestRow[]> {
   const point = 'ST_SetSRID(ST_MakePoint($1, $2), 4326)';
   const overfetch = q.limit * NEAREST_OVERFETCH_FACTOR;
-  // The entity predicate goes in the KNN candidate step too: without it, the
+  // The entity predicate goes inside the KNN over-fetch too: without it, the
   // over-fetch for rivers is spent on reaches and ways, the nearest rows of all.
   const entity = entityPredicate(q.layerKey);
   const notExcluded = '($5::uuid IS NULL OR id <> $5::uuid)';
-  const ctes = candidateCtes(
-    q.layerKey,
-    `SELECT external_id FROM ${layerTable(q.layerKey)}
-      WHERE ${entity} AND ${notExcluded}
-      ORDER BY geom <-> ${point} LIMIT $4`
-  );
+  const view = layerView(q.layerKey);
   const distanceExpr = `ST_Distance(geom::geography, ${point}::geography)`;
-  const { rows: fastRows } = await db.query<NearestRow>(
-    `WITH RECURSIVE ${ctes}
-     SELECT id::text AS "featureId", name, ${POINT_SQL},
+  // The planar KNN (<->) reaches the view's partial spatial index; the over-fetch is then
+  // re-ordered by true geodesic distance. The view holds one row per feature, so the over-fetch
+  // returns min(layer size, overfetch) rows and cannot be starved by older versions' rows, which
+  // is what the old exact-query fallback existed for.
+  const { rows } = await db.query<NearestRow>(
+    `SELECT id::text AS "featureId", name, ${POINT_SQL},
             round((${distanceExpr} / 1000)::numeric, 2)::float8 AS "distanceKm"
-       FROM resolved
-      WHERE NOT deleted AND ${entity} AND ${notExcluded}
+       FROM (SELECT id, name, geom FROM ${view}
+              WHERE ${entity} AND ${notExcluded}
+              ORDER BY geom <-> ${point}
+              LIMIT $4) AS candidates
       ORDER BY ${distanceExpr}
       LIMIT $3`,
     [q.lon, q.lat, q.limit, overfetch, q.excludeId ?? null]
   );
-  if (fastRows.length >= q.limit) return fastRows;
-
-  // The over-fetch came back short. That's a legitimate answer only if it
-  // already holds every active feature of a layer smaller than `limit`.
-  // Otherwise the candidate step missed some (starved by many edit-versions
-  // spreading the same external_ids across more physical rows than the
-  // over-fetch pulled) — even in a small layer, one feature's versions can
-  // fill the whole over-fetch. Rather than silently return a short answer,
-  // fall back to the exact query.
-  const view = layerView(q.layerKey);
-  const { rows: countRows } = await db.query<{ n: string }>(
-    `SELECT count(*)::text AS n FROM ${view} WHERE ${entity} AND ($1::uuid IS NULL OR id <> $1::uuid)`,
-    [q.excludeId ?? null]
-  );
-  if (fastRows.length >= Number(countRows[0].n)) return fastRows;
-  const { rows: exactRows } = await db.query<NearestRow>(
-    `SELECT id::text AS "featureId", name, ${POINT_SQL},
-            round((${distanceExpr} / 1000)::numeric, 2)::float8 AS "distanceKm"
-       FROM ${view}
-      WHERE ${entity} AND ($4::uuid IS NULL OR id <> $4::uuid)
-      ORDER BY ${distanceExpr}
-      LIMIT $3`,
-    [q.lon, q.lat, q.limit, q.excludeId ?? null]
-  );
-  return exactRows;
+  return rows;
 }
 
 /** Connector lines from the origin point to each nearest feature. */

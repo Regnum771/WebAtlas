@@ -3,6 +3,7 @@ import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
 import { usersRepository } from '../users/repository';
 import { hashPassword } from '../../lib/password';
+import { refreshCurrentRows } from '@webatlas/versioning';
 
 const app = buildApp();
 const ADMIN = 'layers-admin@webatlas.test';
@@ -35,12 +36,22 @@ afterAll(async () => {
        (SELECT id FROM app.dataset_versions WHERE layer_key = 'dams' AND kind = 'edit')`
   );
   await getPool().query(`DELETE FROM app.dataset_versions WHERE layer_key = 'dams' AND kind = 'edit'`);
-  await getPool().query(
+  const restored = await getPool().query(
     `UPDATE app.dataset_versions SET is_active = true
      WHERE id = (SELECT id FROM app.dataset_versions
                  WHERE layer_key = 'dams' AND kind = 'ingest'
-                 ORDER BY ingested_at DESC LIMIT 1)`
+                 ORDER BY ingested_at DESC LIMIT 1)
+     RETURNING id`
   );
+  // Raw flip instead of activate(): move the current flag with it.
+  if (restored.rows[0]) {
+    const client = await getPool().connect();
+    try {
+      await refreshCurrentRows(client, 'dams', restored.rows[0].id);
+    } finally {
+      client.release();
+    }
+  }
   await getPool().query('DELETE FROM water.dams WHERE name = $1', [NAME]);
   await getPool().query(`DELETE FROM app.users WHERE email LIKE 'layers-%@webatlas.test'`);
   await app.close();

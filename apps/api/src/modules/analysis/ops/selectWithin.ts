@@ -9,7 +9,7 @@ import {
 } from '@webatlas/shared';
 import { simplifiedGeoJsonSql } from '../../../lib/resultGeometry';
 import {
-  LAYER_LABELS, POINT_SQL, ROW_LIMIT, candidateCtes, entityPredicate, layerTable, type Queryable,
+  LAYER_LABELS, POINT_SQL, ROW_LIMIT, entityPredicate, layerView, type Queryable,
 } from '../../assistant/tools/data/helpers';
 import { requireArea } from '../../roi/kind';
 import { resolveRoi } from '../../roi/resolve';
@@ -18,9 +18,8 @@ import type { SelectWithinInput } from '../schemas';
 const GEOM = 'ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)';
 
 /**
- * Features of each layer inside the ROI. The candidate step reaches the base table's
- * index; the real predicate, NOT deleted and the entity predicate are re-applied after
- * version resolution (handover §4.2). `count(*) OVER ()` is computed before LIMIT, so
+ * Features of each layer inside the ROI. The predicate reaches the view's partial
+ * indexes directly (S1). `count(*) OVER ()` is computed before LIMIT, so
  * counts are full even when drawing is capped.
  */
 export async function selectWithinOp(db: Queryable, input: SelectWithinInput): Promise<AnalysisResult> {
@@ -46,16 +45,14 @@ export async function selectWithinOp(db: Queryable, input: SelectWithinInput): P
 
   for (const key of input.layerKeys) {
     const entity = entityPredicate(key);
-    const ctes = candidateCtes(key, `SELECT external_id FROM ${layerTable(key)} WHERE ${inArea.sql} AND ${entity}`);
     const { rows: found } = await db.query<{
       featureId: string; name: string | null; lon: number; lat: number; geometry: GeoJsonGeometry; total: string;
     }>(
-      `WITH RECURSIVE ${ctes}
-       SELECT id::text AS "featureId", name, ${POINT_SQL},
+      `SELECT id::text AS "featureId", name, ${POINT_SQL},
               ${simplifiedGeoJsonSql('geom')} AS geometry,
               count(*) OVER () AS total
-         FROM resolved
-        WHERE NOT deleted AND geom IS NOT NULL AND ${inArea.sql} AND ${entity}
+         FROM ${layerView(key)}
+        WHERE geom IS NOT NULL AND ${inArea.sql} AND ${entity}
         ORDER BY name NULLS LAST
         LIMIT $2`,
       [inArea.param, MAX_RESULT_ITEMS]

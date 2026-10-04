@@ -45,6 +45,8 @@ async function inRollback<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
   const c = await pool.connect();
   try {
     await c.query('BEGIN');
+    // Keep the layer's existing versions out of retention, so version counts measure only this test.
+    await c.query(`INSERT INTO app.version_pins (version_id, holder) SELECT id, 'test' FROM app.dataset_versions FOR KEY SHARE`);
     return await fn(c);
   } finally {
     await c.query('ROLLBACK');

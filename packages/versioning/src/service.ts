@@ -2,9 +2,11 @@ import type { Pool, PoolClient } from 'pg';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import { versionsRepository } from './repository';
 import { stampAdminCodes } from './adminStamp';
+import { refreshCurrentRows } from './currentRows';
+import { pruneVersions } from './retention';
 import { buildRiverHierarchy } from './riverHierarchy';
 import { assertRiverGates, RIVER_BASELINE } from './riverGates';
-import { ConflictError, NotFoundError } from './errors';
+import { ConflictError, NotFoundError, StaleDraftError } from './errors';
 
 export interface IngestVersionArgs {
   layerKey: string;
@@ -105,6 +107,15 @@ export function versionsService(pg: Pool) {
       if (result.rowCount === 0) {
         throw new NotFoundError(`Version ${versionId} not found for layer ${layerKey}`);
       }
+      // The stored answer to "which rows are the map now" (S1). Here, after the pointer moved
+      // and in the caller's transaction, because this is the one function every path to
+      // "active" goes through. Only the thematic layers have the column.
+      if ((EDITABLE_LAYER_KEYS as readonly string[]).includes(layerKey)) {
+        await refreshCurrentRows(client, layerKey as EditableLayerKey, versionId);
+        // Retention (S1 spec §3), in the same transaction: a failure here rolls the
+        // activation back with the previous version still active and still flagged.
+        await pruneVersions(client, layerKey as EditableLayerKey);
+      }
     },
 
     // Open a draft edit-version branching off the layer's current active version.
@@ -133,6 +144,29 @@ export function versionsService(pg: Pool) {
 
     // Publish the draft: record what it stores, then make it the layer's active version.
     async commitEditDraft(client: PoolClient, layerKey: string, draftId: string): Promise<void> {
+      // Edit sessions on one layer can overlap and nothing serialises them. A draft opened on
+      // a version that is no longer active would, when activated, drop the intervening
+      // version from the map -- and retention would then delete that version for good. Lock
+      // the active row so no other commit can move the pointer meanwhile, and refuse a stale
+      // draft instead.
+      const active = await client.query<{ id: string }>(
+        `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND is_active FOR NO KEY UPDATE`,
+        [layerKey]
+      );
+      const activeId = active.rows[0]?.id;
+      const draft = await client.query<{ parent: string | null }>(
+        `SELECT parent_version_id AS parent FROM app.dataset_versions WHERE id = $1 AND layer_key = $2`,
+        [draftId, layerKey]
+      );
+      if (!draft.rows[0]) throw new NotFoundError(`Version ${draftId} not found for layer ${layerKey}`);
+      const parent = draft.rows[0].parent;
+      if (parent !== activeId) {
+        // The locked active row can be missing after waiting on another commit; don't print "undefined".
+        const now = activeId ? `the active version is now ${activeId}` : `the layer's active version has changed since`;
+        throw new StaleDraftError(
+          `layer ${layerKey} changed since this edit session started (its draft ${draftId} was opened on ${parent}; ${now}). Reopen the session and redo the edits.`
+        );
+      }
       await svc.activate(client, layerKey, draftId);
       // feature_count for an edit version is the number of rows it stores (the changed
       // features, tombstones included) — not the resolved total, which is inherited.
