@@ -12,12 +12,16 @@ const TABLES = [
  * itself (Task 12), and Geofabrik prunes dated files after a while (dailies after about a week,
  * the first-of-month files after about three months; only the 1 January files stay).
  *
+ * So the pin is a first-of-month file, never a daily: 261001 should stay downloadable until about
+ * early January 2027, when 270101 (kept for good) can replace it.
+ *
  * Refreshing the basemap is therefore a deliberate bump: change DATE and SHA256 together, then
  * `npm run atlas:build`. If the pinned file 404s, bump it to a current dated file the same way.
- * Geofabrik publishes no .md5 for daily .shp.zip files, so compute the sha256 of the download.
+ * Geofabrik publishes an .md5 next to the monthly .shp.zip files (none for dailies): check the
+ * download against it, then compute its sha256.
  */
-const DATE = '260929';
-const SHA256 = 'd20f1ea34ab96e1093a2adc45f79302b392d3d33bb9778d1826db01096a9b97d';
+const DATE = '261001';
+const SHA256 = '7ad4a29026ef32e5a47ea90f9ceb1544a82e8836d1899d7d3f9422a119a23efe';
 const FILE = `vietnam-${DATE}-free.shp.zip`;
 const ZIP = `basemap/${FILE}`;
 
