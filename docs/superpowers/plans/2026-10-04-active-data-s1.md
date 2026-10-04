@@ -1438,3 +1438,7 @@ Tests: versioning 65, api 459, shared 119, web 543, atlas-data unit 381 (56 skip
 Tests that had to pin a version (Task 3, Step 5): none beyond the `inRollback` pins in loadGeojson.db.test.ts and adoptLegacy.db.test.ts; no assertion changed.
 
 Behaviour change: `commitEditDraft` refuses a stale edit commit (ConflictError, HTTP 409).
+
+**Activation time, settled (2026-10-05).** The 48 s above came from two causes, measured step by step on a rivers activation (rolled back): `refreshCurrentRows` cleared and re-set all 23k flags (4-5 s), and `stampAdminCodes` rewrote every row even when its codes were unchanged. Fix f8e0ba0 makes both write only the rows that change: the flag refresh now takes 0.33 s and pruning 0.004 s. Stamping still takes about 24 s, but that is the point-in-polygon computation for 23,119 rows against the province and ward polygons, which S1 does not change (an EXPLAIN ANALYZE of the computation alone: 24.0 s).
+
+The 34-36 s baseline turned out not to be comparable: it was taken on the database as it was before this branch's test runs. An A/B on the same database, running main's packages/versioning and this branch's alternately, three activations each in rolled-back transactions: **main 41.4 / 41.5 / 42.0 s, branch 40.9 / 41.6 / 41.0 s.** S1 adds nothing measurable to an activation; the criterion "at most 2 s slower" is met.
