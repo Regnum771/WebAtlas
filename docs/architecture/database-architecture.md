@@ -251,6 +251,26 @@ view causes the entire layer to be scanned and de-duplicated before the predicat
 index therefore apply their predicate to the base table first, to obtain candidate business keys, and resolve the
 version chain only for those candidates.
 
+This was true until migration 22; the views are now plain filters (see 'How the active state is stored').
+
+### How the active state is stored (since migration 22)
+
+Each thematic table carries `is_current`: true exactly for the rows the layer's active
+version chain resolves to, tombstones excluded. `versionsService.activate()` in
+`packages/versioning` is the only writer. It moves the flag in the same transaction as the
+active pointer, using `resolvedSql`, the one definition of what a version resolves to. Each
+`water.<layer>_active` view is a plain `WHERE is_current` filter with partial indexes behind
+it (geometry, admin codes, name trigram, `external_id`), so read the active state through the
+views and never resolve the chain by hand.
+
+Retention: after every activation, and when the loader finds a layer unchanged,
+`pruneVersions` keeps the active chain, the two most recent earlier loads with their edits, and
+every version listed in `app.version_pins` with its chain to the root; everything else goes,
+rows first. Scenarios (S4) pin the versions they branched from.
+
+Committing an edit session whose draft was opened on a version that is no longer active is now
+refused (`ConflictError`, HTTP 409) instead of silently dropping the intervening version.
+
 Two obligations follow, and both have produced defects when neglected:
 
 1. The candidate step runs across all versions and therefore returns a superset. The real predicate, together with the
@@ -328,6 +348,8 @@ that will consume them (§14).
 The resolution view is an optimiser fence (§5.3), and it applies here with force: joining reaches to named ways through
 `water.rivers_active` did not finish within 120 s, and the same join over a materialised copy of the resolved rows took
 10.9 s. Every builder over the network therefore materialises its resolved input into indexed temporary tables first.
+
+This was true until migration 22; the views are now plain filters (see 'How the active state is stored').
 
 ### 7.3 Deferred road topology
 

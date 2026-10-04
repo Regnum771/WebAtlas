@@ -1424,3 +1424,17 @@ git push -u origin feat/active-data-s1
 ```
 
 Open a PR against `main` with a Vietnamese description: summary, the before/after table (map-window times, version count, activation time), the test totals, and the note that migration 22 backfills data. End it with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Watch CI until all four jobs pass. Merging is the user's call.
+
+## Execution notes
+
+Baseline (Task 1, before any change): lakes_active 1218 ms, rivers_active 1425 ms, rivers_detail 192 ms (map-window EXPLAIN ANALYZE); rivers activation 34.3 / 34.4 / 35.9 s; 241 versions (34 per small layer, 3 for rivers).
+
+After S1 (dev stack): lakes_active 5.6 ms (Bitmap Index Scan on `lakes_current_geom_idx`), rivers_active 0.7 ms, rivers_detail 0.8 ms. Rivers activation (now including flag refresh and prune) 48.5 / 47.6 / 48.2 s, about 13 s above baseline, over the 2 s budget. Profiling shows the flag refresh (`refreshCurrentRows`) costs about 5 s (clear 1.7 s plus set 3.2 s, because it rewrites every current row twice); a diff-only refresh (`AND id NOT IN (...)` / `AND NOT is_current`) measured 0.2 s plus 0.3 s. Not applied in this PR; the remaining ~8 s is not yet attributed. Follow-up.
+
+Versions after `atlas:seed` and pruning: dams 2, drought_points 3, flood_generation 3, flood_zones 3, lakes 3, rivers 3, saltwater_intrusion 3, stations 2 (22 total, was 241). `atlas:status` 14 ok; `atlas:verify` all 50 checks passed.
+
+Tests: versioning 65, api 459, shared 119, web 543, atlas-data unit 381 (56 skipped), atlas-data database 42 (2 skipped: probes.db.test needs GeoServer env), all passing; tsc clean for atlas-data, versioning, api. The counts differ from the plan's expectations because reviews added and removed tests.
+
+Tests that had to pin a version (Task 3, Step 5): none beyond the `inRollback` pins in loadGeojson.db.test.ts and adoptLegacy.db.test.ts; no assertion changed.
+
+Behaviour change: `commitEditDraft` refuses a stale edit commit (ConflictError, HTTP 409).
