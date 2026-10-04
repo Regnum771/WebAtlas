@@ -102,8 +102,11 @@ export async function runBuild(
         try {
           // I3: invalidate downstream BEFORE executing. If this throws, the stage never runs:
           // an upstream must not execute while its dependents still look current.
+          // The stage's own row goes too. A forced stage re-runs at an unchanged hash, so if the
+          // runner is killed mid-stage (nothing then writes `failed`) a surviving `ok` row would
+          // make the next plain build skip a half-done stage.
           const later = d.stages.slice(i + 1).map((s, j) => stageKey(i + 1 + j, s));
-          await invalidateStageState(pool, d.id, later, dependents);
+          await invalidateStageState(pool, d.id, [key, ...later], dependents);
           ({ summary } = await executeStage(pool, stage, { datasetId: d.id, forced, log }));
           stageExecuted = true;
         } catch (err) {

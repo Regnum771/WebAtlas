@@ -21,7 +21,13 @@ const ds = (id: string, statement: string, dependsOn?: string[]): Dataset => ({
  * resolves to a client whose `query` is the SAME handler as the pool's `query`, so SQL
  * routed through the client is recognised identically, with a no-op `release`.
  */
-function memoryPool(opts: { failDelete?: boolean; failStatement?: string } = {}) {
+function memoryPool(
+  opts: {
+    failDelete?: boolean;
+    failStatement?: string;
+    onExecute?: (sql: string, state: Map<string, { input_hash: string; status: string }>) => void;
+  } = {}
+) {
   const state = new Map<string, { input_hash: string; status: string }>();
   const steps: string[] = [];
   const executed: string[] = [];
@@ -52,7 +58,10 @@ function memoryPool(opts: { failDelete?: boolean; failStatement?: string } = {})
       return { rows: [] };
     }
     if (opts.failStatement && sql === opts.failStatement) throw new Error('boom');
-    if (sql.startsWith('SELECT') || sql.startsWith('REFRESH')) executed.push(sql);
+    if (sql.startsWith('SELECT') || sql.startsWith('REFRESH')) {
+      opts.onExecute?.(sql, state);
+      executed.push(sql);
+    }
     return { rows: [] };
   });
   const connect = vi.fn(async () => ({ query, release: vi.fn() }));
@@ -381,6 +390,24 @@ describe('runBuild', () => {
       expect(report.failed).toEqual(['dem/1:sql']);
       expect(report.blocked).toContain('contours/0:sql');
       expect(failing.state.has('contours|0:sql')).toBe(false);
+    });
+
+    it('forgets the running stage itself before it executes, so a killed runner cannot leave it ok', async () => {
+      // A forced stage re-runs at an unchanged hash. If the runner dies mid-stage (Ctrl-C during a
+      // five-minute load) nothing writes `failed`, so the row must already be gone: otherwise the
+      // next plain build skips a half-done stage and verify passes on a truncated table.
+      let during: string | undefined = 'unset';
+      const p = memoryPool({
+        onExecute: (sql, state) => {
+          if (sql === 'SELECT 1') during = state.get('dem|0:sql')?.status;
+        },
+      });
+      await runBuild(p.pool, [dem()]);
+      expect(p.state.get('dem|0:sql')?.status).toBe('ok');
+      during = 'unset';
+      await runBuild(p.pool, [dem()], { force: ['dem'] });
+      expect(during).toBeUndefined();
+      expect(p.state.get('dem|0:sql')?.status).toBe('ok');
     });
 
     it('does not execute a stage whose invalidation failed', async () => {
