@@ -93,4 +93,9 @@ jobs:
       - run: python3 packages/atlas-data/tools/fixtures/basemap_fixture.py load
       - run: npm run reference:build -w @webatlas/api
       - run: python3 packages/atlas-data/tools/fixtures/basemap_fixture.py verify
+      # Lõi phiên bản nằm ở packages/versioning; kiểm thử của nó dùng chung cơ sở dữ liệu này
+      # (đã migrate, seed và nạp sông ở các bước trên), nên chạy ngay trong job api.
+      - run: npx tsc -p packages/versioning/tsconfig.json --noEmit
+      - run: npm run test:versioning
+      - run: npx tsc -p apps/api/tsconfig.json --noEmit
       - run: npm run test:api

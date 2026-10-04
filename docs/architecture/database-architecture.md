@@ -681,8 +681,11 @@ recreating a running service, builds the `atlas-tools` image, applies the migrat
 them. The `atlas-tools` image (Debian bookworm with the PGDG repository, Python 3.11, `postgresql-client-16`, PostGIS
 `raster2pgsql` 3.6.x and a virtual environment holding the Python geo stack) runs every non-Node stage, so the host needs
 only Node, Docker and git. `atlas:status`, `atlas:build`, `atlas:verify` and `atlas:adopt` manage the result. Step 5
-(Plan C) remains: it moves the versioning core into its own package and adds the `load-geojson` executor, after which the
-seed and river `run` stages, and the old `npm run seed`, `ingest:rivers` and `publish:geoserver` commands, are retired.
+(Plan C) is under way in three parts. The first is done: the versioning core (the versions service, administrative-code
+stamping, the river hierarchy and its gates, and the feature loader) lives in `packages/versioning`, which both the API and
+the dataset pipeline can import, and the seed attribute mappings live in `packages/shared`. Two parts remain: the
+`load-geojson` executor with its datasets, and then the retirement of the seed and river `run` stages together with the
+old `npm run seed`, `ingest:rivers` and `publish:geoserver` commands.
 
 The river ingest departs from the second half of the rule above. The design called for it to be declared as a registry
 dataset that loads its GeoJSON, but the registry has no `load-geojson` executor yet. It is therefore registered as
