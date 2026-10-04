@@ -8,3 +8,8 @@ Dockerfile  text eol=lf
 # The atlas-tools build COPYs requirements.txt: a CRLF checkout changes that layer's input and
 # misses the build cache, so every Windows clone rebuilt the pip layer (Task 12, 2026-09-30).
 packages/atlas-data/tools/**/*.txt  text eol=lf
+# Generated files that the build rewrites with LF: styles.py writes the .sld files inside the Linux
+# tools container, and tsc emits packages/shared/dist with LF. In a CRLF checkout every atlas:up left
+# them "modified" by line endings only (final review, 2026-10-04).
+packages/atlas-data/tools/**/*.sld  text eol=lf
+packages/shared/dist/**             text eol=lf
