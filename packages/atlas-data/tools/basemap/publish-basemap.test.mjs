@@ -31,7 +31,10 @@ case "$method $url" in
   "GET "*/featuretypes/*)                     code="\${STUB_FT_GET:-404}" ;;
   "POST "*/featuretypes)                      code="\${STUB_FT_CREATE:-201}" ;;
   "PUT "*/featuretypes/*)                     code="\${STUB_FT_UPDATE:-200}" ;;
-  "GET "*/styles/*)                           code="\${STUB_STYLE_GET:-200}" ;;
+  "GET "*/styles/*.json)                      code="\${STUB_STYLE_GET:-200}" ;;
+  # Measured on GeoServer 2.26 (2026-10-04): a style URL with no extension answers 500 under curl's
+  # default Accept, whether or not the style exists. Only the .json form says 200 or 404.
+  "GET "*/styles/*)                           code="500" ;;
   "GET "*/layergroups/*)                      code="\${STUB_GROUP_GET:-404}" ;;
   "POST "*/layergroups)                       code="\${STUB_GROUP_CREATE:-201}" ;;
   "PUT "*/layergroups/*)                      code="\${STUB_GROUP_UPDATE:-200}" ;;

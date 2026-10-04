@@ -72,7 +72,8 @@ for entry in "${LAYER_GROUPS[@]}"; do
   IFS=',' read -ra pairs <<<"$members"
   for pair in "${pairs[@]}"; do
     style="${pair#*:}"
-    if ! gs_exists "$GS/workspaces/$WS/styles/$style"; then
+    # .json on purpose: without an extension GeoServer answers 500 for a style, existing or not.
+    if ! gs_exists "$GS/workspaces/$WS/styles/$style.json"; then
       echo "ERROR: style $WS:$style does not exist; run styles.py before publish-basemap.sh group" >&2
       exit 1
     fi
