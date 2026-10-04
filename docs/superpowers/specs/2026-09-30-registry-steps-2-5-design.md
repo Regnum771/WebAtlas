@@ -392,6 +392,8 @@ Every dataset with its outcome. Excluded datasets are listed with their cause ("
 
 The API suites stop calling `runSeeds`. A test helper `ensureSeeded(layers)` runs the versioned load for the layers a suite needs. An unchanged file creates no version, so repeated test runs stop growing `app.dataset_versions`.
 
+**Amended 2026-10-04 (Plan C-3).** The helper takes no layer list and runs once per test run, from a Vitest global setup: nearly every API suite reads the seeded layers and none declared it. Before loading anything it re-labels a version the old command loaded, so switching a machine over creates no versions. CI, which this design had parked, runs the same function through a command, `npm run atlas:seed`, because the `packages/versioning` suite needs seeded data and cannot import `atlas-data`. Neither records build state nor calls GeoServer.
+
 ### Old commands
 
 - At the end of step 5, `npm run seed`, `ingest:rivers` and `publish:geoserver` (and their root aliases) are removed. The docs point at `atlas:*`.

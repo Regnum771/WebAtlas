@@ -681,14 +681,15 @@ recreating a running service, builds the `atlas-tools` image, applies the migrat
 them. The `atlas-tools` image (Debian bookworm with the PGDG repository, Python 3.11, `postgresql-client-16`, PostGIS
 `raster2pgsql` 3.6.x and a virtual environment holding the Python geo stack) runs every non-Node stage, so the host needs
 only Node, Docker and git. `atlas:status`, `atlas:build`, `atlas:verify` and `atlas:adopt` manage the result. Step 5
-(Plan C) is under way in three parts. The first is done: the versioning core (the versions service, administrative-code
-stamping, the river hierarchy and its gates, and the feature loader) lives in `packages/versioning`, which both the API and
-the dataset pipeline can import, and the seed attribute mappings live in `packages/shared`. The second is done too: a
-`load-geojson` stage loads `admin_boundaries`, the seven thematic layers and `rivers`, each a dataset of its own with its
-own licence and sources. A versioned load is keyed to the content of its files: unchanged content creates no version and
-only re-stamps the administrative codes, and changed content will not replace a layer that carries steward edits unless
-the build is told to (`--supersede-edits`). One part remains: the retirement of the old `npm run seed`, `ingest:rivers`
-and `publish:geoserver` commands, which still exist beside the datasets and still create a version on every run.
+(Plan C) completed the picture. The versioning core (the versions service, administrative-code stamping, the river
+hierarchy and its gates, and the feature loader) lives in `packages/versioning`, which both the API and the dataset
+pipeline import, and the seed attribute mappings live in `packages/shared`. A `load-geojson` stage loads
+`admin_boundaries`, the seven thematic layers and `rivers`, each a dataset of its own with its own licence and sources.
+A versioned load is keyed to the content of its files: unchanged content creates no version and only re-stamps the
+administrative codes, and changed content will not replace a layer that carries steward edits unless the build is told
+to (`--supersede-edits`). The former `npm run seed`, `ingest:rivers` and `publish:geoserver` commands no longer exist.
+Tests and CI obtain their data from the same loader, through `ensureSeeded` and `npm run atlas:seed`, which load the
+seed content without recording a build or contacting GeoServer, so a test run adds no dataset versions.
 
 The river ingest now follows the rule above. `rivers` is a registry dataset whose `load-geojson` stage loads the OSM ways
 and the HydroRIVERS reaches into one version, followed by two `publish-geoserver` stages. The `run` escape hatch it used

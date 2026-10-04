@@ -155,16 +155,15 @@ write is recorded in `app.audit_log`; geometry is validated in PostGIS before wr
 | `npm run atlas:build` | Build datasets (`--only <id>`, `--except <id>`, `--force <id>`) |
 | `npm run atlas:verify` | Check the atlas actually serves |
 | `npm run atlas:adopt` | Record an already-built machine in the registry without re-running it |
-| `npm run seed` | Seed the `water.*` thematic layers — superseded by `atlas:build`; kept until Plan C |
-| `npm run publish:geoserver` | Publish the WFS layers in GeoServer — superseded by `atlas:build`; kept until Plan C |
+| `npm run atlas:seed` | Load the committed seed data without building: for CI and a test database (no GeoServer, no build state). The API test run does this itself |
 | `npm run test:api` | Run the API test suite (needs the DB stack up) |
 | `npm run test:versioning` | Run the versioning package's tests (needs the DB stack up and seeded) |
 | `npm run test:api:live` | API tests that call the real LLM (needs an API key) |
 | `npm run test:web` | Run the frontend tests |
 
 API-workspace scripts (run with `-w @webatlas/api`): `dev`, `start`, `create-admin`,
-`migrate:up`, `migrate:down`, and the build steps the registry runs for you (`ingest:rivers`,
-`rivers:hierarchy`, `reference:build`, `contours:generate`). Pipeline tests: `npm run test -w @webatlas/atlas-data`.
+`migrate:up`, `migrate:down`, the build steps the registry runs for you (`reference:build`, `contours:generate`), and
+`rivers:hierarchy`, a read-only check of the river hierarchy. Pipeline tests: `npm run test -w @webatlas/atlas-data`.
 
 ## Regenerating administrative boundaries
 
@@ -195,13 +194,10 @@ Nguồn: OpenStreetMap qua Overpass API, giấy phép **ODbL** (bắt buộc ghi
 "© OpenStreetMap contributors").
 
 OSM là nguồn `rivers`/`lakes` duy nhất (không còn `thuyhe.geojson` — xem
-"Project status"). `npm run seed` KHÔNG nạp rivers từ OSM; bước đó là
-`ingest:rivers` riêng, **bắt buộc chạy sau `seed`** vì nó tạo và kích hoạt một
-version `rivers` mới đè lên bất kỳ version nào `seed` để lại active.
-
-Từ khi có sổ đăng ký, bước 6–7 dưới đây chỉ là `npm run atlas:build`: tệp seed đổi nội dung thì tập dữ liệu tương ứng
-(`lakes`, `rivers`) tự thành cũ và được nạp lại thành một phiên bản mới. Các lệnh `seed` và `ingest:rivers` cũ vẫn chạy
-được cho đến Plan C-3.
+"Project status"). Việc nạp vào cơ sở dữ liệu do sổ đăng ký làm: tệp seed đổi nội dung thì tập dữ liệu
+tương ứng (`lakes`, `rivers`) tự thành cũ, và `npm run atlas:build` nạp nó thành một phiên bản mới rồi công bố lại.
+Nếu lớp đó đang có chỉnh sửa của người quản lý, lệnh dừng lại và nêu cờ `--supersede-edits <lớp>` thay vì che mất
+chỉnh sửa.
 
 Toàn bộ pipeline tái tạo dữ liệu OSM, theo đúng thứ tự (có các ràng buộc thứ tự
 bắt buộc — xem danh sách ngay dưới):
@@ -212,8 +208,7 @@ node packages/atlas-data/tools/explore-osm.mjs              # 2. xem phân bố 
 node packages/atlas-data/tools/report-dam-crosscheck.mjs    # 3. đối chiếu đập OSM vs danh mục (chỉ sinh báo cáo)
 node packages/atlas-data/tools/build-osm-seeds.mjs          # 4. chuyển thành file seed
 node packages/atlas-data/tools/clip-to-region.mjs           # 5. cắt xuống vùng công tác
-npm run seed -w @webatlas/api                      # 6. nạp lại các layer chuyên đề khác
-npm run ingest:rivers -w @webatlas/api             # 7. nạp OSM rivers làm version active
+npm run atlas:build                                # 6. nạp các tệp seed đã đổi thành phiên bản mới và công bố lại
 ```
 
 **Ràng buộc thứ tự bắt buộc:**
@@ -227,9 +222,8 @@ npm run ingest:rivers -w @webatlas/api             # 7. nạp OSM rivers làm ve
   đúng; nó có fallback đọc từ `git show HEAD:` nếu file trên đĩa đã bị cắt,
   nhưng fallback đó chỉ in cảnh báo ra console chứ không chặn chạy sai — chạy
   đúng thứ tự để khỏi phụ thuộc fallback.
-- **Bước 7 phải chạy sau bước 6** — `seed` không đụng tới `rivers` (không còn
-  layer seed nào cho `rivers`), nhưng nếu có version `rivers` khác đang active
-  từ trước, `ingest:rivers` là bước duy nhất kích hoạt version OSM mới nhất.
+- **Bước 6 tự lo thứ tự** — `rivers` và các lớp khác đều phụ thuộc `admin_boundaries`; sổ đăng ký
+  dựng theo đúng thứ tự phụ thuộc và chỉ nạp lại những tập có tệp đổi nội dung.
 
 `prune-hydrosheds-versions.mjs` dọn các version `rivers`/`lakes` cũ (HydroSHEDS,
 `thuyhe.geojson`) khỏi DB sau khi OSM đã lên active — **từ chối chạy** nếu
@@ -270,11 +264,9 @@ To regenerate:
    Vol_total, Shore_len`. Reaches carry `HYRIV_ID, NEXT_DOWN, MAIN_RIV, ORD_STRA, LENGTH_KM`,
    at every stream order (13,045 reaches, 3.4 MB with coordinates rounded to 5 decimals):
    `NEXT_DOWN` is the downstream link the river hierarchy is built on, so no order may be
-   filtered out without cutting the network. Then change `HYDRORIVERS_SOURCE` in
-   `apps/api/src/db/seeds/ingestRivers.ts` and run `npm run ingest:rivers -w @webatlas/api`,
-   which loads the reaches and rebuilds the hierarchy. The source string is the ingest's
-   idempotency key: left unchanged, the ingest re-activates the existing version instead of
-   loading the new file.
+   filtered out without cutting the network. Then run `npm run atlas:build`: the `rivers` dataset
+   is keyed to the content of its two files, so a changed file is loaded as a new version, and
+   activation rebuilds the hierarchy and runs its gates. Nothing has to be renamed by hand.
 
 ## Project status
 
