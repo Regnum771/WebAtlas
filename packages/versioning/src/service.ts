@@ -182,6 +182,8 @@ export function versionsService(pg: Pool) {
       );
     },
 
+    // The API's edit sessions discard by ROLLBACK of the whole session transaction; this
+    // method remains for callers that must keep their transaction.
     // Throw the draft away: its pending rows first (they reference the version row), then
     // the version itself. The active version never moved, so this leaves no trace.
     async discardEditDraft(client: PoolClient, layerKey: string, draftId: string): Promise<void> {

@@ -64,15 +64,22 @@ export interface FeatureRow {
   properties: Record<string, unknown>; // attribute columns only
 }
 
+/** The row an edit acts on, and whether that row already belongs to the session's draft. */
+export interface EditSource {
+  rowId: string;
+  inDraft: boolean;
+}
+
 export interface FeatureFilter {
   province?: string;
   ward?: string;
 }
 
 /**
- * Đọc từ view phiên bản đang hoạt động, KHÔNG phải bảng gốc: bảng gốc chứa mọi phiên bản,
- * nên liệt kê từ đó trả về cả những hàng đã bị thay thế (604 hàng cho 151 cái đập, đo lúc
- * viết). Ghi thì vẫn nhắm vào bảng gốc theo phiên bản nháp — chỉ phần đọc đổi.
+ * Reads come from the active-version view, NOT the base table: the base table holds every
+ * version, so listing from it also returned superseded rows (604 rows for 151 dams, measured
+ * at the time of writing). Writes still target the base table by draft version -- only the
+ * read side changed.
  */
 function activeRelation(def: LayerDef): string {
   // Rivers list their level-3 OSM ways (water.rivers_detail, migration 20): the rows the
@@ -194,33 +201,57 @@ export function featuresRepository(pg: Pool) {
       return this.findByIdOnClient(client, def, id);
     },
 
-    // Copy-on-write: bring an inherited feature into the draft version and apply the
-    // change there, leaving the parent version's row untouched. Re-editing a feature
-    // already copied into the draft updates that copy rather than copying twice.
+    // Resolve the row id an edit request names to the row the edit must act on, so the
+    // edit lands on the feature's CURRENT state rather than on an outdated row that
+    // another user's committed change has since superseded:
+    //   1. the named row already belongs to this draft -> edit it in place;
+    //   2. else the draft already holds a row for the same external_id -> that row;
+    //   3. else the feature's current row (external_id match with is_current), which is
+    //      then copied into the draft;
+    //   4. no current row (the feature was deleted meanwhile) -> NotFoundError.
+    async resolveEditSource(
+      client: PoolClient,
+      def: LayerDef,
+      draftId: string,
+      id: string
+    ): Promise<EditSource> {
+      const named = await client.query(
+        `SELECT external_id, dataset_version_id, deleted FROM ${def.table} WHERE id = $1`, [id]
+      );
+      if (!named.rows[0]) throw new NotFoundError('Feature not found');
+      // A tombstone in the draft means the feature was deleted earlier in this session.
+      if (named.rows[0].dataset_version_id === draftId) {
+        if (named.rows[0].deleted) throw new NotFoundError('Feature not found');
+        return { rowId: id, inDraft: true };
+      }
+      const externalId = named.rows[0].external_id;
+      const inDraft = await client.query(
+        `SELECT id, deleted FROM ${def.table} WHERE dataset_version_id = $1 AND external_id = $2`,
+        [draftId, externalId]
+      );
+      if (inDraft.rows[0]?.deleted) throw new NotFoundError('Feature not found');
+      if (inDraft.rows[0]) return { rowId: inDraft.rows[0].id, inDraft: true };
+      const current = await client.query(
+        `SELECT id FROM ${def.table} WHERE external_id = $1 AND is_current`, [externalId]
+      );
+      if (!current.rows[0]) throw new NotFoundError('Feature not found');
+      return { rowId: current.rows[0].id, inDraft: false };
+    },
+
+    // Copy-on-write: bring the feature's current row into the draft version and apply the
+    // change there, leaving the parent version's row untouched. `source` comes from
+    // resolveEditSource: a row already in the draft is updated in place, so re-editing
+    // a feature never copies it twice.
     async upsertChangeInVersion(
       client: PoolClient,
       def: LayerDef,
       versionId: string,
-      sourceId: string,
+      source: EditSource,
       input: { attrs: Record<string, unknown>; geometryJson?: string | null; actorId?: string }
     ): Promise<FeatureRow> {
-      await assertHandEditable(client, def, sourceId);
-      const src = await client.query(
-        `SELECT external_id, dataset_version_id FROM ${def.table} WHERE id = $1`, [sourceId]
-      );
-      if (!src.rows[0]) throw new NotFoundError('Feature not found');
-      // The source row is already the draft's own (e.g. created earlier in this
-      // session): edit it in place instead of copying it onto itself.
-      if (src.rows[0].dataset_version_id === versionId) {
-        return (await this.updateOnClient(client, def, sourceId, input))!;
-      }
-      const externalId = src.rows[0].external_id;
-      const existing = await client.query(
-        `SELECT id FROM ${def.table} WHERE dataset_version_id = $1 AND external_id = $2`,
-        [versionId, externalId]
-      );
-      if (existing.rows[0]) {
-        return (await this.updateOnClient(client, def, existing.rows[0].id, input))!;
+      await assertHandEditable(client, def, source.rowId);
+      if (source.inDraft) {
+        return (await this.updateOnClient(client, def, source.rowId, input))!;
       }
       // def.attributeColumns already includes `name`, so it is not listed separately.
       const copyCols = def.attributeColumns.join(', ');
@@ -229,37 +260,24 @@ export function featuresRepository(pg: Pool) {
          SELECT external_id, ${copyCols}, ${def.geomColumn}, $1, $2, $2
          FROM ${def.table} WHERE id = $3
          RETURNING id`,
-        [versionId, input.actorId ?? null, sourceId]
+        [versionId, input.actorId ?? null, source.rowId]
       );
       return (await this.updateOnClient(client, def, copy.rows[0].id, input))!;
     },
 
-    // Mark an inherited feature deleted within the draft version (tombstone). The
-    // resolver drops a feature whose nearest row is a tombstone, so the parent
-    // version keeps its row and still shows the feature when viewed directly.
-    async tombstoneInVersion(client: PoolClient, def: LayerDef, versionId: string, sourceId: string): Promise<void> {
-      await assertHandEditable(client, def, sourceId);
-      const src = await client.query(
-        `SELECT external_id, dataset_version_id FROM ${def.table} WHERE id = $1`, [sourceId]
-      );
-      if (!src.rows[0]) throw new NotFoundError('Feature not found');
-      if (src.rows[0].dataset_version_id === versionId) {
-        await client.query(`UPDATE ${def.table} SET deleted = true WHERE id = $1`, [sourceId]);
-        return;
-      }
-      const externalId = src.rows[0].external_id;
-      const existing = await client.query(
-        `SELECT id FROM ${def.table} WHERE dataset_version_id = $1 AND external_id = $2`,
-        [versionId, externalId]
-      );
-      if (existing.rows[0]) {
-        await client.query(`UPDATE ${def.table} SET deleted = true WHERE id = $1`, [existing.rows[0].id]);
+    // Mark a feature deleted within the draft version (tombstone). The resolver drops a
+    // feature whose nearest row is a tombstone, so the parent version keeps its row and
+    // still shows the feature when viewed directly. `source` comes from resolveEditSource.
+    async tombstoneInVersion(client: PoolClient, def: LayerDef, versionId: string, source: EditSource): Promise<void> {
+      await assertHandEditable(client, def, source.rowId);
+      if (source.inDraft) {
+        await client.query(`UPDATE ${def.table} SET deleted = true WHERE id = $1`, [source.rowId]);
         return;
       }
       await client.query(
         `INSERT INTO ${def.table} (external_id, dataset_version_id, deleted, ${def.geomColumn})
          SELECT external_id, $1, true, ${def.geomColumn} FROM ${def.table} WHERE id = $2`,
-        [versionId, sourceId]
+        [versionId, source.rowId]
       );
     },
   };
