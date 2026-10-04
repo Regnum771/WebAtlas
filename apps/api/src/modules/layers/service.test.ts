@@ -293,9 +293,9 @@ describe('featuresService edit sessions (§7)', () => {
     expect(orphan.rows[0].n).toBe(0);
   });
 
-  // Two sessions minting concurrently must not land on the same external_id: they write
-  // into different draft versions, so the per-version unique index cannot catch a
-  // duplicate, and the resolver's DISTINCT ON would later collapse the pair.
+  // Two sessions on one layer: the second one's mint waits for the first's mint lock, and
+  // because its draft was opened on the version the first has since replaced, its commit
+  // is refused as stale instead of dropping the first's version.
   it("two concurrent sessions on one layer: the second waits for the first to mint, and its stale commit is refused", async () => {
     const a = await svc().editSession('dams');
     const b = await svc().editSession('dams');
@@ -309,7 +309,7 @@ describe('featuresService edit sessions (§7)', () => {
       geometry: { type: 'Point', coordinates: [105.22, 20.42] }, properties: { name: TEST_NAME },
     });
     await a.commit();
-    const rowB = await rowBPromise;
+    await rowBPromise;
 
     // b's mint waited for a's commit and then scanned a max that includes a's row, so a's id is
     // visible and committed while b's is not (it lives in b's open transaction). b's draft was

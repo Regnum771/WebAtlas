@@ -58,7 +58,7 @@ export const filterByAttributeTool: ToolFactory = (ctx) =>
         ctx.pool.query(
           `SELECT id::text AS "featureId", name, ${input.column}::text AS "matchedValue", ${POINT_SQL}
              FROM ${layerView(input.layerKey)}
-            WHERE NOT deleted AND ${input.column}::text ILIKE $1 AND ${entityPredicate(input.layerKey)}
+            WHERE ${input.column}::text ILIKE $1 AND ${entityPredicate(input.layerKey)}
             ORDER BY name NULLS LAST
             LIMIT ${ROW_LIMIT + 1}`,
           [`%${input.value}%`]
