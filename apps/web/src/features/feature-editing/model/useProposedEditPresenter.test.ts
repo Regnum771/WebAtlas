@@ -56,6 +56,14 @@ describe('useProposedEditPresenter', () => {
     expect(onSaved).toHaveBeenCalledWith(1);
   });
 
+  it('maps STALE_EDIT to the try-again message', async () => {
+    updateFeature.mockRejectedValue(new ApiError(409, 'STALE_EDIT', 'layer changed'));
+    const { result } = renderHook(() => useProposedEditPresenter(P, { onSaved: vi.fn() }));
+    act(() => result.current.setSourceProvider('Sở Công Thương'));
+    await act(() => result.current.submit());
+    expect(result.current.error).toBe('Someone else changed this layer while you were saving. Please try again.');
+  });
+
   it('maps a 403 to a Vietnamese permission message and keeps the values', async () => {
     updateFeature.mockRejectedValue(new ApiError(403, 'FORBIDDEN', 'Forbidden'));
     const { result } = renderHook(() => useProposedEditPresenter(P, { onSaved: vi.fn() }));

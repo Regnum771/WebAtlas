@@ -362,6 +362,84 @@ describe('featuresService edit sessions (§7)', () => {
     expect(attempts).toBe(2);
   });
 
+  // ---- Edits apply on the feature's CURRENT state, not on the row the request names ----
+  async function createCommitted(name: string, props: Record<string, unknown>) {
+    const s = await svc().editSession('dams');
+    const row = await s.create({ geometry: { type: 'Point', coordinates: [105.41, 20.61] }, properties: { name, ...props } });
+    await s.commit();
+    return row;
+  }
+  async function activeRow(id: string) {
+    const { rows } = await getPool().query(
+      `SELECT name, wattage_mw::float AS wattage_mw, status FROM water.dams_active
+       WHERE external_id = (SELECT external_id FROM water.dams WHERE id = $1)`, [id]
+    );
+    return rows[0];
+  }
+
+  it('a stale-id partial update keeps the other user\'s change and audits the current state as before', async () => {
+    const name = 'svc-test-stale-update@webatlas.test';
+    const f = await createCommitted(name, { wattage_mw: 10, status: 'planned' });
+    try {
+      // Session X changes field A (status) and commits, superseding F's original row.
+      const x = await svc().editSession('dams');
+      await x.update(f.id, { properties: { status: 'built' } });
+      await x.commit();
+      expect(await activeRow(f.id)).toMatchObject({ status: 'built', wattage_mw: 10 });
+
+      // A client still holding the ORIGINAL row id sends only field B.
+      await svc().update('dams', f.id, { properties: { wattage_mw: 20 } });
+      expect(await activeRow(f.id)).toMatchObject({ name, status: 'built', wattage_mw: 20 });
+
+      const audit = await getPool().query(
+        `SELECT before, after FROM app.audit_log WHERE feature_id = $1 AND action = 'update'`, [f.id]
+      );
+      const second = audit.rows.find((r) => Number(r.after.properties.wattage_mw) === 20);
+      expect(second.before.properties.status).toBe('built');
+      expect(Number(second.before.properties.wattage_mw)).toBe(10);
+    } finally {
+      await getPool().query(`DELETE FROM app.audit_log WHERE feature_id = $1`, [f.id]);
+    }
+  });
+
+  it('a stale-id delete removes the feature from the active view', async () => {
+    const f = await createCommitted('svc-test-stale-delete@webatlas.test', { status: 'planned' });
+    try {
+      const x = await svc().editSession('dams');
+      await x.update(f.id, { properties: { status: 'built' } });
+      await x.commit();
+      await svc().remove('dams', f.id);
+      expect(await activeRow(f.id)).toBeUndefined();
+    } finally {
+      await getPool().query(`DELETE FROM app.audit_log WHERE feature_id = $1`, [f.id]);
+    }
+  });
+
+  it('an update naming the original row of a feature deleted meanwhile is a NotFoundError', async () => {
+    const f = await createCommitted('svc-test-deleted-meanwhile@webatlas.test', {});
+    try {
+      await svc().remove('dams', f.id);
+      await expect(svc().update('dams', f.id, { properties: { status: 'x' } })).rejects.toBeInstanceOf(NotFoundError);
+    } finally {
+      await getPool().query(`DELETE FROM app.audit_log WHERE feature_id = $1`, [f.id]);
+    }
+  });
+
+  it('discard rolls back the session\'s audit rows together with the draft version', async () => {
+    const name = 'svc-test-discard-audit@webatlas.test';
+    const beforeVersions = await editVersionCount('dams');
+    const s = await svc().editSession('dams');
+    const row = await s.create({ geometry: { type: 'Point', coordinates: [105.42, 20.62] }, properties: { name } });
+    // The audit row exists inside the session transaction...
+    const mid = await getPool().query(`SELECT count(*)::int AS n FROM app.audit_log WHERE feature_id = $1`, [row.id]);
+    expect(mid.rows[0].n).toBe(0); // ...but is invisible to other connections until commit.
+    await s.discard();
+    const after = await getPool().query(`SELECT count(*)::int AS n FROM app.audit_log WHERE feature_id = $1`, [row.id]);
+    expect(after.rows[0].n).toBe(0);
+    expect(await editVersionCount('dams')).toBe(beforeVersions);
+    await s.discard(); // idempotent
+  });
+
   it('rejects an update to a feature that does not exist', async () => {
     const s = await svc().editSession('dams');
     await expect(

@@ -105,11 +105,14 @@ export function featuresService(pg: Pool) {
       async update(id: string, input: FeatureInput): Promise<FeatureRow> {
         assertOpen();
         try {
-          // Read on the client: the target may be a row created earlier in this session.
-          const before = await repo.findByIdOnClient(client, def, id);
+          // Apply the edit on the feature's current state, not on the (possibly outdated)
+          // row the request names. Read on the client: the target may be a row created
+          // earlier in this session.
+          const source = await repo.resolveEditSource(client, def, draftId, id);
+          const before = await repo.findByIdOnClient(client, def, source.rowId);
           if (!before) throw new NotFoundError('Feature not found');
           const { attrs, geometryJson } = await prepare(pg, def, input, false);
-          const after = await repo.upsertChangeInVersion(client, def, draftId, id, { attrs, geometryJson, actorId });
+          const after = await repo.upsertChangeInVersion(client, def, draftId, source, { attrs, geometryJson, actorId });
           await audit.record({ userId: actorId, action: 'update', tableName: def.table, featureId: id, before, after, source: input.source }, client);
           return after;
         } catch (e) { return fail(e); }
@@ -118,9 +121,10 @@ export function featuresService(pg: Pool) {
       async remove(id: string): Promise<void> {
         assertOpen();
         try {
-          const before = await repo.findByIdOnClient(client, def, id);
+          const source = await repo.resolveEditSource(client, def, draftId, id);
+          const before = await repo.findByIdOnClient(client, def, source.rowId);
           if (!before) throw new NotFoundError('Feature not found');
-          await repo.tombstoneInVersion(client, def, draftId, id);
+          await repo.tombstoneInVersion(client, def, draftId, source);
           await audit.record({ userId: actorId, action: 'delete', tableName: def.table, featureId: id, before }, client);
         } catch (e) { return fail(e); }
       },
@@ -147,17 +151,16 @@ export function featuresService(pg: Pool) {
         }
       },
 
-      // Throw the draft away. Idempotent and safe after a failed operation already
-      // rolled the session back — in that case there is nothing left to discard.
+      // Throw the session away. Audit rows are written inside the session transaction, so
+      // the whole transaction is rolled back: the draft version, its rows and their audit
+      // rows vanish together (a COMMIT here would keep audit rows for changes that never
+      // landed). Idempotent and safe after a failed operation already rolled the session
+      // back — in that case there is nothing left to discard.
       async discard(): Promise<void> {
         if (settled) return;
         settled = true;
         try {
-          await versions.discardEditDraft(client, def.key, draftId);
-          await client.query('COMMIT');
-        } catch (e) {
-          try { await client.query('ROLLBACK'); } catch { /* transaction already ended */ }
-          throw e;
+          await client.query('ROLLBACK');
         } finally {
           release();
         }
@@ -171,6 +174,8 @@ export function featuresService(pg: Pool) {
   // and redoing the change on a fresh session equals the two requests arriving a moment
   // apart, so it is retried once; a second refusal propagates. The audit rows are written on
   // the session's transaction, so the refused attempt leaves none behind.
+  // Because of that retry, `apply` may run twice: it must act only through the session it
+  // is given and have no side effects outside it.
   async function singleChange<T>(key: string, actorId: string | undefined, apply: (s: EditSession) => Promise<T>): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       const session = await editSession(key, actorId);

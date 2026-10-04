@@ -7,6 +7,7 @@ function messageFor(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.status === 403) return 'Bạn không có quyền cập nhật.';
     if (e.status === 404) return 'Đối tượng không còn tồn tại.';
+    if (e.code === 'STALE_EDIT') return 'Someone else changed this layer while you were saving. Please try again.';
     if (e.status === 400) return e.message;
   }
   return 'Không lưu được, vui lòng thử lại.';
