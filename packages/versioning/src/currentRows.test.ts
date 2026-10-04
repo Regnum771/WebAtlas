@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type pg from 'pg';
 import { getPool, closePool } from './testPool';
+import { refreshCurrentRows } from './currentRows';
 import { loadFeatures, resolvedSql, versionsService } from './index';
 
 // Every case runs on the real stations layer inside a transaction that is rolled back.
@@ -112,6 +113,23 @@ describe('the current flag follows activation', () => {
         `SELECT count(*)::int AS n FROM water.stations WHERE dataset_version_id = $1 AND is_current`, [first]
       );
       expect(rows[0].n).toBe(0);
+    });
+  });
+});
+
+describe('refreshCurrentRows is diff-only', () => {
+  const ctids = async (c: pg.PoolClient) =>
+    (await c.query<{ id: string; ctid: string }>(`SELECT id::text AS id, ctid::text AS ctid FROM water.stations WHERE is_current ORDER BY id`)).rows;
+
+  it('refreshing for the same version rewrites no row', async () => {
+    await inRollback(async (c) => {
+      const v = await ingest(c);
+      const before = await ctids(c);
+      expect(before).toHaveLength(2);
+      await refreshCurrentRows(c, 'stations', v);
+      await versionsService(getPool()).activate(c, 'stations', v);
+      expect(await ctids(c)).toEqual(before);
+      expect(await flagged(c)).toEqual(await resolved(c, v));
     });
   });
 });
