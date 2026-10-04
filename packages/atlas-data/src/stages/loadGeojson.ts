@@ -134,6 +134,10 @@ async function loadVersioned(
     [versionId]
   );
   await client.query(`UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`, [rows[0].n, versionId]);
+  // Autovacuum gets to a freshly filled table about a minute later, and until then the planner has
+  // no statistics for it. Measured on rivers: a self-join over the active view took 72 s, and 11 s
+  // once analysed. After activation, so the rows it derives are counted too.
+  await client.query(`ANALYZE water.${load.layer}`);
   return {
     action: 'loaded',
     versionId,
@@ -177,6 +181,8 @@ async function loadReplacing(client: PoolClient, load: ResolvedLoad): Promise<Lo
   for (const f of [...load.files].reverse()) await client.query(`DELETE FROM ${f.target}`);
   const parts: string[] = [];
   for (const f of load.files) parts.push(`${f.target} ${await insertPlain(client, f.target!, f)}`);
+  // Every layer's stamping joins against these next; see the note on ANALYZE in loadVersioned.
+  for (const f of load.files) await client.query(`ANALYZE ${f.target}`);
   return { action: 'replaced', summary: `${load.layer}: replaced ${parts.join(', ')}` };
 }
 

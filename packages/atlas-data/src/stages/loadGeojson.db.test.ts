@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -78,6 +78,24 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
         `SELECT province_codes AS p FROM water.stations WHERE dataset_version_id = $1 ORDER BY external_id`, [v.id]);
       // Stamped by activate(): both points are inside the six provinces.
       expect(rows.every((r) => r.p.length === 1)).toBe(true);
+    });
+  });
+
+  it('analyses the table it filled, after activation, so the planner is not blind until autovacuum gets there', async () => {
+    // Measured on rivers, loaded seconds earlier and never analysed: a self-join over the active
+    // view took 72 s, and 11 s once the table had statistics. Autovacuum only gets to a new table
+    // about a minute later, which is how a CI run timed out on a test that usually took 8 s.
+    await inRollback(async (c) => {
+      const spy = vi.spyOn(c, 'query');
+      try {
+        await applyLoadGeojson(pool, c, stations('a'), { supersedeEdits: false });
+        const sql = spy.mock.calls.map((call) => String(call[0]).trim());
+        const counted = sql.findIndex((q) => q.startsWith('UPDATE app.dataset_versions SET feature_count'));
+        expect(counted).toBeGreaterThan(-1);
+        expect(sql.indexOf('ANALYZE water.stations')).toBeGreaterThan(counted);
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 
@@ -257,6 +275,7 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
       await c.query(
         `INSERT INTO admin.provinces (code, name, geom)
          VALUES ('zz', 'sentinel', ST_Multi(ST_SetSRID(ST_GeomFromText('POLYGON((0 0,0 1,1 1,0 0))'), 4326)))`);
+      const spy = vi.spyOn(c, 'query');
       const out = await applyLoadGeojson(pool, c, {
         layer: 'admin', versioned: false, source: 'unused', mapping: 'mapping-1',
         files: [
@@ -265,6 +284,10 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
         ],
       }, { supersedeEdits: false });
       expect(out.action).toBe('replaced');
+      // Both tables analysed once they are full: every layer's stamping joins against them next.
+      const sql = spy.mock.calls.map((call) => String(call[0]).trim());
+      spy.mockRestore();
+      expect(sql.slice(-2)).toEqual(['ANALYZE admin.provinces', 'ANALYZE admin.wards']);
       const p = await c.query<{ n: string; z: string }>(
         `SELECT count(*)::text AS n, count(*) FILTER (WHERE code = 'zz')::text AS z FROM admin.provinces`);
       expect([Number(p.rows[0].n), Number(p.rows[0].z)]).toEqual([34, 0]);
