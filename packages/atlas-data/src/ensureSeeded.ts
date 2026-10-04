@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { Pool } from 'pg';
+import type { EditableLayerKey } from '@webatlas/shared';
+import { pruneVersions } from '@webatlas/versioning';
 import type { Dataset, Stage } from './types';
 import { topologicalOrder } from './graph';
 import { ALL_DATASETS } from './registry';
@@ -51,6 +53,8 @@ async function seedOne(
         // The boundaries were just replaced: the codes stamped on this layer are from the old
         // ones, so take the loader's re-stamp path, as a build would through the cascade.
         const stamped = restamp ? (await applyLoadGeojson(pool, client, load, { supersedeEdits: false })).summary : null;
+        // The loader prunes on its re-stamp path; without a re-stamp, retention runs here.
+        if (!restamp) await pruneVersions(client, stage.layer as EditableLayerKey);
         result =
           adoption.result === 'current'
             ? { action: 'unchanged', detail: stamped ?? `${stage.layer}: already loaded` }

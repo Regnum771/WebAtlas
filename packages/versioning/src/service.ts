@@ -3,6 +3,7 @@ import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import { versionsRepository } from './repository';
 import { stampAdminCodes } from './adminStamp';
 import { refreshCurrentRows } from './currentRows';
+import { pruneVersions } from './retention';
 import { buildRiverHierarchy } from './riverHierarchy';
 import { assertRiverGates, RIVER_BASELINE } from './riverGates';
 import { ConflictError, NotFoundError } from './errors';
@@ -111,6 +112,9 @@ export function versionsService(pg: Pool) {
       // "active" goes through. Only the thematic layers have the column.
       if ((EDITABLE_LAYER_KEYS as readonly string[]).includes(layerKey)) {
         await refreshCurrentRows(client, layerKey as EditableLayerKey, versionId);
+        // Retention (S1 spec §3), in the same transaction: a failure here rolls the
+        // activation back with the previous version still active and still flagged.
+        await pruneVersions(client, layerKey as EditableLayerKey);
       }
     },
 
