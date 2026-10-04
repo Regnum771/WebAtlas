@@ -307,6 +307,14 @@ Each dataset may declare `probe(ctx): Promise<{ ok: boolean; detail: string }>`,
 | `atlas:verify` | Every stage ok; every probe passes; every published layer answers a real WMS or WFS request; every dataset has a lineage row with a licence |
 | `atlas:adopt` | Runs each probe. For a passing dataset with no state, it records every stage `ok` at its current hash and appends one process step, `adopted: <probe detail>`. It never executes a stage. |
 
+**Amended 2026-10-04 (deferred list).**
+
+- `atlas:build` takes `--compose` too. `atlas:status`, `atlas:verify` and `atlas:adopt` never start a container; given the flag they say it has no effect there.
+- One build per database: `atlas:build`, `atlas:up` and `atlas:adopt` hold a PostgreSQL advisory lock while they write build state, and a second one stops at once.
+- `atlas:up` refuses when the compose project's containers were created from another checkout's compose file (a second clone keeps the project name), unless `ATLAS_SHARED_STACK=1`.
+- `fetch-http` takes `supersedes`: an anchored pattern of earlier downloads in the target's directory, removed once the new file is in place and verified. It is not part of the stage hash.
+- The stage hash plan hashes a missing `load-geojson` file as `missing`, so one absent file makes one stage stale instead of stopping every command.
+
 ### Preflight (U-6, U-7)
 
 - Node ≥ 22.
