@@ -126,6 +126,31 @@ engine, calls, error = run_write(gdf.iloc[0:0])
 check("write: an empty layer fails the load instead of keeping yesterday's table",
       isinstance(error, SystemExit) and "roads_test" in str(error) and engine.begun == 0 and calls == [])
 
+# The column type. to_postgis decides it from the rows of the call that creates the table, so with
+# chunks it was decided by the first chunk alone: a table whose first 50,000 rows are all LineString
+# got a LineString column, and a MultiLineString further down would have failed the append.
+from shapely.geometry import MultiLineString  # noqa: E402
+
+mixed_later = gpd.GeoDataFrame(
+    {"osm_id": ["a", "b", "c"]},
+    geometry=[lines[0], lines[1], MultiLineString([lines[2], lines[3]])], crs="EPSG:4326")
+mixed_first = gpd.GeoDataFrame(
+    {"osm_id": ["a", "b", "c"]},
+    geometry=[lines[0], MultiLineString([lines[2], lines[3]]), lines[1]], crs="EPSG:4326")
+is_alter = lambda s: s.startswith('ALTER TABLE basemap."roads_test" ALTER COLUMN "geometry" TYPE geometry(Geometry, 4326)')  # noqa: E731
+
+check("column type: one type is that type, several are GEOMETRY",
+      lb.column_geometry_type(gdf) == "LINESTRING" and lb.column_geometry_type(mixed_later) == "GEOMETRY")
+engine, calls, error = run_write(mixed_later)
+check("write: a type that first appears after the first chunk widens the column before the appends",
+      error is None and [is_alter(s) for s in engine.conn.executed][:1] == [True] and len(calls) == 2)
+engine, calls, error = run_write(mixed_first)
+check("write: a first chunk that is already mixed needs no widening (geopandas made it GEOMETRY)",
+      error is None and not any(is_alter(s) for s in engine.conn.executed))
+engine, calls, error = run_write(gdf)
+check("write: a table of one type keeps that type",
+      error is None and not any(is_alter(s) for s in engine.conn.executed))
+
 land = lb.national_land()
 check("land_vn is the 34 provinces", len(land) == 34)
 check("land_vn keeps code and name, as publish-basemap.sh and the dev table have them",

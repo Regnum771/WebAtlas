@@ -13,7 +13,6 @@ Read straight out of the .zip via GDAL's /vsizip/ so nothing is expanded to disk
 import json
 import os
 import pathlib
-import resource
 import sys
 import time
 
@@ -23,6 +22,11 @@ import pandas as pd
 from shapely.geometry import shape
 from shapely.ops import unary_union
 from sqlalchemy import create_engine, text
+
+try:
+    import resource  # Linux and macOS only; the script also runs by hand on Windows
+except ImportError:
+    resource = None
 
 # Repo root is four levels up: packages/atlas-data/tools/basemap/load_basemap.py
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -84,6 +88,12 @@ def write_chunks(n: int, size: int = WRITE_CHUNK) -> list[tuple[int, int, str]]:
     return [(i, min(i + size, n), "replace" if i == 0 else "append") for i in range(0, n, size)]
 
 
+def column_geometry_type(gdf: gpd.GeoDataFrame) -> str:
+    """The column type one to_postgis call over these rows creates: their single type, else GEOMETRY."""
+    kinds = [k for k in gdf.geom_type.unique() if k is not None]
+    return kinds[0].upper() if len(kinds) == 1 else "GEOMETRY"
+
+
 def write(gdf: gpd.GeoDataFrame, table: str, engine) -> None:
     if gdf.empty:
         # Every table this script writes is counted by the basemap probe. Skipping would keep the
@@ -94,9 +104,18 @@ def write(gdf: gpd.GeoDataFrame, table: str, engine) -> None:
     # load killed between chunks left a committed part-table that the row-count probe accepted and
     # the live map drew. Handed a connection that is already in a transaction, geopandas reuses it:
     # memory stays bounded by the chunk, and a failed load leaves the previous table in place.
+    whole = column_geometry_type(gdf)
     with engine.begin() as c:
         for start, stop, if_exists in write_chunks(len(gdf)):
-            gdf.iloc[start:stop].to_postgis(table, c, schema="basemap", if_exists=if_exists, index=False)
+            chunk = gdf.iloc[start:stop]
+            chunk.to_postgis(table, c, schema="basemap", if_exists=if_exists, index=False)
+            # to_postgis types the column from the rows of the call that creates the table (it
+            # overrides a dtype it is given). When the first chunk happens to hold one geometry
+            # type and a later one another, the column would refuse the later rows. Give it the
+            # type a single call over the whole table would have chosen.
+            if if_exists == "replace" and column_geometry_type(chunk) != whole:
+                c.execute(text(
+                    f'ALTER TABLE basemap."{table}" ALTER COLUMN "{gdf.geometry.name}" TYPE geometry(Geometry, 4326)'))
         # KHONG tu tao index hinh hoc o day: to_postgis cua GeoPandas da tao san
         # idx_<table>_geometry. Truoc day dong nay tao them mot GiST thu hai y het
         # tren moi bang, chi ton thoi gian ghi va dung luong, khong giup doc.
@@ -190,7 +209,8 @@ def main() -> None:
             n = c.execute(text(f'SELECT count(*) FROM basemap."{t_}"')).scalar()
             print(f"   basemap.{t_:<18} {n:>10,}")
     # ru_maxrss is in KiB on Linux. Printed so a memory regression shows up in the build log.
-    print(f"\npeak memory: {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024} MB")
+    if resource is not None:
+        print(f"\npeak memory: {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024} MB")
 
 
 if __name__ == "__main__":

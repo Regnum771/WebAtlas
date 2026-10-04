@@ -116,6 +116,41 @@ def scalar(sql: str) -> str:
     return query(sql).decode("utf-8").strip()
 
 
+SECTION = b"@@fixture-section "
+
+
+def snapshot(sections: dict) -> dict:
+    """Every statement in ONE read-only transaction, so all of them see the same moment.
+
+    `build` used to read each table and the entity digest in a session of its own; a rebuild in
+    between gave a fixture whose tables and digest came from different atlases. Returns each
+    statement's output as bytes, by section name.
+    """
+    script = ["BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY;"]
+    for name, sql in sections.items():
+        script += [f"\\echo '{SECTION.decode()}{name}'", sql.strip().rstrip(";") + ";"]
+    script.append("COMMIT;")
+    r = subprocess.run(psql_argv("-At", "-f", "-"), input="\n".join(script).encode("utf-8"), env=child_env(),
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if r.returncode != 0:
+        raise FixtureError("psql failed: " + r.stderr.decode("utf-8", "replace").strip())
+    # On Windows psql writes a script's output through a text-mode stdout: every row of COPY ends
+    # CRLF there, and LF on Linux. COPY's text format never holds a raw CR (it writes backslash-r),
+    # so a CRLF can only be that translation; undo it, or the files would differ by platform.
+    stdout = r.stdout.replace(b"\r\n", b"\n")
+    out, current = {}, None
+    for line in stdout.splitlines(keepends=True):
+        if line.startswith(SECTION):
+            current = line[len(SECTION):].strip().decode("utf-8")
+            out[current] = b""
+        elif current is not None:
+            out[current] += line
+    missing = [name for name in sections if name not in out]
+    if missing:
+        raise FixtureError("psql returned no output section for: " + ", ".join(missing))
+    return out
+
+
 def read_manifest() -> dict:
     path = FIXTURE_DIR / MANIFEST
     if not path.exists():
@@ -264,6 +299,16 @@ def dump_schema() -> str:
     return header + ";\n".join(kept) + ";\n"
 
 
+def gzip_bytes(data: bytes) -> bytes:
+    """gzip with nothing of the machine in it: no timestamp, and the header's OS byte fixed.
+
+    zlib writes the platform there (3 on Unix, 10 on Windows), so the same rows gave different files,
+    and different sha256, depending on where `build` ran. 3 is what the committed fixture has.
+    """
+    blob = gzip.compress(data, compresslevel=9, mtime=0)
+    return blob[:9] + b"" + blob[10:]
+
+
 def pinned_extract() -> str:
     m = re.search(r"const DATE = '(\d{6})'", DESCRIPTOR.read_text(encoding="utf-8"))
     if not m:
@@ -271,17 +316,58 @@ def pinned_extract() -> str:
     return f"vietnam-{m.group(1)}-free.shp.zip"
 
 
+def loaded_extract() -> str:
+    """The extract the basemap tables came from: the argument of the last load in the lineage.
+
+    Not the descriptor's pin: after a pin bump and before a rebuild, the pin names an extract this
+    database has never seen. A machine that was adopted has no load on record; only there the pin
+    is the best there is, and the output says so.
+    """
+    tool = scalar(
+        "SELECT tool FROM app.dataset_lineage_step WHERE dataset_id = 'basemap' "
+        "AND tool LIKE '%load_basemap.py%' ORDER BY ran_at DESC LIMIT 1")
+    m = re.search(r"(vietnam-\d{6}-free\.shp\.zip)", tool)
+    if m:
+        return m.group(1)
+    pinned = pinned_extract()
+    print(f"note: no basemap load is recorded in this database's lineage (an adopted machine?); "
+          f"taking the extract name from the descriptor's pin, {pinned}")
+    return pinned
+
+
 def cmd_build() -> None:
     for table in TABLES:
         if scalar(f"SELECT to_regclass('basemap.{table}') IS NOT NULL") != "t":
             raise FixtureError(f"basemap.{table} does not exist: build the atlas first (npm run atlas:up)")
-    if scalar("SELECT EXISTS (SELECT 1 FROM basemap.roads_region WHERE name IS NULL AND ref IS NULL)") != "t":
+    # Column lists are schema, read first; every row and the entity digest then come from one snapshot.
+    columns = {
+        table: [r[0] for r in rows(
+            "SELECT column_name FROM information_schema.columns "
+            f"WHERE table_schema = 'basemap' AND table_name = '{table}' ORDER BY ordinal_position")]
+        for table in TABLES
+    }
+    sections = {"unnamed_road": "SELECT EXISTS (SELECT 1 FROM basemap.roads_region WHERE name IS NULL AND ref IS NULL)"}
+    for layer, sql in MEMBER_ROWS_SQL.items():
+        sections[f"source.{layer}"] = sql
+        sections[f"stored.{layer}"] = (
+            f"SELECT coalesce(sum(member_count), 0) FROM basemap.reference_entities WHERE layer_key = '{layer}'")
+    for table, rule in TABLES.items():
+        column_list = ", ".join(f'"{c}"' for c in columns[table])
+        # A total order, so unchanged data gives identical bytes. OSM ids repeat in the area tables,
+        # hence the geometry; the whole row last, for two rows that share both.
+        sections[f"data.{table}"] = (
+            f"COPY (SELECT {column_list} FROM basemap.{table} t WHERE {rule} "
+            "ORDER BY osm_id COLLATE \"C\", md5(ST_AsEWKB(geometry, 'NDR')) COLLATE \"C\", "
+            "md5(t::text) COLLATE \"C\") TO STDOUT")
+    sections["entities"] = DIGEST_SQL
+    out = snapshot(sections)
+
+    if out["unnamed_road"].strip() != b"t":
         raise FixtureError(
             "basemap.roads_region holds no unnamed road, so this database was loaded from the fixture, "
             "not built from the extract. Cut the fixture from a full atlas.")
-    for layer, sql in MEMBER_ROWS_SQL.items():
-        source = int(scalar(sql))
-        stored = int(scalar(f"SELECT coalesce(sum(member_count), 0) FROM basemap.reference_entities WHERE layer_key = '{layer}'"))
+    for layer in MEMBER_ROWS_SQL:
+        source, stored = int(out[f"source.{layer}"]), int(out[f"stored.{layer}"])
         if source != stored:
             raise FixtureError(
                 f"basemap.reference_entities is stale for {layer}: its entities hold {stored} members, the table "
@@ -290,37 +376,32 @@ def cmd_build() -> None:
     staged = {SCHEMA: dump_schema().encode("utf-8")}
     files = []
     for table, rule in TABLES.items():
-        columns = [r[0] for r in rows(
-            "SELECT column_name FROM information_schema.columns "
-            f"WHERE table_schema = 'basemap' AND table_name = '{table}' ORDER BY ordinal_position")]
-        column_list = ", ".join(f'"{c}"' for c in columns)
-        # A total order, so unchanged data gives identical bytes. OSM ids repeat in the area tables,
-        # hence the geometry; the whole row last, for two rows that share both.
-        data = query(
-            f"COPY (SELECT {column_list} FROM basemap.{table} t WHERE {rule} "
-            "ORDER BY osm_id COLLATE \"C\", md5(ST_AsEWKB(geometry, 'NDR')) COLLATE \"C\", "
-            "md5(t::text) COLLATE \"C\") TO STDOUT")
-        blob = gzip.compress(data, compresslevel=9, mtime=0)
+        data = out[f"data.{table}"]
+        blob = gzip_bytes(data)
         name = f"{table}.copy.gz"
         count = data.count(b"\n")
         staged[name] = blob
         files.append({
-            "table": f"basemap.{table}", "file": name, "rule": rule, "columns": columns,
+            "table": f"basemap.{table}", "file": name, "rule": rule, "columns": columns[table],
             "rows": count, "sha256": hashlib.sha256(blob).hexdigest(),
         })
         print(f"{name}: {count:,} rows, {len(blob) / 1048576:.2f} MB")
+    entities = {
+        layer: {"count": int(n), "sha256": digest}
+        for layer, n, digest in (line.split("|") for line in out["entities"].decode("utf-8").splitlines() if line.strip())
+    }
 
     manifest = {
         "description": "Every named feature of the six working-region provinces, for the api CI job. "
                        "See README.md beside this file.",
         "source": {
-            "extract": pinned_extract(),
+            "extract": loaded_extract(),
             "licence": "ODbL-1.0",
             "attribution": "© OpenStreetMap contributors, via Geofabrik",
         },
         "schema": {"file": SCHEMA, "sha256": hashlib.sha256(staged[SCHEMA]).hexdigest()},
         "files": files,
-        "referenceEntities": built_entities(),
+        "referenceEntities": entities,
     }
     staged[MANIFEST] = (json.dumps(manifest, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 

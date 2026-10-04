@@ -59,10 +59,8 @@ npm run test -w @webatlas/atlas-data
 `build` refuses a database that was itself loaded from the fixture, and one whose
 `reference_entities` is older than its tables. Unchanged data gives byte-identical files.
 
-Two things `build` cannot check, so check them yourself first:
-
-- **`npm run atlas:status` shows `basemap` and `reference_entities` as `ok`.** The manifest takes the
-  extract's name from the pin in `descriptors/basemap.ts`. After a pin bump and before a rebuild,
-  that is not the extract the tables came from.
-- **No build is running.** `build` reads the database in several sessions; a rebuild in the middle
-  can give tables and digest from different moments. CI's `verify` would then fail.
+`build` reads every table and the entity digest in one read-only transaction, so a rebuild running at
+the same time cannot give it tables and digest from different moments. The manifest's extract name is
+the one the tables were actually loaded from, taken from the database's lineage (the last
+`load_basemap.py` step), not from the pin in `descriptors/basemap.ts`; on an adopted machine, which
+has no load on record, it falls back to the pin and says so.
