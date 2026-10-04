@@ -1223,3 +1223,51 @@ git commit -m "docs: ghi kết quả thực thi kế hoạch fixture bản đồ
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 git push
 ```
+
+---
+
+## Execution notes (2026-10-04, inline in the controller session)
+
+| Task | Commit | Result |
+|---|---|---|
+| 1. Deterministic entity numbering | `5874586` | The ordering test was red with 3,288 out-of-order clusters, green after the change. The 699D part stayed `roads:82ccce28b3c34d80ee4f3e80fd438e39:1` (1 member, 18.4 km), so `analysis.test.ts:324` did not change. |
+| 2. `demAvailable` | `53aa374` | Empty-table case red, then green. |
+| 3. `basemap_fixture.py` | `e961d6c` | 10 stubbed tests. atlas-data suite 311 passed. |
+| 4. The fixture | `16a0e56` | See below. atlas-data suite 318 passed. |
+| 5. CI | `bbebf25`, `01e17cf` | All four jobs green on PR #19 (run 37185510935). |
+
+**The fixture as cut** (tools image, from the dev atlas built on `vietnam-261001`):
+
+| File | Rows | Bytes |
+|---|---|---|
+| `roads_region.copy.gz` | 33,637 | 9,392,878 |
+| `water_region.copy.gz` | 680 | 4,573,506 |
+| `landuse_region.copy.gz` | 812 | 310,778 |
+| `railways_vn.copy.gz` | 3,764 | 715,285 |
+| `places_region.copy.gz` | 6,040 | 154,338 |
+
+A second `build` produced byte-identical files.
+
+**Task 4 Step 8, scratch database `fixture_check`** (created from `template_postgis`, dropped afterwards): `load` printed the five tables, `reference:build` took 5.0 s, and `verify` printed
+
+```
+ok   landuse: 794 entities match the atlas the fixture was cut from
+ok   places: 5,878 entities match the atlas the fixture was cut from
+ok   railways: 203 entities match the atlas the fixture was cut from
+ok   roads: 13,658 entities match the atlas the fixture was cut from
+ok   water: 601 entities match the atlas the fixture was cut from
+```
+
+A second `load` exited 1 with `basemap.landuse_region already holds rows`. CI printed the same five `ok` lines.
+
+**CI.** The first run with the fixture (37185117725) went from six failing files to one failing test: `analysis.test.ts`, "produces a real elevation profile for a line-kind reference entity". It asserted the profile's length "regardless of DEM availability", but `elevationProfileOp` returns only the drawn line and the status when the DEM is not loaded. The assertion had held only because an empty DEM table counted as loaded, and the block had never run in CI. The test now asserts the line always, the length when the DEM is loaded, and the status when it is not (`01e17cf`). The operation was not changed.
+
+Final run 37185510935: `api` 473 passed, 14 skipped (63 files, 62 passed, 1 skipped). The skips are the existing GeoServer, DEM-point and assistant-role gates (`publish.test.ts` 4, `elevation.test.ts` 2, `privileges.test.ts` 8); none is in the six formerly failing files. On the dev stack: `test:api` 487 passed, `atlas:verify` 29 of 29.
+
+**Deviations from this plan**
+
+- Task 3: the tests start the `psql` stub through the absolute path of the bash they run under. On Windows a native `python3` resolves a bare `bash` to System32's WSL launcher.
+- Task 4: `.gitattributes` also pins `schema.sql` and `MANIFEST.json` to LF, so regenerating on a CRLF checkout does not show them as modified. The compose commands carry `--env-file infra/.env`.
+- Task 5: one more commit than planned, the test correction above.
+
+**Observed, not fixed:** on one local run of `analysis.test.ts` the test "select_within over an admin unit > counts by the stamped codes" took 5.6 s and failed against the 5 s analysis timeout; it passed in about 1 s on two reruns and in CI. It is one of the wall-clock-sensitive tests already on the follow-up list.
