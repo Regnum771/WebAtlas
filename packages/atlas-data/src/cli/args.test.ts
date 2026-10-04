@@ -3,7 +3,7 @@ import { parseBuildArgs } from './args';
 
 describe('parseBuildArgs', () => {
   it('returns empty filters when no arguments are given', () => {
-    expect(parseBuildArgs([])).toEqual({ only: [], except: [], force: [] });
+    expect(parseBuildArgs([])).toEqual({ only: [], except: [], force: [], supersedeEdits: [] });
   });
 
   it('parses --only with a space-separated value', () => {
@@ -11,6 +11,7 @@ describe('parseBuildArgs', () => {
       only: ['basemap', 'dem'],
       except: [],
       force: [],
+      supersedeEdits: [],
     });
   });
 
@@ -19,6 +20,7 @@ describe('parseBuildArgs', () => {
       only: [],
       except: ['basemap', 'dem'],
       force: [],
+      supersedeEdits: [],
     });
   });
 
@@ -27,6 +29,7 @@ describe('parseBuildArgs', () => {
       only: ['contours'],
       except: [],
       force: [],
+      supersedeEdits: [],
     });
   });
 
@@ -35,6 +38,7 @@ describe('parseBuildArgs', () => {
       only: [],
       except: ['contours'],
       force: [],
+      supersedeEdits: [],
     });
   });
 
@@ -43,6 +47,7 @@ describe('parseBuildArgs', () => {
       only: ['basemap', 'dem'],
       except: [],
       force: [],
+      supersedeEdits: [],
     });
   });
 
@@ -51,6 +56,7 @@ describe('parseBuildArgs', () => {
       only: ['basemap'],
       except: ['dem'],
       force: [],
+      supersedeEdits: [],
     });
   });
 
@@ -107,5 +113,24 @@ describe('--force', () => {
     expect(() => parseBuildArgs(['--force'])).toThrow(/--force requires a value/);
     expect(() => parseBuildArgs(['--force', 'dem,,x'])).toThrow(/empty dataset id/);
     expect(() => parseBuildArgs(['--force', 'a', '--force', 'b'])).toThrow(/more than once/);
+  });
+});
+
+describe('--supersede-edits', () => {
+  it('parses a list, in either form', () => {
+    expect(parseBuildArgs(['--supersede-edits', 'dams,lakes']).supersedeEdits).toEqual(['dams', 'lakes']);
+    expect(parseBuildArgs(['--supersede-edits=rivers']).supersedeEdits).toEqual(['rivers']);
+    expect(parseBuildArgs([]).supersedeEdits).toEqual([]);
+  });
+
+  it('fails closed: no value, an empty id, given twice', () => {
+    expect(() => parseBuildArgs(['--supersede-edits'])).toThrow(/requires a value/);
+    expect(() => parseBuildArgs(['--supersede-edits', '--force', 'dams'])).toThrow(/requires a value/);
+    expect(() => parseBuildArgs(['--supersede-edits', 'dams,,lakes'])).toThrow(/empty dataset id/);
+    expect(() => parseBuildArgs(['--supersede-edits', 'a', '--supersede-edits', 'b'])).toThrow(/more than once/);
+  });
+
+  it('is not implied by --force: a precautionary rebuild must never hide edits', () => {
+    expect(parseBuildArgs(['--force', 'dams']).supersedeEdits).toEqual([]);
   });
 });

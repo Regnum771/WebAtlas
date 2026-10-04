@@ -5,6 +5,9 @@ import { stageHashPlan } from './state';
 
 vi.mock('./stages/index', () => ({ executeStage: vi.fn(), hasExecutor: () => true }));
 import { executeStage } from './stages/index';
+// Re-labelling has its own database test (adoptLegacy.db.test.ts); here it is a stub.
+vi.mock('./adoptLegacy', () => ({ adoptLegacySource: vi.fn() }));
+import { adoptLegacySource } from './adoptLegacy';
 import { adoptDatasets } from './adopt';
 
 /** In-memory stage state and lineage, enough for adoption. */
@@ -33,6 +36,15 @@ function memoryPool(seed: Record<string, { input_hash: string; status: string }>
 const ds = (id: string, probe?: Dataset['probe']): Dataset => ({
   id, kind: 'derived', lineage: { statement: 's', licence: 'CC0-1.0', sources: [] },
   stages: [{ type: 'sql', statement: 'SELECT 1' }, { type: 'sql', statement: 'SELECT 2' }],
+  probe,
+});
+/** A versioned layer dataset over a seed file that exists, so the stage hash can be planned. */
+const layerDs = (probe: Dataset['probe']): Dataset => ({
+  id: 'stations', kind: 'vector', lineage: { statement: 's', licence: 'CC0-1.0', sources: [] },
+  stages: [{
+    type: 'load-geojson', layer: 'stations', versioned: true, legacySource: 'stations.geojson',
+    files: [{ file: 'seeds/stations.geojson', columns: () => ({}) }],
+  }],
   probe,
 });
 const ctx = {} as ProbeContext;
@@ -77,5 +89,31 @@ describe('adoptDatasets', () => {
     ]);
     expect(m.state.size).toBe(0);
     expect(m.steps).toEqual([]);
+  });
+
+  it('leaves a layer for the build when its existing version cannot be shown to be this content', async () => {
+    vi.mocked(adoptLegacySource).mockResolvedValueOnce({
+      result: 'mismatch', detail: 'stations: the active load holds 1 rows, the files hold 2 features',
+    });
+    const m = memoryPool();
+    const out = await adoptDatasets(m.pool, [layerDs(async () => ({ ok: true, detail: 'water.stations_active: 2' }))], ctx);
+    expect(out).toEqual([{
+      id: 'stations', result: 'needs-build',
+      detail: 'stations: the active load holds 1 rows, the files hold 2 features; atlas:build will load it',
+    }]);
+    // Nothing recorded: the next build must run the load.
+    expect(m.state.size).toBe(0);
+    expect(m.steps).toEqual([]);
+  });
+
+  it('adopts a layer whose existing version was re-labelled, or was already current', async () => {
+    for (const adoption of [{ result: 'relabelled' as const, versionId: 'v1' }, { result: 'current' as const }]) {
+      vi.mocked(adoptLegacySource).mockResolvedValueOnce(adoption);
+      const m = memoryPool();
+      const d = layerDs(async () => ({ ok: true, detail: 'water.stations_active: 2' }));
+      const out = await adoptDatasets(m.pool, [d], ctx);
+      expect(out[0].result).toBe('adopted');
+      expect(m.state.get('stations|0:load-geojson')).toEqual({ input_hash: stageHashPlan([d]).get('stations')![0], status: 'ok' });
+    }
   });
 });

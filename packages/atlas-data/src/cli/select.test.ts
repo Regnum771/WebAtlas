@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectDatasets, assertForceSelected } from './select';
+import { selectDatasets, assertForceSelected, assertSupersedeSelected } from './select';
 import type { Dataset } from '../types';
 
 const ds = (id: string, dependsOn?: string[]): Dataset => ({
@@ -76,5 +76,21 @@ describe('assertForceSelected', () => {
   it('rejects forcing a dataset that --except removed (a contradiction, not a no-op)', () => {
     const { selected } = selectDatasets(graph, { only: [], except: ['dem'] });
     expect(() => assertForceSelected(['dem'], graph, selected)).toThrow(/not in the selected set/);
+  });
+});
+
+describe('assertSupersedeSelected', () => {
+  const all = [ds('admin_boundaries'), ds('dams', ['admin_boundaries']), ds('lakes', ['admin_boundaries'])];
+
+  it('accepts ids that are registered and selected', () => {
+    expect(() => assertSupersedeSelected(['dams'], all, all)).not.toThrow();
+    expect(() => assertSupersedeSelected([], all, [])).not.toThrow();
+  });
+
+  it('rejects an unknown id and one that --only or --except removed', () => {
+    expect(() => assertSupersedeSelected(['damz'], all, all)).toThrow(/--supersede-edits names unknown dataset "damz"/);
+    expect(() => assertSupersedeSelected(['lakes'], all, [all[0], all[1]])).toThrow(
+      /--supersede-edits lakes is not in the selected set/
+    );
   });
 });

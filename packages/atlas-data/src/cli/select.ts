@@ -80,3 +80,18 @@ export function assertForceSelected(force: string[], all: Dataset[], selected: D
     }
   }
 }
+
+/**
+ * --supersede-edits must name datasets that are registered and selected, exactly as --force must:
+ * naming one that will not be built is a contradiction, reported as a usage error (spec §11).
+ */
+export function assertSupersedeSelected(ids: string[], all: Dataset[], selected: Dataset[]): void {
+  const known = new Set(all.map((d) => d.id));
+  const chosen = new Set(selected.map((d) => d.id));
+  for (const id of ids) {
+    if (!known.has(id)) throw new Error(`atlas:build: --supersede-edits names unknown dataset "${id}"`);
+    if (!chosen.has(id)) {
+      throw new Error(`atlas:build: --supersede-edits ${id} is not in the selected set (removed by --only/--except)`);
+    }
+  }
+}

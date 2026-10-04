@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runBuild } from './runner';
+
+// Calls through to the real executeStage; the wrapper only records the context each stage was given.
+vi.mock('./stages/index', async (original) => {
+  const actual = await original<typeof import('./stages/index')>();
+  return { ...actual, executeStage: vi.fn(actual.executeStage) };
+});
+import { executeStage } from './stages/index';
 import type { Dataset } from './types';
 import type { Pool } from 'pg';
 
@@ -358,6 +365,21 @@ describe('runBuild', () => {
     expect(executed).toEqual([]);
     expect(report.failed).toEqual(['a/0:sql']);
     expect(report.errors['a/0:sql']).toBe('state write boom');
+  });
+
+  it('tells a stage whether its dataset may supersede steward edits', async () => {
+    vi.mocked(executeStage).mockClear();
+    const { pool } = memoryPool();
+    await runBuild(pool, [ds('a', 'SELECT 1'), ds('b', 'SELECT 2')], { supersedeEdits: ['b'] });
+    const seen = vi.mocked(executeStage).mock.calls.map(([, , c]) => [c.datasetId, c.supersedeEdits]);
+    expect(seen).toEqual([['a', false], ['b', true]]);
+  });
+
+  it('never supersedes edits because a dataset was forced', async () => {
+    vi.mocked(executeStage).mockClear();
+    const { pool } = memoryPool();
+    await runBuild(pool, [ds('a', 'SELECT 1')], { force: ['a'] });
+    expect(vi.mocked(executeStage).mock.calls.map(([, , c]) => [c.forced, c.supersedeEdits])).toEqual([[true, false]]);
   });
 
   it('blocks transitively through a chain of dependents', async () => {
