@@ -289,7 +289,7 @@ Each dataset may declare `probe(ctx): Promise<{ ok: boolean; detail: string }>`,
 
 | Dataset | Probe |
 |---|---|
-| `basemap` | `basemap.roads_region` has rows, and `webatlas:basemap_roads_region` answers a WMS GetMap |
+| `basemap` | Each of the eight `basemap.*` tables the loader writes has rows, and each of the five layer groups the web app requests (`basemap`, `bm_landuse`, `bm_water`, `bm_railways`, `basemap_roads`) answers a WMS GetMap (amended 2026-10-04, final review) |
 | `reference_entities` | `basemap.reference_entities` has rows for each of the five layers |
 | `dem` | `ST_Value` at Buôn Ma Thuột (108.0447, 12.6797) is between 440 and 500 m |
 | `contours` | `basemap.contours` has rows for each published interval, and its layer answers |

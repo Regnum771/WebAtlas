@@ -96,6 +96,26 @@ describe('basemap SLD artifacts', () => {
     // trunk and 91% of primary, so name is the one field worth labelling.
     expect(read('basemap_roads_vn')).toContain('<ogc:PropertyName>name</ogc:PropertyName>');
   });
+
+  it('draws land at every scale: it is the whole of the base layer group', () => {
+    const sld = read('basemap_land');
+    expect(sld).toContain('<PolygonSymbolizer>');
+    expect(scaleGates(sld)).toEqual([]);
+  });
+
+  it('generates and assigns every style a layer group names', () => {
+    // The fresh-clone gap this guards: publish-basemap.sh named basemap_land, styles.py never made
+    // it, and GeoServer accepted the group anyway and drew land unstyled. Two scripts, one list.
+    const publish = readFileSync(join(SLD_DIR, 'publish-basemap.sh'), 'utf8');
+    const groups = publish.slice(publish.indexOf('LAYER_GROUPS=('), publish.indexOf('\n)\n'));
+    const pairs = [...groups.matchAll(/([a-z_]+):(basemap_[a-z_]+)/g)].map((m) => ({ layer: m[1], style: m[2] }));
+    expect(pairs.length).toBeGreaterThanOrEqual(6);
+    const stylesPy = readFileSync(join(SLD_DIR, 'styles.py'), 'utf8');
+    for (const { layer, style } of pairs) {
+      expect(() => read(style), `${style}.sld is not generated`).not.toThrow();
+      expect(stylesPy, `${layer} is not assigned ${style}`).toContain(`("${layer}", "${style}")`);
+    }
+  });
 });
 
 describe.skipIf(!process.env.DATABASE_URL)('basemap SLD artifacts vs live tables', () => {

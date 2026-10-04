@@ -74,6 +74,9 @@ ROAD_LABEL = "#5b5145"
 # its own opacity variants from the shared hex instead of storing them shared.
 ROAD_MAJOR = "#fdfdfd"
 ROAD_MAJOR_CASING = "#d8d8d8"
+# Land is the base everything else is drawn on, not a legend entry, so it has no palette key.
+LAND = "#f7f7f5"
+LAND_LINE = "#e0ded9"
 LABEL = "#7a7a7a"
 LABEL_HALO = "#ffffff"
 
@@ -171,6 +174,10 @@ def fclass_in(*values):
 
 # --- styles --------------------------------------------------------------
 STYLES = {}
+
+# land: the 34 province polygons, at every scale. It is the whole of the base layer group
+# `webatlas:basemap`; the sea is the map's background colour.
+STYLES["basemap_land"] = HEAD.format(name="basemap_land", rules=rule("land", polygon(LAND, LAND_LINE, 0.5)))
 
 # water: open water at every scale, wetlands only from 1:500.000 in.
 # Ngưỡng theo bản thiết kế 2026-09-08. Mẫu số CÀNG LỚN nghĩa là CÀNG THU NHỎ, nên
@@ -286,6 +293,7 @@ def assign(layer, style, pw):
 
 
 PAIRS = [
+    ("land_vn", "basemap_land"),
     ("water_region", "basemap_water"),
     ("landuse_region", "basemap_landuse"),
     ("roads_vn", "basemap_roads_vn"),

@@ -69,7 +69,7 @@ Do the same if the pinned file has been pruned and the fetch fails with a 404. T
 
 ### 1. Download the extract (~720 MB)
 
-The registry fetches the pinned `https://download.geofabrik.de/asia/vietnam-261001-free.shp.zip` into `packages/atlas-data/data/cache/basemap/` and checks its `sha256` before keeping it. A file already in the cache with the right hash is reused without a request.
+The registry fetches the pinned file (`vietnam-YYMMDD-free.shp.zip`, the `DATE` in `descriptors/basemap.ts`; `261001` today) from `https://download.geofabrik.de/asia/` into `packages/atlas-data/data/cache/basemap/` and checks its `sha256` before keeping it. A file already in the cache with the right hash is reused without a request.
 
 Geofabrik, OpenStreetMap-derived, ODbL. **Do not unzip it** — the loader reads through GDAL's `/vsizip/`, so ~1.1 GB of shapefiles never hit disk.
 
@@ -77,7 +77,7 @@ Geofabrik, OpenStreetMap-derived, ODbL. **Do not unzip it** — the loader reads
 
 ```bash
 docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools \
-  python3 packages/atlas-data/tools/basemap/load_basemap.py packages/atlas-data/data/cache/basemap/vietnam-261001-free.shp.zip
+  python3 packages/atlas-data/tools/basemap/load_basemap.py packages/atlas-data/data/cache/basemap/vietnam-261001-free.shp.zip   # the file the descriptor pins today; older pins stay in the cache, so check the date
 ```
 
 The Python geo stack (`geopandas`, `shapely`, `pyproj`, `psycopg2-binary`, `geoalchemy2`) is in the tools image, pinned in `packages/atlas-data/tools/requirements.txt`; there is nothing to install. No system GDAL on the host either, which matters, because this repo has none.
@@ -135,7 +135,7 @@ docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps
   bash packages/atlas-data/tools/basemap/publish-basemap.sh group
 ```
 
-`styles.py` generates the SLDs (muted Positron-lineage palette, scale-dependent rules) and assigns them. `publish-basemap.sh group` builds the `webatlas:basemap` layer group and truncates the tile cache.
+`styles.py` generates the SLDs (muted Positron-lineage palette, scale-dependent rules) and assigns them. `publish-basemap.sh group` builds the five layer groups in the table above (the land-only `webatlas:basemap` and the four context groups), refuses to start if a style they name is missing, and truncates their tile cache.
 
 **Order matters:** feature types, then styles, then the group: `styles.py` assigns styles to layers that must already exist, and the layer group references styles that must exist first.
 
@@ -147,7 +147,7 @@ curl -s -o out.png "http://localhost:8080/geoserver/webatlas/wms?service=WMS&ver
 &bbox=107.2,11.0,109.6,16.2&width=400&height=800&bgcolor=0xDCE7EF&transparent=false"
 ```
 
-Open it. Land should be near-white on a pale blue sea, with the coastal highway visible. A blank image means the layer group is empty or the styles failed to assign.
+Open it. Land should be near-white on a pale blue sea, and nothing else: the base group is land only. Repeat with `layers=webatlas:basemap_roads` (and `bm_water`, `bm_railways`, `bm_landuse`) to see each context layer on a transparent background; the coastal highway should be visible in the roads group. A blank base image means the layer group is empty or the styles failed to assign. `npm run atlas:verify` checks that all five groups render.
 
 ## Gotchas
 

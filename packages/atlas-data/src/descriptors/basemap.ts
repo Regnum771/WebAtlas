@@ -6,6 +6,12 @@ const TABLES = [
 ] as const;
 
 /**
+ * What publish-basemap.sh builds and apps/web's MapModel.ts requests: the land-only base and one
+ * group per context layer. A test holds this list, the script and MapModel.ts together.
+ */
+export const LAYER_GROUPS = ['basemap', 'bm_landuse', 'bm_water', 'bm_railways', 'basemap_roads'] as const;
+
+/**
  * The pinned Geofabrik extract (spec C-10). One dated file plus its sha256, so every clone gets
  * identical data and a changed file fails the fetch instead of silently changing the basemap.
  * Not `-latest`: on 2026-09-30 every `*-latest*` alias on download.geofabrik.de 301-looped to
@@ -79,9 +85,11 @@ export const basemap = defineDataset({
       promoteBy: '2027-06-30',
     },
   ],
-  // Every table load_basemap.py writes: a partial load must not pass.
+  // Every table load_basemap.py writes (each is loaded in one transaction, so a table that exists is
+  // a whole one), then every layer group the web app requests from GWC: a fresh GeoServer that only
+  // has some of them must not pass.
   probe: allOf(
     ...TABLES.map((t) => rowCount(`basemap.${t}`, `SELECT count(*)::text AS n FROM basemap.${t}`)),
-    wmsAnswers('basemap', '108.0,12.5,108.2,12.7')
+    ...LAYER_GROUPS.map((g) => wmsAnswers(g, '108.0,12.5,108.2,12.7'))
   ),
 });

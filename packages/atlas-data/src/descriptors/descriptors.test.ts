@@ -5,6 +5,7 @@ import { ALL_DATASETS, validateRegistry } from '../registry';
 import { resolveLicences } from '../lineage';
 import { REPO_ROOT } from '../paths';
 import { CONTOUR_INTERVALS_M } from './contours';
+import { LAYER_GROUPS } from './basemap';
 
 const byId = (id: string) => ALL_DATASETS.find((d) => d.id === id)!;
 const runStages = ALL_DATASETS.flatMap((d) =>
@@ -68,6 +69,18 @@ describe('registered datasets', () => {
     const bm = byId('basemap').stages;
     const fetch = bm.find((s) => s.type === 'fetch-http') as Extract<(typeof bm)[number], { type: 'fetch-http' }>;
     expect(fetch.url).toMatch(/vietnam-\d{4}01-free\.shp\.zip$/);
+  });
+
+  it('the basemap probe checks exactly the layer groups the web app requests and the script publishes', () => {
+    // Three places name these groups. A fresh clone once passed verify with one of the five: the
+    // other four existed only on the developer's GeoServer, created by hand.
+    const sorted = (xs: Iterable<string>) => [...xs].sort();
+    const mapModel = readFileSync(join(REPO_ROOT, 'apps/web/src/features/map/model/MapModel.ts'), 'utf8');
+    const requested = new Set([...mapModel.matchAll(/'webatlas:((?:basemap|bm_)[a-z_]*)'/g)].map((m) => m[1]));
+    const script = readFileSync(join(REPO_ROOT, 'packages/atlas-data/tools/basemap/publish-basemap.sh'), 'utf8');
+    const published = [...script.matchAll(/^ {2}"([a-z_]+)\|/gm)].map((m) => m[1]);
+    expect(sorted(LAYER_GROUPS)).toEqual(sorted(requested));
+    expect(sorted(LAYER_GROUPS)).toEqual(sorted(published));
   });
 
   it('path arguments agree between stages of one dataset', () => {
