@@ -4,6 +4,8 @@ Columns: first_med_s / first_max_s = median / max seconds of the 16 first reques
 median of the 16 repeat requests (should be a cache hit); first_hits = how many first requests
 were already cached (geowebcache-cache-result: HIT); kB/tile = mean tile size.
 Base URL: WEBATLAS_GEOSERVER (default http://127.0.0.1:8080/geoserver). Use 127.0.0.1, not localhost.
+Zooms: WEBATLAS_TILE_ZOOMS (default 9,11,13, the baseline's). The seed covers zooms 5-12, so add 12 to
+check it: WEBATLAS_TILE_ZOOMS=9,11,12,13.
 """
 import math
 import os
@@ -17,7 +19,7 @@ LAYERS = ['webatlas:basemap', 'webatlas:basemap_roads', 'webatlas:bm_water', 'we
           'webatlas:bm_railways', 'webatlas:contours_100', 'webatlas:contours_50']
 # Around Buon Ma Thuot (108.05E, 12.68N); zooms the app actually shows
 LON, LAT = 108.05, 12.68
-ZOOMS = [9, 11, 13]
+ZOOMS = [int(z) for z in os.environ.get('WEBATLAS_TILE_ZOOMS', '9,11,13').split(',')]
 
 
 def tile_xy(z):

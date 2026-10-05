@@ -3,16 +3,20 @@
 // main-thread tasks over 50 ms (count, total, worst); groups = finished requests by origin
 // (n, slowest ms, failed); slow = requests over 800 ms. The first session prints loadMs, nav
 // (domContentLoaded, load, fcp in ms) and mapQuietAfterLoadMs (time until the network went quiet);
-// the second prints zoomSettleMs (4 zoom-in clicks, z7 -> z11, until the network went quiet).
+// the second prints zoomSettleMs (4 zoom-in clicks, z7 -> z11, until the network went quiet); the
+// third repeats that zoom in the same browser, so its tiles come from the browser's HTTP cache.
 // Base URL: WEBATLAS_WEB (default http://127.0.0.1:4173/); the API is expected on :3001 and
 // GeoServer on :8080. Use 127.0.0.1, not localhost.
+// The API must allow this page's origin (CORS_ORIGIN=http://127.0.0.1:4173) and the web build must
+// point at it (VITE_API_BASE_URL=http://127.0.0.1:3001). If the "api" group reports failed
+// requests, that setup is missing and the water layers were not drawn: the numbers are invalid.
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../../package.json', import.meta.url));
 const puppeteer = require('puppeteer-core');
 
 const URL_ = process.env.WEBATLAS_WEB ?? 'http://127.0.0.1:4173/';
 const browser = await puppeteer.launch({
-  executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe',
   headless: 'new',
   args: ['--no-sandbox'],
   defaultViewport: { width: 1440, height: 900 },
@@ -77,7 +81,7 @@ await session('first load (cold browser cache), until network quiet', async (pag
   console.log(JSON.stringify({ loadMs, nav, mapQuietAfterLoadMs: quietAfterLoad }));
 });
 
-await session('zoom into Buon Ma Thuot (z7 -> z11, 4 clicks) with water layers', async (page, quiet) => {
+const zoomIn = async (page, quiet) => {
   await page.goto(URL_, { waitUntil: 'load' });
   await quiet();
   for (let i = 0; i < 4; i++) {
@@ -86,6 +90,10 @@ await session('zoom into Buon Ma Thuot (z7 -> z11, 4 clicks) with water layers',
   }
   const settle = await quiet();
   console.log(JSON.stringify({ zoomSettleMs: settle }));
-});
+};
+
+await session('zoom into Buon Ma Thuot (z7 -> z11, 4 clicks) with water layers', zoomIn);
+// The same zoom again in the same browser: every tile is now in its HTTP cache.
+await session('the same zoom again (warm browser cache)', zoomIn);
 
 await browser.close();
