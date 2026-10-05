@@ -115,12 +115,32 @@ check("write: every chunk goes through one transaction's connection, never the e
       error is None and engine.begun == 1 and len(calls) == 3 and all(c[1] is engine.conn for c in calls))
 check("write: the first chunk replaces, the rest append, into the basemap schema",
       [(c[2], c[3], c[4]) for c in calls] == [("basemap", "replace", 2), ("basemap", "append", 2), ("basemap", "append", 1)])
+check("write: every chunk goes to the staging table <table>__new, never the live table",
+      [c[0] for c in calls] == ["roads_test__new"] * 3)
 check("write: the fclass index is created inside the same transaction",
       any("roads_test_fclass_idx" in s for s in engine.conn.executed) and engine.exits == [None])
+
+# The swap. The live table is locked only for the DROP and renames, so tile requests wait
+# milliseconds instead of the whole load.
+ex = engine.conn.executed
+pos = lambda needle: next((i for i, s in enumerate(ex) if needle in s), -1)  # noqa: E731
+i_idx, i_an = pos('CREATE INDEX IF NOT EXISTS roads_test__new_fclass_idx ON basemap."roads_test__new"'), pos('ANALYZE basemap."roads_test__new"')
+i_drop, i_ren = pos('DROP TABLE IF EXISTS basemap."roads_test"'), pos('ALTER TABLE basemap."roads_test__new" RENAME TO "roads_test"')
+i_geo = pos('ALTER INDEX basemap."idx_roads_test__new_geometry" RENAME TO "idx_roads_test_geometry"')
+i_fc = pos('ALTER INDEX basemap."roads_test__new_fclass_idx" RENAME TO "roads_test_fclass_idx"')
+check("write: the fclass index and ANALYZE run on the staging table before the swap",
+      0 <= i_idx < i_drop and 0 <= i_an < i_drop)
+check("write: swap order is DROP old table, rename __new, then rename its indexes",
+      0 <= i_drop < i_ren < min(i_geo, i_fc) and i_geo >= 0 and i_fc >= 0)
+check("write: the old table is dropped without CASCADE",
+      "CASCADE" not in ex[i_drop].upper())
+check("write: nothing is executed after the index renames", max(i_geo, i_fc) == len(ex) - 1)
 
 engine, calls, error = run_write(gdf, fail_on_call=2)
 check("write: a failed chunk leaves the transaction through the exception, so the old table survives",
       isinstance(error, RuntimeError) and engine.begun == 1 and engine.exits == [RuntimeError] and len(calls) == 2)
+check("write: a failed chunk executes no DROP and no RENAME",
+      not any("DROP" in s or "RENAME" in s for s in engine.conn.executed))
 
 engine, calls, error = run_write(gdf.iloc[0:0])
 check("write: an empty layer fails the load instead of keeping yesterday's table",
@@ -137,7 +157,7 @@ mixed_later = gpd.GeoDataFrame(
 mixed_first = gpd.GeoDataFrame(
     {"osm_id": ["a", "b", "c"]},
     geometry=[lines[0], MultiLineString([lines[2], lines[3]]), lines[1]], crs="EPSG:4326")
-is_alter = lambda s: s.startswith('ALTER TABLE basemap."roads_test" ALTER COLUMN "geometry" TYPE geometry(Geometry, 4326)')  # noqa: E731
+is_alter = lambda s: s.startswith('ALTER TABLE basemap."roads_test__new" ALTER COLUMN "geometry" TYPE geometry(Geometry, 4326)')  # noqa: E731
 
 check("column type: one type is that type, several are GEOMETRY",
       lb.column_geometry_type(gdf) == "LINESTRING" and lb.column_geometry_type(mixed_later) == "GEOMETRY")
