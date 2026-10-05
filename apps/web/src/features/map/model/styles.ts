@@ -132,50 +132,27 @@ export const floodGenerationStyle = new Style({
 // — chứa provinceColors[] và hàm hashCode() băm màu theo mã xã.
 
 
-// Style cho các tỉnh thành (ranh giới sau sáp nhập 2025 — properties: code, name, ...)
+// Province boundaries (after the 2025 merger). A tile holds the polygons (MVT layer `provinces`) and
+// one label point per province (MVT layer `province_labels`, placed by the API on the province's
+// largest part): only the points draw text, so a province cut by several tiles is labelled once.
+const PROVINCE_OUTLINE = new Style({
+  // A TRANSPARENT fill, not none: the decorative pastel fills are gone (see the ARCHIVED note above),
+  // but OpenLayers needs a fill to hit-test the INSIDE of a polygon; without one a province could
+  // only be clicked exactly on its outline.
+  fill: new Fill({ color: 'rgba(0,0,0,0)' }),
+  stroke: new Stroke({ color: LAYER_PALETTE.layer_provinces_2026.color, width: 2.5 }),
+});
+
 export const provincesStyle = (feature: any) => {
-  const name = feature.get('name') || '';
-
-  const geom = feature.getGeometry();
-  let labelGeometry = feature.get('_labelGeom');
-  if (!labelGeometry && geom) {
-    const geomType = geom.getType();
-    if (geomType === 'MultiPolygon') {
-      const polygons = geom.getPolygons();
-      let maxArea = -1;
-      let largestPolygon = polygons[0];
-      polygons.forEach((poly: any) => {
-        const area = poly.getArea();
-        if (area > maxArea) { maxArea = area; largestPolygon = poly; }
-      });
-      if (largestPolygon) labelGeometry = largestPolygon.getInteriorPoint();
-    } else if (geomType === 'Polygon') {
-      labelGeometry = geom.getInteriorPoint();
-    }
-    if (labelGeometry) feature.set('_labelGeom', labelGeometry, true);
-  }
-  if (!labelGeometry) labelGeometry = geom;
-
-  return [
-    new Style({
-      // Tô nền trong SUỐT: bỏ dải màu pastel trang trí (xem ghi chú ARCHIVED ở
-      // trên). Vẫn phải có fill — OpenLayers cần nó để hit-test phần RUỘT đa giác;
-      // bỏ hẳn thì tỉnh chỉ còn bấm được đúng trên đường viền.
-      fill: new Fill({ color: 'rgba(0,0,0,0)' }),
-      stroke: new Stroke({ color: LAYER_PALETTE.layer_provinces_2026.color, width: 2.5 }),
+  if (feature.get('layer') !== 'province_labels') return PROVINCE_OUTLINE;
+  return new Style({
+    text: new Text({
+      text: feature.get('name') || '',
+      font: 'bold 12px Inter, system-ui, sans-serif',
+      fill: new Fill({ color: '#312e81' }),
+      stroke: new Stroke({ color: '#ffffff', width: 4 }),
     }),
-    new Style({
-      geometry: labelGeometry,
-      text: new Text({
-        text: name,
-        font: 'bold 12px Inter, system-ui, sans-serif',
-        fill: new Fill({ color: '#312e81' }),
-        stroke: new Stroke({ color: '#ffffff', width: 4 }),
-        overflow: true,
-        padding: [2, 4, 2, 4]
-      })
-    })
-  ];
+  });
 };
 
 
@@ -183,7 +160,7 @@ export const provincesStyle = (feature: any) => {
 // (MVT layer `wards`) and one label point per ward (MVT layer `ward_labels`): only the points draw text,
 // so a ward cut by several tiles is labelled once.
 const WARD_OUTLINE = new Style({
-  // Transparent — see the note on provincesStyle for why the fill stays.
+  // Transparent — see the note on PROVINCE_OUTLINE for why the fill stays.
   fill: new Fill({ color: 'rgba(0,0,0,0)' }),
   stroke: new Stroke({ color: hexToRgba(LAYER_PALETTE.layer_wards_2026.color, 0.4), width: 1, lineDash: [4, 4] }),
 });

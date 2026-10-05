@@ -8,8 +8,9 @@ import { allOf, rowCount } from '../probes';
  * feature with the province and ward codes it intersects; a boundary change therefore cascades to
  * every layer's re-stamp path (spec §11).
  *
- * The two files are read from apps/web/public, not from data/seeds: the map loads them there
- * (spec C-2). The exception ends when the map reads boundaries from GeoServer or the API.
+ * The two files are read from apps/web/public, not from data/seeds: the map used to load them
+ * there (spec C-2). It now draws both layers from the API's vector tiles, so the reason for the
+ * exception is gone and the files can move to data/seeds; they have not been moved yet.
  */
 export const adminBoundaries = defineDataset({
   id: 'admin_boundaries',

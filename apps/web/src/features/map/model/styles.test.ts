@@ -116,8 +116,8 @@ describe('map styles stay on the shared LAYER_PALETTE (legend/map colour parity)
 
   it('provincesStyle boundary stroke matches LAYER_PALETTE.layer_provinces_2026', () => {
     const feature = { get: () => undefined, set: () => {}, getGeometry: () => undefined } as any;
-    const styles = provincesStyle(feature) as Style[];
-    expect(styles[0].getStroke()?.getColor()).toBe(LAYER_PALETTE.layer_provinces_2026.color);
+    const outline = provincesStyle(feature) as Style;
+    expect(outline.getStroke()?.getColor()).toBe(LAYER_PALETTE.layer_provinces_2026.color);
   });
 
   it('rivers get wider as Strahler order increases', () => {
@@ -158,11 +158,11 @@ describe('độ rộng nét sông theo hạng OSM', () => {
   });
 });
 
-// Ranh giới hành chính mới (sau sáp nhập) mang thuộc tính hoàn toàn khác GADM 4.1:
-// code, name, nameEn, fullName, fullNameEn, codeName, gisServerId, areaKm2 — KHÔNG
-// còn NAME_1/GID_1 (tỉnh) hay NAME_3/GID_3 (xã). Test này dùng đúng bộ thuộc tính
-// thật để tránh tái diễn lỗi provincesStyle/wardsStyle đọc nhầm key GADM cũ.
-describe('provincesStyle / wardsStyle dùng đúng thuộc tính ranh giới mới (không phải GADM)', () => {
+// The administrative boundaries after the merger carry properties unlike GADM 4.1's: code, name,
+// nameEn, fullName, fullNameEn, areaKm2, and no NAME_1/GID_1 (province) or NAME_3/GID_3 (ward).
+// These tests use the real property set so provincesStyle/wardsStyle cannot go back to reading
+// the old GADM keys.
+describe('provincesStyle / wardsStyle read the new boundary properties (not GADM)', () => {
   function fakeBoundaryFeature(props: Record<string, unknown>) {
     return {
       get: (k: string) => props[k],
@@ -171,21 +171,26 @@ describe('provincesStyle / wardsStyle dùng đúng thuộc tính ranh giới m�
     } as any;
   }
 
-  it('provincesStyle hiển thị tên tỉnh từ thuộc tính "name" (không phải NAME_1)', () => {
-    const feature = fakeBoundaryFeature({
+  it('provincesStyle draws text only for province_labels points, from the "name" property (not NAME_1)', () => {
+    // A province tile holds the polygons (MVT layer `provinces`) and one label point per province
+    // (`province_labels`): only the point draws the name, so a province cut by tiles is labelled once.
+    const polygon = provincesStyle(fakeBoundaryFeature({
+      layer: 'provinces',
       code: '48',
       name: 'Đắk Lắk',
       nameEn: 'Dak Lak',
       fullName: 'Tỉnh Đắk Lắk',
-      fullNameEn: 'Dak Lak Province',
-      codeName: 'dak_lak',
-      gisServerId: 48,
       areaKm2: 13125.4,
-    });
-    const styles = provincesStyle(feature) as Style[];
-    const labelStyle = styles[styles.length - 1];
-    const text = labelStyle.getText() as Text;
+    })) as Style;
+    expect(polygon.getText()).toBeNull();
+    expect(polygon.getStroke()?.getWidth()).toBe(2.5);
+    // The transparent fill stays: without it only the outline of a province is clickable.
+    expect(polygon.getFill()).not.toBeNull();
+    const label = provincesStyle(fakeBoundaryFeature({ layer: 'province_labels', code: '48', name: 'Đắk Lắk' })) as Style;
+    const text = label.getText() as Text;
     expect(text.getText()).toBe('Đắk Lắk');
+    expect(text.getFont()).toBe('bold 12px Inter, system-ui, sans-serif');
+    expect(label.getStroke()).toBeNull();
   });
 
   it('wardsStyle draws text only for ward_labels points, from the "name" property', () => {

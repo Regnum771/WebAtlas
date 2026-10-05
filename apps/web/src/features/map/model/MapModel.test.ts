@@ -256,6 +256,37 @@ describe('water layers from vector tiles', () => {
     xhrOpen.mockRestore();
   });
 
+  it('draws the provinces from API tiles at their token, at every zoom, and never requests provinces-34.geojson', async () => {
+    const fetchMock = versions({ rivers: 'r1', lakes: 'l1', wards: 'w1', provinces: 'p1' } as never);
+    vi.stubGlobal('fetch', fetchMock);
+    const xhrOpen = vi.spyOn(XMLHttpRequest.prototype, 'open');
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    const provinces = m.layers.layer_provinces_2026;
+    expect(provinces).toBeInstanceOf(VectorTileLayer);
+    expect(provinces.getSource()).toBeInstanceOf(VectorTileSource);
+    // Hidden until the versions are known, so no tile is fetched on the unversioned URL first.
+    expect(provinces.getVisible()).toBe(false);
+    await vi.waitFor(() => expect(provinces.getSource()!.getUrls()).toEqual([waterTileUrl('provinces', 'p1')]));
+    await vi.waitFor(() => expect((model as unknown as { waterVersionsSettled: boolean }).waterVersionsSettled).toBe(true));
+    const states = [{ id: 'layer_provinces_2026', visible: true, opacity: 1 }];
+    for (const zoom of [6, 9.9, 12]) {
+      m.map.getView().setZoom(zoom);
+      model.applyLayerStates(states);
+      expect(provinces.getVisible()).toBe(true);
+    }
+    model.applyLayerStates([{ id: 'layer_provinces_2026', visible: false, opacity: 1 }]);
+    expect(provinces.getVisible()).toBe(false);
+    const requested = [
+      ...fetchMock.mock.calls.map((c) => String(c[0])),
+      ...xhrOpen.mock.calls.map((c) => String(c[1])),
+    ];
+    expect(requested.some((u) => u.includes('provinces-34.geojson'))).toBe(false);
+    model.dispose();
+    xhrOpen.mockRestore();
+  });
+
   it('shows the water layers after the timeout when the start-up request hangs', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
