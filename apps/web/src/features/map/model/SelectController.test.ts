@@ -118,7 +118,7 @@ describe('SelectController on vector-tile water layers', () => {
     vi.restoreAllMocks();
   });
 
-  it('a click selects the tile feature by its id property, with the fetched full geometry, not the tile one', async () => {
+  it('a click selects the tile feature by its id property, with the fetched (search endpoint) geometry, not the tile one', async () => {
     hitsAtPixel([[tileFeature, riversLayer]]);
     const fetchMock = stubFetch(ok({ name: 'X', geometry: fetched }));
     const onSelect = vi.fn();

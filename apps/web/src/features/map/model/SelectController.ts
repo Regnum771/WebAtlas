@@ -38,8 +38,9 @@ export class SelectController {
   /** Bumped on every tile click and on deactivate: a late geometry response for an older click is dropped. */
   private clickSeq = 0;
   /**
-   * Holds the full-geometry copy of a selected tile feature. Tile geometry is clipped and
-   * simplified, so it can be neither edited nor shown as the thing being edited. Unmanaged
+   * Holds the fetched copy of a selected tile feature: the search endpoint's simplified geometry
+   * (saved only if the user moves it, see geometryChanged). Tile geometry is clipped and
+   * simplified to the tile grid, so it can be neither edited nor shown as the thing being edited. Unmanaged
    * (setMap), so it is not in the map's layer list and is never a popup, snap or select target.
    */
   private editLayer: VectorLayer<VectorSource> | null = null;
@@ -105,7 +106,7 @@ export class SelectController {
     this.clickHandler = clickHandler;
   }
 
-  /** Selection of a tile feature: fetch the full geometry, which is what the editor edits. */
+  /** Selection of a tile feature: fetch the search endpoint's simplified geometry, which is what the editor edits. */
   private async selectTileFeature(feature: FeatureLike, onSelect: (sel: EditSelection) => void): Promise<void> {
     const props = feature.getProperties();
     const id = typeof props.id === 'string' ? props.id : null;

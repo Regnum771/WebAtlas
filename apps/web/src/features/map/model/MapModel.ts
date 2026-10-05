@@ -14,7 +14,7 @@ import type VectorTileLayer from 'ol/layer/VectorTile';
 import GeoJSON from 'ol/format/GeoJSON';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
-import { applyWaterVersions, createWaterTileLayer, fetchWaterVersions, withHighlight, type WaterTileLayer } from './waterTiles';
+import { applyWaterVersions, createWardTileLayer, createWaterTileLayer, fetchWaterVersions, withHighlight, type ApiTileLayer } from './waterTiles';
 import { GEOSERVER_URL } from '../../../shared/config';
 import { BASEMAP_CONTEXT_LAYER_STATE_IDS, TERRAIN_LAYER_STATE_IDS, type ContourInterval } from '@webatlas/shared';
 import {
@@ -26,7 +26,7 @@ import {
   type ContourSettings,
 } from './contours';
 import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM, settleZoomCorrection } from './zoomScale';
-import { createOneShotLoadGate, WATER_MIN_ZOOM, WARDS_MIN_ZOOM } from './zoomLoadGate';
+import { WATER_MIN_ZOOM, WARDS_MIN_ZOOM } from './zoomLoadGate';
 import {
   provincesStyle,
   wardsStyle,
@@ -122,7 +122,7 @@ export class MapModel {
    *  `layers` is typed for vector sources and its consumers call getSource().refresh(). */
   private contextLayers: Record<string, TileLayer<XYZ>> = {};
   /** The water layers drawn from API vector tiles, keyed by tile layer, for version updates. */
-  private waterLayers: Partial<Record<WaterTileLayer, VectorTileLayer>> = {};
+  private waterLayers: Partial<Record<ApiTileLayer, VectorTileLayer>> = {};
   /** The river whose `id` property is highlighted after a click (replaces ol/interaction/Select,
    *  which never selects tile features). */
   private highlightedRiverId: string | null = null;
@@ -133,6 +133,8 @@ export class MapModel {
   private waterVersionsSettled = false;
   /** Bumped per /api/tiles/versions request: only the latest request's answer is applied. */
   private waterVersionsSeq = 0;
+  /** The sequence number of the newest versions answer applied so far. */
+  private waterVersionsApplied = 0;
   private waterVersionsTimer: ReturnType<typeof setTimeout> | null = null;
   /** Coordinate readout control — kept to swap its formatter on CRS toggle. */
   private mousePosition: MousePosition | null = null;
@@ -149,8 +151,6 @@ export class MapModel {
   private contourLabels = true;
   /** Snaps to a round thousand when the view settles — see settleZoomCorrection. */
   private settleSnapHandler: (() => void) | null = null;
-  /** Ward boundary load gate — loads once, the first time zoom passes 10. */
-  private wardsGate: ((zoom: number) => void) | null = null;
   /** Busy/idle of basemap tile loading — see loadingState.ts. Only the raster (GWC)
    *  sources are tracked; WFS sources fire featuresloadstart/end at a different pace
    *  and would show the indicator during ordinary thematic data loads too. */
@@ -296,22 +296,11 @@ export class MapModel {
     // inside the work area — zoomed out beyond it, provinces show but wards do not.
     const provincesLayer = createVectorLayerFromUrl('layer_provinces_2026', './provinces-34.geojson', provincesStyle);
 
-    // The ward source starts EMPTY: the file is ~6.9 MB and only shows from zoom 10.
-    // OpenLayers' setMinZoom only stops DRAWING, not LOADING, so the gate sits at the
-    // source: the URL is set the first time the user passes the threshold (see
-    // zoomLoadGate.ts). `format` is required from the start because setUrl() asserts
-    // it (ol/source/Vector.js:1192).
-    const wardsSource = new VectorSource({ format: new GeoJSON() });
-    const wardsLayer = new VectorLayer({
-      source: wardsSource,
-      style: wardsStyle,
-      properties: { id: 'layer_wards_2026' },
-    });
+    // Wards are API vector tiles (waterTiles.ts): only the tiles in view are requested, and the
+    // layer stays hidden (so requests nothing) until the versions are known and zoom reaches WARDS_MIN_ZOOM.
+    const wardsLayer = createWardTileLayer('layer_wards_2026', wardsStyle);
     this.layers['layer_wards_2026'] = wardsLayer;
-    this.wardsGate = createOneShotLoadGate(WARDS_MIN_ZOOM, () => {
-      wardsSource.setUrl('./wards-region.geojson');
-      wardsSource.refresh();
-    });
+    this.waterLayers.wards = wardsLayer;
 
     // 3. The map.
     this.mousePosition = createMousePosition();
@@ -383,7 +372,6 @@ export class MapModel {
     const updateLayersVisibility = () => {
       const zoom = map.getView().getZoom();
       if (zoom !== undefined) {
-        this.wardsGate?.(zoom);
         // Swap the source only when the contour interval really changes: a new source
         // throws away every loaded tile, so doing it on every map move would flicker.
         // contourFixedInterval, pinned by the user (setContourSettings, Task 6), wins
@@ -455,8 +443,8 @@ export class MapModel {
         if (state.id === 'layer_provinces_2026') {
           zoomVisible = true; // Province boundaries always show.
         } else if (state.id === 'layer_wards_2026') {
-          // Same threshold as the LOAD gate in zoomLoadGate.ts — a single source of truth.
-          zoomVisible = currentZoom >= WARDS_MIN_ZOOM; // Ward boundaries only when zoomed in.
+          // Hidden layers request no tiles, so this is also what gates loading.
+          zoomVisible = this.waterVersionsSettled && currentZoom >= WARDS_MIN_ZOOM;
         } else if (state.id === 'layer_rivers' || state.id === 'layer_lakes') {
           // Below 8.5 the full water layers do not draw (the river overview stands in
           // for rivers), and a hidden tile layer requests nothing. The legend reads this
@@ -589,8 +577,9 @@ export class MapModel {
 
   /**
    * Fetch the active water versions and point the tile layers at them. Requests can answer
-   * out of order (start-up, then a refresh after an edit): only the latest one is applied,
-   * so an older answer can never point a layer back at a superseded version. Any answer
+   * out of order (start-up, then a refresh after an edit): an answer is applied only when
+   * newer than the last applied one, so an older answer can never point a layer back at a superseded
+   * version, yet a failing newest request does not discard an older successful answer. Any answer
    * settles the start-up wait.
    */
   private syncWaterVersions(onError: (e: unknown) => void): void {
@@ -599,7 +588,12 @@ export class MapModel {
     fetchWaterVersions()
       .then((v) => {
         if (this.map !== map) return;
-        if (seq === this.waterVersionsSeq) applyWaterVersions(this.waterLayers, v);
+        // Apply when newer than the last applied answer, not only when it is the latest request:
+        // a failing newest request must not discard an older successful answer.
+        if (seq > this.waterVersionsApplied) {
+          this.waterVersionsApplied = seq;
+          applyWaterVersions(this.waterLayers, v);
+        }
         this.settleWaterVersions();
       })
       .catch((e) => {
@@ -653,7 +647,6 @@ export class MapModel {
       this.map.un('moveend', this.settleSnapHandler);
       this.settleSnapHandler = null;
     }
-    this.wardsGate = null;
     // Remove each tileload* handler from the exact source it was registered on — see
     // the note on the contextLoadHandlers declaration above.
     for (const { source, type, handler } of this.contextLoadHandlers) {

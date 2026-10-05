@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { gunzipSync } from 'node:zlib';
 import { PbfReader } from 'pbf';
 import { VectorTile } from '@mapbox/vector-tile';
 import { buildApp } from '../../server';
@@ -17,11 +18,30 @@ const tile = (layer: string, z: number, x: number, y: number, v?: string) =>
 const decode = (body: Buffer, layer: string) => new VectorTile(new PbfReader(body)).layers[layer];
 
 describe('GET /api/tiles/versions', () => {
-  it('returns the active version ids of rivers and lakes', async () => {
+  it('returns the active version ids of rivers and lakes, and a token for wards', async () => {
     const { rows } = await getPool().query<{ layer_key: string; id: string }>(
       `SELECT layer_key, id::text AS id FROM app.dataset_versions WHERE is_active AND layer_key IN ('rivers','lakes')`);
     const want = Object.fromEntries(rows.map((r) => [r.layer_key, r.id]));
-    expect(await versions()).toEqual(want);
+    const got = await versions();
+    expect({ rivers: got.rivers, lakes: got.lakes }).toEqual(want);
+    expect(got.wards).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('changes the wards token when a ward row changes (rolled back afterwards)', async () => {
+    const before = (await versions()).wards;
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`UPDATE admin.wards SET name = name || ' x' WHERE code = (SELECT min(code) FROM admin.wards)`);
+      // Same query the endpoint runs, inside the transaction.
+      const { activeVersions } = await import('./repository');
+      const inTx = (await activeVersions(client as never)).wards;
+      expect(inTx).not.toBe(before);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+    expect((await versions()).wards).toBe(before);
   });
 });
 
@@ -102,5 +122,50 @@ describe('GET /api/tiles/:layer/:z/:x/:y.pbf', () => {
     }
     expect(codes).toHaveLength(150);
     expect(codes.every((c) => c === 200)).toBe(true);
+  });
+});
+
+describe('wards tiles', () => {
+  const WARD_PROPS = ['code', 'provinceCode', 'name', 'nameEn', 'fullName', 'areaKm2'];
+
+  it('decode to polygons with the ward properties and one label point per ward', async () => {
+    const v = (await versions()).wards;
+    const res = await tile('wards', BMT.z, BMT.x, BMT.y, v);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    const wards = decode(res.rawPayload, 'wards');
+    expect(wards.length).toBeGreaterThan(0);
+    const keys = new Set(Array.from({ length: wards.length }, (_, i) => Object.keys(wards.feature(i).properties)).flat());
+    expect([...keys]).toEqual(expect.arrayContaining(WARD_PROPS));
+    const labels = decode(res.rawPayload, 'ward_labels');
+    expect(labels.length).toBeGreaterThan(0);
+    expect(Object.keys(labels.feature(0).properties).sort()).toEqual(['code', 'name']);
+  });
+
+  it('puts the label of a ward in exactly one of the four child tiles', async () => {
+    const parent = decode((await tile('wards', BMT.z, BMT.x, BMT.y)).rawPayload, 'ward_labels');
+    const parentCodes = Array.from({ length: parent.length }, (_, i) => String(parent.feature(i).properties.code));
+    expect(parentCodes.length).toBeGreaterThan(0);
+    const seen: string[] = [];
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+      const res = await tile('wards', BMT.z + 1, BMT.x * 2 + dx, BMT.y * 2 + dy);
+      if (res.statusCode !== 200) continue;
+      const l = decode(res.rawPayload, 'ward_labels');
+      if (l) for (let i = 0; i < l.length; i++) seen.push(String(l.feature(i).properties.code));
+    }
+    for (const code of parentCodes) expect(seen.filter((c) => c === code)).toHaveLength(1);
+    expect(new Set(seen).size).toBe(seen.length);
+  });
+});
+
+describe('tile compression', () => {
+  it('sends plain bytes without Accept-Encoding and gzip with it, decoding to the same tile', async () => {
+    const plain = await tile('rivers', BMT.z, BMT.x, BMT.y);
+    expect(plain.headers['content-encoding']).toBeUndefined();
+    expect(plain.headers['vary']).toMatch(/Accept-Encoding/i);
+    const zipped = await app.inject({ method: 'GET', url: `/api/tiles/rivers/${BMT.z}/${BMT.x}/${BMT.y}.pbf`, headers: { 'accept-encoding': 'gzip, deflate' } });
+    expect(zipped.headers['content-encoding']).toBe('gzip');
+    expect(zipped.headers['vary']).toMatch(/Accept-Encoding/i);
+    expect(gunzipSync(zipped.rawPayload).equals(plain.rawPayload)).toBe(true);
   });
 });

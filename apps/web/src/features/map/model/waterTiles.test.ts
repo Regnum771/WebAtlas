@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import Feature from 'ol/Feature';
 import { Style } from 'ol/style';
-import { applyWaterVersions, createWaterTileLayer, fetchWaterVersions, waterTileUrl, withHighlight } from './waterTiles';
+import VectorTileLayer from 'ol/layer/VectorTile';
+import { applyWaterVersions, createWardTileLayer, createWaterTileLayer, isWardLabel, fetchWaterVersions, waterTileUrl, withHighlight } from './waterTiles';
 import { API_BASE_URL } from '../../../shared/config';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -60,5 +61,21 @@ describe('withHighlight', () => {
   it('draws every other feature, and everything when nothing is selected, with the base style', () => {
     expect(style('u1')(new Feature({ id: 'u2' }), 10)).toBe(base);
     expect(style(null)(new Feature({ id: 'u1' }), 10)).toBe(base);
+  });
+});
+
+describe('ward tile layer', () => {
+  it('is a hidden VectorTile layer on the versioned wards URL, and is not an editable water layer', () => {
+    const wards = createWardTileLayer('layer_wards_2026', () => undefined);
+    expect(wards).toBeInstanceOf(VectorTileLayer);
+    expect(wards.getVisible()).toBe(false);
+    expect(wards.get('waterTileLayer')).toBeUndefined();
+    applyWaterVersions({ wards }, { rivers: null, lakes: null, wards: 'w1' });
+    expect(wards.getSource()!.getUrls()).toEqual([`${API_BASE_URL}/api/tiles/wards/{z}/{x}/{y}.pbf?v=w1`]);
+  });
+
+  it('tells a label point from a ward polygon by its MVT layer', () => {
+    expect(isWardLabel({ layer: 'ward_labels', code: '1' })).toBe(true);
+    expect(isWardLabel({ layer: 'wards', code: '1' })).toBe(false);
   });
 });

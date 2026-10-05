@@ -9,6 +9,7 @@ import MousePosition from 'ol/control/MousePosition';
 import type Map from 'ol/Map';
 import VectorTileLayer from 'ol/layer/VectorTile';
 import { waterTileUrl } from './waterTiles';
+import VectorTileSource from 'ol/source/VectorTile';
 
 // jsdom has no ResizeObserver but the ol/Map constructor needs it (init() builds a
 // real Map underneath) — the same workaround as DrawController.test.ts.
@@ -208,6 +209,51 @@ describe('water layers from vector tiles', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(m.layers.layer_lakes.getSource()!.getUrls()).toEqual([waterTileUrl('lakes', 'l2')]);
     model.dispose();
+  });
+
+  it('applies an older successful answer when the newest request fails', async () => {
+    const answers: Array<{ ok: (v: unknown) => void; fail: (e: unknown) => void }> = [];
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((ok, fail) => { answers.push({ ok, fail }); })));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    model.refreshLayer('layer_lakes');
+    expect(answers).toHaveLength(2);
+    answers[1].fail(new Error('offline'));
+    await new Promise((r) => setTimeout(r, 0));
+    answers[0].ok({ ok: true, status: 200, json: async () => ({ rivers: 'r1', lakes: 'l1' }) });
+    await vi.waitFor(() => expect(m.layers.layer_lakes.getSource()!.getUrls()).toEqual([waterTileUrl('lakes', 'l1')]));
+    model.dispose();
+  });
+
+  it('draws the wards from API tiles at their token, and never requests wards-region.geojson', async () => {
+    const fetchMock = versions({ rivers: 'r1', lakes: 'l1', wards: 'w1' } as never);
+    vi.stubGlobal('fetch', fetchMock);
+    const xhrOpen = vi.spyOn(XMLHttpRequest.prototype, 'open');
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    const wards = m.layers.layer_wards_2026;
+    expect(wards).toBeInstanceOf(VectorTileLayer);
+    expect(wards.getSource()).toBeInstanceOf(VectorTileSource);
+    await vi.waitFor(() => expect(wards.getSource()!.getUrls()).toEqual([waterTileUrl('wards', 'w1')]));
+    // Hidden below WARDS_MIN_ZOOM, shown from it, once the versions are known.
+    await vi.waitFor(() => expect((model as unknown as { waterVersionsSettled: boolean }).waterVersionsSettled).toBe(true));
+    const states = [{ id: 'layer_wards_2026', visible: true, opacity: 1 }];
+    m.map.getView().setZoom(9.9);
+    model.applyLayerStates(states);
+    expect(wards.getVisible()).toBe(false);
+    m.map.getView().setZoom(11);
+    model.applyLayerStates(states);
+    expect(wards.getVisible()).toBe(true);
+    const requested = [
+      ...fetchMock.mock.calls.map((c) => String(c[0])),
+      ...xhrOpen.mock.calls.map((c) => String(c[1])),
+    ];
+    expect(requested.some((u) => u.includes('wards-region.geojson'))).toBe(false);
+    model.dispose();
+    xhrOpen.mockRestore();
   });
 
   it('shows the water layers after the timeout when the start-up request hangs', () => {

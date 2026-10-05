@@ -5,13 +5,12 @@
  * the zoom. For a heavy layer the gate has to sit at the SOURCE: load only once the
  * user actually zooms to where the layer shows.
  *
- * `createOneShotLoadGate` — a static file layer (ward boundaries). Loads in full EXACTLY
- * ONCE when the threshold is crossed; nothing more is needed since the data then sits in
- * memory. (The water layers used a WFS bbox gate here; they are vector tiles now, which
- * only request what is in view, so they need none.)
+ * `createOneShotLoadGate` — a static file layer. Loads in full EXACTLY ONCE when the
+ * threshold is crossed. (The water layers and the wards are API vector tiles now, which only
+ * request what is in view and nothing while hidden, so they need no gate; no layer uses it today.)
  */
 
-/** Zoom threshold for ward boundaries — matches recomputeVisibility() in MapModel. */
+/** Zoom threshold from which ward boundaries draw — see recomputeVisibility() in MapModel. */
 export const WARDS_MIN_ZOOM = 10.0;
 
 /**
