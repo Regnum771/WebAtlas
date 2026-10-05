@@ -4,7 +4,7 @@ import { PbfReader } from 'pbf';
 import { VectorTile } from '@mapbox/vector-tile';
 import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
-import { resetWardsTokenCache, wardsVersion } from './repository';
+import { boundaryVersion, largestPartPointSql, resetBoundaryTokenCache } from './repository';
 import { acceptsGzip } from './controller';
 
 let app: ReturnType<typeof buildApp>;
@@ -20,32 +20,53 @@ const tile = (layer: string, z: number, x: number, y: number, v?: string) =>
 const decode = (body: Buffer, layer: string) => new VectorTile(new PbfReader(body)).layers[layer];
 
 describe('GET /api/tiles/versions', () => {
-  it('returns the active version ids of rivers and lakes, and a token for wards', async () => {
+  it('returns the active version ids of rivers and lakes, and a token for wards and for provinces', async () => {
     const { rows } = await getPool().query<{ layer_key: string; id: string }>(
       `SELECT layer_key, id::text AS id FROM app.dataset_versions WHERE is_active AND layer_key IN ('rivers','lakes')`);
     const want = Object.fromEntries(rows.map((r) => [r.layer_key, r.id]));
     const got = await versions();
     expect({ rivers: got.rivers, lakes: got.lakes }).toEqual(want);
     expect(got.wards).toMatch(/^[0-9a-f]{32}$/);
+    expect(got.provinces).toMatch(/^[0-9a-f]{32}$/);
+    expect(got.provinces).not.toBe(got.wards);
   });
 
-  it('changes the wards token when only the geometry of one ward moves (rolled back afterwards)', async () => {
-    resetWardsTokenCache();
-    const before = await wardsVersion(getPool());
+  it.each(['wards', 'provinces'] as const)(
+    'changes the %s token when only the geometry of one row moves (rolled back afterwards)',
+    async (layer) => {
+      resetBoundaryTokenCache();
+      const before = await boundaryVersion(getPool(), layer);
+      const client = await getPool().connect();
+      try {
+        await client.query('BEGIN');
+        // Shift one row by about 0.1 m: the attributes stay the same, only the geometry changes.
+        await client.query(`UPDATE admin.${layer} SET geom = ST_Translate(geom, 1e-6, 0) WHERE code = (SELECT min(code) FROM admin.${layer})`);
+        resetBoundaryTokenCache();
+        const inTx = await boundaryVersion(client as never, layer);
+        expect(inTx).not.toBe(before);
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+        resetBoundaryTokenCache();
+      }
+      expect(await boundaryVersion(getPool(), layer)).toBe(before);
+    },
+  );
+
+  it('changes the provinces token when only a name changes (rolled back afterwards)', async () => {
+    resetBoundaryTokenCache();
+    const before = await boundaryVersion(getPool(), 'provinces');
     const client = await getPool().connect();
     try {
       await client.query('BEGIN');
-      // Shift one ward by about 0.1 m: the attributes stay the same, only the geometry changes.
-      await client.query(`UPDATE admin.wards SET geom = ST_Translate(geom, 1e-6, 0) WHERE code = (SELECT min(code) FROM admin.wards)`);
-      resetWardsTokenCache();
-      const inTx = await wardsVersion(client as never);
-      expect(inTx).not.toBe(before);
+      await client.query(`UPDATE admin.provinces SET name = name || ' (x)' WHERE code = (SELECT min(code) FROM admin.provinces)`);
+      resetBoundaryTokenCache();
+      expect(await boundaryVersion(client as never, 'provinces')).not.toBe(before);
     } finally {
       await client.query('ROLLBACK');
       client.release();
-      resetWardsTokenCache();
+      resetBoundaryTokenCache();
     }
-    expect(await wardsVersion(getPool())).toBe(before);
   });
 });
 
@@ -162,6 +183,87 @@ describe('wards tiles', () => {
     }
     for (const code of parentCodes) expect(seen.filter((c) => c === code)).toHaveLength(1);
     expect(new Set(seen).size).toBe(seen.length);
+  });
+});
+
+describe('provinces tiles', () => {
+  // Zoom 7 tile 102/59 covers Buon Ma Thuot and several provinces around it.
+  const P = { z: 7, x: 102, y: 59 };
+  const PROVINCE_PROPS = ['code', 'name', 'nameEn', 'fullName', 'areaKm2'];
+  const codesOf = (layer: ReturnType<typeof decode> | undefined) =>
+    layer ? Array.from({ length: layer.length }, (_, i) => String(layer.feature(i).properties.code)) : [];
+
+  it('decode to polygons with the province properties and label points, cached for good at the token', async () => {
+    const v = (await versions()).provinces;
+    const res = await tile('provinces', P.z, P.x, P.y, v);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    expect((await tile('provinces', P.z, P.x, P.y)).headers['cache-control']).toBe('no-cache');
+    const polys = decode(res.rawPayload, 'provinces');
+    expect(polys.length).toBeGreaterThan(1);
+    const keys = new Set(Array.from({ length: polys.length }, (_, i) => Object.keys(polys.feature(i).properties)).flat());
+    expect([...keys]).toEqual(expect.arrayContaining(PROVINCE_PROPS));
+    // Dak Lak (66) holds Buon Ma Thuot.
+    expect(codesOf(polys)).toContain('66');
+    const labels = decode(res.rawPayload, 'province_labels');
+    expect(labels.length).toBeGreaterThan(0);
+    expect(Object.keys(labels.feature(0).properties).sort()).toEqual(['code', 'name']);
+  });
+
+  it('puts the label of a province in exactly one of the four child tiles', async () => {
+    // One zoom up, so the parent holds the labels of several provinces.
+    const parent = { z: 6, x: 51, y: 29 };
+    const parentCodes = codesOf(decode((await tile('provinces', parent.z, parent.x, parent.y)).rawPayload, 'province_labels'));
+    expect(parentCodes.length).toBeGreaterThan(1);
+    const seen: string[] = [];
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+      const res = await tile('provinces', parent.z + 1, parent.x * 2 + dx, parent.y * 2 + dy);
+      if (res.statusCode !== 200) continue;
+      seen.push(...codesOf(decode(res.rawPayload, 'province_labels')));
+    }
+    for (const code of parentCodes) expect(seen.filter((c) => c === code)).toHaveLength(1);
+    expect(new Set(seen).size).toBe(seen.length);
+  });
+
+  it('labels every province exactly once across the whole country', async () => {
+    // Zoom 5: x 24-26, y 13-15 cover more than the whole of Vietnam, archipelagos included.
+    const seen: string[] = [];
+    for (const x of [24, 25, 26]) {
+      for (const y of [13, 14, 15]) {
+        const res = await tile('provinces', 5, x, y);
+        if (res.statusCode === 200) seen.push(...codesOf(decode(res.rawPayload, 'province_labels')));
+      }
+    }
+    const { rows } = await getPool().query<{ code: string }>(`SELECT code FROM admin.provinces ORDER BY code`);
+    expect(seen.sort()).toEqual(rows.map((r) => r.code));
+  });
+
+  it('simplifies the polygons to the zoom of the tile: a country-wide tile is not sent at stored detail', async () => {
+    const vertices = (layer: ReturnType<typeof decode>) => {
+      let n = 0;
+      for (let i = 0; i < layer.length; i++) for (const ring of layer.feature(i).loadGeometry()) n += ring.length;
+      return n;
+    };
+    const far = { z: 5, x: 25, y: 14 };
+    const sent = vertices(decode((await tile('provinces', far.z, far.x, far.y)).rawPayload, 'provinces'));
+    const { rows } = await getPool().query<{ stored: number }>(
+      `SELECT sum(ST_NPoints(ST_Intersection(p.geom, ST_Transform(ST_TileEnvelope($1, $2, $3), 4326))))::int AS stored
+         FROM admin.provinces p WHERE p.geom && ST_Transform(ST_TileEnvelope($1, $2, $3), 4326)`, [far.z, far.x, far.y]);
+    expect(sent).toBeGreaterThan(100);
+    expect(sent).toBeLessThan(rows[0].stored / 4);
+    // Up close the tolerance is half a pixel of a far finer grid, so the outline keeps its shape:
+    // the tile still has more than a handful of vertices where the border is detailed.
+    expect(vertices(decode((await tile('provinces', BMT.z, BMT.x, BMT.y)).rawPayload, 'provinces'))).toBeGreaterThanOrEqual(4);
+  });
+
+  it('places each label on the largest part of its province, so an island province is labelled on its mainland', async () => {
+    const { rows } = await getPool().query<{ multipart: number; off: number }>(
+      `SELECT count(*) FILTER (WHERE ST_NumGeometries(p.geom) > 1)::int AS multipart,
+              count(*) FILTER (WHERE NOT ST_Intersects(${largestPartPointSql('p.geom')},
+                (SELECT d.geom FROM ST_Dump(p.geom) d ORDER BY ST_Area(d.geom) DESC LIMIT 1)))::int AS off
+         FROM admin.provinces p`);
+    expect(rows[0].multipart).toBeGreaterThan(0);
+    expect(rows[0].off).toBe(0);
   });
 });
 

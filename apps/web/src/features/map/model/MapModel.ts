@@ -9,12 +9,11 @@ import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
 import XYZ from 'ol/source/XYZ';
 import VectorLayer from 'ol/layer/Vector';
-import VectorSource from 'ol/source/Vector';
+import type VectorSource from 'ol/source/Vector';
 import type VectorTileLayer from 'ol/layer/VectorTile';
-import GeoJSON from 'ol/format/GeoJSON';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
-import { applyWaterVersions, createWardTileLayer, createWaterTileLayer, fetchWaterVersions, withHighlight, type ApiTileLayer } from './waterTiles';
+import { applyWaterVersions, createBoundaryTileLayer, createWaterTileLayer, fetchWaterVersions, withHighlight, type ApiTileLayer } from './waterTiles';
 import { GEOSERVER_URL } from '../../../shared/config';
 import { BASEMAP_CONTEXT_LAYER_STATE_IDS, TERRAIN_LAYER_STATE_IDS, type ContourInterval } from '@webatlas/shared';
 import {
@@ -238,22 +237,6 @@ export class MapModel {
       );
     }
 
-    // Helper: a vector layer from a GeoJSON URL.
-    const createVectorLayerFromUrl = (id: string, url: string, style: any, options: any = {}) => {
-      const source = new VectorSource({
-        url: url,
-        format: new GeoJSON()
-      });
-      const layer = new VectorLayer({
-        source,
-        style,
-        properties: { id },
-        ...options
-      });
-      this.layers[id] = layer;
-      return layer;
-    };
-
     const damsStyle = makeDamsStyle(() => this.reservoirFilter);
 
     const damsLayer = new VectorLayer({ source: createWfsVectorSource('dams'), style: damsStyle, properties: { id: 'layer_dams' } });
@@ -290,15 +273,15 @@ export class MapModel {
     const saltwaterIntrusionLayer = mkWfs('layer_saltwater_intrusion', 'saltwater_intrusion', saltwaterIntrusionStyle);
     const floodGenerationLayer = mkWfs('layer_flood_generation', 'flood_generation', floodGenerationStyle);
 
-    // Province and ward boundaries from GeoJSON (shown/hidden by zoom level from the
-    // moveend listener, to avoid display glitches while moving).
-    // Boundaries after the merger (1 July 2025): 34 provinces nationwide; wards only
-    // inside the work area — zoomed out beyond it, provinces show but wards do not.
-    const provincesLayer = createVectorLayerFromUrl('layer_provinces_2026', './provinces-34.geojson', provincesStyle);
-
-    // Wards are API vector tiles (waterTiles.ts): only the tiles in view are requested, and the
-    // layer stays hidden (so requests nothing) until the versions are known and zoom reaches WARDS_MIN_ZOOM.
-    const wardsLayer = createWardTileLayer('layer_wards_2026', wardsStyle);
+    // Province and ward boundaries are API vector tiles (waterTiles.ts): only the tiles in view are
+    // requested, and a layer stays hidden (so requests nothing) until the versions are known.
+    // Boundaries after the merger (1 July 2025): 34 provinces nationwide, shown at every zoom;
+    // wards only inside the work area and only from WARDS_MIN_ZOOM — zoomed out beyond the work
+    // area, provinces show but wards do not.
+    const provincesLayer = createBoundaryTileLayer('provinces', 'layer_provinces_2026', provincesStyle);
+    this.layers['layer_provinces_2026'] = provincesLayer;
+    this.waterLayers.provinces = provincesLayer;
+    const wardsLayer = createBoundaryTileLayer('wards', 'layer_wards_2026', wardsStyle);
     this.layers['layer_wards_2026'] = wardsLayer;
     this.waterLayers.wards = wardsLayer;
 
@@ -441,7 +424,8 @@ export class MapModel {
       if (layer) {
         let zoomVisible = true;
         if (state.id === 'layer_provinces_2026') {
-          zoomVisible = true; // Province boundaries always show.
+          // Province boundaries show at every zoom, once the versions are known.
+          zoomVisible = this.waterVersionsSettled;
         } else if (state.id === 'layer_wards_2026') {
           // Hidden layers request no tiles, so this is also what gates loading.
           zoomVisible = this.waterVersionsSettled && currentZoom >= WARDS_MIN_ZOOM;

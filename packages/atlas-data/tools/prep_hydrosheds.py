@@ -42,7 +42,7 @@ RIVER_FIELDS = ["HYRIV_ID", "NEXT_DOWN", "MAIN_RIV", "ORD_STRA", "LENGTH_KM"]
 REGION_PROVINCE_CODES = {"48", "51", "52", "56", "66", "68"}
 
 # packages/atlas-data/tools -> repo root is three levels up.
-PROVINCES = Path(__file__).resolve().parents[3] / "apps/web/public/provinces-34.geojson"
+PROVINCES = Path(__file__).resolve().parents[3] / "packages/atlas-data/data/seeds/provinces-34.geojson"
 
 
 def _region_polygon():

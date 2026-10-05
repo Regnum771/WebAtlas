@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import Feature from 'ol/Feature';
 import { Style } from 'ol/style';
 import VectorTileLayer from 'ol/layer/VectorTile';
-import { applyWaterVersions, createWardTileLayer, createWaterTileLayer, isWardLabel, fetchWaterVersions, waterTileUrl, withHighlight } from './waterTiles';
+import { applyWaterVersions, createBoundaryTileLayer, createWaterTileLayer, isBoundaryLabel, fetchWaterVersions, waterTileUrl, withHighlight } from './waterTiles';
 import { API_BASE_URL } from '../../../shared/config';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -64,18 +64,30 @@ describe('withHighlight', () => {
   });
 });
 
-describe('ward tile layer', () => {
-  it('is a hidden VectorTile layer on the versioned wards URL, and is not an editable water layer', () => {
-    const wards = createWardTileLayer('layer_wards_2026', () => undefined);
-    expect(wards).toBeInstanceOf(VectorTileLayer);
-    expect(wards.getVisible()).toBe(false);
-    expect(wards.get('waterTileLayer')).toBeUndefined();
-    applyWaterVersions({ wards }, { rivers: null, lakes: null, wards: 'w1' });
-    expect(wards.getSource()!.getUrls()).toEqual([`${API_BASE_URL}/api/tiles/wards/{z}/{x}/{y}.pbf?v=w1`]);
+describe('boundary tile layers', () => {
+  it.each([
+    ['wards', 'layer_wards_2026', 'w1'],
+    ['provinces', 'layer_provinces_2026', 'p1'],
+  ] as const)('%s: a hidden VectorTile layer on its versioned URL, and not an editable water layer', (name, stateId, token) => {
+    const layer = createBoundaryTileLayer(name, stateId, () => undefined);
+    expect(layer).toBeInstanceOf(VectorTileLayer);
+    expect(layer.getVisible()).toBe(false);
+    expect(layer.get('id')).toBe(stateId);
+    expect(layer.get('waterTileLayer')).toBeUndefined();
+    applyWaterVersions({ [name]: layer }, { rivers: null, lakes: null, wards: 'w1', provinces: 'p1' });
+    expect(layer.getSource()!.getUrls()).toEqual([`${API_BASE_URL}/api/tiles/${name}/{z}/{x}/{y}.pbf?v=${token}`]);
   });
 
-  it('tells a label point from a ward polygon by its MVT layer', () => {
-    expect(isWardLabel({ layer: 'ward_labels', code: '1' })).toBe(true);
-    expect(isWardLabel({ layer: 'wards', code: '1' })).toBe(false);
+  it('keeps the unversioned URL when an older API answers without a provinces token', () => {
+    const provinces = createBoundaryTileLayer('provinces', 'layer_provinces_2026', () => undefined);
+    applyWaterVersions({ provinces }, { rivers: 'r1', lakes: 'l1' });
+    expect(provinces.getSource()!.getUrls()).toEqual([`${API_BASE_URL}/api/tiles/provinces/{z}/{x}/{y}.pbf`]);
+  });
+
+  it('tells a label point from a boundary polygon by its MVT layer', () => {
+    expect(isBoundaryLabel({ layer: 'ward_labels', code: '1' })).toBe(true);
+    expect(isBoundaryLabel({ layer: 'province_labels', code: '66' })).toBe(true);
+    expect(isBoundaryLabel({ layer: 'wards', code: '1' })).toBe(false);
+    expect(isBoundaryLabel({ layer: 'provinces', code: '66' })).toBe(false);
   });
 });

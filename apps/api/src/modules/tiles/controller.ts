@@ -1,7 +1,7 @@
 import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { activeVersions, tileSql, versionOf, TILE_LAYERS, type TileLayer } from './repository';
+import { activeVersions, tileSql, versionOf, TILE_LAYERS, VERSION_OF, type TileLayer } from './repository';
 
 const MAX_ZOOM = 16;
 const gzipAsync = promisify(gzip);
@@ -38,7 +38,7 @@ export async function tile(req: FastifyRequest, reply: FastifyReply) {
   // A tile is immutable at a given active version: a URL that names it is cached for good, and the
   // next activation changes the version, so the next URL is new. Anything else must be revalidated.
   const wanted = (req.query as { v?: string }).v;
-  const current = await versionOf(req.server.pg, layer === 'lakes' ? 'lakes' : layer === 'wards' ? 'wards' : 'rivers');
+  const current = await versionOf(req.server.pg, VERSION_OF[layer]);
   const cacheable = wanted !== undefined && wanted === current;
   const { rows } = await req.server.pg.query<{ tile: Buffer | null }>(tileSql(layer), [z, x, y]);
   const body = rows[0]?.tile;

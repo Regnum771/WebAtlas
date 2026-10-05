@@ -8,8 +8,9 @@ import { allOf, rowCount } from '../probes';
  * feature with the province and ward codes it intersects; a boundary change therefore cascades to
  * every layer's re-stamp path (spec §11).
  *
- * The two files are read from apps/web/public, not from data/seeds: the map loads them there
- * (spec C-2). The exception ends when the map reads boundaries from GeoServer or the API.
+ * The two files live in data/seeds with the other committed inputs. They used to sit in
+ * apps/web/public because the map loaded them there (spec C-2); it now draws both layers from
+ * the API's vector tiles.
  */
 export const adminBoundaries = defineDataset({
   id: 'admin_boundaries',
@@ -33,8 +34,8 @@ export const adminBoundaries = defineDataset({
       layer: 'admin',
       versioned: false,
       files: [
-        { file: 'apps/web/public/provinces-34.geojson', root: 'repo', target: 'admin.provinces', multiPolygon: true, columns: ADMIN_PROVINCE_COLUMNS },
-        { file: 'apps/web/public/wards-region.geojson', root: 'repo', target: 'admin.wards', multiPolygon: true, columns: ADMIN_WARD_COLUMNS },
+        { file: 'seeds/provinces-34.geojson', target: 'admin.provinces', multiPolygon: true, columns: ADMIN_PROVINCE_COLUMNS },
+        { file: 'seeds/wards-region.geojson', target: 'admin.wards', multiPolygon: true, columns: ADMIN_WARD_COLUMNS },
       ],
     },
   ],

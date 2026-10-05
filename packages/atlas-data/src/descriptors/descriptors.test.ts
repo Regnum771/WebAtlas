@@ -106,7 +106,7 @@ describe('registered datasets', () => {
         'differently from the same file (for the builder: the rivers layer), raise that stage\'s mappingRevision: ' +
         'the build then loads it as a new version instead of re-stamping the old rows. Then update this table.'
     ).toEqual({
-      mappingCode: 'e6422daf17a9031c',
+      mappingCode: 'ec8f832d7f344ed7',
       riverHierarchyCode: 'b457e1d24f1823c8',
       loads: {
         admin: 'mapping-1: provinces-34.geojson multiPolygon -> admin.provinces + wards-region.geojson multiPolygon -> admin.wards',
@@ -122,13 +122,13 @@ describe('registered datasets', () => {
     });
   });
 
-  it('the boundaries are a non-versioned load of the two files the map itself uses', () => {
+  it('the boundaries are a non-versioned load of the two committed boundary files', () => {
     const [load] = byId('admin_boundaries').stages;
     if (load.type !== 'load-geojson') throw new Error('expected load-geojson');
     expect(load.versioned).toBe(false);
     expect(load.files.map((f) => [f.root, f.file, f.target])).toEqual([
-      ['repo', 'apps/web/public/provinces-34.geojson', 'admin.provinces'],
-      ['repo', 'apps/web/public/wards-region.geojson', 'admin.wards'],
+      [undefined, 'seeds/provinces-34.geojson', 'admin.provinces'],
+      [undefined, 'seeds/wards-region.geojson', 'admin.wards'],
     ]);
   });
 

@@ -38,7 +38,7 @@ DB = os.environ.get(
     "BASEMAP_DB_URL",
     "postgresql+psycopg2://webatlas:change_me_dev@localhost:5432/webatlas",
 )
-PROVINCES = str(ROOT / "apps" / "web" / "public" / "provinces-34.geojson")
+PROVINCES = str(ROOT / "packages" / "atlas-data" / "data" / "seeds" / "provinces-34.geojson")
 REGION_CODES = {"48", "51", "52", "56", "66", "68"}  # REGION_PROVINCE_CODES
 
 MAJOR_ROADS = ("motorway", "trunk", "primary", "motorway_link", "trunk_link", "primary_link")
@@ -126,15 +126,15 @@ def write(gdf: gpd.GeoDataFrame, table: str, engine) -> None:
                 c.execute(text(
                     f'ALTER TABLE basemap."{new}" ALTER COLUMN "{geom}" '
                     f'TYPE geometry({"GeometryZ" if whole.endswith("Z") else "Geometry"}, 4326)'))
-        # KHONG tu tao index hinh hoc o day: to_postgis cua GeoPandas da tao san
-        # idx_<table>__new_<geom>, doi ten thanh idx_<table>_geometry sau khi hoan doi.
-        # Truoc day dong nay tao them mot GiST thu hai y het
-        # tren moi bang, chi ton thoi gian ghi va dung luong, khong giup doc.
+        # Do NOT create a geometry index here: GeoPandas' to_postgis already made
+        # idx_<table>__new_<geom>, renamed to idx_<table>_geometry after the swap.
+        # This line used to create a second, identical GiST on every table, which
+        # only cost write time and space and did not help reads.
         #
-        # Index fclass moi la thu thuc su thieu. Moi luat trong SLD loc theo fclass;
-        # voi bbox rong (tile o muc thu nho) PostgreSQL bo qua index hinh hoc va
-        # quet ca bang 527k dong. Do tren roads_region: 998ms -> 199ms cho luat
-        # 'secondary' khi co index nay.
+        # The fclass index is what was actually missing. Every SLD rule filters on
+        # fclass; with a wide bbox (a tile at a zoomed-out level) PostgreSQL skips the
+        # geometry index and scans the whole 527k-row table. Measured on roads_region:
+        # 998 ms -> 199 ms for the 'secondary' rule with this index.
         has_fclass = "fclass" in gdf.columns
         if has_fclass:
             c.execute(text(f'CREATE INDEX IF NOT EXISTS {new}_fclass_idx ON basemap."{new}" (fclass)'))

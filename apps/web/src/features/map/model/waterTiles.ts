@@ -7,16 +7,21 @@ import { API_BASE_URL } from '../../../shared/config';
 import { apiRequest } from '../../../shared/api/apiClient';
 
 export type WaterTileLayer = 'rivers' | 'lakes' | 'rivers_overview';
-/** `wards` is the ward layer's token, not a dataset version: it is optional so an older API answer still applies. */
-export type WaterVersions = { rivers: string | null; lakes: string | null; wards?: string | null };
-/** Every layer served by the API's tile endpoint. The wards are not a water layer, but share the versions request. */
-export type ApiTileLayer = WaterTileLayer | 'wards';
+/** The administrative boundary layers, drawn from the same tile endpoint. */
+export type BoundaryTileLayer = 'wards' | 'provinces';
+/** `wards` and `provinces` are tokens, not dataset versions: they are optional so an older API answer still applies. */
+export type WaterVersions = { rivers: string | null; lakes: string | null; wards?: string | null; provinces?: string | null };
+/** Every layer served by the API's tile endpoint. The boundaries are not water layers, but share the versions request. */
+export type ApiTileLayer = WaterTileLayer | BoundaryTileLayer;
 
-/** MVT layer name of the ward label points (the polygons are the `wards` MVT layer). */
+/** MVT layer names of the boundary label points (the polygons are the `wards` and `provinces` MVT layers). */
 export const WARD_LABEL_LAYER = 'ward_labels';
+export const PROVINCE_LABEL_LAYER = 'province_labels';
 
 /** The rivers version also keys the overview: both are drawn from the rivers layer's active version. */
-const VERSION_OF: Record<ApiTileLayer, keyof WaterVersions> = { rivers: 'rivers', rivers_overview: 'rivers', lakes: 'lakes', wards: 'wards' };
+const VERSION_OF: Record<ApiTileLayer, keyof WaterVersions> = {
+  rivers: 'rivers', rivers_overview: 'rivers', lakes: 'lakes', wards: 'wards', provinces: 'provinces',
+};
 
 export function waterTileUrl(layer: ApiTileLayer, version: string | null): string {
   const base = `${API_BASE_URL}/api/tiles/${layer}/{z}/{x}/{y}.pbf`;
@@ -45,25 +50,26 @@ export function createWaterTileLayer(layer: WaterTileLayer, stateId: string, sty
 }
 
 /**
- * The ward boundary layer (`layer_wards_2026`), drawn from the API's tiles. Created hidden, like the
- * water layers: MapModel shows it once the versions are known and the zoom reaches WARDS_MIN_ZOOM.
- * Not a water layer, so it carries no `waterTileLayer` property and is never an edit target.
+ * A boundary layer (`layer_wards_2026`, `layer_provinces_2026`), drawn from the API's tiles. Created
+ * hidden, like the water layers: MapModel shows it once the versions are known (and, for wards, the
+ * zoom reaches WARDS_MIN_ZOOM). Not a water layer, so it carries no `waterTileLayer` property and is
+ * never an edit target.
  */
-export function createWardTileLayer(stateId: string, style: StyleLike | StyleFunction): VectorTileLayer {
+export function createBoundaryTileLayer(layer: BoundaryTileLayer, stateId: string, style: StyleLike | StyleFunction): VectorTileLayer {
   return new VectorTileLayer({
-    source: new VectorTileSource({ format: new MVT(), url: waterTileUrl('wards', null), maxZoom: 16 }),
+    source: new VectorTileSource({ format: new MVT(), url: waterTileUrl(layer, null), maxZoom: 16 }),
     style,
     renderMode: 'hybrid',
     visible: false,
-    // Labels are single points, one per ward, so no decluttering is needed.
+    // Labels are single points, one per unit, so no decluttering is needed.
     declutter: false,
     properties: { id: stateId },
   });
 }
 
-/** True for the label points of a tile feature (they carry only `code` and `name`, not the ward's attributes). */
-export function isWardLabel(props: Record<string, unknown>): boolean {
-  return props.layer === WARD_LABEL_LAYER;
+/** True for a boundary tile's label point (it carries only `code` and `name`, not the unit's attributes). */
+export function isBoundaryLabel(props: Record<string, unknown>): boolean {
+  return props.layer === WARD_LABEL_LAYER || props.layer === PROVINCE_LABEL_LAYER;
 }
 
 export async function fetchWaterVersions(): Promise<WaterVersions> {

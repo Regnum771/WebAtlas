@@ -1,10 +1,10 @@
 /**
- * Lọc mọi dữ liệu chuyên đề xuống đúng vùng công tác (6 tỉnh).
+ * Filters every thematic dataset down to the working region (6 provinces).
  *
- * Chạy trên các file seed tại chỗ (ghi đè). Dữ liệu seed đã được commit nên
- * `git restore` khôi phục được nếu cần.
+ * Works on the seed files in place (overwrites them). The seed data is committed, so
+ * `git restore` brings it back if needed.
  *
- * Chạy: node packages/atlas-data/tools/clip-to-region.mjs
+ * Run: node packages/atlas-data/tools/clip-to-region.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,14 +14,13 @@ import { buildRegionRings, featureIntersectsRegion } from './lib/regionClip.mjs'
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../../..');
 const dataDir = path.join(repoRoot, 'packages/atlas-data/data/seeds');
-const provincesPath = path.join(repoRoot, 'apps/web/public/provinces-34.geojson');
+const provincesPath = path.join(dataDir, 'provinces-34.geojson');
 
-// Giữ đồng bộ với REGION_PROVINCE_CODES trong packages/shared/src/region.ts.
+// Keep in step with REGION_PROVINCE_CODES in packages/shared/src/region.ts.
 const REGION_CODES = ['48', '51', '52', '56', '66', '68'];
 
-// Mọi file seed chuyên đề. Layer nào chưa có file thì bỏ qua trong im lặng.
-// LƯU Ý: dams nằm ở apps/web/public/ chứ không phải thư mục seed, nên phải
-// liệt kê đường dẫn riêng — 205/371 đập nằm ngoài vùng nếu không cắt.
+// Every thematic seed file. A layer with no file yet is skipped silently.
+// Dams matter here: 205 of the 371 dams lie outside the region unless clipped.
 const TARGETS = [
   path.join(dataDir, 'osm-rivers-region.geojson'),
   path.join(dataDir, 'osm-lakes-region.geojson'),
@@ -45,8 +44,8 @@ for (const filePath of TARGETS) {
   }
   const fc = JSON.parse(fs.readFileSync(filePath, 'utf8'));
   const before = fc.features.length;
-  // Đập thiếu toạ độ (geom null) vẫn giữ: chúng là bản ghi danh mục hợp lệ,
-  // đã có báo cáo riêng ở Task 13 và bị lọc ở frontend.
+  // Dams without coordinates (null geom) are kept: they are valid catalogue records,
+  // reported separately in Task 13 and filtered out in the frontend.
   fc.features = fc.features.filter((f) => !f.geometry || featureIntersectsRegion(f, rings));
   const after = fc.features.length;
   fs.writeFileSync(filePath, JSON.stringify(fc));

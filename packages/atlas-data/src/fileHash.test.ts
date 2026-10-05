@@ -45,8 +45,8 @@ describe('file hashing for load-geojson', () => {
 
   it('resolves a stage file under data/ by default and under the repo root when asked', () => {
     expect(resolveStageFile({ file: 'seeds/dams.geojson' })).toBe(join(DATA_DIR, 'seeds', 'dams.geojson'));
-    expect(resolveStageFile({ file: 'apps/web/public/provinces-34.geojson', root: 'repo' }))
-      .toBe(join(REPO_ROOT, 'apps', 'web', 'public', 'provinces-34.geojson'));
+    expect(resolveStageFile({ file: 'apps/web/public/favicon.svg', root: 'repo' }))
+      .toBe(join(REPO_ROOT, 'apps', 'web', 'public', 'favicon.svg'));
   });
 
   it('hashes every file of a stage, in order', () => {

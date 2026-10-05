@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   members: [] as Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }>,
   target: null as null | HTMLElement,
   overlayOnTop: false,
+  labelOnTop: false,
 }));
 
 vi.mock('../features/map/model/drawingState', () => ({ isDrawing: () => false, drawingJustEnded: () => false }));
@@ -25,7 +26,9 @@ vi.mock('../app/providers/MapProvider', () => {
     un: () => {},
     forEachFeatureAtPixel: (_px: unknown, cb: (f: unknown, l: unknown) => unknown) => {
       if (h.overlayOnTop) cb({ getProperties: () => ({ geometry: {}, label: 'Vùng phân tích' }), getId: () => undefined }, { get: () => 'layer_roi' });
-      cb({ getProperties: () => ({ code: '66', name: 'Đắk Lắk', fullName: 'Tỉnh Đắk Lắk' }), getId: () => 'p.66' },
+      // A province tile's label point carries only code and name; the polygon has the full attributes.
+      if (h.labelOnTop) cb({ getProperties: () => ({ layer: 'province_labels', code: '66', name: 'Đắk Lắk' }), getId: () => undefined }, { get: () => 'layer_provinces_2026' });
+      cb({ getProperties: () => ({ layer: 'provinces', code: '66', name: 'Đắk Lắk', fullName: 'Tỉnh Đắk Lắk' }), getId: () => undefined },
         { get: () => 'layer_provinces_2026' });
     },
     getSize: () => [100, 100],
@@ -104,5 +107,16 @@ describe('DynamicPopup under an ROI overlay', () => {
     h.overlayOnTop = false;
     expect(screen.getByText('Tỉnh Đắk Lắk')).toBeInTheDocument(); // candidate from the province layer
     expect(container.textContent).not.toContain('Đối tượng không tên');
+  });
+});
+
+describe('DynamicPopup on a province label point', () => {
+  beforeEach(() => { h.handler = null; h.info.length = 0; h.members.length = 0; h.overlayOnTop = false; h.labelOnTop = true; });
+  it('takes the province from the polygon, not from the label point drawn over it', async () => {
+    render(<DynamicPopup />);
+    await click(1);
+    h.labelOnTop = false;
+    // The label point has no fullName: read from it, the candidate would be the bare "Đắk Lắk".
+    expect(screen.getByText('Tỉnh Đắk Lắk')).toBeInTheDocument();
   });
 });

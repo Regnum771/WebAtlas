@@ -83,8 +83,8 @@ lines are for a manual rerun.
    that create `basemap.dem_region` and `basemap.contours` empty and ready for steps 7–8.
 3. **`admin_boundaries` and the seven layer datasets** (`dams`, `lakes`, `stations`, `flood_zones`, `flood_generation`,
    `drought_points`, `saltwater_intrusion`). `admin_boundaries` loads `admin.provinces` / `admin.wards` from the
-   GeoJSON committed in `apps/web/public`; each layer dataset then loads its GeoJSON from
-   [`packages/atlas-data/data/seeds`](../../packages/atlas-data/data/seeds), stamps `province_codes` / `ward_codes`
+   two boundary files in [`packages/atlas-data/data/seeds`](../../packages/atlas-data/data/seeds); each layer
+   dataset then loads its GeoJSON from the same folder, stamps `province_codes` / `ward_codes`
    onto every feature, and publishes the layer. The files are in git, so this is fully reproducible from a checkout
    with no network access. Manual rerun of one: `npm run atlas:build -- --only dams`.
 

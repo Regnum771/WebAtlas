@@ -61,7 +61,7 @@ docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps
 >
 > The mirror labels the licence "Non-Commercial Government Licence v2.0" where Bristol says CC BY-NC-SA 4.0. Both are non-commercial; honour the Bristol terms, which are upstream.
 
-Writes `packages/atlas-data/data/cache/dem/` (gitignored): `raw/` holds the downloaded tiles, `clipped/` the per-province-polygon clips that get loaded. The clip mask is the union of the six working-region provinces from `apps/web/public/provinces-34.geojson`, padded by ~110 m.
+Writes `packages/atlas-data/data/cache/dem/` (gitignored): `raw/` holds the downloaded tiles, `clipped/` the per-province-polygon clips that get loaded. The clip mask is the union of the six working-region provinces from `packages/atlas-data/data/seeds/provinces-34.geojson`, padded by ~110 m.
 
 **Clipping is by polygon, not bounding box** — not a detail. The region's bbox runs out to lon ~117.8° because of the archipelagos, so a bbox-driven tile list would fetch a hundred-odd cells of open sea. The same trap the basemap runbook documents.
 

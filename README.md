@@ -167,7 +167,7 @@ API-workspace scripts (run with `-w @webatlas/api`): `dev`, `start`, `create-adm
 
 ## Regenerating administrative boundaries
 
-`apps/web/public/provinces-34.geojson` (34 tỉnh sau sáp nhập, cả nước) và
+`packages/atlas-data/data/seeds/provinces-34.geojson` (34 tỉnh sau sáp nhập, cả nước) và
 `wards-region.geojson` (xã của 6 tỉnh trong vùng công tác) là generated
 artifact đã commit — không cần chạy lại để chạy app.
 
