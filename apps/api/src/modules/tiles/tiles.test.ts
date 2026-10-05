@@ -58,6 +58,21 @@ describe('GET /api/tiles/:layer/:z/:x/:y.pbf', () => {
     expect(Object.keys(props)).toEqual(expect.arrayContaining(['name_key', 'stream_order']));
   });
 
+  it('overview tile holds the same rivers as the view, compared by name', async () => {
+    const res = await tile('rivers_overview', 7, 102, 59);
+    const layer = decode(res.rawPayload, 'rivers_overview');
+    const got = new Set(Array.from({ length: layer.length }, (_, i) => String(layer.feature(i).properties.name_key)));
+    const { rows } = await getPool().query<{ k: string }>(
+      `SELECT DISTINCT name_key AS k FROM water.rivers_overview
+        WHERE geom && ST_Transform(ST_TileEnvelope(7, 102, 59), 4326)`);
+    const want = new Set(rows.map((r) => r.k));
+    // The view's 0.01 degree simplification moves edges slightly, so allow a little slack at tile borders.
+    const missing = [...want].filter((k) => !got.has(k));
+    const extra = [...got].filter((k) => !want.has(k));
+    expect(got.size).toBeGreaterThan(0);
+    expect(missing.length + extra.length).toBeLessThanOrEqual(Math.ceil(want.size * 0.05));
+  });
+
   it('does not let a stale or missing version be cached', async () => {
     expect((await tile('rivers', BMT.z, BMT.x, BMT.y)).headers['cache-control']).toBe('no-cache');
     expect((await tile('rivers', BMT.z, BMT.x, BMT.y, '00000000-0000-0000-0000-000000000000')).headers['cache-control']).toBe('no-cache');
@@ -77,9 +92,14 @@ describe('GET /api/tiles/:layer/:z/:x/:y.pbf', () => {
   });
 
   it('is not throttled by the global 100/min limit: a map view requests tiles in bursts', async () => {
-    // Lakes, not the far-zoom rivers: that view takes ~2 s a tile, and 150 at once would exhaust the
-    // pool's 5 s connection wait; this test is about the rate limit, not tile speed.
-    const codes = await Promise.all(Array.from({ length: 150 }, () => tile('lakes', BMT.z, BMT.x, BMT.y)));
-    expect(codes.every((r) => r.statusCode === 200)).toBe(true);
+    // The point is the rate limit, not throughput. Requests go in waves of 10 (the pool size), so the
+    // outcome does not depend on how many connections happen to be free; 15 waves = 150 > 100/min.
+    const codes: number[] = [];
+    for (let w = 0; w < 15; w++) {
+      const wave = await Promise.all(Array.from({ length: 10 }, () => tile('lakes', BMT.z, BMT.x, BMT.y)));
+      codes.push(...wave.map((r) => r.statusCode));
+    }
+    expect(codes).toHaveLength(150);
+    expect(codes.every((c) => c === 200)).toBe(true);
   });
 });

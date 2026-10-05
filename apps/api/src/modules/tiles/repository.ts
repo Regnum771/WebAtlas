@@ -8,7 +8,7 @@ export type TileLayer = (typeof TILE_LAYERS)[number];
 const SOURCE: Record<TileLayer, string> = {
   rivers: 'water.rivers_detail',
   lakes: 'water.lakes_active',
-  rivers_overview: 'water.rivers_overview',
+  rivers_overview: 'water.rivers_active',
 };
 
 /** The properties each tile feature carries: what the web app's styles, popups and ROI candidates read. */
@@ -24,6 +24,7 @@ function propertiesSql(layer: TileLayer): string {
  * on the stored 4326 geometry, so the views' partial GiST index (migration 22) serves it.
  */
 export function tileSql(layer: TileLayer): string {
+  if (layer === 'rivers_overview') return overviewTileSql();
   return `
     WITH bounds AS (SELECT ST_TileEnvelope($1, $2, $3) AS b),
     features AS (
@@ -32,6 +33,28 @@ export function tileSql(layer: TileLayer): string {
        WHERE t.geom && ST_Transform(bounds.b, 4326)
     )
     SELECT ST_AsMVT(features.*, '${layer}', 4096, 'geom') AS tile FROM features WHERE geom IS NOT NULL`;
+}
+
+/**
+ * Far-zoom rivers. Deliberately NOT read from water.rivers_overview: that view simplifies every river
+ * before any filter, which defeats the bounding-box index and costs seconds per tile. This selects the
+ * same rows (level-1 rivers having a level-3 way of stream order 5, as in migration 1000000000020) from
+ * the active view and filters by the tile envelope first. Only the surviving rivers are simplified (0.01 degree,
+ * like the view; plain ST_Simplify, since the topology-preserving variant is several times slower and a
+ * tile does not need it), then clipped and quantised by ST_AsMVTGeom.
+ */
+function overviewTileSql(): string {
+  return `
+    WITH bounds AS (SELECT ST_TileEnvelope($1, $2, $3) AS b),
+    features AS (
+      SELECT ST_AsMVTGeom(ST_Transform(ST_Simplify(t.geom, 0.01), 3857), bounds.b, 4096, 64, true) AS geom,
+             COALESCE(t.name, '') AS name_key, t.name, t.stream_order
+        FROM ${SOURCE.rivers_overview} t, bounds
+       WHERE t.feature_level = 1
+         AND t.geom && ST_Transform(bounds.b, 4326)
+         AND t.external_id IN (SELECT parent_external_id FROM ${SOURCE.rivers_overview} WHERE feature_level = 3 AND stream_order = 5)
+    )
+    SELECT ST_AsMVT(features.*, 'rivers_overview', 4096, 'geom') AS tile FROM features WHERE geom IS NOT NULL`;
 }
 
 export async function activeVersions(db: Pool): Promise<{ rivers: string | null; lakes: string | null }> {
