@@ -61,7 +61,10 @@ describe('GET /api/tiles/:layer/:z/:x/:y.pbf', () => {
     const props = layer.feature(0).properties;
     expect(props.layerKey).toBe('rivers');
     expect(typeof props.id).toBe('string');
-    expect(Object.keys(props)).toEqual(expect.arrayContaining(['localId', 'geographicalName', 'streamOrder']));
+    // MVT omits null values and a tile's feature order is not fixed, so the first feature may be an
+    // unnamed river: look across the whole tile.
+    const keys = new Set(Array.from({ length: layer.length }, (_, i) => Object.keys(layer.feature(i).properties)).flat());
+    expect([...keys]).toEqual(expect.arrayContaining(['localId', 'geographicalName', 'streamOrder']));
   });
 
   it('serves lakes the same way', async () => {
