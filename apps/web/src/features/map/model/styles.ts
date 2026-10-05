@@ -13,17 +13,17 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// Bucket (từ riverBucket, theo hạng OSM waterway) -> [độ rộng viền, độ rộng lõi]. Bucket càng cao càng rộng.
-// Bucket 0 là mặc định mỏng cho "mương / còn lại".
+// Bucket (from riverBucket, by OSM waterway rank) -> [casing width, core width]. The higher the bucket, the wider.
+// Bucket 0 is the thin default for "ditch / everything else".
 const RIVER_WIDTHS: Record<number, [number, number]> = {
-  3: [7, 3.5],   // sông chính
-  2: [5, 2.2],   // kênh đào
-  1: [3, 1.2],   // suối
-  0: [1.5, 0.5], // mương / không xác định
+  3: [7, 3.5],   // main river
+  2: [5, 2.2],   // canal
+  1: [3, 1.2],   // stream
+  0: [1.5, 0.5], // ditch / unknown
 };
 
-// Hạng theo loại OSM (xem packages/shared/src/osm-water.ts):
-// 5 = sông chính, 4 = kênh đào, 2 = suối, 1 = mương.
+// Rank by OSM kind (see packages/shared/src/osm-water.ts):
+// 5 = main river, 4 = canal, 2 = stream, 1 = ditch.
 function riverBucket(order: number): 0 | 1 | 2 | 3 {
   if (order >= 5) return 3;
   if (order === 4) return 2;
@@ -46,40 +46,40 @@ const RIVER_STYLES: Record<number, Style[]> = Object.fromEntries(
 );
 
 /**
- * So sánh ">= ngưỡng" có dung sai, vì ba ngưỡng dưới đây (1.000.000, 500.000,
- * 250.000) đều NẰM ĐÚNG trên ba nấc của thanh trượt. Đi vòng qua
- * zoomForScale -> resolution -> scaleAtResolution, mẫu số 1.000.000 quay về
- * thành 999.999,9999..., nên phép so sánh chặt sẽ cho ra mức chi tiết khác nhau
- * ở đúng một nấc người dùng bấm tới được — hành vi phụ thuộc nhiễu dấu phẩy động.
- * Một phần nghìn đơn vị mẫu số thấp hơn nhiều so với mức có nghĩa, và cao hơn
- * nhiều so với sai số làm tròn (~1e-4 ở thang 1e6).
+ * A ">= threshold" comparison with a tolerance, because the three thresholds below
+ * (1,000,000, 500,000 and 250,000) sit EXACTLY on three stops of the slider. Going
+ * round through zoomForScale -> resolution -> scaleAtResolution, the denominator
+ * 1,000,000 comes back as 999,999.9999..., so a strict comparison would give a
+ * different level of detail at a stop the user can click to: behaviour that depends
+ * on floating-point noise. A thousandth of a denominator unit is far below anything
+ * meaningful and far above the rounding error (~1e-4 at the 1e6 scale).
  */
 function atLeast(scale: number, threshold: number): boolean {
   return scale >= threshold - 0.001;
 }
 
 /**
- * Bucket nhỏ nhất còn được vẽ ở một resolution. Bucket càng cao càng là sông lớn,
- * và các bucket hiển thị luôn là một dải liên tục từ trên xuống, nên một con số
- * đủ diễn đạt cả bảng ngưỡng — không phải cấp phát Set nào trong hàm style chạy
- * mỗi đối tượng mỗi khung hình.
+ * The smallest bucket still drawn at a resolution. The higher the bucket, the larger
+ * the river, and the buckets shown are always one unbroken run from the top down, so
+ * a single number expresses the whole threshold table: no Set is allocated in a style
+ * function that runs for every feature on every frame.
  *
- * Mẫu số CÀNG LỚN nghĩa là CÀNG THU NHỎ.
+ * A LARGER denominator means MORE zoomed out.
  */
 export function minRiverBucketAt(resolution: number): 0 | 1 | 2 | 3 {
   const scale = scaleAtResolution(resolution);
-  if (atLeast(scale, 1_000_000)) return 3; // chỉ sông chính
-  if (atLeast(scale, 500_000)) return 2; // + kênh đào
-  if (atLeast(scale, 250_000)) return 1; // + suối
-  return 0; // + mương, chưa xác định
+  if (atLeast(scale, 1_000_000)) return 3; // main rivers only
+  if (atLeast(scale, 500_000)) return 2; // + canals
+  if (atLeast(scale, 250_000)) return 1; // + streams
+  return 0; // + ditches, unknown
 }
 
-// Style cho mạng lưới sông ngòi động dựa trên cấp độ sông (Cap) — cached, no per-frame allocation.
-// Trả undefined cho các bucket dưới ngưỡng của mức thu phóng hiện tại: OpenLayers
-// hiểu "không có style" là không vẽ đối tượng. Phải là undefined chứ không phải
-// null — kiểu StyleFunction của ol khai báo trả về Style | Style[] | void, nên
-// null làm hỏng type-check ở chỗ gán style cho lớp (MapModel.ts).
-// Đây là LOD HIỂN THỊ — WFS vẫn tải đủ dữ liệu, chỉ phần dựng hình nhẹ đi.
+// The style of the river network, by river rank — cached, no per-frame allocation.
+// Returns undefined for buckets below the current zoom's threshold: OpenLayers reads
+// "no style" as "do not draw the feature". It must be undefined, not null: ol's
+// StyleFunction type is declared to return Style | Style[] | void, so null breaks the
+// type-check where the style is assigned to the layer (MapModel.ts).
+// This is DISPLAY level of detail: the data is still all there, only the drawing is lighter.
 export const riversStyle = (feature: any, resolution: number) => {
   const cap = feature.get('streamOrder') || 6;
   const bucket = riverBucket(cap);
@@ -126,10 +126,10 @@ export const floodGenerationStyle = new Style({
   stroke: new Stroke({ color: LAYER_PALETTE.layer_flood_generation.color, width: 1.5 })
 });
 
-// ARCHIVED: dải màu pastel tô nền tỉnh/xã đã được gỡ (nền bản đồ tự lưu trữ đã
-// cung cấp ngữ cảnh, và màu trang trí tranh chấp với màu DỮ LIỆU của lớp hiểm hoạ).
-// Muốn khôi phục: `git show b84bf50:apps/web/src/features/map/model/styles.ts`
-// — chứa provinceColors[] và hàm hashCode() băm màu theo mã xã.
+// ARCHIVED: the pastel fills of provinces and wards were removed (the self-hosted basemap
+// already gives the context, and decorative colours competed with the DATA colours of the
+// hazard layers). To restore them: `git show b84bf50:apps/web/src/features/map/model/styles.ts`,
+// which holds provinceColors[] and the hashCode() function that picks a colour from the ward code.
 
 
 // Province boundaries (after the 2025 merger). A tile holds the polygons (MVT layer `provinces`) and
@@ -227,7 +227,7 @@ const RIVER_SELECT_STYLES: Record<number, Style[]> = Object.fromEntries(
   })
 );
 
-// Style highlight khi click chọn một đoạn sông (dùng cho ol/interaction/Select)
+// The highlight style of a clicked river segment (applied through withHighlight in waterTiles.ts).
 export function makeRiverSelectStyle() {
   return (feature: any) => {
     const cap = feature.get('streamOrder') || 6;

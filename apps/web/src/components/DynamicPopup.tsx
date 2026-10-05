@@ -157,11 +157,11 @@ const DynamicPopup: React.FC = () => {
       ];
       setCandidates(base);
 
-      // Ranh giới tỉnh/xã là polygon phủ KÍN bản đồ, nên forEachFeatureAtPixel
-      // luôn trúng một cái — nếu coi đó là "đã trúng đối tượng" thì nhánh tra cứu
-      // lớp nền bên dưới không bao giờ chạy, và nhấp vào một con đường chỉ ra tên
-      // phường. Đối tượng chuyên đề có layerKey; ranh giới thì không, nên dùng
-      // đúng dấu hiệu đó để phân biệt trúng THẬT với trúng nền hành chính.
+      // Province and ward boundaries are polygons that COVER the whole map, so
+      // forEachFeatureAtPixel always hits one. Treating that as "a feature was hit"
+      // would mean the basemap lookup below never runs, and a click on a road would
+      // only show the ward's name. Thematic features carry a layerKey and boundaries
+      // do not, so that is the sign that tells a REAL hit from the administrative backdrop.
       const isThematic = Boolean(feature?.getProperties()?.layerKey);
 
       if (feature && isThematic) {
@@ -172,25 +172,25 @@ const DynamicPopup: React.FC = () => {
         // Pan the map to the clicked feature so the popup stays in viewport
         map.getView().animate({ center: e.coordinate, duration: 400 });
       } else {
-        // Chưa trúng đối tượng chuyên đề nào. Các lớp NỀN (đường, đường sắt, mặt
-        // nước) tới trình duyệt dưới dạng ảnh tile nên forEachFeatureAtPixel
-        // không bao giờ thấy chúng — phải hỏi ngược GeoServer mới biết con đường
-        // vừa nhấp tên gì. Đây là yêu cầu riêng, không ảnh hưởng tốc độ dựng tile.
+        // No thematic feature was hit. The BASEMAP layers (roads, railways, water)
+        // reach the browser as tile images, so forEachFeatureAtPixel never sees them:
+        // GeoServer has to be asked what the clicked road is called. That is a
+        // separate request and does not affect how fast tiles are drawn.
         const fallback = feature
           ? { coordinate: e.coordinate, feature: feature.getProperties() }
           : null;
         const size = map.getSize();
         if (!size) { setPopupData(fallback); if (!fallback) setCandidates([]); return; }
-        // ol khai báo Extent là number[]; basemapInfo cần bộ 4 cố định để không
-        // ai truyền nhầm mảng thiếu phần tử.
+        // ol declares Extent as number[]; basemapInfo wants a fixed 4-tuple so no
+        // one passes an array with elements missing.
         const [minX, minY, maxX, maxY] = map.getView().calculateExtent(size);
         const extent: [number, number, number, number] = [minX, minY, maxX, maxY];
         setPopupData(fallback);
         fetchBasemapInfo(extent, [size[0], size[1]], [e.pixel[0], e.pixel[1]])
           .then((found) => {
             if (!isCurrent()) return;
-            // Chỉ thay khi tìm được thứ CÓ TÊN: một đoạn đường không tên thì kém
-            // hữu ích hơn tên phường đang hiện sẵn.
+            // Replace only when something WITH A NAME was found: an unnamed road
+            // segment is less useful than the ward name already shown.
             if (!found?.name) { if (!fallback) setCandidates([]); return; }
             setPopupData({ coordinate: e.coordinate, feature: { ...found, layerKey: 'basemap' } });
             const layer = found.table ? referenceLayerOfTable(found.table) : null;
@@ -201,7 +201,7 @@ const DynamicPopup: React.FC = () => {
             }
           })
           .catch(() => {
-            /* Tra cứu nền là tiện ích thêm: hỏng thì im lặng, không chặn bản đồ. */
+            /* The basemap lookup is an extra: when it fails, stay silent and do not block the map. */
           });
       }
     };
@@ -226,7 +226,7 @@ const DynamicPopup: React.FC = () => {
 
   const props = popupData.feature;
 
-  // Xác định icon và nội dung hiển thị dựa theo loại đối tượng
+  // Pick the icon and the content to show from the kind of feature.
   const renderPopupContent = () => {
     // Thematic WFS layers are discriminated by layerKey (ISO/INSPIRE attributes).
     if (props.layerKey === 'dams') {
@@ -318,8 +318,8 @@ const DynamicPopup: React.FC = () => {
           {props.hydroId && (
             <div className="info-row"><Database size={14} className="text-blue-500" />
               <span>Mã phân đoạn: <strong>{props.hydroId}</strong></span></div>)}
-          {/* stream_order giờ là hạng theo LOẠI dòng chảy (OSM), không phải bậc
-              Strahler — nên hiển thị nhãn loại thay vì "Cấp N". */}
+          {/* stream_order is now a rank by KIND of watercourse (OSM), not a Strahler
+              order, so the kind's label is shown instead of "Cấp N". */}
           {props.streamOrder != null && STREAM_ORDER_LABELS[props.streamOrder] && (
             <div className="info-row"><Info size={14} className="text-blue-500" />
               <span>Loại: <strong>{STREAM_ORDER_LABELS[props.streamOrder]}</strong></span></div>)}
@@ -406,7 +406,7 @@ const DynamicPopup: React.FC = () => {
       );
     }
 
-    // 5. Nếu là tỉnh thành sáp nhập năm 2026
+    // 5. A province after the merger.
     if (props.truocsn !== undefined) {
       return (
         <>
@@ -427,7 +427,7 @@ const DynamicPopup: React.FC = () => {
       );
     }
 
-    // 6. Nếu là Tỉnh / Huyện (Hành chính)
+    // 6. A province or district (administrative).
     if (props.population !== undefined || props.province !== undefined) {
       return (
         <>
@@ -451,7 +451,7 @@ const DynamicPopup: React.FC = () => {
       );
     }
 
-    // Mặc định cho các loại khác
+    // The default for every other kind.
     return (
       <div className="info-row">
         <Info size={14} className="text-blue-500" />
@@ -463,20 +463,20 @@ const DynamicPopup: React.FC = () => {
   const isDamOrReservoir = props.layerKey === 'dams';
   const detail = isDamOrReservoir ? getDetailedDamInfo(props.localId || 0, props.geographicalName || 'Đập & Hồ chứa', props.ratedPower) : null;
 
-  // Tính toán vị trí để không bị tràn khỏi màn hình (khung hình)
+  // Position the popup so it does not spill off the screen.
   let popupLeft = pixel[0] + 15;
   let popupTop = pixel[1] - 15;
   let xTranslate = '0';
   let yTranslate = '-100%';
 
-  // Ước tính kích thước popup (width: 260px, height khoảng 350px)
+  // Estimated popup size (width 260px, height about 350px).
   if (popupLeft + 260 > window.innerWidth) {
-    popupLeft = pixel[0] - 15; // Đẩy sang trái con trỏ
+    popupLeft = pixel[0] - 15; // To the left of the pointer.
     xTranslate = '-100%';
   }
   
   if (popupTop - 350 < 0) {
-    popupTop = pixel[1] + 15; // Đẩy xuống dưới con trỏ
+    popupTop = pixel[1] + 15; // Below the pointer.
     yTranslate = '0';
   }
 
@@ -543,7 +543,7 @@ const DynamicPopup: React.FC = () => {
             <div className="ogc-modal-content">
               <div className="details-grid">
                 
-                {/* Cột 1: Thông số kỹ thuật */}
+                {/* Column 1: technical specifications */}
                 <div className="details-section">
                   <h4>
                     <Sliders size={15} />
@@ -583,7 +583,7 @@ const DynamicPopup: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Cột 2: Hiện trạng an toàn */}
+                {/* Column 2: safety status */}
                 <div className="details-section">
                   <h4>
                     <ShieldCheck size={15} />

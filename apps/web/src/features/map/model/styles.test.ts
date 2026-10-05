@@ -20,8 +20,8 @@ function fakeFeature(props: Record<string, unknown>) {
 }
 
 
-/** Resolution ở mức phóng to nhất — LOD không ẩn bucket nào, nên các ca kiểm thử
- *  về màu/độ rộng bên dưới kiểm đúng thứ chúng định kiểm. */
+/** The resolution at the closest zoom: the level of detail hides no bucket, so the colour
+ *  and width tests below check what they mean to check. */
 const FULL_DETAIL_RESOLUTION = 1;
 
 describe('style caching', () => {
@@ -139,8 +139,8 @@ import { STREAM_ORDER_LABELS } from '@webatlas/shared';
 describe('độ rộng nét sông theo hạng OSM', () => {
   const widthOf = (order: number): number => {
     const styles = riversStyle({ get: (k: string) => (k === 'streamOrder' ? order : undefined) } as any, FULL_DETAIL_RESOLUTION);
-    // riversStyle luôn trả mảng cặp [viền, lõi] khi có vẽ; ở FULL_DETAIL_RESOLUTION
-    // thì không bucket nào bị ẩn nên chắc chắn có giá trị.
+    // riversStyle always returns the [casing, core] pair when it draws; at
+    // FULL_DETAIL_RESOLUTION no bucket is hidden, so there is a value.
     const stroke = styles![1].getStroke();
     return stroke?.getWidth() ?? 0;
   };
