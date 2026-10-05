@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, chmodSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,9 +27,10 @@ let stubDir;
 beforeAll(() => {
   stubDir = mkdtempSync(join(tmpdir(), 'publish-contours-stub-'));
   const curlStub = `#!/usr/bin/env bash
-method=GET; url=""; fmt=""; prev=""
+method=GET; url=""; fmt=""; prev=""; body=""
 for arg in "$@"; do
   [ "$prev" = "-w" ] && fmt="$arg"
+  if [ "$prev" = "-d" ] || [ "$prev" = "--data" ]; then body="$arg"; fi
   case "$arg" in -XPOST) method=POST ;; -XPUT) method=PUT ;; -XDELETE) method=DELETE ;; http*) url="$arg" ;; esac
   prev="$arg"
 done
@@ -46,8 +47,12 @@ case "$method $url" in
   "PUT "*/layergroups/basemap)                code="\${STUB_GROUP_UPDATE:-200}" ;;
   "PUT "*/layers/*)                           code="\${STUB_STYLE:-200}" ;;
   "POST "*/gwc/rest/masstruncate)             code="\${STUB_TRUNCATE:-200}" ;;
+  "POST "*/gwc/rest/seed/*)                   code="\${STUB_SEED:-200}" ;;
   *) code="000" ;;
 esac
+if [ -n "\${STUB_LOG:-}" ] && [ "$method" != GET ]; then
+  printf '%s %s %s\n' "$method" "$url" "$(printf '%s' "$body" | tr -d '\n')" >> "$STUB_LOG"
+fi
 out="\${fmt//%\\{http_code\\}/\$code}"
 printf '%b' "\$out"
 `;
@@ -60,8 +65,8 @@ afterAll(() => {
   rmSync(stubDir, { recursive: true, force: true });
 });
 
-function run(env) {
-  return spawnSync('bash', [SCRIPT], {
+function run(env, args = []) {
+  return spawnSync('bash', [SCRIPT, ...args], {
     cwd: process.cwd(),
     encoding: 'utf8',
     env: {
@@ -106,5 +111,33 @@ describe('publish-contours.sh — REST call failures must fail the publish', { t
     const r = run({ STUB_STORE_GET: '404', STUB_STORE_CREATE: '201' });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('datastore: 201');
+  });
+
+  it('seed starts one background GWC seed per interval with its zoom range, and publishes nothing', () => {
+    const log = join(stubDir, 'seed.log');
+    rmSync(log, { force: true });
+    const r = run({ STUB_LOG: log }, ['seed']);
+    expect(r.status).toBe(0);
+    const lines = readFileSync(log, 'utf8').split('\n').filter(Boolean);
+    const expected = { contours_250: [5, 8], contours_100: [9, 10], contours_50: [11, 12] };
+    expect(lines).toHaveLength(3);
+    for (const [name, [z0, z1]] of Object.entries(expected)) {
+      const line = lines.find((l) =>
+        l.startsWith(`POST http://fake-geoserver.invalid/geoserver/gwc/rest/seed/webatlas:${name}.json `)
+      );
+      expect(line, `no seed POST for ${name}`).toBeDefined();
+      for (const part of [
+        '"type":"seed"', '"gridSetId":"EPSG:900913"', '"format":"image/png"', '"threadCount":2',
+        `"zoomStart":${z0}`, `"zoomStop":${z1}`,
+        '"coords":{"double":[11855526,1175453,12245144,1874312]}',
+      ]) expect(line).toContain(part);
+      expect(line).not.toContain('parameters');
+    }
+  });
+
+  it('seed fails on a non-2xx from GeoServer', () => {
+    const r = run({ STUB_SEED: '500' }, ['seed']);
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain('seed contours_250: 500');
   });
 });

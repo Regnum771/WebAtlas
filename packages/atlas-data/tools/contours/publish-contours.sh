@@ -4,6 +4,11 @@
 #
 # Run after `npm run contours:generate -w @webatlas/api`. Styles first: styles.py.
 #
+# With the optional first argument `seed` it publishes nothing and instead starts a background GWC
+# seed of the working region: contours_250 zooms 5-8, contours_100 zooms 9-10, contours_50 zooms
+# 11-12 (default style only). Seeding is separate from the truncate above so the publish stage stays
+# a pure publish-and-truncate; GWC runs the tasks, so the build does not wait for them.
+#
 # Env:
 #   GEOSERVER_URL             default http://localhost:8080/geoserver
 #   GEOSERVER_ADMIN_USER      default admin
@@ -15,6 +20,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../lib/geoserver.sh
 . "$SCRIPT_DIR/../lib/geoserver.sh"
 STORE="${CONTOUR_STORE:-$BASEMAP_STORE}"
+
+if [ "${1:-}" = seed ]; then
+  echo "== seed tile caches over the working region (runs in the background)"
+  gs_seed_region contours_250 5 8
+  gs_seed_region contours_100 9 10
+  gs_seed_region contours_50 11 12
+  echo "Done."
+  exit 0
+fi
 
 echo "== workspace and datastore"
 gs_ensure_workspace

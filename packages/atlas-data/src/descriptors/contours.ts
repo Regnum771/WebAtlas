@@ -46,6 +46,15 @@ export const contours = defineDataset({
       promoteTo: 'publish-geoserver',
       promoteBy: '2027-06-30',
     },
+    // Right after the truncate: refill the working region in the background so users do not meet cold tiles.
+    {
+      type: 'run',
+      in: 'tools',
+      argv: ['bash', 'packages/atlas-data/tools/contours/publish-contours.sh', 'seed'],
+      produces: 'GeoWebCache seed tasks for contours_250 (zooms 5-8), contours_100 (9-10), contours_50 (11-12) over the working region (run in the background)',
+      promoteTo: 'publish-geoserver',
+      promoteBy: '2027-06-30',
+    },
   ],
   probe: allOf(
     ...CONTOUR_INTERVALS_M.map((m) =>

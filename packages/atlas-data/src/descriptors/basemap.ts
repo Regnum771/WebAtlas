@@ -91,6 +91,15 @@ export const basemap = defineDataset({
       promoteTo: 'publish-geoserver',
       promoteBy: '2027-06-30',
     },
+    // Right after the truncate: refill the working region in the background so users do not meet cold tiles.
+    {
+      type: 'run',
+      in: 'tools',
+      argv: ['bash', 'packages/atlas-data/tools/basemap/publish-basemap.sh', 'seed'],
+      produces: 'GeoWebCache seed tasks for the five basemap groups over the working region, zooms 5-12 (run in the background)',
+      promoteTo: 'publish-geoserver',
+      promoteBy: '2027-06-30',
+    },
   ],
   // Every table load_basemap.py writes (each is loaded in one transaction, so a table that exists is
   // a whole one), then every layer group the web app requests from GWC: a fresh GeoServer that only

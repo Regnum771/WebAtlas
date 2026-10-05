@@ -65,3 +65,15 @@ gs_ensure_featuretype() {
     require_2xx "featuretype $name" "$(gs_curl -XPOST -H "Content-Type: $ctype" "$path" -d "$body")"
   fi
 }
+
+# EPSG:3857 extent of the six working provinces (106.5-110.0 E, 10.5-16.6 N), for GWC seeding.
+REGION_BOUNDS_3857='[11855526,1175453,12245144,1874312]'
+
+# Start GeoServer seeding one cached layer over the working region, in the background (GWC runs
+# the task; this returns at once). Default style only. Usage: gs_seed_region <layer> <zoomStart> <zoomStop>
+gs_seed_region() {
+  local layer="$1" z0="$2" z1="$3"
+  require_2xx "seed $layer" "$(gs_curl -XPOST -H "Content-Type: application/json" \
+    "$GEOSERVER_URL/gwc/rest/seed/$WS:$layer.json" \
+    -d "{\"seedRequest\":{\"name\":\"$WS:$layer\",\"bounds\":{\"coords\":{\"double\":$REGION_BOUNDS_3857}},\"srs\":{\"number\":3857},\"gridSetId\":\"EPSG:900913\",\"zoomStart\":$z0,\"zoomStop\":$z1,\"format\":\"image/png\",\"type\":\"seed\",\"threadCount\":2}}")"
+}

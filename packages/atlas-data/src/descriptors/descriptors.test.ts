@@ -194,6 +194,12 @@ describe('registered datasets', () => {
     expect(pattern.test('vietnam-260901-free.shp.zip.source')).toBe(false);
   });
 
+  it('basemap and contours each end with a background tile-cache seed stage', () => {
+    const last = (id: string) => (byId(id).stages.at(-1) as { argv: string[] }).argv.join(' ');
+    expect(last('basemap')).toBe('bash packages/atlas-data/tools/basemap/publish-basemap.sh seed');
+    expect(last('contours')).toBe('bash packages/atlas-data/tools/contours/publish-contours.sh seed');
+  });
+
   it('the basemap probe checks exactly the layer groups the web app requests and the script publishes', () => {
     // Three places name these groups. A fresh clone once passed verify with one of the five: the
     // other four existed only on the developer's GeoServer, created by hand.

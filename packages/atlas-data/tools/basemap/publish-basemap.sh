@@ -2,11 +2,14 @@
 # Publish the self-hosted basemap tables to GeoServer and build its layer groups.
 #
 # Run AFTER load_basemap.py has populated the `basemap` schema in PostGIS.
-# Two modes, chosen by one required argument. On a fresh GeoServer neither step can come first in
+# Three modes, chosen by one required argument. On a fresh GeoServer neither step can come first in
 # one go: the styles need the feature types, and the layer group needs the styles. The registry runs
-#   publish-basemap.sh featuretypes   ->   styles.py   ->   publish-basemap.sh group
+#   publish-basemap.sh featuretypes   ->   styles.py   ->   publish-basemap.sh group   ->   publish-basemap.sh seed
 #   featuretypes  ensure workspace, basemap_pg store and every feature type (no group, no truncate)
 #   group         create or PUT the five layer groups the web app requests, then truncate their tile caches
+#   seed          start a background GWC seed of the working region (zooms 5-12) for the five groups.
+#                 Separate from `group` so that stage stays a pure publish-and-truncate; GWC runs the
+#                 tasks, so the build does not wait for them and returns once they are accepted.
 #
 # Idempotent and fail-closed: each resource is checked with a GET and created (POST) or updated
 # (PUT); any status that is not 2xx stops the script, so a registry stage never records a failed
@@ -23,8 +26,8 @@
 set -euo pipefail
 MODE="${1:-}"
 case "$MODE" in
-  featuretypes|group) ;;
-  *) echo "usage: publish-basemap.sh <featuretypes|group>" >&2; exit 2 ;;
+  featuretypes|group|seed) ;;
+  *) echo "usage: publish-basemap.sh <featuretypes|group|seed>" >&2; exit 2 ;;
 esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../lib/geoserver.sh
@@ -49,6 +52,15 @@ LAYER_GROUPS=(
 # Identical national bounds on every group. Load-bearing: OpenLayers requests tiles on the national
 # grid, and a group published with its own tighter bbox answers 400 TileOutOfRange outside it.
 BOUNDS='{"minx":102.0,"maxx":117.9,"miny":8.0,"maxy":23.5,"crs":"EPSG:4326"}'
+
+if [ "$MODE" = seed ]; then
+  echo "== seed tile caches over the working region (zooms 5-12, runs in the background)"
+  for entry in "${LAYER_GROUPS[@]}"; do
+    gs_seed_region "${entry%%|*}" 5 12
+  done
+  echo "Done."
+  exit 0
+fi
 
 if [ "$MODE" = featuretypes ]; then
   echo "== workspace and datastore"
