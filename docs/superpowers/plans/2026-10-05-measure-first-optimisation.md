@@ -38,7 +38,7 @@
 | `apps/web/src/features/map/model/SelectController.ts` (+ test) | Selecting a tile feature fetches its full geometry |
 | `apps/web/src/features/map/model/riverOverview.ts` | Loses its WFS source factory |
 | `packages/atlas-data/tools/lib/geoserver.sh`, `tools/basemap/publish-basemap.sh`, `tools/contours/publish-contours.sh`, `src/descriptors/{basemap,contours}.ts` | Seed after truncate |
-| `apps/api/src/db/migrations/1000000000023_working-region.cjs` (new), `apps/api/src/modules/analysis/area.ts`, `apps/api/src/modules/roi/resolve.ts`, `packages/atlas-data/src/stages/loadGeojson.ts` | Fast river + radius |
+| `apps/api/src/db/migrations/1000000000024_working-region.cjs` (new), `apps/api/src/modules/analysis/area.ts`, `apps/api/src/modules/roi/resolve.ts`, `packages/atlas-data/src/stages/loadGeojson.ts` | Fast river + radius |
 | `packages/versioning/src/riverHierarchy.test.ts`, `apps/api/vitest.config.ts` and what profiling points to | Test speed |
 | `packages/atlas-data/tools/basemap/load_basemap.py`, `test_load_basemap.py` | Load into `__new`, swap with a rename |
 
@@ -466,6 +466,57 @@ EOF
 
 ---
 
+### Task 3b: Ward boundaries as tiles, and compressed tiles (added 2026-10-05, user decision)
+
+Added after Task 3's measurements. The last main-thread freeze on zoom-in (~700 ms) is parsing `apps/web/public/wards-region.geojson` (6.9 MB, 616 wards) when zoom passes 10, and API tiles are sent uncompressed (a zoom-8 rivers tile is 175 kB). The user chose to serve the wards as API tiles in this group, and to gzip tiles.
+
+**Files:**
+- Modify: `apps/api/src/modules/tiles/{repository,controller,routes}.ts`, `tiles.test.ts`
+- Modify: `apps/web/src/features/map/model/waterTiles.ts` (or a sibling `boundaryTiles.ts` if that reads better), `MapModel.ts`, the ward layer's tests
+
+**Interfaces:**
+- `wards` joins the tile layers: `GET /api/tiles/wards/:z/:x/:y.pbf?v=<token>`. `GET /api/tiles/versions` adds `wards: <token>`, where the token is `md5` over the sorted ward codes, areas and geometry hashes, or any cheap expression that changes whenever `admin.wards` is replaced. The same `immutable` / `no-cache` rule as the water layers applies.
+- A wards tile holds two MVT layers:
+  - `wards`: polygons with properties `code`, `provinceCode`, `name`, `nameEn`, `fullName`, `fullNameEn`, `areaKm2` (from `admin.wards`: `code`, `province_code`, `name`, `name_en`, `full_name`, `area_km2`);
+  - `ward_labels`: one point per ward (`ST_PointOnSurface`) with `code` and `name`, emitted only in the tile that contains the point, so a label is drawn once and not once per tile.
+
+**Requirements:**
+- Every tile response is gzip-compressed when the request's `Accept-Encoding` includes `gzip` (`Content-Encoding: gzip`, `Vary: Accept-Encoding`), and uncompressed otherwise. Fastify's `inject` without that header must still get plain bytes.
+- Web:
+  - The ward layer (`layer_wards_2026`) becomes a VectorTile layer from that endpoint.
+  - Its zoom rule stays (shown from `WARDS_MIN_ZOOM`). The load gate for the GeoJSON file goes, and the app no longer fetches `wards-region.geojson`. The file stays in `apps/web/public`: the `admin_boundaries` dataset loads it.
+  - The polygon style keeps the dashed outline. The label is drawn from the `ward_labels` points, with the same font, fill and stroke as today.
+  - Popups and the analysis-area candidates (`adminCandidates` in `features/roi/model/candidates.ts` reads `code`, `fullName`, `name`) keep working from tile features.
+  - Wards stay out of snapping.
+  - `refreshLayer` is not needed for wards: users don't edit boundaries.
+- Provinces: measure first. With `tools/perf/page.mjs`, check whether parsing `provinces-34.geojson` (1.2 MB, 34 features, labels placed by `_labelGeom` in `styles.ts`) causes a main-thread task over 100 ms. If it does, stop and report the number. Do not convert provinces in this task: their label placement needs its own decision.
+
+**Tests:**
+- API:
+  - a wards tile at 12/3277/1902 decodes to both layers with the listed properties;
+  - a label point appears in exactly one of the four zoom-13 children of that tile;
+  - `versions` includes `wards`, and the token changes when a ward row changes (inside a rolled-back transaction);
+  - a request with `Accept-Encoding: gzip` gets a gzip body that decodes to the same tile;
+  - the existing tile tests still pass.
+- Web:
+  - the ward layer is a VectorTile layer pointed at the versioned URL;
+  - no request for `wards-region.geojson` is made;
+  - the ward style draws text only for `ward_labels` features;
+  - the admin candidates still come from a clicked ward.
+
+**Verify:**
+1. Run `node tools/perf/page.mjs` with the measurement setup from Task 3's report (API with `CORS_ORIGIN=http://127.0.0.1:4173`, build with `VITE_API_BASE_URL=http://127.0.0.1:3001`; not committed). Expected: no long task over 100 ms in the zoom session that comes from wards, and tile transfer sizes drop (record a zoom-8 rivers tile's compressed size).
+2. Take a screenshot at zoom ~11 to confirm ward outlines and labels draw once.
+
+**Commit:** `perf: ranh giới xã phục vụ dạng tile vector, tile được nén gzip` (Vietnamese Conventional Commits, `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`).
+
+### Plan amendments (2026-10-05)
+
+- Task 5's working-region migration is number **24**. Task 2 used 23 for the `rivers_overview_parents_idx` partial index.
+- Task 3's selection fetches the search endpoint's simplified geometry. By user decision, a save sends a geometry only when the user moved it (Modify/Translate), so an attribute-only edit never rewrites the stored shape.
+
+---
+
 ### Task 4: Seed the tile cache after each build
 
 **Files:**
@@ -547,7 +598,7 @@ EOF
 ### Task 5: River + radius in under 0.35 s
 
 **Files:**
-- Create: `apps/api/src/db/migrations/1000000000023_working-region.cjs`
+- Create: `apps/api/src/db/migrations/1000000000024_working-region.cjs`
 - Modify: `apps/api/src/modules/analysis/area.ts` (`REGION_SQL`), `apps/api/src/modules/roi/resolve.ts`, `packages/atlas-data/src/stages/loadGeojson.ts` (`loadReplacing` refreshes the view), tests next to each
 
 **Interfaces:**
@@ -569,7 +620,7 @@ Write the numbers in the plan's Execution notes.
   - In `apps/api/src/modules/roi/resolve.test.ts`: resolving the longest river + 10 km gives an area within 1 % of the unsimplified buffer's area, computed in the test with the old SQL inline.
 
 - [ ] **Step 3: Implement**
-  - Migration 23: `CREATE MATERIALIZED VIEW admin.working_region AS SELECT ST_Union(geom) AS g FROM admin.provinces WHERE code = ANY(ARRAY['48','51','52','56','66','68'])`. The comment names `REGION_PROVINCE_CODES` as the source and the test that keeps them equal. Grant `SELECT` to `webatlas_assistant` as migrations 16–20 do for new relations. `down` drops it.
+  - Migration 24: `CREATE MATERIALIZED VIEW admin.working_region AS SELECT ST_Union(geom) AS g FROM admin.provinces WHERE code = ANY(ARRAY['48','51','52','56','66','68'])`. The comment names `REGION_PROVINCE_CODES` as the source and the test that keeps them equal. Grant `SELECT` to `webatlas_assistant` as migrations 16–20 do for new relations. `down` drops it.
   - Add a test in `apps/api/src/db/workingRegion.test.ts` asserting the migration's code list equals `REGION_PROVINCE_CODES`. Read the migration file's text and compare the codes.
   - `REGION_SQL` becomes `SELECT g FROM admin.working_region`.
   - `loadReplacing` (atlas-data): after loading, if any target is `admin.provinces` and `to_regclass('admin.working_region')` is not null, run `REFRESH MATERIALIZED VIEW admin.working_region` in the same transaction.
