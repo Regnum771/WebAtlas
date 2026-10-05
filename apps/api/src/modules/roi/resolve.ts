@@ -140,7 +140,7 @@ function sourceOf(db: Queryable, roi: Roi): Promise<Source> {
 
 interface ShapeRow {
   sourceDim: number; sourceVertices: number; sourceParts: number; outDim: number;
-  refused: boolean; empty: boolean;
+  refused: boolean; empty: boolean; noRegion: boolean;
   geojson: string | null; display: GeoJsonGeometry | null;
   areaKm2: number | null; lengthKm: number | null; vertices: number | null;
   cx: number | null; cy: number | null;
@@ -179,28 +179,41 @@ export async function resolveRoi(db: Queryable, roi: Roi): Promise<RoiResolution
   const regionJoin = src.bounded ? `CROSS JOIN (${REGION_SQL}) rg` : '';
 
   const { rows: [row] } = await db.query<ShapeRow>(
-    `WITH src AS (
+    // src and shaped are MATERIALIZED too: with bound parameters the planner constant-folds
+    // an inlined CTE once per reference, so the ST_Buffer ran ~3 times at plan time
+    // (measured: 330 ms per resolve, 150 ms once materialised).
+    `WITH src AS MATERIALIZED (
        SELECT g, ST_Dimension(g) AS dim, ST_NPoints(g) AS npoints, ST_NumGeometries(g) AS nparts
          FROM (SELECT ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS g) raw
      ),
-     shaped AS (
+     shaped AS MATERIALIZED (
        SELECT dim, npoints, nparts,
               CASE WHEN $2::float8 IS NULL THEN dim ELSE 2 END AS outdim,
               CASE WHEN $2::float8 IS NULL THEN g
                    WHEN dim = 2 THEN NULL::geometry
                    WHEN npoints > ${MAX_SOURCE_ENTITY_VERTICES} OR nparts > ${MAX_SOURCE_ENTITY_PARTS}
                      THEN NULL::geometry
-                   ELSE ST_Buffer(g::geography, $2 * 1000)::geometry END AS g
+                   -- Buffer a copy simplified to 1 % of the radius: the offset curve of a
+                   -- 2,500-point river is the dominant cost, and the buffer's outline moves by
+                   -- at most the tolerance, i.e. 1 % of the radius. The tolerance is $2 km * 1000
+                   -- m * 0.01 = $2 * 10 m, converted to degrees at the source's latitude.
+                   -- npoints / nparts stay on the original so the guards are unchanged.
+                   ELSE ST_Buffer(
+                          ST_SimplifyPreserveTopology(
+                            g, ($2 * 10.0) / (111320.0 * cos(radians(ST_Y(ST_Centroid(g)))))
+                          )::geography,
+                          $2 * 1000)::geometry END AS g
          FROM src
      ),
      -- MATERIALIZED: g is read a dozen times below; without it each reference would
      -- re-run the whole buffer-and-clip expression (see the old area.ts, same reason).
      clipped AS MATERIALIZED (
        SELECT dim, npoints, nparts, outdim,
+              ${src.bounded ? '(rg.g IS NULL)' : 'false'} AS noregion,
               CASE WHEN s.g IS NULL THEN NULL::geometry ELSE ${clip} END AS g
          FROM shaped s ${regionJoin}
      )
-     SELECT dim AS "sourceDim", npoints AS "sourceVertices", nparts AS "sourceParts", outdim AS "outDim",
+     SELECT noregion AS "noRegion", dim AS "sourceDim", npoints AS "sourceVertices", nparts AS "sourceParts", outdim AS "outDim",
             g IS NULL AS refused, (g IS NULL OR ST_IsEmpty(g)) AS empty,
             ST_AsGeoJSON(g, 7) AS geojson,
             CASE WHEN g IS NULL OR ST_IsEmpty(g) THEN NULL ELSE ${simplifiedGeoJsonSql('g')} END AS display,
@@ -213,6 +226,8 @@ export async function resolveRoi(db: Queryable, roi: Roi): Promise<RoiResolution
     [src.geojson, radiusKm]
   );
 
+  // admin.working_region holds a NULL geometry until the boundaries are seeded.
+  if (row.noRegion) throw new Error('admin.working_region is empty: seed the admin boundaries first');
   if (row.refused) {
     if (row.sourceDim === 2) {
       throw new ValidationError('Vùng đã có diện tích, không cần bán kính.');
