@@ -1,10 +1,21 @@
 import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { activeVersions, tileSql, TILE_LAYERS, type TileLayer } from './repository';
+import { activeVersions, tileSql, versionOf, TILE_LAYERS, type TileLayer } from './repository';
 
 const MAX_ZOOM = 16;
 const gzipAsync = promisify(gzip);
+
+/** Accept-Encoding allows gzip when it lists gzip (or *) with a q-value above 0. */
+export function acceptsGzip(header: string | string[] | undefined): boolean {
+  for (const part of String(header ?? '').split(',')) {
+    const [name, ...params] = part.trim().toLowerCase().split(';');
+    if (name !== 'gzip' && name !== '*') continue;
+    const q = params.map((p) => /^\s*q\s*=\s*([0-9.]+)\s*$/.exec(p)?.[1]).find((v) => v !== undefined);
+    if (q === undefined || Number(q) > 0) return true;
+  }
+  return false;
+}
 
 export async function versions(req: FastifyRequest, reply: FastifyReply) {
   reply.header('Cache-Control', 'no-cache').send(await activeVersions(req.server.pg));
@@ -27,16 +38,15 @@ export async function tile(req: FastifyRequest, reply: FastifyReply) {
   // A tile is immutable at a given active version: a URL that names it is cached for good, and the
   // next activation changes the version, so the next URL is new. Anything else must be revalidated.
   const wanted = (req.query as { v?: string }).v;
-  const active = await activeVersions(req.server.pg);
-  const current = active[layer === 'lakes' ? 'lakes' : layer === 'wards' ? 'wards' : 'rivers'];
+  const current = await versionOf(req.server.pg, layer === 'lakes' ? 'lakes' : layer === 'wards' ? 'wards' : 'rivers');
   const cacheable = wanted !== undefined && wanted === current;
   const { rows } = await req.server.pg.query<{ tile: Buffer | null }>(tileSql(layer), [z, x, y]);
   const body = rows[0]?.tile;
   reply.header('Cache-Control', cacheable ? 'public, max-age=31536000, immutable' : 'no-cache');
   if (!body || body.length === 0) return reply.code(204).send();
-  reply.header('Content-Type', 'application/vnd.mapbox-vector-tile').header('Vary', 'Accept-Encoding');
+  reply.header('Content-Type', 'application/vnd.mapbox-vector-tile').header('Vary', [reply.getHeader('Vary'), 'Accept-Encoding'].filter(Boolean).join(', '));
   // Tiles are highly compressible (a zoom-8 rivers tile shrinks to a fraction); gzip when the client accepts it.
-  if (String(req.headers['accept-encoding'] ?? '').toLowerCase().includes('gzip')) {
+  if (acceptsGzip(req.headers['accept-encoding'])) {
     return reply.header('Content-Encoding', 'gzip').send(await gzipAsync(body));
   }
   return reply.send(body);

@@ -4,6 +4,8 @@ import { PbfReader } from 'pbf';
 import { VectorTile } from '@mapbox/vector-tile';
 import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
+import { resetWardsTokenCache, wardsVersion } from './repository';
+import { acceptsGzip } from './controller';
 
 let app: ReturnType<typeof buildApp>;
 // app.close() also closes the pool (plugins/db.ts onClose).
@@ -27,21 +29,23 @@ describe('GET /api/tiles/versions', () => {
     expect(got.wards).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  it('changes the wards token when a ward row changes (rolled back afterwards)', async () => {
-    const before = (await versions()).wards;
+  it('changes the wards token when only the geometry of one ward moves (rolled back afterwards)', async () => {
+    resetWardsTokenCache();
+    const before = await wardsVersion(getPool());
     const client = await getPool().connect();
     try {
       await client.query('BEGIN');
-      await client.query(`UPDATE admin.wards SET name = name || ' x' WHERE code = (SELECT min(code) FROM admin.wards)`);
-      // Same query the endpoint runs, inside the transaction.
-      const { activeVersions } = await import('./repository');
-      const inTx = (await activeVersions(client as never)).wards;
+      // Shift one ward by about 0.1 m: the attributes stay the same, only the geometry changes.
+      await client.query(`UPDATE admin.wards SET geom = ST_Translate(geom, 1e-6, 0) WHERE code = (SELECT min(code) FROM admin.wards)`);
+      resetWardsTokenCache();
+      const inTx = await wardsVersion(client as never);
       expect(inTx).not.toBe(before);
     } finally {
       await client.query('ROLLBACK');
       client.release();
+      resetWardsTokenCache();
     }
-    expect((await versions()).wards).toBe(before);
+    expect(await wardsVersion(getPool())).toBe(before);
   });
 });
 
@@ -167,5 +171,16 @@ describe('tile compression', () => {
     expect(zipped.headers['content-encoding']).toBe('gzip');
     expect(zipped.headers['vary']).toMatch(/Accept-Encoding/i);
     expect(gunzipSync(zipped.rawPayload).equals(plain.rawPayload)).toBe(true);
+  });
+});
+
+describe('acceptsGzip', () => {
+  it('reads the q-values of Accept-Encoding', () => {
+    expect(acceptsGzip('gzip, deflate')).toBe(true);
+    expect(acceptsGzip('br;q=1, gzip;q=0.5')).toBe(true);
+    expect(acceptsGzip('*')).toBe(true);
+    expect(acceptsGzip('gzip;q=0')).toBe(false);
+    expect(acceptsGzip('identity')).toBe(false);
+    expect(acceptsGzip(undefined)).toBe(false);
   });
 });

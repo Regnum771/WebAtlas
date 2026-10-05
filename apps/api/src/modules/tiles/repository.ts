@@ -92,22 +92,48 @@ function wardsTileSql(): string {
         || (SELECT COALESCE(ST_AsMVT(labels.*, 'ward_labels', 4096, 'geom'), ''::bytea) FROM labels WHERE geom IS NOT NULL) AS tile`;
 }
 
+export type VersionedLayer = 'rivers' | 'lakes' | 'wards';
 export interface TileVersions { rivers: string | null; lakes: string | null; wards: string | null }
 
-/**
- * Rivers and lakes are keyed by their active dataset version. Wards have no version chain, so their
- * token is a hash over what a tile draws from admin.wards: code, name, area and a geometry digest
- * (vertex count plus bounding box), which changes whenever the table is replaced or a ward edited.
- */
-export async function activeVersions(db: Pool): Promise<TileVersions> {
-  const [{ rows }, wards] = await Promise.all([
-    db.query<{ layer_key: 'rivers' | 'lakes'; id: string }>(
-      `SELECT layer_key, id::text AS id FROM app.dataset_versions WHERE is_active AND layer_key IN ('rivers', 'lakes')`),
-    db.query<{ token: string | null }>(
-      `SELECT md5(string_agg(concat_ws('|', code, province_code, name, name_en, full_name, area_km2, ST_NPoints(geom), ST_AsText(Box2D(geom))), ';' ORDER BY code)) AS token
-         FROM admin.wards`),
-  ]);
-  const out: TileVersions = { rivers: null, lakes: null, wards: wards.rows[0]?.token ?? null };
+/** The active dataset version ids of rivers and lakes (one cheap lookup). */
+async function datasetVersions(db: Pool): Promise<{ rivers: string | null; lakes: string | null }> {
+  const { rows } = await db.query<{ layer_key: 'rivers' | 'lakes'; id: string }>(
+    `SELECT layer_key, id::text AS id FROM app.dataset_versions WHERE is_active AND layer_key IN ('rivers', 'lakes')`);
+  const out = { rivers: null as string | null, lakes: null as string | null };
   for (const r of rows) out[r.layer_key] = r.id;
   return out;
+}
+
+const WARDS_TOKEN_TTL_MS = 60_000;
+let wardsToken: { value: string | null; at: number } | null = null;
+
+/** Test hook: forget the cached wards token. */
+export function resetWardsTokenCache(): void { wardsToken = null; }
+
+/**
+ * Wards have no version chain, so their token is an md5 over every ward's code, full geometry digest
+ * and area: any change to the table changes it. The digest scans all geometries (tens to hundreds of ms),
+ * so it is cached in-process for 60 s (a concurrent miss may compute twice, which is harmless). A short cache
+ * is safe: a boundary replacement takes effect within 60 s, and a stale token can only mark NEW data
+ * immutable under an OLD URL, which clients stop requesting once they re-read /api/tiles/versions; it can
+ * never put old data under a new URL.
+ */
+export async function wardsVersion(db: Pool): Promise<string | null> {
+  if (wardsToken && Date.now() - wardsToken.at < WARDS_TOKEN_TTL_MS) return wardsToken.value;
+  const { rows } = await db.query<{ token: string | null }>(
+    `SELECT md5(string_agg(code || ':' || md5(ST_AsEWKB(geom)) || ':' || coalesce(area_km2::text, ''), ',' ORDER BY code)) AS token
+       FROM admin.wards`);
+  wardsToken = { value: rows[0]?.token ?? null, at: Date.now() };
+  return wardsToken.value;
+}
+
+/** The version token of one layer: only what that layer needs is computed. */
+export async function versionOf(db: Pool, layer: VersionedLayer): Promise<string | null> {
+  return layer === 'wards' ? wardsVersion(db) : (await datasetVersions(db))[layer];
+}
+
+/** All tokens, for GET /api/tiles/versions. */
+export async function activeVersions(db: Pool): Promise<TileVersions> {
+  const [d, wards] = await Promise.all([datasetVersions(db), wardsVersion(db)]);
+  return { ...d, wards };
 }
