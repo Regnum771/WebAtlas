@@ -342,11 +342,9 @@ describe('rebuild over an already-built version', () => {
       const versionId = rows[0].id;
       const built = await buildRiverHierarchy(client, versionId);
       expect(built).toMatchObject({ matched: 4716, names: 439, rivers: 588, bridged: 38 });
-      // The FIRST rebuild may legitimately write: the committed hierarchy is whatever the
-      // code of its ingest produced, and a later determinism fix (tie-break order, ordered
-      // ST_Collect) changes some bytes. The second must write nothing, whatever the first did.
-      const again = await buildRiverHierarchy(client, versionId);
-      expect(again).toEqual({ ...built, superseded: 0 });
+      // One build, not two: the builder returns the rows it superseded, and 0 is the proof that
+      // rebuilding the committed hierarchy writes nothing -- the same claim a second build proved.
+      expect(built).toMatchObject({ superseded: 0 });
       await assertRiverGates(client, versionId, RIVER_BASELINE);
 
       const { rows: l1 } = await client.query<{
@@ -365,6 +363,6 @@ describe('rebuild over an already-built version', () => {
       await client.query('ROLLBACK');
       client.release();
     }
-    // One build is ~9 s against the real data.
+    // One build is ~9 s against the real data, plus ~5 s for the gates.
   }, 180_000);
 });
