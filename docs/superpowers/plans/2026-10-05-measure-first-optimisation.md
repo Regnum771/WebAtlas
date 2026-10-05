@@ -689,3 +689,48 @@ Write the numbers in the plan's Execution notes.
   - In `docs/architecture/database-architecture.md` (or the map/serving doc if one exists: `grep -rln "WFS" docs/architecture docs/runbooks`), describe that rivers, lakes and the far-zoom rivers are served as vector tiles by the API, keyed by the active version.
   - In `docs/runbooks/README.md`, note that basemap and contour builds start a background tile seed.
 - [ ] **Step 4: Commit, push, PR** against `main`, with a Vietnamese description: summary, the before/after table, the behaviour changes (rivers and lakes are not snap targets; tile cache seeding), and how to measure. End it with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Watch CI until all four jobs pass. Do not merge.
+
+---
+
+## Execution notes (2026-10-05)
+
+All tasks executed on `perf/measure-first`. The numbers below are from the final measurement, after a forced basemap rebuild and its seed; the full before/after table is in `tools/perf/README.md`.
+
+### Success criteria
+
+| Criterion | Result | Met |
+|---|---|---|
+| Zoom 7 → 11 settles under 2 s on a cold browser cache | 1.27–1.88 s over four runs (median 1.57 s) | yes |
+| Zoom 7 → 11 settles under 1 s on a warm browser cache | 0.66, 0.67, 0.87 and 1.69 s | three runs of four |
+| No main-thread task over 100 ms while zooming | 60–104 ms over eight sessions; one at 104 ms | seven sessions of eight |
+| Far-zoom river layer under 0.1 s per tile | 4–10 ms median, 53 ms worst | yes |
+| After a basemap rebuild and seed, the 4×4 sample at zooms 9, 11, 12 is all cache hits at 5–20 ms | 16/16 hits for all five groups; medians 8–22 ms | yes (one median at 22 ms) |
+| Chrome first load on a freshly rebuilt stack settles under 2 s | 0.67–1.29 s | yes |
+| `roi/resolve`, longest river + 10 km, under 0.35 s | 0.14 s median, 0.25 s first request | yes |
+| `select_within` on it under 0.5 s | 0.21 s | yes |
+| Versioning suite under 45 s | 97 s | **no** |
+| API suite under 70 s | 81 s | **no** |
+| Tile-cache miss during a basemap rebuild waits under 1 s | 0.36 s worst of 298 misses during the load; no lock waits | yes |
+| Existing behaviour unchanged, plus new tests | versioning 68, API 487, shared 119, web 557, atlas-data 386 + 45 database tests, all passing; web build clean; `atlas:verify` 50/50 | yes |
+
+### What did not go to plan
+
+- **Task 6, suite times.** Neither target was reached. The versioning suite cannot go below the river activations on the pinned hierarchy builder, which take most of its 97 s; the incremental hierarchy work that would change that is the deferred item in the spec. The API suite's start-up cost was removed (module collection 26–38 s → 5–14 s), which brought it from about 100 s to 81 s.
+- **Task 7, first live run.** One tile request waited 4.9 s and the cause was not established. A second run with lock sampling (one uncached zoom-17 metatile per second, `pg_stat_activity` every 250 ms) found no lock wait anywhere in the build and a worst wait of 0.36 s during the load, including across the `roads_region` swap. The 4.9 s was load on the machine, not a lock.
+- **Slow tiles after the load.** In the 40 s after the load finished, while the group, truncate and seed stages ran, six uncached zoom-17 requests took over 1 s (worst 2.6 s). The background seed renders with two threads per group for about three minutes; this is expected and is documented in the runbook.
+- **Measuring the page.** `page.mjs` printed plausible numbers with every API request failing on CORS, because the preview page's origin was not allowed. The README now states the two settings a valid run needs and how to recognise an invalid one.
+
+### Additions to the measurement tools
+
+- `tiles.py` takes its zooms from `WEBATLAS_TILE_ZOOMS` (default unchanged), so zoom 12 can be checked.
+- `page.mjs` has a third session that repeats the zoom in the same browser (the warm-cache criterion had no measurement), and reads `CHROME_PATH`.
+
+### Open after this plan
+
+- **The provinces layer is still GeoJSON** (about 145 ms to parse on a cold load). Converting it to tiles was not in scope and is a decision for the user.
+- **The swap in `load_basemap.py` has no `lock_timeout`.** A long-running reader of the old table would make the `DROP` wait and hold new readers behind it. Not observed in either live run.
+- Minor findings from the per-task reviews that were not fixed: the wards token cache can be computed by several requests at once (cache the promise); `acceptsGzip("gzip;q=0, *")` is true; an empty ROI source gives a NULL tolerance; `publish-contours.sh` accepts any first argument.
+
+### A warning for whoever runs Task 7's fixture check again
+
+`BASEMAP_FIXTURE_DIR` must not be a `/`-rooted path when the command goes through Git Bash on Windows. Git Bash rewrites such a path to one under its own install directory, and the files land somewhere unexpected. Use a relative path, or run it from PowerShell.

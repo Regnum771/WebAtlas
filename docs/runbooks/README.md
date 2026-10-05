@@ -125,15 +125,25 @@ lines are for a manual rerun.
    (including the 588 rivers it just built), and the boundaries it stamps against are
    loaded by `seed`. Run in the other order and every river reads as belonging to no
    province or ward.
-5. **The `basemap` dataset** rebuilds the street basemap from an OpenStreetMap extract, in five stages: fetch the
-   Geofabrik extract, `load_basemap.py`, `publish-basemap.sh featuretypes`, `styles.py`, `publish-basemap.sh group`. Not in git — CARTO and
+5. **The `basemap` dataset** rebuilds the street basemap from an OpenStreetMap extract, in six stages: fetch the
+   Geofabrik extract, `load_basemap.py`, `publish-basemap.sh featuretypes`, `styles.py`, `publish-basemap.sh group`,
+   `publish-basemap.sh seed`. Not in git — CARTO and
    Esri tiles cannot be re-hosted under their terms, so this is the one basemap tier the
    project builds itself. Skipping this step leaves the street tier broken (a grey
    "API KEY REQUIRED" tile at HTTP 200, or nothing at all before the rebuild). Manual rerun:
    `npm run atlas:build -- --force basemap`.
-6. **The `reference_entities` dataset** rebuilds the dissolved reference entities. `load_basemap.py` (step 5) loads every
-   `basemap` table with GeoPandas `to_postgis(..., if_exists="replace")`, which drops and
-   recreates each table — so `basemap.reference_entities` (the searchable, named roads,
+
+   The load writes each table beside the live one (`basemap.<table>__new`) and swaps it in at the end, so the
+   map keeps drawing the old tiles during a rebuild instead of waiting for the load.
+
+   A last stage, `publish-basemap.sh seed`, starts a **background tile-cache seed** of the five basemap groups over
+   the working region (zooms 5–12) and returns at once: the build does not wait for it, and it finishes about
+   three minutes later. A tile asked for before the seed reaches it is drawn on demand as before. The seed runs
+   again whenever the group or truncate stage runs. On a machine built before this stage existed, the next build
+   also rebuilds `reference_entities` once, because adding a stage changed what it depends on.
+6. **The `reference_entities` dataset** rebuilds the dissolved reference entities. `load_basemap.py` (step 5) replaces every
+   `basemap` table: it loads a new copy, drops the old table and renames the copy into
+   place — so `basemap.reference_entities` (the searchable, named roads,
    railways, water bodies, land use and places built from those raw tables) is stale
    from the moment step 5 finishes, referring to rows that no longer exist and missing
    ones that now do. This dataset rebuilds it from the tables step 5 just loaded, and depends on `basemap`, so a
@@ -150,7 +160,8 @@ lines are for a manual rerun.
    has nothing to contour. Manual rerun: `npm run atlas:build -- --only dem`.
 8. **The `contours` dataset** generates and publishes contour lines from that DEM. Optional in the same sense as
    step 7, and it depends on `dem`, so excluding `dem` excludes it too. Manual rerun:
-   `npm run atlas:build -- --only contours`.
+   `npm run atlas:build -- --only contours`. Like the basemap, it ends with a background tile-cache seed
+   (`publish-contours.sh seed`: the 250 m, 100 m and 50 m layers at the zooms the app shows them), about a minute.
 9. **Publishing the feature layers to GeoServer** — creates the `webatlas_water` datastore
    and the WMS/WFS layers the web app actually renders. Publishing is part of each dataset's own stages: the seven layer datasets (one `publish-geoserver` stage each),
    `rivers`, `basemap` and `contours` all publish their layers, so there is no separate publish step and publishing

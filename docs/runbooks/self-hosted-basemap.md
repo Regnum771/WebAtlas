@@ -97,6 +97,10 @@ Creates the `basemap` schema and 8 tables. Expect roughly:
 
 `places_*` are loaded but **not** in the layer group — see "no labels" above.
 
+Each table is written to `basemap.<table>__new` and swapped in by rename at the end of its own transaction (old
+table dropped, new one and its indexes renamed). The live table is therefore locked only for the swap, and the map
+keeps drawing from it during the load; a failed load leaves the old table in place.
+
 ### 3. Publish the feature types
 
 ```bash
@@ -114,8 +118,8 @@ npm run atlas:build -- --only reference_entities
 
 (the `reference_entities` dataset; it runs `npm run reference:build -w @webatlas/api`, which still works until Plan C.)
 
-Step 2 loads every `basemap` table with GeoPandas `to_postgis(..., if_exists="replace")`, which **drops and
-recreates** each table it touches. `basemap.reference_entities` — the dissolved, named, searchable roads, railways,
+Step 2 **replaces** every `basemap` table it touches: it loads a new copy, drops the old table and renames the copy
+into place. `basemap.reference_entities` — the dissolved, named, searchable roads, railways,
 water bodies, land use and places that `GET /api/reference/*` and the `ref:*` sources on `GET /api/search` actually
 read — is built from those raw tables by a separate script, not by the loader, and is therefore stale the moment
 step 2 finishes: it can point at `osm_id`s that no longer exist and miss ones that now do. The registry runs it after
@@ -138,6 +142,15 @@ docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps
 `styles.py` generates the SLDs (muted Positron-lineage palette, scale-dependent rules) and assigns them. `publish-basemap.sh group` builds the five layer groups in the table above (the land-only `webatlas:basemap` and the four context groups), refuses to start if a style they name is missing, and truncates their tile cache.
 
 **Order matters:** feature types, then styles, then the group: `styles.py` assigns styles to layers that must already exist, and the layer group references styles that must exist first.
+
+### 4b. Seed the tile cache
+
+```bash
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools \
+  bash packages/atlas-data/tools/basemap/publish-basemap.sh seed
+```
+
+The registry runs this as the dataset's last stage, after the truncate. It asks GeoWebCache to render the five groups over the working region (106.5–110.0 E, 10.5–16.6 N) at zooms 5–12 and returns at once; GeoServer does the work in the background in about three minutes. Until the seed reaches a tile, that tile is drawn on demand. Zoom 13 and above are always on demand.
 
 ### 5. Verify
 
