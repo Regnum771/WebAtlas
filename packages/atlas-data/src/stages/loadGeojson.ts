@@ -186,6 +186,13 @@ async function loadReplacing(client: PoolClient, load: ResolvedLoad): Promise<Lo
   for (const f of [...load.files].reverse()) await client.query(`DELETE FROM ${f.target}`);
   const parts: string[] = [];
   for (const f of load.files) parts.push(`${f.target} ${await insertPlain(client, f.target!, f)}`);
+  // admin.working_region is the union of region provinces, stored; it must follow its source
+  // in the same transaction. Absent on a database migrated before migration 24.
+  if (load.files.some((f) => f.target === 'admin.provinces')) {
+    const { rows: [r] } = await client.query<{ present: boolean }>(
+      `SELECT to_regclass('admin.working_region') IS NOT NULL AS present`);
+    if (r.present) await client.query(`REFRESH MATERIALIZED VIEW admin.working_region`);
+  }
   // Every layer's stamping joins against these next; see the note on ANALYZE in loadVersioned.
   for (const f of load.files) await client.query(`ANALYZE ${f.target}`);
   return { action: 'replaced', summary: `${load.layer}: replaced ${parts.join(', ')}` };

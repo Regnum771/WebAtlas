@@ -64,6 +64,16 @@ application programming interface is the only writer, and the web client holds a
 write. Consequently, every rule expressed in the schema is enforced for all consumers, and no consumer may hold state
 that contradicts it.
 
+Four layers reach the map by a second read-only path: rivers, lakes, the far-zoom rivers and the ward boundaries are
+served as vector tiles by the application programming interface (`GET /api/tiles/:layer/:z/:x/:y.pbf`, one
+`ST_AsMVT` query per tile over the layer's active rows). A tile address carries the layer's active version, or for
+the ward boundaries a hash of their geometry, so a tile is immutable at that address and an activation changes the
+address. Tile geometry is clipped to the tile and simplified for display, and is never edited: selecting a river or lake
+for editing reads that feature's whole shape from the database (`GET /api/features/:layerKey/:id/geometry`, which
+simplifies by 1/2000 of the feature's extent, a few metres for the largest rivers and lakes), and a save sends a
+geometry only when the user changed it, so an attribute edit never rewrites the stored shape. The map server continues to publish these layers over WFS for other
+clients; dams and the five small thematic layers are still drawn from WFS.
+
 ### 2.2 Binding invariants
 
 Five invariants, established at the outset of the project, constrain all subsequent design (reference [2]). Those

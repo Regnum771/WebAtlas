@@ -1,5 +1,3 @@
-import { REGION_PROVINCE_CODES } from '@webatlas/shared';
-
 /**
  * The ceiling on an ROI's area, in km2.
  *
@@ -61,7 +59,10 @@ export const MAX_SOURCE_ENTITY_VERTICES = 10_000;
  */
 export const MAX_SOURCE_ENTITY_PARTS = 300;
 
-/** Union of the six working-region provinces; an ROI is clipped to it. */
-export const REGION_SQL = `
-  SELECT ST_Union(geom) AS g FROM admin.provinces
-   WHERE code = ANY(ARRAY[${REGION_PROVINCE_CODES.map((c) => `'${c}'`).join(',')}])`;
+/**
+ * The union of the six working-region provinces; an ROI is clipped to it. Stored as
+ * admin.working_region (migration 24), refreshed whenever the boundaries are reloaded.
+ * Before the boundaries are seeded the view holds one NULL geometry, which the callers
+ * check for (resolveRoi throws instead of reporting a misleading refusal).
+ */
+export const REGION_SQL = `SELECT g FROM admin.working_region`;

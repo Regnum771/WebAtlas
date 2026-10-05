@@ -10,6 +10,7 @@ import { RoiCandidatesView } from '../features/roi/ui/RoiCandidates.view';
 import { setRoi } from '../features/roi/model/roi.store';
 import { OVERLAY_LAYER_IDS } from '../features/map/model/overlayLayers';
 import { useMapEditing } from '../features/map/model/mapEditing';
+import { isWardLabel } from '../features/map/model/waterTiles';
 
 interface PopupData {
   coordinate: number[];
@@ -145,7 +146,8 @@ const DynamicPopup: React.FC = () => {
         if (!thematic && p.layerKey) thematic = { ...p, id: p.id ?? String(f.getId() ?? '').split('.').pop() };
         const layerId = layer?.get('id');
         if (!province && layerId === 'layer_provinces_2026') province = p;
-        if (!ward && layerId === 'layer_wards_2026') ward = p;
+        // The label points of a ward tile carry only code and name: the polygon has the full attributes.
+        if (!ward && layerId === 'layer_wards_2026' && !isWardLabel(p)) ward = p;
         return undefined; // keep iterating
       });
       const zoom = map.getView().getZoom() ?? 0;

@@ -1,6 +1,7 @@
 import Map from 'ol/Map';
 import type MousePosition from 'ol/control/MousePosition';
-import { createRiverOverviewSource, riverOverviewVisibleAt } from './riverOverview';
+import type MapBrowserEvent from 'ol/MapBrowserEvent';
+import { riverOverviewVisibleAt } from './riverOverview';
 import { createLoadTracker } from './loadingState';
 import { createScaleBar, createMousePosition } from './mapReadouts';
 import View from 'ol/View';
@@ -9,10 +10,11 @@ import OSM from 'ol/source/OSM';
 import XYZ from 'ol/source/XYZ';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
+import type VectorTileLayer from 'ol/layer/VectorTile';
 import GeoJSON from 'ol/format/GeoJSON';
-import Select from 'ol/interaction/Select';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
+import { applyWaterVersions, createWardTileLayer, createWaterTileLayer, fetchWaterVersions, withHighlight, type ApiTileLayer } from './waterTiles';
 import { GEOSERVER_URL } from '../../../shared/config';
 import { BASEMAP_CONTEXT_LAYER_STATE_IDS, TERRAIN_LAYER_STATE_IDS, type ContourInterval } from '@webatlas/shared';
 import {
@@ -24,13 +26,7 @@ import {
   type ContourSettings,
 } from './contours';
 import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_ZOOM, settleZoomCorrection } from './zoomScale';
-import {
-  createBboxLoadGate,
-  createOneShotLoadGate,
-  createPendingRefreshQueue,
-  WATER_MIN_ZOOM,
-  WARDS_MIN_ZOOM,
-} from './zoomLoadGate';
+import { WATER_MIN_ZOOM, WARDS_MIN_ZOOM } from './zoomLoadGate';
 import {
   provincesStyle,
   wardsStyle,
@@ -49,15 +45,15 @@ export type BasemapType = 'satellite' | 'street' | 'dem';
 export type ReservoirFilterType = 'all' | 'binh_thuong' | 'xa_lu' | 'nguy_hiem';
 
 /**
- * Nền đường phố: TỰ LƯU TRỮ trên GeoServer, không phụ thuộc bên thứ ba.
+ * Street basemap: SELF-HOSTED on GeoServer, no third-party dependency.
  *
- * Trước đây dùng CARTO `light_nolabels`. CARTO đã chuyển sang bắt buộc API key,
- * và endpoint cũ vẫn trả HTTP 200 nhưng nội dung là ô xám ghi "API KEY REQUIRED"
- * — hỏng mà không hề báo lỗi. Nay dựng lại từ dữ liệu OpenStreetMap (Geofabrik)
- * nạp vào PostGIS và render qua layer group `webatlas:basemap`, phục vụ qua
- * GeoWebCache nên tile được cache chứ không render lại mỗi lần.
+ * It used to be CARTO `light_nolabels`. CARTO moved to a mandatory API key, and the
+ * old endpoint still answers HTTP 200 with grey tiles reading "API KEY REQUIRED":
+ * broken without any error. It is now rebuilt from OpenStreetMap data (Geofabrik)
+ * loaded into PostGIS and rendered through the `webatlas:basemap` layer group,
+ * served through GeoWebCache so tiles are cached rather than rendered every time.
  *
- * Dữ liệu OSM là ODbL: BẮT BUỘC ghi công "© OpenStreetMap contributors".
+ * OSM data is ODbL: the "© OpenStreetMap contributors" attribution is MANDATORY.
  */
 const OSM_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL)';
@@ -86,11 +82,12 @@ function streetBasemapSource(): XYZ {
 }
 
 /**
- * Lớp ngữ cảnh của nền bản đồ — tách riêng để BẬT/TẮT ĐỘC LẬP.
+ * Basemap context layers, kept separate so each can be TOGGLED INDEPENDENTLY.
  *
- * Mỗi lớp là một layer group riêng trên GeoServer nên có cache GWC RIÊNG: tách ra
- * không làm mất lợi ích cache, chỉ thêm request. Tắt một lớp cũng không giải phóng
- * source — tile đã tải vẫn nằm trong cache của OpenLayers, bật lại là hiện ngay.
+ * Each is its own layer group on GeoServer with its OWN GWC cache: splitting them
+ * keeps the caching benefit and only adds requests. Turning a layer off does not
+ * release its source either: loaded tiles stay in OpenLayers' cache and show again
+ * at once when it is turned back on.
  */
 const [BM_ROADS, BM_RAILWAYS, BM_WATER, BM_LANDUSE] = BASEMAP_CONTEXT_LAYER_STATE_IDS;
 
@@ -116,59 +113,61 @@ export interface LayerState {
 export class MapModel {
   private map: Map | null = null;
   private basemapLayer: TileLayer<XYZ | OSM> | null = null;
-  /** Đăng ký các lớp bật/tắt được từ bảng điều khiển. Chủ yếu là vector, cộng thêm
-   *  lớp raster đường đồng mức (layer_contours) — cả hai đều có setVisible/
-   *  setOpacity/getSource().refresh(), nên union này không phá các nơi dùng chung. */
-  private layers: Record<string, VectorLayer<VectorSource> | TileLayer<XYZ>> = {};
+  /** Registry of the layers the control panel toggles. Mostly vector (WFS or, for the
+   *  water layers, vector tiles), plus the contour raster (layer_contours). All of them
+   *  have setVisible/setOpacity/getSource().refresh(), so the union does not break the
+   *  shared call sites. */
+  private layers: Record<string, VectorLayer<VectorSource> | VectorTileLayer | TileLayer<XYZ>> = {};
   /** Raster context layers (roads/rail/landuse/water). Separate registry because
    *  `layers` is typed for vector sources and its consumers call getSource().refresh(). */
   private contextLayers: Record<string, TileLayer<XYZ>> = {};
-  private selectInteraction: Select | null = null;
+  /** The water layers drawn from API vector tiles, keyed by tile layer, for version updates. */
+  private waterLayers: Partial<Record<ApiTileLayer, VectorTileLayer>> = {};
+  /** The river whose `id` property is highlighted after a click (replaces ol/interaction/Select,
+   *  which never selects tile features). */
+  private highlightedRiverId: string | null = null;
+  /** Off during admin edit mode, so the highlight does not fire alongside the edit selection. */
+  private riverHighlightActive = true;
+  private riverClickHandler: ((evt: MapBrowserEvent) => void) | null = null;
+  /** False until a versions fetch has answered or failed, or the start-up timeout ran out; see init(). */
+  private waterVersionsSettled = false;
+  /** Bumped per /api/tiles/versions request: only the latest request's answer is applied. */
+  private waterVersionsSeq = 0;
+  /** The sequence number of the newest versions answer applied so far. */
+  private waterVersionsApplied = 0;
+  private waterVersionsTimer: ReturnType<typeof setTimeout> | null = null;
   /** Coordinate readout control — kept to swap its formatter on CRS toggle. */
   private mousePosition: MousePosition | null = null;
   private reservoirFilter: ReservoirFilterType = 'all';
   private layerStates: LayerState[] = [];
   private moveendHandler: (() => void) | null = null;
-  /** Lớp sông tổng quan cho mức thu nhỏ — xem riverOverview.ts. */
-  private riversOverviewLayer: VectorLayer<VectorSource> | null = null;
+  /** The far-zoom river overview layer — see riverOverview.ts. */
+  private riversOverviewLayer: VectorTileLayer | null = null;
   private contourLayer: TileLayer<XYZ> | null = null;
-  /** Khoảng đang hiển thị, để không đặt lại source khi không cần. */
+  /** The interval on display, so the source is not reset when it need not be. */
   private contourInterval: ContourInterval | null = null;
-  /** Người dùng chọn cứng một khoảng; null nghĩa là để mức thu phóng quyết định. */
+  /** An interval the user pinned; null lets the zoom level decide. */
   private contourFixedInterval: ContourInterval | null = null;
   private contourLabels = true;
-  /** Bám nấc nghìn khi khung nhìn dừng — xem settleZoomCorrection. */
+  /** Snaps to a round thousand when the view settles — see settleZoomCorrection. */
   private settleSnapHandler: (() => void) | null = null;
-  /** Cổng tải sông/hồ theo zoom — chạy mỗi lần moveend (xem zoomLoadGate.ts). */
-  private waterGate: ((zoom: number) => void) | null = null;
-  /** Cổng tải ranh giới xã — chỉ nạp một lần khi vượt zoom 10. */
-  private wardsGate: ((zoom: number) => void) | null = null;
-  /**
-   * Lớp đã bị cổng zoom gỡ source nhưng có yêu cầu refresh trong lúc đó.
-   *
-   * Vì sao cần: sông và hồ đều là lớp CHO PHÉP SỬA. Nếu quản trị viên vẽ/sửa ở
-   * mức zoom dưới ngưỡng, API ghi thành công nhưng refreshLayer() gọi vào source
-   * null nên im lặng không làm gì — đối tượng vừa lưu KHÔNG hiện ra, y hệt như
-   * lưu thất bại. Ghi nhận lại ở đây để nạp bù đúng lúc gắn source trở lại.
-   */
-  private pendingRefresh = createPendingRefreshQueue();
-  /** Bận/rảnh của việc tải tile nền — xem loadingState.ts. Chỉ theo dõi nguồn
-   *  raster (GWC); nguồn WFS bắn featuresloadstart/end theo nhịp khác và sẽ
-   *  khiến thanh báo hiện cả lúc tải dữ liệu chuyên đề thông thường. */
+  /** Busy/idle of basemap tile loading — see loadingState.ts. Only the raster (GWC)
+   *  sources are tracked; WFS sources fire featuresloadstart/end at a different pace
+   *  and would show the indicator during ordinary thematic data loads too. */
   private loadTracker = createLoadTracker((busy) => this.onLoadingChange?.(busy));
   private onLoadingChange: ((busy: boolean) => void) | null = null;
   /**
-   * Tay cầm tileloadstart/end/error gắn trên từng nguồn ngữ cảnh, lưu lại để
-   * gỡ đúng trong dispose(). Đăng ký bằng arrow vô danh (như trước đây) thì
-   * KHÔNG THỂ un() được — phải đặt tên và giữ tham chiếu, giống hệt quy ước
-   * moveendHandler/settleSnapHandler ở trên.
+   * The tileloadstart/end/error handlers attached to each context source, kept so
+   * dispose() can remove exactly them. Anonymous arrows (as before) CANNOT be un()'d:
+   * they must be named and referenced, the same convention as moveendHandler/
+   * settleSnapHandler above.
    *
-   * Vì sao bắt buộc phải gỡ: setTarget(undefined) không huỷ các request tile
-   * đang bay. Nếu MapView unmount rồi mount lại (StrictMode dev double-invoke,
-   * hay remount thật sau này), instance MapModel cũ vẫn còn nguyên các tay cầm
-   * này gắn trên source cũ và vẫn còn onLoadingChange trỏ tới setBusy của React
-   * đã bị thay. Một tileloadstart trễ trên instance đã dispose() sẽ ghi đè
-   * cùng state `busy` mà instance mới đang sở hữu, gây tranh chấp (race).
+   * Why removal is mandatory: setTarget(undefined) does not cancel tile requests in
+   * flight. If MapView unmounts and mounts again (StrictMode dev double-invoke, or a
+   * real remount later), the old MapModel instance still has these handlers on the
+   * old sources and still has onLoadingChange pointing at React's replaced setBusy.
+   * A late tileloadstart on the disposed instance would overwrite the same `busy`
+   * state the new instance owns: a race.
    */
   private contextLoadHandlers: Array<{
     source: XYZ;
@@ -176,7 +175,7 @@ export class MapModel {
     handler: () => void;
   }> = [];
 
-  /** Đăng ký nơi nhận trạng thái bận/rảnh (MapView/MapProvider phía React). */
+  /** Registers the receiver of the busy/idle state (MapView/MapProvider on the React side). */
   setLoadingListener(fn: ((busy: boolean) => void) | null): void {
     this.onLoadingChange = fn;
   }
@@ -185,14 +184,15 @@ export class MapModel {
     // Idempotency guard for React 19 StrictMode double-invoked effects.
     if (this.map) return;
 
-    // 1. Khởi tạo Basemap Layer (nền tự lưu trữ, xem streetBasemapSource)
+    // 1. The basemap layer (self-hosted, see streetBasemapSource).
     const initialBasemap = new TileLayer({
       className: 'basemap-tile-layer',
       source: streetBasemapSource(),
     });
 
-    // Lớp ngữ cảnh: nằm TRÊN nền (kể cả ảnh vệ tinh) nhưng DƯỚI dữ liệu chuyên đề.
-    // Đăng ký vào contextLayers để recomputeVisibility() điều khiển qua layersState.
+    // Context layers: ABOVE the basemap (satellite imagery included) but BELOW the
+    // thematic data. Registered in contextLayers so recomputeVisibility() drives them
+    // through layersState.
     for (const { stateId, gwc } of CONTEXT_LAYERS) {
       this.contextLayers[stateId] = new TileLayer({
         className: `context-tile-${stateId}`,
@@ -201,15 +201,15 @@ export class MapModel {
     }
     this.basemapLayer = initialBasemap;
 
-    // Lớp đường đồng mức: nằm TRÊN nền và ngữ cảnh nhưng DƯỚI ranh giới/dữ liệu
-    // chuyên đề (xem vị trí trong mảng `layers` của map bên dưới). Tắt theo mặc
-    // định — bật qua bảng điều khiển ('Địa hình' > 'Đường đồng mức').
+    // Contour layer: ABOVE the basemap and context but BELOW the boundaries and
+    // thematic data (see its place in the map's `layers` array below). Off by
+    // default; turned on from the control panel ('Địa hình' > 'Đường đồng mức').
     //
-    // extent: các lớp GWC đường đồng mức được xuất bản với biên DỮ LIỆU
-    // (CONTOUR_EXTENT_4326), khác với biên toàn quốc mà mọi lớp nền khác dùng —
-    // xem ghi chú tại khai báo hằng số đó trong contours.ts. Thiếu extent thì mỗi
-    // lần rê bản đồ ra ngoài vùng công tác sẽ xin tile ngoài phạm vi, GWC trả về
-    // 400 TileOutOfRange cho từng ô.
+    // extent: the contour GWC layers are published with the DATA bounds
+    // (CONTOUR_EXTENT_4326), not the national bounds every other basemap layer uses —
+    // see the note on that constant in contours.ts. Without the extent, every pan
+    // outside the work area would request out-of-range tiles and GWC would answer
+    // 400 TileOutOfRange for each one.
     const [CONTOURS] = TERRAIN_LAYER_STATE_IDS;
     const contourLayer = new TileLayer({
       source: gwcSource(contourGwcLayer(250), contourStyle(this.contourLabels), CONTOUR_ATTRIBUTION),
@@ -220,8 +220,8 @@ export class MapModel {
     this.contourLayer = contourLayer;
     this.layers[CONTOURS] = contourLayer;
 
-    // Chỉ theo dõi tải cho các nguồn tile raster (nền + ngữ cảnh) — xem ghi chú
-    // tại khai báo loadTracker phía trên.
+    // Track loading only for the raster tile sources (basemap + context) — see the
+    // note on the loadTracker declaration above.
     for (const { stateId } of CONTEXT_LAYERS) {
       const src = this.contextLayers[stateId].getSource();
       if (!src) continue;
@@ -238,7 +238,7 @@ export class MapModel {
       );
     }
 
-    // Helper tạo vector layer từ URL GeoJSON
+    // Helper: a vector layer from a GeoJSON URL.
     const createVectorLayerFromUrl = (id: string, url: string, style: any, options: any = {}) => {
       const source = new VectorSource({
         url: url,
@@ -258,92 +258,58 @@ export class MapModel {
 
     const damsLayer = new VectorLayer({ source: createWfsVectorSource('dams'), style: damsStyle, properties: { id: 'layer_dams' } });
     this.layers['layer_dams'] = damsLayer;
-    const riversLayer = new VectorLayer({ source: createWfsVectorSource('rivers'), style: riversStyle, properties: { id: 'layer_rivers' } });
+    // Rivers and lakes are drawn from the API's vector tiles (waterTiles.ts). A tile
+    // layer only requests the tiles in view, so these layers need no zoom load gate:
+    // below WATER_MIN_ZOOM they are hidden (recomputeVisibility) and an invisible
+    // layer requests nothing. The clicked river is highlighted through its style.
+    const riversLayer = createWaterTileLayer(
+      'rivers',
+      'layer_rivers',
+      withHighlight(riversStyle, makeRiverSelectStyle(), () => this.highlightedRiverId),
+    );
     this.layers['layer_rivers'] = riversLayer;
 
-    // Sông tổng quan: chỉ sông chính, hình học đã đơn giản hoá sẵn, phục vụ đúng
-    // phần dải tỷ lệ mà lớp sông đầy đủ chưa được phép tải (dưới zoom 8,5).
-    // KHÔNG đưa vào this.layers: đó là sổ đăng ký các lớp người dùng bật/tắt
-    // được, còn lớp này đi kèm 'layer_rivers' chứ không có mục riêng trong bảng.
-    const riversOverviewLayer = new VectorLayer({
-      source: createRiverOverviewSource(),
-      style: riversStyle,
-      visible: false,
-      properties: { id: 'layer_rivers_overview' },
-    });
+    // River overview: main rivers only, with pre-simplified geometry, covering exactly
+    // the part of the scale range where the full river layer is not drawn (below zoom
+    // 8.5). NOT added to this.layers: that is the registry of layers the user toggles,
+    // and this one follows 'layer_rivers' rather than having its own panel entry.
+    const riversOverviewLayer = createWaterTileLayer('rivers_overview', 'layer_rivers_overview', riversStyle);
     this.riversOverviewLayer = riversOverviewLayer;
+    const lakesLayer = createWaterTileLayer('lakes', 'layer_lakes', lakesStyle);
+    this.layers['layer_lakes'] = lakesLayer;
+    this.waterLayers = { rivers: riversLayer, rivers_overview: riversOverviewLayer, lakes: lakesLayer };
+
     const mkWfs = (stateId: string, key: Parameters<typeof createWfsVectorSource>[0], style: any) => {
       const layer = new VectorLayer({ source: createWfsVectorSource(key), style, properties: { id: stateId } });
       this.layers[stateId] = layer;
       return layer;
     };
-    const lakesLayer = mkWfs('layer_lakes', 'lakes', lakesStyle);
-
-    // Cổng tải sông/hồ theo zoom. Gỡ hẳn source khỏi layer khi ở dưới ngưỡng —
-    // layer không có source thì không tải gì cả, và đây là API công khai của
-    // OpenLayers (Layer#setSource) nên không phải lách nội bộ thư viện.
-    //
-    // Vì sao cần: khung nhìn lúc mở (zoom 7) trải 101–116°Đ nên bbox vẫn kéo về
-    // trọn 17,6 MB dữ liệu sông. Chỉ từ zoom 8,5 bbox mới thực sự cắt bớt.
-    const riversSource = riversLayer.getSource();
-    const lakesSource = lakesLayer.getSource();
-    this.waterGate = createBboxLoadGate(
-      WATER_MIN_ZOOM,
-      () => {
-        riversLayer.setSource(riversSource);
-        lakesLayer.setSource(lakesSource);
-        // Nạp bù cho yêu cầu refresh đã rơi vào lúc source bị gỡ (xem pendingRefresh).
-        for (const id of ['layer_rivers', 'layer_lakes']) {
-          if (this.pendingRefresh.take(id)) this.layers[id]?.getSource()?.refresh();
-        }
-      },
-      () => {
-        riversLayer.setSource(null);
-        lakesLayer.setSource(null);
-        // PHẢI dùng refresh() chứ không phải clear(): clear() chỉ xoá feature mà
-        // GIỮ NGUYÊN loadedExtentsRtree_, nên khi gắn source lại OpenLayers tưởng
-        // các extent đã tải xong và sẽ không gửi request nào (ol/source/Vector.js:566
-        // so với refresh() ở dòng 1058 — refresh xoá cả hai).
-        riversSource?.refresh();
-        lakesSource?.refresh();
-      }
-    );
     const stationsLayer = mkWfs('layer_stations', 'stations', stationsStyle);
     const floodLayer = mkWfs('layer_flood', 'flood_zones', floodStyle);
     const droughtSurveyLayer = mkWfs('layer_drought_survey', 'drought_points', droughtSurveyStyle);
     const saltwaterIntrusionLayer = mkWfs('layer_saltwater_intrusion', 'saltwater_intrusion', saltwaterIntrusionStyle);
     const floodGenerationLayer = mkWfs('layer_flood_generation', 'flood_generation', floodGenerationStyle);
 
-    // Tải layer ranh giới tỉnh và xã từ GeoJSON (quản lý ẩn hiện động theo mức zoom qua event listener để tránh lỗi hiển thị khi di chuyển)
-    // Ranh giới sau sáp nhập (01/7/2025): 34 tỉnh cả nước; xã chỉ có trong vùng
-    // công tác — zoom ra ngoài vùng sẽ thấy ranh giới tỉnh nhưng không có xã.
+    // Province and ward boundaries from GeoJSON (shown/hidden by zoom level from the
+    // moveend listener, to avoid display glitches while moving).
+    // Boundaries after the merger (1 July 2025): 34 provinces nationwide; wards only
+    // inside the work area — zoomed out beyond it, provinces show but wards do not.
     const provincesLayer = createVectorLayerFromUrl('layer_provinces_2026', './provinces-34.geojson', provincesStyle);
 
-    // Source ranh giới xã khởi tạo RỖNG: file ~6,9 MB mà chỉ hiển thị từ zoom 10.
-    // setMinZoom của OpenLayers chỉ chặn VẼ chứ không chặn TẢI, nên phải chặn ở
-    // tầng source: chỉ nạp URL vào lần đầu người dùng vượt ngưỡng (xem zoomLoadGate.ts).
-    // `format` bắt buộc phải có ngay từ đầu vì setUrl() có assert yêu cầu
-    // (ol/source/Vector.js:1192).
-    const wardsSource = new VectorSource({ format: new GeoJSON() });
-    const wardsLayer = new VectorLayer({
-      source: wardsSource,
-      style: wardsStyle,
-      properties: { id: 'layer_wards_2026' },
-    });
+    // Wards are API vector tiles (waterTiles.ts): only the tiles in view are requested, and the
+    // layer stays hidden (so requests nothing) until the versions are known and zoom reaches WARDS_MIN_ZOOM.
+    const wardsLayer = createWardTileLayer('layer_wards_2026', wardsStyle);
     this.layers['layer_wards_2026'] = wardsLayer;
-    this.wardsGate = createOneShotLoadGate(WARDS_MIN_ZOOM, () => {
-      wardsSource.setUrl('./wards-region.geojson');
-      wardsSource.refresh();
-    });
+    this.waterLayers.wards = wardsLayer;
 
-    // 3. Khởi tạo Map
+    // 3. The map.
     this.mousePosition = createMousePosition();
     const map = new Map({
       target,
       layers: [
         initialBasemap,
-        // Ngữ cảnh nền: trên nền, dưới ranh giới và dữ liệu chuyên đề. Thứ tự trong
-        // CONTEXT_LAYERS là thứ tự vẽ (sử dụng đất -> mặt nước -> đường sắt -> đường bộ).
+        // Basemap context: above the basemap, below boundaries and thematic data. The
+        // order in CONTEXT_LAYERS is the draw order (land use -> water -> rail -> roads).
         ...CONTEXT_LAYERS.map(({ stateId }) => this.contextLayers[stateId]),
         contourLayer,
         provincesLayer,
@@ -359,50 +325,59 @@ export class MapModel {
         floodGenerationLayer
       ],
       view: new View({
-        // Mở ứng dụng ngay tại VÙNG CÔNG TÁC, không phải toàn quốc: dữ liệu chuyên
-        // đề chỉ có trong vùng này, và khung nhìn toàn quốc buộc chiến lược bbox
-        // phải tải sạch dữ liệu ngay từ đầu. Xem INITIAL_CENTER_4326 trong zoomScale.
-        // Người dùng vẫn thu nhỏ được tới MIN_ZOOM để xem cả nước.
+        // Open on the WORK AREA, not the whole country: thematic data only exists
+        // there, and a national view would make the bbox strategy load everything up
+        // front. See INITIAL_CENTER_4326 in zoomScale. The user can still zoom out to
+        // MIN_ZOOM to see the whole country.
         center: fromLonLat(INITIAL_CENTER_4326),
         zoom: INITIAL_ZOOM,
-        // Giới hạn zoom theo tỷ lệ bản đồ (Web Mercator, 96 DPI, vĩ độ ~16°N):
-        // MIN_ZOOM ~ 1:7.500.000 (thu nhỏ vừa đủ thấy hết Việt Nam),
-        // MAX_ZOOM ~ 1:100.000. Xem ZOOM_SCALE_LEVELS trong MapControls.
+        // Zoom limits by map scale (Web Mercator, 96 DPI, latitude ~16°N):
+        // MIN_ZOOM ~ 1:7,500,000 (just zoomed out enough to see all of Vietnam),
+        // MAX_ZOOM ~ 1:100,000. See ZOOM_SCALE_LEVELS in MapControls.
         minZoom: MIN_ZOOM,
         maxZoom: MAX_ZOOM,
         extent: transformExtent(VIETNAM_EXTENT_4326, 'EPSG:4326', 'EPSG:3857'),
-        // Việt Nam hẹp ngang (~431px ở MIN_ZOOM) nên nếu ràng buộc cả khung nhìn,
-        // OpenLayers sẽ chặn thu nhỏ lại để khung vừa extent -> kẹt ở ~1:1.750.000.
-        // Chỉ ràng buộc TÂM: rìa bản đồ được phép tràn ra ngoài extent.
+        // Vietnam is narrow (~431 px wide at MIN_ZOOM), so constraining the whole view
+        // would stop zooming out once the view fits the extent -> stuck at ~1:1,750,000.
+        // Constrain only the CENTER: the map edges may spill beyond the extent.
         constrainOnlyCenter: true,
       }),
-      // Giữ danh sách TƯỜNG MINH, không dùng defaults(): defaults() kèm nút zoom
-      // và ô ghi công, chồng lên thanh công cụ và góc dưới phải của chính ta.
+      // An EXPLICIT list, not defaults(): defaults() brings a zoom button and an
+      // attribution box that overlap our own toolbar and bottom-right corner.
       controls: [createScaleBar(), this.mousePosition],
     });
 
-    // Thêm interaction để highlight sông khi click
-    const selectInteraction = new Select({
-      layers: [riversLayer],
-      style: makeRiverSelectStyle()
-    });
-    map.addInteraction(selectInteraction);
-    this.selectInteraction = selectInteraction;
+    // Highlight the clicked river. ol/interaction/Select does not select tile features,
+    // so the click sets the highlighted id and the rivers style draws it (withHighlight).
+    const onRiverClick = (evt: MapBrowserEvent) => {
+      if (!this.riverHighlightActive) return;
+      let id: string | null = null;
+      map.forEachFeatureAtPixel(
+        evt.pixel,
+        (feature) => {
+          const value = feature.get('id');
+          id = typeof value === 'string' ? value : null;
+          return true;
+        },
+        { layerFilter: (l) => l === riversLayer },
+      );
+      this.setRiverHighlight(id);
+    };
+    this.riverClickHandler = onRiverClick;
+    map.on('singleclick', onRiverClick);
 
     this.map = map;
 
-    // Lắng nghe thay đổi LayerState và zoom/pan để cập nhật hiển thị ranh giới
+    // Follow LayerState changes and zoom/pan to update what is shown.
     const updateLayersVisibility = () => {
       const zoom = map.getView().getZoom();
       if (zoom !== undefined) {
-        this.waterGate?.(zoom);
-        this.wardsGate?.(zoom);
-        // Chỉ đổi source khi khoảng cao đều thật sự đổi: đặt lại source đồng nghĩa vứt bỏ
-        // toàn bộ tile đã tải, nên gọi mỗi lần di chuyển bản đồ sẽ nháy liên tục.
-        // contourFixedInterval do người dùng chọn cứng (setContourSettings, Nhiệm vụ 6)
-        // được ưu tiên hơn mức tự động theo zoom: khi khác null, `wanted` luôn bằng
-        // đúng giá trị cố định đó bất kể zoom, nên nó khớp contourInterval ngay từ lần
-        // gọi đầu và nhánh dưới đây không bao giờ đặt lại source vì đổi zoom nữa.
+        // Swap the source only when the contour interval really changes: a new source
+        // throws away every loaded tile, so doing it on every map move would flicker.
+        // contourFixedInterval, pinned by the user (setContourSettings, Task 6), wins
+        // over the automatic per-zoom interval: when it is not null, `wanted` always
+        // equals that fixed value whatever the zoom, so it matches contourInterval from
+        // the first call and the branch below never resets the source on zoom changes.
         const wanted = this.contourFixedInterval ?? contourIntervalFor(zoom);
         if (this.contourLayer && wanted !== this.contourInterval) {
           this.contourInterval = wanted;
@@ -439,13 +414,16 @@ export class MapModel {
     this.settleSnapHandler = settleSnap;
     map.on('moveend', settleSnap);
 
-    // Chạy cổng ngay lúc khởi tạo cho chắc. ('moveend' CÓ bắn ở lần render đầu tiên
-    // — ol/Map.js nhánh idle — nên đây là lớp bảo hiểm, không phải bắt buộc: lần
-    // moveend sau đó cùng mức zoom sẽ tự early-return vì trạng thái không đổi.)
-    this.waterGate?.(INITIAL_ZOOM);
+    // Point the water layers at their active versions, so their tiles are cacheable for
+    // good. A failed fetch leaves the unversioned URLs, which still work, uncached. The
+    // water layers stay hidden until then (waterVersionsSettled): drawn earlier, the
+    // overview would load every tile in view twice, unversioned and then versioned. A
+    // request that hangs must not hide them for good, hence the timeout.
+    this.waterVersionsTimer = setTimeout(() => this.settleWaterVersions(), MapModel.WATER_VERSIONS_TIMEOUT_MS);
+    this.syncWaterVersions(() => {});
 
-    // Chỉ để script đo hiệu năng (apps/web/scripts/profile-map.mjs) truy cập được map.
-    // Dev-only: production build không đặt biến này.
+    // Only so the profiling script (apps/web/scripts/profile-map.mjs) can reach the map.
+    // Dev-only: the production build does not set it.
     if (import.meta.env.DEV) {
       (window as unknown as { __olMap?: Map }).__olMap = map;
     }
@@ -462,25 +440,24 @@ export class MapModel {
       const layer = this.layers[state.id];
       if (layer) {
         let zoomVisible = true;
-        // Ranh giới tỉnh chỉ hiện khi zoom <= 9.5, ranh giới xã phường hiện khi zoom > 9.5
         if (state.id === 'layer_provinces_2026') {
-          zoomVisible = true; // Luôn hiển thị ranh giới tỉnh
+          zoomVisible = true; // Province boundaries always show.
         } else if (state.id === 'layer_wards_2026') {
-          // Cùng ngưỡng với cổng TẢI ở zoomLoadGate.ts — một nguồn sự thật duy nhất.
-          zoomVisible = currentZoom >= WARDS_MIN_ZOOM; // Chỉ hiện ranh giới xã khi phóng to
+          // Hidden layers request no tiles, so this is also what gates loading.
+          zoomVisible = this.waterVersionsSettled && currentZoom >= WARDS_MIN_ZOOM;
         } else if (state.id === 'layer_rivers' || state.id === 'layer_lakes') {
-          // Khớp ngưỡng VẼ với ngưỡng TẢI: dưới 8,5 source bị gỡ nên lớp rỗng.
-          // Nếu vẫn để "hiện", chú giải sẽ liệt kê sông/hồ (kèm ghi công ODbL) cho
-          // những lớp đang không vẽ gì — người dùng tưởng bản đồ hỏng.
-          zoomVisible = currentZoom >= WATER_MIN_ZOOM;
+          // Below 8.5 the full water layers do not draw (the river overview stands in
+          // for rivers), and a hidden tile layer requests nothing. The legend reads this
+          // visibility, so it does not list (with their ODbL credit) layers drawing nothing.
+          zoomVisible = this.waterVersionsSettled && currentZoom >= WATER_MIN_ZOOM;
         }
 
         layer.setVisible(state.visible && zoomVisible);
         layer.setOpacity(state.opacity);
       }
 
-      // Lớp ngữ cảnh raster: không có cổng zoom riêng — chi tiết đã được điều khiển
-      // bằng scale denominator trong SLD phía GeoServer, nên chỉ cần theo layersState.
+      // Raster context layers: no zoom gate of their own — detail is already driven by
+      // scale denominators in the GeoServer SLDs, so they only follow layersState.
       const context = this.contextLayers[state.id];
       if (context) {
         context.setVisible(state.visible);
@@ -492,7 +469,7 @@ export class MapModel {
     // their handoff in the same visibility pass so layer-state changes cannot
     // leave both representations drawing at once.
     const riversOn = this.layerStates.find((l) => l.id === 'layer_rivers')?.visible ?? true;
-    this.riversOverviewLayer?.setVisible(riverOverviewVisibleAt(currentZoom) && riversOn);
+    this.riversOverviewLayer?.setVisible(this.waterVersionsSettled && riverOverviewVisibleAt(currentZoom) && riversOn);
   }
 
   getMap(): Map | null {
@@ -513,7 +490,7 @@ export class MapModel {
     this.map?.updateSize();
   }
 
-  // Lắng nghe thay đổi Basemap (Yêu cầu 1.1)
+  // Basemap switch (requirement 1.1).
   setBasemap(type: BasemapType): void {
     if (!this.basemapLayer) return;
 
@@ -546,14 +523,14 @@ export class MapModel {
     this.basemapLayer.setSource(newSource);
   }
 
-  // Lắng nghe thay đổi LayerState (lưu lại states để moveend handler ở init() tái sử dụng khi tính toán zoomVisible)
+  // LayerState changes (kept so the moveend handler from init() reuses them for zoomVisible).
   applyLayerStates(states: LayerState[]): void {
     if (!this.map) return;
     this.layerStates = states;
     this.recomputeVisibility();
   }
 
-  // Lắng nghe thay đổi reservoirFilter để vẽ lại layer hồ chứa
+  // A reservoirFilter change redraws the dams layer.
   setReservoirFilter(filter: ReservoirFilterType): void {
     this.reservoirFilter = filter;
     const damsLayer = this.layers['layer_dams'];
@@ -563,11 +540,11 @@ export class MapModel {
   }
 
   /**
-   * Bảng điều khiển (Nhiệm vụ 6) gọi khi người dùng đổi khoảng cao đều hoặc bật/tắt
-   * nhãn. Một khoảng cố định (khác 'auto') ưu tiên hơn mức tự động theo zoom: đặt
-   * contourFixedInterval khác null khiến nhánh trong updateLayersVisibility() (moveend)
-   * luôn tính lại `wanted` bằng đúng giá trị này, nên nó không bao giờ lệch khỏi
-   * contourInterval và source không bị đặt lại khi zoom đổi.
+   * Called by the control panel (Task 6) when the user changes the contour interval or
+   * toggles labels. A fixed interval (not 'auto') wins over the automatic per-zoom one:
+   * a non-null contourFixedInterval makes the branch in updateLayersVisibility()
+   * (moveend) always compute `wanted` as exactly this value, so it never drifts from
+   * contourInterval and the source is not reset when the zoom changes.
    */
   setContourSettings(settings: ContourSettings): void {
     this.contourLabels = settings.labels;
@@ -581,26 +558,72 @@ export class MapModel {
   }
 
   /**
-   * Force a WFS refetch for a thematic layer by its layersState id (e.g. 'layer_dams').
+   * Force a refetch for a thematic layer by its layersState id (e.g. 'layer_dams').
    * Called after an admin create/edit so the new feature renders live (design §4.7).
+   * The water layers are tiles keyed by the layer's active version: the edit just
+   * committed made a new version, so pointing them at it is the refresh.
    */
   refreshLayer(layerStateId: string): void {
     if (!this.map) return;
-    const layer = this.layers[layerStateId];
-    if (!layer) return;
-    const source = layer.getSource();
-    if (!source) {
-      // Source đang bị cổng zoom gỡ ra: refresh() sẽ rơi vào hư không và đối tượng
-      // vừa lưu sẽ không bao giờ hiện. Ghi nhận để nạp bù khi cổng mở lại.
-      this.pendingRefresh.add(layerStateId);
+    if (layerStateId === 'layer_rivers' || layerStateId === 'layer_lakes') {
+      this.syncWaterVersions((e) => console.warn('[tiles] could not refresh the water layer versions', e));
       return;
     }
-    source.refresh();
+    this.layers[layerStateId]?.getSource()?.refresh();
   }
 
-  /** Enable/disable the rivers click-highlight Select (disabled during admin edit mode so it doesn't fire alongside the edit selection). */
+  /** How long the water layers wait for the start-up versions before showing anyway. */
+  static readonly WATER_VERSIONS_TIMEOUT_MS = 5000;
+
+  /**
+   * Fetch the active water versions and point the tile layers at them. Requests can answer
+   * out of order (start-up, then a refresh after an edit): an answer is applied only when
+   * newer than the last applied one, so an older answer can never point a layer back at a superseded
+   * version, yet a failing newest request does not discard an older successful answer. Any answer
+   * settles the start-up wait.
+   */
+  private syncWaterVersions(onError: (e: unknown) => void): void {
+    const map = this.map;
+    const seq = ++this.waterVersionsSeq;
+    fetchWaterVersions()
+      .then((v) => {
+        if (this.map !== map) return;
+        // Apply when newer than the last applied answer, not only when it is the latest request:
+        // a failing newest request must not discard an older successful answer.
+        if (seq > this.waterVersionsApplied) {
+          this.waterVersionsApplied = seq;
+          applyWaterVersions(this.waterLayers, v);
+        }
+        this.settleWaterVersions();
+      })
+      .catch((e) => {
+        if (this.map !== map) return;
+        onError(e);
+        this.settleWaterVersions();
+      });
+  }
+
+  private settleWaterVersions(): void {
+    if (this.waterVersionsTimer !== null) {
+      clearTimeout(this.waterVersionsTimer);
+      this.waterVersionsTimer = null;
+    }
+    if (this.waterVersionsSettled || !this.map) return;
+    this.waterVersionsSettled = true;
+    this.recomputeVisibility();
+  }
+
+  /** Enable/disable the rivers click highlight (disabled during admin edit mode so it doesn't fire alongside the edit selection). */
   setSelectActive(active: boolean): void {
-    this.selectInteraction?.setActive(active);
+    this.riverHighlightActive = active;
+    if (!active) this.setRiverHighlight(null);
+  }
+
+  private setRiverHighlight(id: string | null): void {
+    if (id === this.highlightedRiverId) return;
+    this.highlightedRiverId = id;
+    // The style reads the id when a tile is drawn: changed() makes the tiles redraw.
+    this.waterLayers.rivers?.changed();
   }
 
   /** Swaps the coordinate readout's formatter (CRS toggle). The control keeps
@@ -612,9 +635,9 @@ export class MapModel {
   dispose(): void {
     if (!this.map) return;
 
-    if (this.selectInteraction) {
-      this.map.removeInteraction(this.selectInteraction);
-      this.selectInteraction = null;
+    if (this.riverClickHandler) {
+      this.map.un('singleclick', this.riverClickHandler);
+      this.riverClickHandler = null;
     }
     if (this.moveendHandler) {
       this.map.un('moveend', this.moveendHandler);
@@ -624,11 +647,8 @@ export class MapModel {
       this.map.un('moveend', this.settleSnapHandler);
       this.settleSnapHandler = null;
     }
-    this.waterGate = null;
-    this.wardsGate = null;
-    this.pendingRefresh.clear();
-    // Gỡ từng tay cầm tileload* khỏi đúng source đã đăng ký — xem ghi chú tại
-    // khai báo contextLoadHandlers phía trên.
+    // Remove each tileload* handler from the exact source it was registered on — see
+    // the note on the contextLoadHandlers declaration above.
     for (const { source, type, handler } of this.contextLoadHandlers) {
       source.un(type, handler);
     }
@@ -640,5 +660,11 @@ export class MapModel {
     this.basemapLayer = null;
     this.mousePosition = null;
     this.layers = {};
+    this.waterLayers = {};
+    this.riversOverviewLayer = null;
+    this.highlightedRiverId = null;
+    this.waterVersionsSettled = false;
+    if (this.waterVersionsTimer !== null) clearTimeout(this.waterVersionsTimer);
+    this.waterVersionsTimer = null;
   }
 }

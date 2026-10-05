@@ -17,9 +17,14 @@ export class ModifyController {
   start(feature: Feature, onChange: (geometry: GeoJSONGeometry) => void): void {
     this.cancel();
     const features = new Collection<Feature>([feature]);
+    // Emit only when the geometry really changed: Translate ends on a plain click too, and
+    // the editor treats any emitted geometry as an edit to save (useEditExistingPresenter).
+    let lastRevision = feature.getGeometry()?.getRevision();
     const emit = () => {
       const geom = feature.getGeometry();
-      if (geom) onChange(olGeometryTo4326GeoJSON(geom));
+      if (!geom || geom.getRevision() === lastRevision) return;
+      lastRevision = geom.getRevision();
+      onChange(olGeometryTo4326GeoJSON(geom));
     };
     const modify = new Modify({ features });
     modify.on('modifyend', emit);

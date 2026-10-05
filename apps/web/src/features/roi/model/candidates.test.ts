@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import RenderFeature from 'ol/render/Feature';
 import { adminCandidates, entityCandidates, referenceLayerOfTable, roiOfSearchHit, thematicCandidate } from './candidates';
 
 describe('thematicCandidate', () => {
@@ -28,6 +29,12 @@ describe('adminCandidates', () => {
       { key: 'ward:22015', label: 'Phường Tuy Hoà', detail: 'xã/phường', roi: { source: 'admin', level: 'ward', code: '22015' } },
       { key: 'province:66', label: 'Tỉnh Đắk Lắk', detail: 'tỉnh', roi: { source: 'admin', level: 'province', code: '66' } },
     ]);
+  });
+  it('takes the ward from a tile feature (RenderFeature properties), as the click handler passes it', () => {
+    const f = new RenderFeature('Polygon', [0, 0, 1, 0, 1, 1], [3], 2,
+      { layer: 'wards', code: '22015', name: 'Tuy Hoà', fullName: 'Phường Tuy Hoà' }, undefined);
+    expect(adminCandidates(null, f.getProperties() as never, 11)[0]).toEqual(
+      { key: 'ward:22015', label: 'Phường Tuy Hoà', detail: 'xã/phường', roi: { source: 'admin', level: 'ward', code: '22015' } });
   });
   it('below zoom 10, says how to reach the ward', () => {
     expect(adminCandidates(province, null, 8)[0]).toEqual({

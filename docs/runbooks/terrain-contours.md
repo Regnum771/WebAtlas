@@ -80,6 +80,8 @@ docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps
 
 Publishes one SQL-view feature type per interval (`contours_250`, `contours_100`, `contours_50`) on the `basemap_pg` datastore — each view is `SELECT ... FROM basemap.contours WHERE interval_m = <n>`, so every published layer serves exactly one bucket and the client never has to pass a filter. Assigns `contours_plain` as the default style and `contours_labelled` as an alternate, then truncates the tile cache (GWC) for all three layers.
 
+The registry then runs `publish-contours.sh seed` as the dataset's last stage. It asks GeoWebCache to render each layer over the working region at the zooms the app shows it (`contours_250` 5–8, `contours_100` 9–10, `contours_50` 11–12) and returns at once; the seed finishes in the background in about a minute.
+
 ## 4. Verify
 
 **Use GWC WMTS, not plain WMS GetMap** — see the first gotcha below for why a WMS test is not sufficient proof. A known-good tile over Buôn Ma Thuột:

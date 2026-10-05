@@ -188,20 +188,13 @@ describe('provincesStyle / wardsStyle dùng đúng thuộc tính ranh giới m�
     expect(text.getText()).toBe('Đắk Lắk');
   });
 
-  it('wardsStyle hiển thị tên xã từ thuộc tính "name" (không phải NAME_3)', () => {
-    const feature = fakeBoundaryFeature({
-      code: '48012',
-      name: 'Xã Ea Tul',
-      nameEn: 'Ea Tul Commune',
-      fullName: 'Xã Ea Tul',
-      fullNameEn: 'Ea Tul Commune',
-      codeName: 'ea_tul',
-      gisServerId: 480123,
-      areaKm2: 42.1,
-    });
-    const style = wardsStyle(feature) as Style;
-    const text = style.getText() as Text;
-    expect(text.getText()).toBe('Xã Ea Tul');
+  it('wardsStyle draws text only for ward_labels points, from the "name" property', () => {
+    const label = fakeBoundaryFeature({ layer: 'ward_labels', code: '48012', name: 'Xã Ea Tul' });
+    expect((wardsStyle(label) as Style).getText()?.getText()).toBe('Xã Ea Tul');
+    const polygon = fakeBoundaryFeature({ layer: 'wards', code: '48012', name: 'Xã Ea Tul', fullName: 'Xã Ea Tul' });
+    const outline = wardsStyle(polygon) as Style;
+    expect(outline.getText()).toBeNull();
+    expect(outline.getStroke()?.getLineDash()).toEqual([4, 4]);
   });
 });
 

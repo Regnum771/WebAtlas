@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { FABDEM_ATTRIBUTION } from '@webatlas/shared';
 import { MapModel } from './MapModel';
 import { settleZoomCorrection, zoomForScale, scaleAtZoom } from './zoomScale';
@@ -7,9 +7,12 @@ import type XYZ from 'ol/source/XYZ';
 import ScaleLine from 'ol/control/ScaleLine';
 import MousePosition from 'ol/control/MousePosition';
 import type Map from 'ol/Map';
+import VectorTileLayer from 'ol/layer/VectorTile';
+import { waterTileUrl } from './waterTiles';
+import VectorTileSource from 'ol/source/VectorTile';
 
-// jsdom không có ResizeObserver nhưng constructor của ol/Map cần nó (init() dựng
-// Map thật bên dưới) — cùng cách khắc phục như DrawController.test.ts.
+// jsdom has no ResizeObserver but the ol/Map constructor needs it (init() builds a
+// real Map underneath) — the same workaround as DrawController.test.ts.
 if (typeof globalThis.ResizeObserver === 'undefined') {
   globalThis.ResizeObserver = class {
     observe() {}
@@ -78,26 +81,26 @@ describe('context-layer load-tracking teardown', () => {
     const onBusyChange = vi.fn();
     model.setLoadingListener(onBusyChange);
 
-    // MapModel's `contextLayers` field is TS-private only, giống cách test
-    // "delegates to..." ở trên truy cập `map` — lấy một source ngữ cảnh THẬT mà
-    // init() vừa gắn tay cầm tileload* lên (xem MapModel.ts quanh dòng 161).
+    // MapModel's `contextLayers` field is TS-private only, the same way the
+    // "delegates to..." test above reaches `map` — take a REAL context source that
+    // init() just attached the tileload* handlers to (see contextLoadHandlers in MapModel.ts).
     const contextLayers = (model as unknown as { contextLayers: Record<string, TileLayer<XYZ>> }).contextLayers;
     const firstSource = Object.values(contextLayers)[0].getSource()!;
 
-    // Trước dispose(): tay cầm đã thật sự đăng ký trên source.
+    // Before dispose(): the handlers really are registered on the source.
     expect(firstSource.hasListener('tileloadstart')).toBe(true);
     expect(firstSource.hasListener('tileloadend')).toBe(true);
     expect(firstSource.hasListener('tileloaderror')).toBe(true);
 
     model.dispose();
 
-    // Sau dispose(): không còn tay cầm nào sót lại trên source cũ...
+    // After dispose(): no handler is left on the old source...
     expect(firstSource.hasListener('tileloadstart')).toBe(false);
     expect(firstSource.hasListener('tileloadend')).toBe(false);
     expect(firstSource.hasListener('tileloaderror')).toBe(false);
 
-    // ...nên một sự kiện tải bắn trễ (request đang bay lúc unmount) không còn
-    // chạm tới listener — tức không còn ghi đè `busy` của instance đã chết.
+    // ...so a late load event (a request in flight at unmount) no longer reaches
+    // the listener — it can no longer overwrite the dead instance's `busy`.
     firstSource.dispatchEvent({ type: 'tileloadstart' } as never);
     expect(onBusyChange).not.toHaveBeenCalled();
   });
@@ -111,8 +114,8 @@ describe('context-layer load-tracking teardown', () => {
     model.setLoadingListener(onBusyChange);
     model.dispose();
 
-    // dispose() PHẢI null hoá onLoadingChange — nếu không, instance đã chết vẫn
-    // giữ tham chiếu tới setBusy cũ của React và có thể ghi đè state của instance mới.
+    // dispose() MUST null onLoadingChange — otherwise the dead instance still holds
+    // React's old setBusy and can overwrite the new instance's state.
     expect((model as unknown as { onLoadingChange: unknown }).onLoadingChange).toBeNull();
     expect(onBusyChange).not.toHaveBeenCalled();
   });
@@ -133,14 +136,192 @@ describe('MapModel.setContourSettings', () => {
     expect(url).toContain('STYLE=webatlas:contours_plain');
     expect(source.getAttributions()?.(undefined as never)).toEqual([FABDEM_ATTRIBUTION]);
 
-    // Đổi mức thu phóng và bắn moveend thủ công (như OpenLayers sẽ làm khi người
-    // dùng cuộn chuột) — khoảng cố định không được bị mức tự động ghi đè.
+    // Change the zoom and fire moveend by hand (as OpenLayers does when the user
+    // scrolls) — the fixed interval must not be overridden by the automatic one.
     const map = (model as unknown as { map: Map }).map;
     map.getView().setZoom(20);
     const moveendHandler = (model as unknown as { moveendHandler: (() => void) | null }).moveendHandler;
     moveendHandler?.();
 
     expect(contourLayer.getSource()).toBe(source);
+  });
+});
+
+describe('water layers from vector tiles', () => {
+  type Internals = { map: Map; layers: Record<string, VectorTileLayer>; riversOverviewLayer: VectorTileLayer };
+  const versions = (body: { rivers: string | null; lakes: string | null }) =>
+    vi.fn(async (..._args: unknown[]) => ({ ok: true, status: 200, json: async () => body }));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('points rivers, the overview and lakes at their active versions after init', async () => {
+    vi.stubGlobal('fetch', versions({ rivers: 'r1', lakes: 'l1' }));
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    expect(m.layers.layer_rivers).toBeInstanceOf(VectorTileLayer);
+    expect(m.layers.layer_lakes).toBeInstanceOf(VectorTileLayer);
+    await vi.waitFor(() => expect(m.layers.layer_lakes.getSource()!.getUrls()).toEqual([waterTileUrl('lakes', 'l1')]));
+    expect(m.layers.layer_rivers.getSource()!.getUrls()).toEqual([waterTileUrl('rivers', 'r1')]);
+    expect(m.riversOverviewLayer.getSource()!.getUrls()).toEqual([waterTileUrl('rivers_overview', 'r1')]);
+    model.dispose();
+  });
+
+  it('refreshLayer after an edit re-reads the versions instead of refetching features', async () => {
+    vi.stubGlobal('fetch', versions({ rivers: 'r1', lakes: 'l1' }));
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    await vi.waitFor(() => expect(m.layers.layer_lakes.getSource()!.getUrls()).toEqual([waterTileUrl('lakes', 'l1')]));
+    vi.stubGlobal('fetch', versions({ rivers: 'r1', lakes: 'l2' }));
+    model.refreshLayer('layer_lakes');
+    await vi.waitFor(() => expect(m.layers.layer_lakes.getSource()!.getUrls()).toEqual([waterTileUrl('lakes', 'l2')]));
+    model.dispose();
+  });
+
+  it('keeps the water layers hidden until the versions are known, so no tile loads twice', async () => {
+    let answer: (v: unknown) => void = () => {};
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => { answer = r; })));
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    model.applyLayerStates([{ id: 'layer_rivers', visible: true, opacity: 1 }]);
+    expect(m.riversOverviewLayer.getVisible()).toBe(false);
+    answer({ ok: true, status: 200, json: async () => ({ rivers: 'r1', lakes: 'l1' }) });
+    await vi.waitFor(() => expect(m.riversOverviewLayer.getVisible()).toBe(true));
+    expect(m.riversOverviewLayer.getSource()!.getUrls()).toEqual([waterTileUrl('rivers_overview', 'r1')]);
+    model.dispose();
+  });
+
+  it('applies only the latest versions answer when two requests answer out of order', async () => {
+    const answers: Array<(v: unknown) => void> = [];
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => { answers.push(r); })));
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    const reply = (i: number, body: { rivers: string; lakes: string }) =>
+      answers[i]({ ok: true, status: 200, json: async () => body });
+    // [0] start-up, [1] the refresh after an edit; the refresh answers first.
+    model.refreshLayer('layer_lakes');
+    expect(answers).toHaveLength(2);
+    reply(1, { rivers: 'r1', lakes: 'l2' });
+    await vi.waitFor(() => expect(m.layers.layer_lakes.getSource()!.getUrls()).toEqual([waterTileUrl('lakes', 'l2')]));
+    reply(0, { rivers: 'r1', lakes: 'l1' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(m.layers.layer_lakes.getSource()!.getUrls()).toEqual([waterTileUrl('lakes', 'l2')]);
+    model.dispose();
+  });
+
+  it('applies an older successful answer when the newest request fails', async () => {
+    const answers: Array<{ ok: (v: unknown) => void; fail: (e: unknown) => void }> = [];
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((ok, fail) => { answers.push({ ok, fail }); })));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    model.refreshLayer('layer_lakes');
+    expect(answers).toHaveLength(2);
+    answers[1].fail(new Error('offline'));
+    await new Promise((r) => setTimeout(r, 0));
+    answers[0].ok({ ok: true, status: 200, json: async () => ({ rivers: 'r1', lakes: 'l1' }) });
+    await vi.waitFor(() => expect(m.layers.layer_lakes.getSource()!.getUrls()).toEqual([waterTileUrl('lakes', 'l1')]));
+    model.dispose();
+  });
+
+  it('draws the wards from API tiles at their token, and never requests wards-region.geojson', async () => {
+    const fetchMock = versions({ rivers: 'r1', lakes: 'l1', wards: 'w1' } as never);
+    vi.stubGlobal('fetch', fetchMock);
+    const xhrOpen = vi.spyOn(XMLHttpRequest.prototype, 'open');
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    const wards = m.layers.layer_wards_2026;
+    expect(wards).toBeInstanceOf(VectorTileLayer);
+    expect(wards.getSource()).toBeInstanceOf(VectorTileSource);
+    await vi.waitFor(() => expect(wards.getSource()!.getUrls()).toEqual([waterTileUrl('wards', 'w1')]));
+    // Hidden below WARDS_MIN_ZOOM, shown from it, once the versions are known.
+    await vi.waitFor(() => expect((model as unknown as { waterVersionsSettled: boolean }).waterVersionsSettled).toBe(true));
+    const states = [{ id: 'layer_wards_2026', visible: true, opacity: 1 }];
+    m.map.getView().setZoom(9.9);
+    model.applyLayerStates(states);
+    expect(wards.getVisible()).toBe(false);
+    m.map.getView().setZoom(11);
+    model.applyLayerStates(states);
+    expect(wards.getVisible()).toBe(true);
+    const requested = [
+      ...fetchMock.mock.calls.map((c) => String(c[0])),
+      ...xhrOpen.mock.calls.map((c) => String(c[1])),
+    ];
+    expect(requested.some((u) => u.includes('wards-region.geojson'))).toBe(false);
+    model.dispose();
+    xhrOpen.mockRestore();
+  });
+
+  it('shows the water layers after the timeout when the start-up request hangs', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+      const model = new MapModel();
+      model.init(document.createElement('div'));
+      const m = model as unknown as Internals;
+      model.applyLayerStates([{ id: 'layer_rivers', visible: true, opacity: 1 }]);
+      vi.advanceTimersByTime(MapModel.WATER_VERSIONS_TIMEOUT_MS - 1);
+      expect(m.riversOverviewLayer.getVisible()).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(m.riversOverviewLayer.getVisible()).toBe(true);
+      model.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a refresh that answers settles the start-up wait even if the start-up request hangs', async () => {
+    let call = 0;
+    vi.stubGlobal('fetch', vi.fn(() => (call++ === 0
+      ? new Promise(() => {})
+      : Promise.resolve({ ok: true, status: 200, json: async () => ({ rivers: 'r2', lakes: 'l2' }) }))));
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    model.applyLayerStates([{ id: 'layer_rivers', visible: true, opacity: 1 }]);
+    model.refreshLayer('layer_rivers');
+    await vi.waitFor(() => expect(m.riversOverviewLayer.getVisible()).toBe(true));
+    expect(m.riversOverviewLayer.getSource()!.getUrls()).toEqual([waterTileUrl('rivers_overview', 'r2')]);
+    model.dispose();
+  });
+
+  it('a failed versions fetch still shows the water layers, on unversioned URLs', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    model.applyLayerStates([{ id: 'layer_rivers', visible: true, opacity: 1 }]);
+    await vi.waitFor(() => expect(m.riversOverviewLayer.getVisible()).toBe(true));
+    expect(m.riversOverviewLayer.getSource()!.getUrls()).toEqual([waterTileUrl('rivers_overview', null)]);
+    model.dispose();
+  });
+
+  it('hands rivers over from the overview to the full layer at 8.5, never drawing both', async () => {
+    vi.stubGlobal('fetch', versions({ rivers: 'r1', lakes: 'l1' }));
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    await vi.waitFor(() => expect(m.riversOverviewLayer.getSource()!.getUrls()).toEqual([waterTileUrl('rivers_overview', 'r1')]));
+    await vi.waitFor(() => expect((model as unknown as { waterVersionsSettled: boolean }).waterVersionsSettled).toBe(true));
+    const states = [
+      { id: 'layer_rivers', visible: true, opacity: 1 },
+      { id: 'layer_lakes', visible: true, opacity: 1 },
+    ];
+    m.map.getView().setZoom(8.4);
+    model.applyLayerStates(states);
+    expect(m.riversOverviewLayer.getVisible()).toBe(true);
+    expect(m.layers.layer_rivers.getVisible()).toBe(false);
+    expect(m.layers.layer_lakes.getVisible()).toBe(false);
+    m.map.getView().setZoom(8.5);
+    model.applyLayerStates(states);
+    expect(m.riversOverviewLayer.getVisible()).toBe(false);
+    expect(m.layers.layer_rivers.getVisible()).toBe(true);
+    expect(m.layers.layer_lakes.getVisible()).toBe(true);
+    model.dispose();
   });
 });
 

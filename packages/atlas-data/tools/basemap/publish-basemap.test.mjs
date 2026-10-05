@@ -39,6 +39,7 @@ case "$method $url" in
   "POST "*/layergroups)                       code="\${STUB_GROUP_CREATE:-201}" ;;
   "PUT "*/layergroups/*)                      code="\${STUB_GROUP_UPDATE:-200}" ;;
   "POST "*/gwc/rest/masstruncate)             code="\${STUB_TRUNCATE:-200}" ;;
+  "POST "*/gwc/rest/seed/*)                   code="\${STUB_SEED:-200}" ;;
   *) code="000" ;;
 esac
 # Every write is logged with its body on one line, so a test can assert what was sent.
@@ -141,11 +142,40 @@ describe('publish-basemap.sh — fail closed, idempotent', { timeout: 60000 }, (
     for (const name of GROUPS) expect(r.stdout).toContain(`layergroup ${name}: 200`);
   });
 
+  it('seed starts one GWC seed per group over the working region and does nothing else', () => {
+    const log = join(stubDir, 'seed.log');
+    rmSync(log, { force: true });
+    const r = run({ STUB_LOG: log, GEOSERVER_ADMIN_PASSWORD: 'sekrit-pw' }, 'seed');
+    expect(r.status).toBe(0);
+    const text = readFileSync(log, 'utf8');
+    const lines = text.split('\n').filter(Boolean);
+    expect(lines).toHaveLength(GROUPS.length);
+    for (const name of GROUPS) {
+      const line = lines.find((l) =>
+        l.startsWith(`POST http://fake-geoserver.invalid/geoserver/gwc/rest/seed/webatlas:${name}.json `)
+      );
+      expect(line, `no seed POST for ${name}`).toBeDefined();
+      for (const part of [
+        '"type":"seed"', '"gridSetId":"EPSG:900913"', '"format":"image/png"',
+        '"zoomStart":5', '"zoomStop":12', '"threadCount":2',
+        '"coords":{"double":[11855526,1175453,12245144,1874312]}',
+      ]) expect(line).toContain(part);
+    }
+    // The password reaches curl through -u only, never in the URL or body.
+    expect(text).not.toContain('sekrit-pw');
+  });
+
+  it('seed fails on a non-2xx from GeoServer', () => {
+    const r = run({ STUB_SEED: '500' }, 'seed');
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain('seed basemap: 500');
+  });
+
   it('exits 2 with a usage line when the mode is missing or unknown', () => {
     for (const mode of [null, 'bogus']) {
       const r = run({}, mode);
       expect(r.status).toBe(2);
-      expect(r.stderr).toContain('usage: publish-basemap.sh <featuretypes|group>');
+      expect(r.stderr).toContain('usage: publish-basemap.sh <featuretypes|group|seed>');
     }
   });
 

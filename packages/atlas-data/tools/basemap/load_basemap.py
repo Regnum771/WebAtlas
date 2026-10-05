@@ -107,29 +107,45 @@ def write(gdf: gpd.GeoDataFrame, table: str, engine) -> None:
     # the live map drew. Handed a connection that is already in a transaction, geopandas reuses it:
     # memory stays bounded by the chunk, and a failed load leaves the previous table in place.
     whole = column_geometry_type(gdf)
+    geom = gdf.geometry.name
+    # Write to <table>__new and swap by rename. Replacing the live table in place held its lock for
+    # the whole load (about 4 minutes for roads_region), and every GeoServer tile request that read
+    # it waited that long. Now the live table is locked only for the DROP and the renames, so tile
+    # requests wait milliseconds. A leftover <table>__new from a crashed run is replaced by the
+    # first chunk.
+    new = f"{table}__new"
     with engine.begin() as c:
         for start, stop, if_exists in write_chunks(len(gdf)):
             chunk = gdf.iloc[start:stop]
-            chunk.to_postgis(table, c, schema="basemap", if_exists=if_exists, index=False)
+            chunk.to_postgis(new, c, schema="basemap", if_exists=if_exists, index=False)
             # to_postgis types the column from the rows of the call that creates the table (it
             # overrides a dtype it is given). When the first chunk happens to hold one geometry
             # type and a later one another, the column would refuse the later rows. Give it the
             # type a single call over the whole table would have chosen.
             if if_exists == "replace" and column_geometry_type(chunk) != whole:
                 c.execute(text(
-                    f'ALTER TABLE basemap."{table}" ALTER COLUMN "{gdf.geometry.name}" '
+                    f'ALTER TABLE basemap."{new}" ALTER COLUMN "{geom}" '
                     f'TYPE geometry({"GeometryZ" if whole.endswith("Z") else "Geometry"}, 4326)'))
         # KHONG tu tao index hinh hoc o day: to_postgis cua GeoPandas da tao san
-        # idx_<table>_geometry. Truoc day dong nay tao them mot GiST thu hai y het
+        # idx_<table>__new_<geom>, doi ten thanh idx_<table>_geometry sau khi hoan doi.
+        # Truoc day dong nay tao them mot GiST thu hai y het
         # tren moi bang, chi ton thoi gian ghi va dung luong, khong giup doc.
         #
         # Index fclass moi la thu thuc su thieu. Moi luat trong SLD loc theo fclass;
         # voi bbox rong (tile o muc thu nho) PostgreSQL bo qua index hinh hoc va
         # quet ca bang 527k dong. Do tren roads_region: 998ms -> 199ms cho luat
         # 'secondary' khi co index nay.
-        if "fclass" in gdf.columns:
-            c.execute(text(f'CREATE INDEX IF NOT EXISTS {table}_fclass_idx ON basemap."{table}" (fclass)'))
-        c.execute(text(f'ANALYZE basemap."{table}"'))
+        has_fclass = "fclass" in gdf.columns
+        if has_fclass:
+            c.execute(text(f'CREATE INDEX IF NOT EXISTS {new}_fclass_idx ON basemap."{new}" (fclass)'))
+        c.execute(text(f'ANALYZE basemap."{new}"'))
+        # No CASCADE: a view that depends on the old table must fail the load loudly, not vanish.
+        c.execute(text(f'DROP TABLE IF EXISTS basemap."{table}"'))
+        c.execute(text(f'ALTER TABLE basemap."{new}" RENAME TO "{table}"'))
+        # Index names are schema-wide; the old table's are free now that it is dropped.
+        c.execute(text(f'ALTER INDEX basemap."idx_{new}_{geom}" RENAME TO "idx_{table}_{geom}"'))
+        if has_fclass:
+            c.execute(text(f'ALTER INDEX basemap."{new}_fclass_idx" RENAME TO "{table}_fclass_idx"'))
     print(f"   -> basemap.{table}: {len(gdf):,} features")
 
 

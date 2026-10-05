@@ -37,9 +37,9 @@ export function buildPanelGroups(input: {
     const meta = input.display[state.id];
     if (!meta) continue; // no display metadata: not renderable, skip rather than crash
 
-    // layer_rivers giữ minZoom 8,5 vì mạng lưới ĐẦY ĐỦ vẫn bị chặn tải, nhưng từ
-    // khi có lớp sông tổng quan thì các sông chính vẫn hiện ở mọi mức thu phóng.
-    // Báo "hiện từ mức 8,5" lúc đó là nói ngược với thứ người dùng đang nhìn thấy.
+    // layer_rivers keeps minZoom 8.5 because the FULL network only draws from there,
+    // but the river overview shows the main rivers at every zoom level. Saying
+    // "shown from 8.5" would then contradict what the user is looking at.
     const alwaysDrawnBySubstitute = state.id === 'layer_rivers';
     const gated =
       !alwaysDrawnBySubstitute && meta.minZoom !== undefined && input.currentZoom < meta.minZoom;

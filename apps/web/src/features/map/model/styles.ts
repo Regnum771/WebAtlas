@@ -179,16 +179,20 @@ export const provincesStyle = (feature: any) => {
 };
 
 
-// Style cho Phường/Xã (ranh giới sau sáp nhập 2025, chỉ hiện nét đứt, nhạt)
-export const wardsStyle = (feature: any) => {
-  const name = feature.get('name') || '';
+// Ward boundaries (after the 2025 merger): dashed, faint outline. A tile holds the polygons
+// (MVT layer `wards`) and one label point per ward (MVT layer `ward_labels`): only the points draw text,
+// so a ward cut by several tiles is labelled once.
+const WARD_OUTLINE = new Style({
+  // Transparent — see the note on provincesStyle for why the fill stays.
+  fill: new Fill({ color: 'rgba(0,0,0,0)' }),
+  stroke: new Stroke({ color: hexToRgba(LAYER_PALETTE.layer_wards_2026.color, 0.4), width: 1, lineDash: [4, 4] }),
+});
 
+export const wardsStyle = (feature: any) => {
+  if (feature.get('layer') !== 'ward_labels') return WARD_OUTLINE;
   return new Style({
-    // Trong suốt — xem ghi chú ARCHIVED và lý do giữ lại fill ở provincesStyle.
-    fill: new Fill({ color: 'rgba(0,0,0,0)' }),
-    stroke: new Stroke({ color: hexToRgba(LAYER_PALETTE.layer_wards_2026.color, 0.4), width: 1, lineDash: [4, 4] }),
     text: new Text({
-      text: name,
+      text: feature.get('name') || '',
       font: 'normal 10.5px Inter, system-ui, sans-serif',
       fill: new Fill({ color: '#374151' }),
       stroke: new Stroke({ color: '#ffffff', width: 2.5 }),

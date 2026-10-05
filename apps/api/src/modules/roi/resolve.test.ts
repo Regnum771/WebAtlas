@@ -133,6 +133,29 @@ describe('resolveRoi — feature', () => {
   });
 });
 
+describe('resolveRoi — river + radius', () => {
+  it('the longest river + 10 km matches the unsimplified buffer clipped to the region, within 1 %', async () => {
+    const pool = getPool();
+    const { rows: [{ id }] } = await pool.query<{ id: string }>(
+      `SELECT id::text FROM water.rivers_active WHERE feature_level = 1
+        ORDER BY ST_Length(geom::geography) DESC LIMIT 1`
+    );
+    // The old SQL: buffer the raw geometry, clip to the freshly computed union.
+    const { rows: [{ km2 }] } = await pool.query<{ km2: number }>(
+      `SELECT (ST_Area(ST_Intersection(
+                 ST_Buffer(r.geom::geography, 10000)::geometry,
+                 (SELECT ST_Union(geom) FROM admin.provinces
+                   WHERE code = ANY(ARRAY['48','51','52','56','66','68']))
+               )::geography) / 1e6)::float8 AS km2
+         FROM water.rivers_active r WHERE r.id = $1`,
+      [id]
+    );
+    const out = await resolveRoi(pool, { source: 'feature', layerKey: 'rivers', featureId: id, radiusKm: 10 });
+    expect((out.resolved.measure as { areaKm2: number }).areaKm2).toBeGreaterThan(km2 * 0.99);
+    expect((out.resolved.measure as { areaKm2: number }).areaKm2).toBeLessThan(km2 * 1.01);
+  });
+});
+
 describe('resolveRoi — reference', () => {
   it('resolves a road to a line, and to an area with a radius', async () => {
     const line = await resolve({ source: 'reference', referenceLayer: 'roads', entityId: roadEntityId });
