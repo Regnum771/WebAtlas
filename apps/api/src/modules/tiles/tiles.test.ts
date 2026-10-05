@@ -58,19 +58,18 @@ describe('GET /api/tiles/:layer/:z/:x/:y.pbf', () => {
     expect(Object.keys(props)).toEqual(expect.arrayContaining(['name_key', 'stream_order']));
   });
 
-  it('overview tile holds the same rivers as the view, compared by name', async () => {
+  it('overview tile holds exactly the rivers the view has in the tile, by name', async () => {
     const res = await tile('rivers_overview', 7, 102, 59);
     const layer = decode(res.rawPayload, 'rivers_overview');
-    const got = new Set(Array.from({ length: layer.length }, (_, i) => String(layer.feature(i).properties.name_key)));
+    const got = Array.from({ length: layer.length }, (_, i) => String(layer.feature(i).properties.name_key)).sort();
+    // Same bounding-box rule on both sides (the tile applies it to the unsimplified geometry, like
+    // the view's source rows); a sorted list keeps counts, so a missing or extra unnamed river shows.
     const { rows } = await getPool().query<{ k: string }>(
-      `SELECT DISTINCT name_key AS k FROM water.rivers_overview
-        WHERE geom && ST_Transform(ST_TileEnvelope(7, 102, 59), 4326)`);
-    const want = new Set(rows.map((r) => r.k));
-    // The view's 0.01 degree simplification moves edges slightly, so allow a little slack at tile borders.
-    const missing = [...want].filter((k) => !got.has(k));
-    const extra = [...got].filter((k) => !want.has(k));
-    expect(got.size).toBeGreaterThan(0);
-    expect(missing.length + extra.length).toBeLessThanOrEqual(Math.ceil(want.size * 0.05));
+      `SELECT o.name_key AS k FROM water.rivers_overview o
+        WHERE o.geom && ST_Transform(ST_TileEnvelope(7, 102, 59), 4326)`);
+    const want = rows.map((r) => r.k).sort();
+    expect(got.length).toBeGreaterThan(0);
+    expect(got).toEqual(want);
   });
 
   it('does not let a stale or missing version be cached', async () => {
@@ -89,6 +88,8 @@ describe('GET /api/tiles/:layer/:z/:x/:y.pbf', () => {
     expect((await tile('rivers', 17, 0, 0)).statusCode).toBe(400);
     expect((await tile('rivers', 3, 8, 0)).statusCode).toBe(400);
     expect((await app.inject({ method: 'GET', url: '/api/tiles/rivers/7/102/59.png' })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: '/api/tiles/rivers/1e1/0/0.pbf' })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: '/api/tiles/rivers/7/%205/0.pbf' })).statusCode).toBe(400);
   });
 
   it('is not throttled by the global 100/min limit: a map view requests tiles in bursts', async () => {

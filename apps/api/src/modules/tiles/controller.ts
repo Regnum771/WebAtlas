@@ -14,7 +14,9 @@ export async function tile(req: FastifyRequest, reply: FastifyReply) {
   }
   const layer = p.layer as TileLayer;
   const yMatch = /^(\d+)\.pbf$/.exec(p.y);
-  const z = Number(p.z), x = Number(p.x), y = yMatch ? Number(yMatch[1]) : NaN;
+  // Digits only: Number() alone would accept "1e1", " 5" or "".
+  const digits = /^\d+$/;
+  const z = digits.test(p.z) ? Number(p.z) : NaN, x = digits.test(p.x) ? Number(p.x) : NaN, y = yMatch ? Number(yMatch[1]) : NaN;
   const n = 2 ** z;
   if (!Number.isInteger(z) || z < 0 || z > MAX_ZOOM || !Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= n || y >= n) {
     return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'Invalid tile coordinates' } });
