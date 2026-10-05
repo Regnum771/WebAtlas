@@ -76,8 +76,8 @@ export declare const RIVER_WAY_COLUMNS: ColumnMap;
  */
 export declare const RIVER_REACH_COLUMNS: ColumnMap;
 /**
- * The administrative boundaries, from the same two files the browser loads
- * (apps/web/public/provinces-34.geojson, wards-region.geojson). Codes are text: '01' is not 1.
+ * The administrative boundaries, from the two committed boundary files
+ * (packages/atlas-data/data/seeds/provinces-34.geojson, wards-region.geojson). Codes are text: '01' is not 1.
  */
 export declare const ADMIN_PROVINCE_COLUMNS: ColumnMap;
 export declare const ADMIN_WARD_COLUMNS: ColumnMap;

@@ -83,7 +83,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 # cannot import the TS constant, the same duplication fetch-boundaries.mjs lives with.
 REGION_PROVINCE_CODES = {"48", "51", "52", "56", "66", "68"}
 
-PROVINCES = ROOT / "apps/web/public/provinces-34.geojson"
+PROVINCES = ROOT / "packages/atlas-data/data/seeds/provinces-34.geojson"
 DEFAULT_OUT = ROOT / "packages/atlas-data/data/cache/dem"
 
 VERSION = "V1-2"

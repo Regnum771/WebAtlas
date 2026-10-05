@@ -259,11 +259,11 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
           // Both tables, as the real stage has them: wards reference provinces, so they go first.
           files: [
             {
-              path: resolveStageFile({ file: 'apps/web/public/provinces-34.geojson', root: 'repo' }),
+              path: resolveStageFile({ file: 'seeds/provinces-34.geojson' }),
               target: 'admin.provinces', multiPolygon: true,
               columns: () => ({ 'code) VALUES (1); --': 'x' }),
             },
-            { path: resolveStageFile({ file: 'apps/web/public/wards-region.geojson', root: 'repo' }), columns: ADMIN_WARD_COLUMNS, target: 'admin.wards', multiPolygon: true },
+            { path: resolveStageFile({ file: 'seeds/wards-region.geojson' }), columns: ADMIN_WARD_COLUMNS, target: 'admin.wards', multiPolygon: true },
           ],
         }, { supersedeEdits: false })
       ).rejects.toThrow(/is not a column name/);
@@ -301,8 +301,8 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
       const out = await applyLoadGeojson(pool, c, {
         layer: 'admin', versioned: false, source: 'unused', mapping: 'mapping-1',
         files: [
-          { path: resolveStageFile({ file: 'apps/web/public/provinces-34.geojson', root: 'repo' }), columns: ADMIN_PROVINCE_COLUMNS, target: 'admin.provinces', multiPolygon: true },
-          { path: resolveStageFile({ file: 'apps/web/public/wards-region.geojson', root: 'repo' }), columns: ADMIN_WARD_COLUMNS, target: 'admin.wards', multiPolygon: true },
+          { path: resolveStageFile({ file: 'seeds/provinces-34.geojson' }), columns: ADMIN_PROVINCE_COLUMNS, target: 'admin.provinces', multiPolygon: true },
+          { path: resolveStageFile({ file: 'seeds/wards-region.geojson' }), columns: ADMIN_WARD_COLUMNS, target: 'admin.wards', multiPolygon: true },
         ],
       }, { supersedeEdits: false });
       expect(out.action).toBe('replaced');
@@ -329,8 +329,8 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
       await applyLoadGeojson(pool, c, {
         layer: 'admin', versioned: false, source: 'unused', mapping: 'mapping-1',
         files: [
-          { path: resolveStageFile({ file: 'apps/web/public/provinces-34.geojson', root: 'repo' }), columns: ADMIN_PROVINCE_COLUMNS, target: 'admin.provinces', multiPolygon: true },
-          { path: resolveStageFile({ file: 'apps/web/public/wards-region.geojson', root: 'repo' }), columns: ADMIN_WARD_COLUMNS, target: 'admin.wards', multiPolygon: true },
+          { path: resolveStageFile({ file: 'seeds/provinces-34.geojson' }), columns: ADMIN_PROVINCE_COLUMNS, target: 'admin.provinces', multiPolygon: true },
+          { path: resolveStageFile({ file: 'seeds/wards-region.geojson' }), columns: ADMIN_WARD_COLUMNS, target: 'admin.wards', multiPolygon: true },
         ],
       }, { supersedeEdits: false });
       const { rows } = await c.query<{ same: boolean; grew: boolean }>(
