@@ -122,8 +122,9 @@ export class SelectController {
     }
     if (seq !== this.clickSeq || !this.select) return; // a newer click, or edit mode ended
     const isoProps: Record<string, unknown> = {};
+    // `layer` is the MVT layer name the format adds to every feature; not an attribute.
     for (const [k, v] of Object.entries(props)) {
-      if (k !== 'geometry') isoProps[k] = v;
+      if (k !== 'geometry' && k !== 'layer') isoProps[k] = v;
     }
     this.select.getFeatures().clear();
     const editFeature = new Feature({ geometry: geoJSON4326ToOlGeometry(geometry) });

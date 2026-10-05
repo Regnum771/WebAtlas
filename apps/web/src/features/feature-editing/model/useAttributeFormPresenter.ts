@@ -72,7 +72,8 @@ export function useAttributeFormPresenter({
     try {
       if (mode === 'edit') {
         // featureId is guaranteed non-null in edit mode: the container only renders the edit form for a real selection.
-        await updateFeature(layerKey, featureId!, { geometry: geometry ?? undefined, properties });
+        // No geometry key unless there is one to save: the API then keeps the stored shape.
+        await updateFeature(layerKey, featureId!, geometry ? { geometry, properties } : { properties });
       } else {
         await createFeature(layerKey, { geometry: geometry!, properties });
       }

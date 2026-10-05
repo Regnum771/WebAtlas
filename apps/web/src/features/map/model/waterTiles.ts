@@ -21,6 +21,8 @@ export function waterTileUrl(layer: WaterTileLayer, version: string | null): str
  * A water layer drawn from the API's vector tiles (spec §1). Tiles hold clipped, simplified
  * geometry for drawing only: editing fetches the full geometry (SelectController).
  * renderMode 'hybrid' keeps hit detection exact for popups and selection.
+ * Created hidden: nothing loads until the owner shows it (MapModel does once the active
+ * versions are known), so no tile is ever fetched on its unversioned URL by accident.
  *
  * MVT features carry no usable feature id (the uuid cannot be an MVT id): popups, ROI
  * candidates, selection and the highlight all read the `id` property instead.
@@ -30,6 +32,7 @@ export function createWaterTileLayer(layer: WaterTileLayer, stateId: string, sty
     source: new VectorTileSource({ format: new MVT(), url: waterTileUrl(layer, null), maxZoom: 16 }),
     style,
     renderMode: 'hybrid',
+    visible: false,
     declutter: false,
     properties: { id: stateId, waterTileLayer: layer },
   });

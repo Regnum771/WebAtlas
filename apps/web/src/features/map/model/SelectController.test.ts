@@ -132,6 +132,7 @@ describe('SelectController on vector-tile water layers', () => {
     expect(sel.geometry).toEqual(fetched);
     expect(sel.isoProps.geographicalName).toBe('X');
     expect(sel.isoProps).not.toHaveProperty('geometry');
+    expect(sel.isoProps).not.toHaveProperty('layer');
     // The editor modifies this feature, so it carries the fetched geometry (map projection).
     const coords = (ctrl.getSelectedFeature()!.getGeometry() as LineString).getCoordinates();
     expect(coords).toHaveLength(3);

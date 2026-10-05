@@ -191,6 +191,58 @@ describe('water layers from vector tiles', () => {
     model.dispose();
   });
 
+  it('applies only the latest versions answer when two requests answer out of order', async () => {
+    const answers: Array<(v: unknown) => void> = [];
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((r) => { answers.push(r); })));
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    const reply = (i: number, body: { rivers: string; lakes: string }) =>
+      answers[i]({ ok: true, status: 200, json: async () => body });
+    // [0] start-up, [1] the refresh after an edit; the refresh answers first.
+    model.refreshLayer('layer_lakes');
+    expect(answers).toHaveLength(2);
+    reply(1, { rivers: 'r1', lakes: 'l2' });
+    await vi.waitFor(() => expect(m.layers.layer_lakes.getSource()!.getUrls()).toEqual([waterTileUrl('lakes', 'l2')]));
+    reply(0, { rivers: 'r1', lakes: 'l1' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(m.layers.layer_lakes.getSource()!.getUrls()).toEqual([waterTileUrl('lakes', 'l2')]);
+    model.dispose();
+  });
+
+  it('shows the water layers after the timeout when the start-up request hangs', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+      const model = new MapModel();
+      model.init(document.createElement('div'));
+      const m = model as unknown as Internals;
+      model.applyLayerStates([{ id: 'layer_rivers', visible: true, opacity: 1 }]);
+      vi.advanceTimersByTime(MapModel.WATER_VERSIONS_TIMEOUT_MS - 1);
+      expect(m.riversOverviewLayer.getVisible()).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(m.riversOverviewLayer.getVisible()).toBe(true);
+      model.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a refresh that answers settles the start-up wait even if the start-up request hangs', async () => {
+    let call = 0;
+    vi.stubGlobal('fetch', vi.fn(() => (call++ === 0
+      ? new Promise(() => {})
+      : Promise.resolve({ ok: true, status: 200, json: async () => ({ rivers: 'r2', lakes: 'l2' }) }))));
+    const model = new MapModel();
+    model.init(document.createElement('div'));
+    const m = model as unknown as Internals;
+    model.applyLayerStates([{ id: 'layer_rivers', visible: true, opacity: 1 }]);
+    model.refreshLayer('layer_rivers');
+    await vi.waitFor(() => expect(m.riversOverviewLayer.getVisible()).toBe(true));
+    expect(m.riversOverviewLayer.getSource()!.getUrls()).toEqual([waterTileUrl('rivers_overview', 'r2')]);
+    model.dispose();
+  });
+
   it('a failed versions fetch still shows the water layers, on unversioned URLs', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
     const model = new MapModel();

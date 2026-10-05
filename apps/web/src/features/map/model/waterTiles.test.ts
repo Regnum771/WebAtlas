@@ -13,6 +13,12 @@ describe('waterTileUrl', () => {
   });
 });
 
+describe('createWaterTileLayer', () => {
+  it('starts hidden, so nothing loads before its owner shows it', () => {
+    expect(createWaterTileLayer('rivers', 'layer_rivers', () => undefined).getVisible()).toBe(false);
+  });
+});
+
 describe('applyWaterVersions', () => {
   it('points rivers and the overview at the rivers version, lakes at the lakes version', () => {
     const rivers = createWaterTileLayer('rivers', 'layer_rivers', () => undefined);

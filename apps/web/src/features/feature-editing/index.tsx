@@ -59,13 +59,14 @@ function EditToolbar() {
   );
 }
 
-function EditForm({ sel, workingGeometry, onSaved, onCancel, onDelete }: {
+function EditForm({ sel, geometryToSave, onSaved, onCancel, onDelete }: {
   sel: NonNullable<ReturnType<typeof useEditExistingPresenter>['selection']>;
-  workingGeometry: GeoJSONGeometry | null;
+  /** Null unless the user changed the geometry: see geometryChanged in useEditExistingPresenter. */
+  geometryToSave: GeoJSONGeometry | null;
   onSaved: () => void; onCancel: () => void; onDelete: () => void;
 }) {
   const form = useAttributeFormPresenter({
-    layerKey: sel.layerKey, attributes: sel.attributes, geometry: workingGeometry,
+    layerKey: sel.layerKey, attributes: sel.attributes, geometry: geometryToSave,
     mode: 'edit', featureId: sel.featureId, initialValues: sel.initialValues, onSaved,
   });
   return (
@@ -97,7 +98,7 @@ function EditExisting() {
           /* key remounts EditForm per selection so the form re-seeds initialValues (useState initializer runs once) */
           key={sel.featureId}
           sel={sel}
-          workingGeometry={edit.workingGeometry}
+          geometryToSave={edit.geometryToSave}
           onSaved={edit.onSaved}
           onCancel={edit.exit}
           onDelete={edit.requestDelete}

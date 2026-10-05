@@ -47,6 +47,17 @@ describe('ModifyController', () => {
     expect(gj.coordinates[1]).toBeCloseTo(14.0, 2);
   });
 
+  it('a translateend or modifyend that changed nothing emits nothing', () => {
+    const f = new Feature(new Point(fromLonLat([108, 13])));
+    const onChange = vi.fn();
+    ctrl.start(f, onChange);
+    const translate = interactionsOfType(map, Translate)[0] as Translate;
+    const modify = interactionsOfType(map, Modify)[0] as Modify;
+    translate.dispatchEvent({ type: 'translateend', features: { getArray: () => [f] } } as never);
+    modify.dispatchEvent({ type: 'modifyend', features: { getArray: () => [f] } } as never);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('cancel removes both interactions', () => {
     ctrl.start(new Feature(new Point(fromLonLat([108, 13]))), () => {});
     ctrl.cancel();

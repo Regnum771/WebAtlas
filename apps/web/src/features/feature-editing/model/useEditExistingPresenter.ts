@@ -16,6 +16,15 @@ export function useEditExistingPresenter() {
   const [editMode, setEditMode] = useState(false);
   const [selection, setSelection] = useState<SelectionVM | null>(null);
   const [workingGeometry, setWorkingGeometry] = useState<GeoJSONGeometry | null>(null);
+  /**
+   * True once Modify/Translate actually changed the selected geometry. The editor's starting
+   * geometry may be SIMPLIFIED: a river or lake selected from the vector tiles is loaded from
+   * GET /api/features/:layerKey/:id/geometry, the search-highlight endpoint, which simplifies.
+   * Saving it back unchanged would overwrite the stored shape with that copy, so the geometry
+   * is sent on update only when the user moved it (geometryToSave); otherwise only the
+   * attributes are saved and the API keeps the stored geometry.
+   */
+  const [geometryChanged, setGeometryChanged] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +34,7 @@ export function useEditExistingPresenter() {
     clearSelection();
     setSelection(null);
     setWorkingGeometry(null);
+    setGeometryChanged(false);
     setConfirmOpen(false);
     setError(null);
   }, [cancelModify, clearSelection]);
@@ -39,7 +49,11 @@ export function useEditExistingPresenter() {
     }
     setSelection({ layerKey: sel.layerKey, featureId: sel.featureId, attributes, initialValues });
     setWorkingGeometry(sel.geometry);
-    startModify((g) => setWorkingGeometry(g));
+    setGeometryChanged(false);
+    startModify((g) => {
+      setWorkingGeometry(g);
+      setGeometryChanged(true);
+    });
   }, [startModify]);
 
   const enter = useCallback(() => {
@@ -79,6 +93,7 @@ export function useEditExistingPresenter() {
 
   return {
     editMode, selection, workingGeometry, confirmOpen, deleting, error,
+    geometryToSave: geometryChanged ? workingGeometry : null,
     enter, exit, onSaved, requestDelete, cancelDelete, confirmDelete,
   };
 }

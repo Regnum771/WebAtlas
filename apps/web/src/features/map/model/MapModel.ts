@@ -129,8 +129,11 @@ export class MapModel {
   /** Off during admin edit mode, so the highlight does not fire alongside the edit selection. */
   private riverHighlightActive = true;
   private riverClickHandler: ((evt: MapBrowserEvent) => void) | null = null;
-  /** False until the start-up versions fetch has answered or failed; see init(). */
+  /** False until a versions fetch has answered or failed, or the start-up timeout ran out; see init(). */
   private waterVersionsSettled = false;
+  /** Bumped per /api/tiles/versions request: only the latest request's answer is applied. */
+  private waterVersionsSeq = 0;
+  private waterVersionsTimer: ReturnType<typeof setTimeout> | null = null;
   /** Coordinate readout control — kept to swap its formatter on CRS toggle. */
   private mousePosition: MousePosition | null = null;
   private reservoirFilter: ReservoirFilterType = 'all';
@@ -271,7 +274,6 @@ export class MapModel {
     // 8.5). NOT added to this.layers: that is the registry of layers the user toggles,
     // and this one follows 'layer_rivers' rather than having its own panel entry.
     const riversOverviewLayer = createWaterTileLayer('rivers_overview', 'layer_rivers_overview', riversStyle);
-    riversOverviewLayer.setVisible(false);
     this.riversOverviewLayer = riversOverviewLayer;
     const lakesLayer = createWaterTileLayer('lakes', 'layer_lakes', lakesStyle);
     this.layers['layer_lakes'] = lakesLayer;
@@ -427,15 +429,10 @@ export class MapModel {
     // Point the water layers at their active versions, so their tiles are cacheable for
     // good. A failed fetch leaves the unversioned URLs, which still work, uncached. The
     // water layers stay hidden until then (waterVersionsSettled): drawn earlier, the
-    // overview would load every tile in view twice, unversioned and then versioned.
-    fetchWaterVersions()
-      .then((v) => { if (this.map === map) applyWaterVersions(this.waterLayers, v); })
-      .catch(() => {})
-      .finally(() => {
-        if (this.map !== map) return;
-        this.waterVersionsSettled = true;
-        this.recomputeVisibility();
-      });
+    // overview would load every tile in view twice, unversioned and then versioned. A
+    // request that hangs must not hide them for good, hence the timeout.
+    this.waterVersionsTimer = setTimeout(() => this.settleWaterVersions(), MapModel.WATER_VERSIONS_TIMEOUT_MS);
+    this.syncWaterVersions(() => {});
 
     // Only so the profiling script (apps/web/scripts/profile-map.mjs) can reach the map.
     // Dev-only: the production build does not set it.
@@ -581,13 +578,45 @@ export class MapModel {
   refreshLayer(layerStateId: string): void {
     if (!this.map) return;
     if (layerStateId === 'layer_rivers' || layerStateId === 'layer_lakes') {
-      const map = this.map;
-      fetchWaterVersions()
-        .then((v) => { if (this.map === map) applyWaterVersions(this.waterLayers, v); })
-        .catch((e) => console.warn('[tiles] could not refresh the water layer versions', e));
+      this.syncWaterVersions((e) => console.warn('[tiles] could not refresh the water layer versions', e));
       return;
     }
     this.layers[layerStateId]?.getSource()?.refresh();
+  }
+
+  /** How long the water layers wait for the start-up versions before showing anyway. */
+  static readonly WATER_VERSIONS_TIMEOUT_MS = 5000;
+
+  /**
+   * Fetch the active water versions and point the tile layers at them. Requests can answer
+   * out of order (start-up, then a refresh after an edit): only the latest one is applied,
+   * so an older answer can never point a layer back at a superseded version. Any answer
+   * settles the start-up wait.
+   */
+  private syncWaterVersions(onError: (e: unknown) => void): void {
+    const map = this.map;
+    const seq = ++this.waterVersionsSeq;
+    fetchWaterVersions()
+      .then((v) => {
+        if (this.map !== map) return;
+        if (seq === this.waterVersionsSeq) applyWaterVersions(this.waterLayers, v);
+        this.settleWaterVersions();
+      })
+      .catch((e) => {
+        if (this.map !== map) return;
+        onError(e);
+        this.settleWaterVersions();
+      });
+  }
+
+  private settleWaterVersions(): void {
+    if (this.waterVersionsTimer !== null) {
+      clearTimeout(this.waterVersionsTimer);
+      this.waterVersionsTimer = null;
+    }
+    if (this.waterVersionsSettled || !this.map) return;
+    this.waterVersionsSettled = true;
+    this.recomputeVisibility();
   }
 
   /** Enable/disable the rivers click highlight (disabled during admin edit mode so it doesn't fire alongside the edit selection). */
@@ -642,5 +671,7 @@ export class MapModel {
     this.riversOverviewLayer = null;
     this.highlightedRiverId = null;
     this.waterVersionsSettled = false;
+    if (this.waterVersionsTimer !== null) clearTimeout(this.waterVersionsTimer);
+    this.waterVersionsTimer = null;
   }
 }

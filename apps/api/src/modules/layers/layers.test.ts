@@ -12,9 +12,16 @@ const VIEWER = 'layers-viewer@webatlas.test';
 const PW = 'admin-pass-123';
 const NAME = 'layers-crud-dam@webatlas.test';
 
+// One login per user for the whole file: /api/auth/login allows 10 per minute, and a
+// fresh login per test hits that ceiling (the eleventh answers 401).
+const tokens = new Map<string, string>();
 async function tokenFor(email: string) {
+  const cached = tokens.get(email);
+  if (cached) return cached;
   const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: PW } });
-  return res.json().token as string;
+  const token = res.json().token as string;
+  tokens.set(email, token);
+  return token;
 }
 
 beforeAll(async () => {
@@ -171,6 +178,33 @@ describe('feature CRUD (admin only)', () => {
       [id]
     );
     expect(rows[0]).toEqual({ source_document: 'Quyết định 123/QĐ-UBND', source_provider: 'Sở Công Thương Đắk Lắk' });
+  });
+
+  it('an update with properties only keeps the stored geometry exactly', async () => {
+    // The web editor sends no geometry on an attribute-only save (its geometry may be a
+    // simplified copy), so the copy-on-write row must carry the stored shape over unchanged.
+    const token = await tokenFor(ADMIN);
+    const auth = { authorization: `Bearer ${token}` };
+    const create = await app.inject({
+      method: 'POST', url: '/api/layers/dams/features', headers: auth,
+      payload: { geometry: { type: 'Point', coordinates: [108.123456789, 12.987654321] }, properties: { name: NAME } },
+    });
+    expect(create.statusCode).toBe(201);
+    const before = create.json().feature.id as string;
+
+    const upd = await app.inject({
+      method: 'PUT', url: `/api/layers/dams/features/${before}`, headers: auth,
+      payload: { properties: { name: NAME, wattage_mw: 12 } },
+    });
+    expect(upd.statusCode).toBe(200);
+    const after = upd.json().feature.id as string;
+
+    const { rows } = await getPool().query<{ same: boolean; has_geom: boolean }>(
+      `SELECT ST_Equals(a.geom, b.geom) AS same, b.geom IS NOT NULL AS has_geom
+         FROM water.dams a, water.dams b WHERE a.id = $1 AND b.id = $2`,
+      [before, after]
+    );
+    expect(rows[0]).toEqual({ same: true, has_geom: true });
   });
 
   it('rejects a blank source provider', async () => {
