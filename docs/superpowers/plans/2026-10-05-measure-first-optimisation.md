@@ -478,7 +478,7 @@ EOF
 - [ ] **Step 1: Failing tests**
 
 Extend the existing fake-curl script tests:
-- `publish-basemap.sh seed` makes exactly five POSTs to `$GEOSERVER_URL/gwc/rest/seed/webatlas:<group>.json`, one per group (`basemap`, `basemap_roads`, `bm_water`, `bm_landuse`, `bm_railways`). Each body has `"type":"seed"`, `"gridSetId":"EPSG:900913"`, `"format":"image/png"`, `"zoomStart":5`, `"zoomStop":12`, `"threadCount":2`, and bounds `[11855526,1175453,12245144,1874312]` (`"coords":{"double":[...]}`, the EPSG:3857 extent of 106.5–110.0 E / 10.5–16.6 N; compute and paste the exact rounded values).
+- `publish-basemap.sh seed` makes exactly five POSTs to `$GEOSERVER_URL/gwc/rest/seed/webatlas:<group>.json`, one per group (`basemap`, `basemap_roads`, `bm_water`, `bm_landuse`, `bm_railways`). Each body has `"type":"seed"`, `"gridSetId":"EPSG:900913"`, `"format":"image/png"`, `"zoomStart":5`, `"zoomStop":12`, `"threadCount":2`, and bounds `[11855526,1175453,12245144,1874312]` (`"coords":{"double":[...]}`, the EPSG:3857 extent of 106.5–110.0 E / 10.5–16.6 N).
 - `publish-contours.sh seed` makes three: `contours_250` zooms 5–8, `contours_100` zooms 9–10, `contours_50` zooms 11–12.
 - A non-2xx from GeoServer fails the script, as `require_2xx` does elsewhere.
 - No password appears in argv (the existing helper takes it from the environment).
