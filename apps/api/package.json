@@ -32,8 +32,10 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@webatlas/atlas-data": "*",
+    "@mapbox/vector-tile": "^3.0.0",
     "@types/pg": "^8.11.10",
+    "@webatlas/atlas-data": "*",
+    "pbf": "^5.1.2",
     "tsx": "^4.19.2",
     "typescript": "~6.0.2",
     "vitest": "^3.0.0"
