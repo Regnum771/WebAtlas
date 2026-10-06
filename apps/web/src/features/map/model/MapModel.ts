@@ -463,12 +463,11 @@ export class MapModel {
   /**
    * OpenLayers caches the viewport size at init and after each explicit
    * updateSize() call — it does not observe its container's box on its own.
-   * The rail flyout inset (.map-container's left/width in main.css) resizes
-   * that container without the OL canvas ever changing size itself, so the
-   * canvas would keep rendering at the pre-toggle size and clip/misplace
-   * content until a manual resize. Call this once the CSS transition that
-   * animates the inset has finished (see MapView's transitionend listener) —
-   * calling it mid-transition would read the interpolated, not final, size.
+   * The map stage is a grid cell whose size changes when the assistant docks
+   * or closes and when the window resizes, without the OL canvas ever changing
+   * size itself, so the canvas would keep rendering at the old size and
+   * clip/misplace content until told. MapView calls this from a ResizeObserver
+   * on the map container whenever that box changes.
    */
   updateSize(): void {
     this.map?.updateSize();

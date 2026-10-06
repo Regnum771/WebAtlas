@@ -31,6 +31,13 @@ describe('ProposedEditWizardView', () => {
     expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled();
   });
 
+  it('says Đang lưu on the save button while saving', () => {
+    render(<ProposedEditWizardView {...props({ saving: true })} />);
+    const save = screen.getByRole('button', { name: /Đang lưu/ });
+    expect(save).toHaveAttribute('aria-busy', 'true');
+    expect(save).toHaveTextContent(/^Đang lưu$/);
+  });
+
   it('cancels without saving', () => {
     const p = props();
     render(<ProposedEditWizardView {...p} />);

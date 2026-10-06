@@ -59,7 +59,7 @@ export function ProposedEditWizardView(p: ProposedEditWizardViewProps) {
 
         {p.error && <Message tone="error" title={p.error} />}
         <div className="edit-form-actions">
-          <Button type="submit" variant="solid" busy={p.saving} busyLabel="Đang lưu…" disabled={!p.canSave && !p.saving}>Lưu</Button>
+          <Button type="submit" variant="solid" busy={p.saving} busyLabel="Đang lưu" disabled={!p.canSave && !p.saving}>Lưu</Button>
           <Button onClick={p.onCancel}>Huỷ</Button>
         </div>
       </form>

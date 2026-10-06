@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown } from 'lucide-react';
 import type { Role } from '../../../entities/session/model/session.types';
@@ -14,6 +14,7 @@ export interface AccountMenuViewProps {
 // route regardless of whether this link is rendered.
 export function AccountMenuView({ email, role, onLogout }: AccountMenuViewProps) {
   const [open, setOpen] = useState(false);
+  const panelId = useId();
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
 
@@ -48,24 +49,23 @@ export function AccountMenuView({ email, role, onLogout }: AccountMenuViewProps)
         ref={trigger}
         type="button"
         className="account-trigger"
-        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={panelId}
         onClick={() => setOpen((o) => !o)}
       >
         {ROLE_LABELS[role]}
         <ChevronDown size={16} aria-hidden="true" />
       </button>
       {open && (
-        <div role="menu" className="account-menu float">
+        <div id={panelId} className="account-menu float">
           <span className="account-email" title={email}>{email}</span>
           {role === 'admin' && (
-            <Link to="/admin/users" role="menuitem" className="account-item" onClick={() => setOpen(false)}>
+            <Link to="/admin/users" className="account-item" onClick={() => setOpen(false)}>
               Người dùng
             </Link>
           )}
           <button
             type="button"
-            role="menuitem"
             className="account-item"
             onClick={() => { setOpen(false); onLogout(); }}
           >

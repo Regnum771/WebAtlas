@@ -103,9 +103,9 @@ const DynamicPopup: React.FC = () => {
   useEffect(() => {
     if (!map || !popupData) return;
     
-    // The popup lives in the full-window .app-container, but the map is docked right
-    // of the rail and any open flyout: a map pixel must be shifted by where the map
-    // starts, or the popup lands that far left of the click (behind the layers panel).
+    // The popup lives in the full-window .app-container, but the map sits in the map
+    // stage, right of the side panel and below the top bar: a map pixel must be shifted
+    // by where the map starts, or the popup lands that far up and left of the click.
     const updatePixel = () => {
       const px = map.getPixelFromCoordinate(popupData.coordinate);
       if (!px) return;

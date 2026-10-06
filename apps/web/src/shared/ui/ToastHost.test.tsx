@@ -43,4 +43,12 @@ describe('ToastHost', () => {
     await user.keyboard('{Escape}');
     expect(getToasts()).toHaveLength(0);
   });
+
+  it('is a polite live region, and each toast keeps its own role', () => {
+    const { container } = render(<ToastHost />);
+    const host = container.querySelector('.toast-host') as HTMLElement;
+    expect(host).toHaveAttribute('aria-live', 'polite');
+    act(() => { showToast({ tone: 'info', title: 'Đã sao chép' }); });
+    expect(screen.getByRole('status')).toHaveTextContent('Đã sao chép');
+  });
 });

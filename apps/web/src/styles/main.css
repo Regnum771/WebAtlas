@@ -629,12 +629,14 @@ body {
 }
 .badge.on { background: var(--ink); color: var(--sheet); }
 
-/* Layers panel: real-catalog replacement for the legacy LayerTree */
-.layers-panel { padding: var(--space-3) var(--space-4); }
-.layers-panel .panel-title {
+/* The heading of a panel block (layers, legend, assistant). */
+.panel-title {
   font-size: var(--text-md); font-weight: 600; color: var(--ink);
   margin: 0 0 var(--space-3);
 }
+
+/* Layers panel: real-catalog replacement for the legacy LayerTree */
+.layers-panel { padding: var(--space-3) var(--space-4); }
 .layers-warning {
   background: var(--paper); border: 1px solid var(--rule);
   border-radius: var(--radius); color: var(--ink-2);
@@ -728,8 +730,8 @@ body {
   padding: var(--space-3); color: var(--ink);
 }
 .assistant-transcript { flex: 1; overflow-y: auto; font-size: var(--text-sm); }
-.assistant-hint { color: var(--ink-2); font-size: var(--text-xs); line-height: 1.5; }
-.assistant-turn { margin: 0 0 var(--space-3); line-height: 1.5; }
+.assistant-hint { color: var(--ink-2); font-size: var(--text-xs); line-height: var(--leading); }
+.assistant-turn { margin: 0 0 var(--space-3); line-height: var(--leading); }
 .assistant-turn-user {
   background: var(--paper); border-radius: var(--radius);
   padding: var(--space-2) var(--space-3); font-weight: 500;

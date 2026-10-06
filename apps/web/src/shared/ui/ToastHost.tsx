@@ -32,7 +32,7 @@ function ToastItem({ toast }: { toast: Toast }) {
 export function ToastHost() {
   const toasts = useToasts();
   return (
-    <div className="toast-host">
+    <div className="toast-host" aria-live="polite">
       {toasts.map((t) => <ToastItem key={t.id} toast={t} />)}
     </div>
   );
