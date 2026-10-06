@@ -29,18 +29,31 @@ function startTimer(toast: Toast) {
   timers.set(toast.id, setTimeout(() => dismissToast(toast.id), TOAST_AUTO_CLOSE_MS));
 }
 
+/** Same tone, title, body and action label: showing it again restarts the live one. */
+function isSame(a: Omit<Toast, 'id'>, b: Omit<Toast, 'id'>): boolean {
+  return a.tone === b.tone && a.title === b.title && a.body === b.body && a.action?.label === b.action?.label;
+}
+
 export function showToast(toast: Omit<Toast, 'id'>): number {
-  const same = toasts.find((t) => t.tone === toast.tone && t.title === toast.title && t.body === toast.body);
-  if (same) { startTimer(same); return same.id; }
+  const same = toasts.find((t) => isSame(t, toast));
+  if (same) {
+    // The new caller's action replaces the old one, so the button never runs a stale closure.
+    const live: Toast = toast.action ? { ...same, action: toast.action } : same;
+    startTimer(live);
+    if (live !== same) publish(toasts.map((t) => (t === same ? live : t)));
+    return live.id;
+  }
   const created: Toast = { ...toast, id: nextId++ };
-  let next = [...toasts, created];
-  while (next.length > MAX_TOASTS) {
-    const drop = next.find((t) => t.tone !== 'error') ?? next[0];
+  // The new toast is always shown: only toasts that were already live make room for it,
+  // the oldest that is not an error first, else the oldest of all.
+  let kept = toasts;
+  while (kept.length >= MAX_TOASTS) {
+    const drop = kept.find((t) => t.tone !== 'error') ?? kept[0];
     clearTimer(drop.id);
-    next = next.filter((t) => t !== drop);
+    kept = kept.filter((t) => t !== drop);
   }
   startTimer(created);
-  publish(next);
+  publish([...kept, created]);
   return created.id;
 }
 
