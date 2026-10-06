@@ -2,7 +2,7 @@
 export function Spinner({ label }: { label?: string }) {
   if (label) {
     return (
-      <span role="status">
+      <span role="status" aria-label={label}>
         <span className="spin" aria-hidden="true" />
         <span className="visually-hidden">{label}</span>
       </span>

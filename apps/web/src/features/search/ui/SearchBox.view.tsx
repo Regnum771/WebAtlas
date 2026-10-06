@@ -1,5 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { SearchHit } from '../api/search.api';
+import type { SearchStatus } from '../model/useSearch';
+import { Message } from '../../../shared/ui/Message';
+import { Button } from '../../../shared/ui/Button';
+import { Spinner } from '../../../shared/ui/Spinner';
 
 const LAYER_BADGE: Record<string, string> = {
   dams: 'Đập', lakes: 'Hồ', rivers: 'Sông', stations: 'Trạm',
@@ -27,24 +31,23 @@ function displayName(name: string | null | undefined, badge: string): string {
 interface Props {
   query: string;
   results: SearchHit[];
-  loading: boolean;
+  status: SearchStatus;
+  answeredQuery: string;
+  onRetry: () => void;
   onQuery: (q: string) => void;
   onSelect: (hit: SearchHit) => void;
   renderAction?: (hit: SearchHit) => ReactNode;
 }
 
 /** Passive: input + results list. No fetching, no map access. */
-export function SearchBoxView({ query, results, loading, onQuery, onSelect, renderAction }: Props) {
-  // `results` alone used to decide whether the dropdown shows, so once there
-  // were hits nothing could hide it short of emptying the query — a click on
-  // the map, tabbing away, or Escape all left it floating over an unrelated
-  // click target. `dismissed` tracks an explicit close; a fresh `results` set
-  // (new keystroke, new fetch) always reopens it even if the previous one was
-  // dismissed.
+export function SearchBoxView({ query, results, status, answeredQuery, onRetry, onQuery, onSelect, renderAction }: Props) {
+  // The dropdown shows for results, for "nothing found" and for a failure.
+  // `dismissed` tracks an explicit close (blur, Escape, a click on the map); a
+  // fresh answer (new results, a new status or a new answered query) reopens it.
   const [dismissed, setDismissed] = useState(false);
-  useEffect(() => { setDismissed(false); }, [results]);
+  useEffect(() => { setDismissed(false); }, [results, status, answeredQuery]);
 
-  const open = !dismissed && results.length > 0;
+  const open = !dismissed && (status === 'done' || status === 'failed');
 
   return (
     <div className="search-box">
@@ -58,31 +61,43 @@ export function SearchBoxView({ query, results, loading, onQuery, onSelect, rend
         onBlur={() => setDismissed(true)}
         onKeyDown={(e) => { if (e.key === 'Escape') setDismissed(true); }}
       />
-      {loading && <span className="search-loading">Đang tìm…</span>}
+      {status === 'loading' && <span className="search-spinner"><Spinner label="Đang tìm" /></span>}
       {open && (
         // preventDefault on mousedown keeps focus in the input while a result
-        // is being clicked, so onBlur doesn't close the list out from under
-        // the click before its onClick has a chance to fire.
-        <ul className="search-results" onMouseDown={(e) => e.preventDefault()}>
-          {results.map((hit) => {
-            // Reference hits get their own badge: they're basemap data (a road,
-            // railway, water body, landuse area, place), not one of the editable
-            // water layers LAYER_BADGE names — showing the raw OSM layer key
-            // ("roads") instead would be both untranslated and misleading.
-            const badge = hit.source === 'reference' ? 'Nền bản đồ'
-              : hit.source === 'admin' ? (hit.layerKey === 'province' ? 'Tỉnh' : 'Xã/phường')
-                : (LAYER_BADGE[hit.layerKey] ?? hit.layerKey);
-            return (
-              <li key={`${hit.layerKey}:${hit.featureId}`}>
-                <button type="button" className="search-result" onClick={() => onSelect(hit)}>
-                  <span className="search-badge">{badge}</span>{' '}
-                  <span>{displayName(hit.name, badge)}</span>
-                </button>
-                {renderAction?.(hit)}
-              </li>
-            );
-          })}
-        </ul>
+        // or Thử lại is being clicked, so onBlur doesn't close the dropdown out
+        // from under the click before its onClick has a chance to fire.
+        <div className="search-results float" onMouseDown={(e) => e.preventDefault()}>
+          {status === 'failed' && (
+            <Message tone="error" title="Chưa tìm được" actions={<Button size="sm" onClick={onRetry}>Thử lại</Button>}>
+              Máy chủ không phản hồi.
+            </Message>
+          )}
+          {status === 'done' && results.length === 0 && (
+            <Message title={`Không có kết quả cho “${answeredQuery}”`}>Thử tên ngắn hơn.</Message>
+          )}
+          {results.length > 0 && (
+          <ul>
+            {results.map((hit) => {
+              // Reference hits get their own badge: they're basemap data (a road,
+              // railway, water body, landuse area, place), not one of the editable
+              // water layers LAYER_BADGE names — showing the raw OSM layer key
+              // ("roads") instead would be both untranslated and misleading.
+              const badge = hit.source === 'reference' ? 'Nền bản đồ'
+                : hit.source === 'admin' ? (hit.layerKey === 'province' ? 'Tỉnh' : 'Xã/phường')
+                  : (LAYER_BADGE[hit.layerKey] ?? hit.layerKey);
+              return (
+                <li key={`${hit.layerKey}:${hit.featureId}`}>
+                  <button type="button" className="search-result" onClick={() => onSelect(hit)}>
+                    <span className="search-badge">{badge}</span>{' '}
+                    <span>{displayName(hit.name, badge)}</span>
+                  </button>
+                  {renderAction?.(hit)}
+                </li>
+              );
+            })}
+          </ul>
+          )}
+        </div>
       )}
     </div>
   );

@@ -8,7 +8,7 @@ import { roiOfSearchHit } from '../roi/model/candidates';
 import { fetchFeatureGeometry, type SearchHit } from './api/search.api';
 
 export default function Search() {
-  const { query, setQuery, results, loading, clear } = useSearch();
+  const { query, setQuery, results, status, answeredQuery, retry, clear } = useSearch();
   const { map, setBasemap, toggleLayerVisibility, setLayerOpacity, layersState } = useMapContext();
 
   const run = createCommandExecutor({
@@ -60,7 +60,7 @@ export default function Search() {
   };
 
   return (
-    <SearchBoxView query={query} results={results} loading={loading} onQuery={setQuery} onSelect={onSelect}
+    <SearchBoxView query={query} results={results} status={status} answeredQuery={answeredQuery} onRetry={retry} onQuery={setQuery} onSelect={onSelect}
       renderAction={(hit) => <UseAsRoiButton roi={roiOfSearchHit(hit)} label={hit.name} />}
     />
   );

@@ -1,52 +1,75 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fetchSearch, type SearchHit } from '../api/search.api';
 
 const DEBOUNCE_MS = 300;
 const MIN_CHARS = 2;
 
+export type SearchStatus = 'idle' | 'loading' | 'done' | 'failed';
+
 export function useSearch() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchHit[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<SearchStatus>('idle');
+  const [answeredQuery, setAnsweredQuery] = useState('');
+  // Bumped by retry() to re-run the effect for the same query; `immediate`
+  // tells that run to skip the debounce.
+  const [attempt, setAttempt] = useState(0);
+  const immediate = useRef(false);
 
   useEffect(() => {
-    if (query.trim().length < MIN_CHARS) {
+    const trimmed = query.trim();
+    if (trimmed.length < MIN_CHARS) {
       setResults([]);
+      setStatus('idle');
+      setAnsweredQuery('');
       return;
     }
+    // Every settling request checks `cancelled`: a newer query (or clear())
+    // runs this cleanup first, so a late answer or failure for an old query
+    // never replaces the newer one.
     let cancelled = false;
-    const timer = setTimeout(() => {
-      setLoading(true);
-      fetchSearch(query.trim())
-        .then((hits) => { if (!cancelled) setResults(hits); })
-        .catch((err) => {
-          // Not a UI concern (no error state is in scope here) — but swallowing
-          // this entirely made "no matches" and "the API is down" indistinguishable
-          // to anyone debugging a report of search not working.
-          console.error('Tìm kiếm thất bại:', err);
-          if (!cancelled) setResults([]);
+    const send = () => {
+      setStatus('loading');
+      fetchSearch(trimmed)
+        .then((hits) => {
+          if (cancelled) return;
+          setResults(hits);
+          setAnsweredQuery(trimmed);
+          setStatus('done');
         })
-        .finally(() => { if (!cancelled) setLoading(false); });
-    }, DEBOUNCE_MS);
-
+        .catch(() => {
+          if (cancelled) return;
+          setResults([]);
+          setAnsweredQuery(trimmed);
+          setStatus('failed');
+        });
+    };
+    if (immediate.current) {
+      immediate.current = false;
+      send();
+      return () => { cancelled = true; };
+    }
+    const timer = setTimeout(send, DEBOUNCE_MS);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [query]);
+  }, [query, attempt]);
 
-  // Resets query and results together so a consumer (e.g. after the user picks
-  // a result) never renders an intermediate frame with an empty input but a
-  // still-populated dropdown — setQuery('') alone would leave `results` stale
-  // until this effect re-runs on the next commit.
-  //
-  // Also resets `loading` directly: calling clear() while a request is still
-  // in flight changes `query`, which runs the effect's cleanup and sets that
-  // request's local `cancelled = true` — so its `.finally` no longer calls
-  // setLoading(false) when the response eventually arrives. Without this,
-  // `loading` stays true forever (a permanent "Đang tìm…" under an empty box).
+  const retry = () => {
+    if (query.trim().length < MIN_CHARS) return;
+    immediate.current = true;
+    setAttempt((n) => n + 1);
+  };
+
+  // Resets query, results and status together so a consumer (e.g. after the
+  // user picks a result) never renders an intermediate frame with an empty
+  // input but a still-populated dropdown, or a spinner that never ends: the
+  // change of `query` cancels any in-flight request, so its settle handlers
+  // would no longer reset `status` themselves.
   const clear = () => {
     setQuery('');
     setResults([]);
-    setLoading(false);
+    setStatus('idle');
+    setAnsweredQuery('');
   };
 
-  return { query, setQuery, results, loading, clear };
+  return { query, setQuery, results, status, answeredQuery, retry, clear };
 }
