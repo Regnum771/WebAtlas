@@ -12,7 +12,7 @@ const EMPTY: FormValues = { email: '', password: '', full_name: '', role: 'viewe
 
 function mapError(e: unknown, setFieldErrors: (f: Record<string, string>) => void, setFormError: (s: string) => void) {
   if (e instanceof ApiError) {
-    if (e.status === 409) { setFieldErrors({ email: 'Email already in use' }); return; }
+    if (e.status === 409) { setFieldErrors({ email: 'Email này đã có người dùng.' }); return; }
     if (e.status === 400) {
       const details = e.details as { formErrors?: unknown; fieldErrors?: unknown } | null | undefined;
       const rawFieldErrors = details?.fieldErrors;
@@ -27,10 +27,10 @@ function mapError(e: unknown, setFieldErrors: (f: Record<string, string>) => voi
       if (Array.isArray(formErrors) && formErrors.length > 0) { setFormError(formErrors.join(', ')); return; }
       setFormError(e.message); return;
     }
-    if (e.status === 403) { setFormError('You do not have permission'); return; }
+    if (e.status === 403) { setFormError('Bạn không có quyền làm việc này.'); return; }
     setFormError(e.message); return;
   }
-  setFormError(e instanceof Error ? e.message : 'Something went wrong');
+  setFormError(e instanceof Error ? e.message : 'Chưa lưu được. Thử lại.');
 }
 
 export function useUsersPresenter() {
@@ -88,7 +88,7 @@ export function useUsersPresenter() {
   return {
     users: query.data ?? [],
     loading: query.isLoading,
-    listError: query.error ? "Couldn't load users" : null,
+    listError: query.error ? 'Không tải được danh sách người dùng.' : null,
     modal, values, fieldErrors, formError,
     saving: createMut.isPending || updateMut.isPending,
     canSave, canModify,

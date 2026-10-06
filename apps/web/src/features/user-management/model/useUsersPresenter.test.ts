@@ -83,7 +83,7 @@ describe('useUsersPresenter', () => {
     act(() => result.current.openCreate());
     act(() => { result.current.setField('email', 'dupe@b.test'); result.current.setField('password', 'longenough'); });
     await act(async () => { await result.current.submitForm(); });
-    expect(result.current.fieldErrors.email).toBe('Email already in use');
+    expect(result.current.fieldErrors.email).toBe('Email này đã có người dùng.');
     expect(result.current.modal.mode).toBe('create'); // stays open
   });
 
@@ -96,5 +96,24 @@ describe('useUsersPresenter', () => {
     await act(async () => { await result.current.submitForm(); });
     expect(result.current.fieldErrors.password).toBe('Too short');
     expect(result.current.modal.mode).toBe('create'); // stays open
+  });
+
+  it('maps a 403 to a Vietnamese permission message', async () => {
+    const { ApiError } = await import('../../../shared/api/apiClient');
+    createUser.mockRejectedValue(new ApiError(403, 'FORBIDDEN', 'Forbidden'));
+    const { result } = renderHook(() => useUsersPresenter());
+    act(() => result.current.openCreate());
+    act(() => { result.current.setField('email', 'n@b.test'); result.current.setField('password', 'longenough'); });
+    await act(async () => { await result.current.submitForm(); });
+    expect(result.current.formError).toBe('Bạn không có quyền làm việc này.');
+  });
+
+  it('reports a non-API failure in Vietnamese', async () => {
+    createUser.mockRejectedValue('boom');
+    const { result } = renderHook(() => useUsersPresenter());
+    act(() => result.current.openCreate());
+    act(() => { result.current.setField('email', 'n@b.test'); result.current.setField('password', 'longenough'); });
+    await act(async () => { await result.current.submitForm(); });
+    expect(result.current.formError).toBe('Chưa lưu được. Thử lại.');
   });
 });

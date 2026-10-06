@@ -1,6 +1,7 @@
 import { useUsersPresenter } from './model/useUsersPresenter';
 import { UserTableView } from './ui/UserTable.view';
 import { UserFormModalView } from './ui/UserFormModal.view';
+import { Button } from '../../shared/ui/Button';
 
 // The `open` prop is gone: a route's existence IS the open signal (design §4.4).
 // The panel no longer renders its own Close button — the route owns dismissal,
@@ -21,9 +22,9 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
         canSave={p.canSave} saving={p.saving}
         onField={p.setField} onSubmit={p.submitForm} onClose={p.closeModal}
       />
-      <button type="button" className="user-mgmt-back" onClick={onClose}>
-        Back to map
-      </button>
+      <div className="user-mgmt-footer">
+        <Button onClick={onClose}>Về bản đồ</Button>
+      </div>
     </div>
   );
 }

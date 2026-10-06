@@ -84,8 +84,8 @@ export function useEditExistingPresenter() {
       reset();
     } catch (e) {
       setError(e instanceof ApiError && e.code === 'STALE_EDIT'
-        ? 'Someone else changed this layer while you were saving. Please try again.'
-        : 'Could not delete — please try again');
+        ? 'Lớp này vừa được người khác thay đổi. Thử lưu lại.'
+        : 'Chưa xoá được. Thử lại.');
     } finally {
       setDeleting(false);
     }

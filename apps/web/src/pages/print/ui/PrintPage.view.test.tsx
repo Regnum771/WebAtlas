@@ -26,6 +26,11 @@ describe('PrintPageView', () => {
     expect(screen.getByText('Nền bản đồ: © OpenStreetMap contributors (ODbL)')).toBeInTheDocument();
   });
 
+  it('titles the options panel In và xuất', () => {
+    render(<PrintPageView {...props()} />);
+    expect(screen.getByRole('heading', { name: 'In và xuất' })).toBeInTheDocument();
+  });
+
   it('hides optional elements when toggled off, but never the attributions', () => {
     render(<PrintPageView {...props({ toggles: { legend: false, scale: false, north: false, date: false, crs: false } })} />);
     expect(screen.queryByText('LEGEND')).toBeNull();

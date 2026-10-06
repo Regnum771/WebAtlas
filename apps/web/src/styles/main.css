@@ -618,32 +618,43 @@ body {
 .admin-region-placeholder { padding: 8px 12px; border-radius: 8px; }
 
 .edit-toolbar { display: flex; flex-direction: column; gap: 10px; }
-.edit-toolbar-title { margin: 0 0 2px; font-size: 14px; }
-.edit-layer-picker, .edit-draw-controls, .edit-attr-form { display: flex; flex-direction: column; gap: 6px; }
-.edit-draw-controls { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
-.edit-layer-picker select, .edit-attr-field input { padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.2); }
-.edit-hint { margin: 0; font-size: 12px; opacity: 0.75; flex-basis: 100%; }
-.edit-attr-field { display: flex; flex-direction: column; gap: 4px; }
-.edit-attr-error, .edit-form-error { color: #c0392b; font-size: 12px; margin: 0; }
+.edit-toolbar-title { margin: 0 0 2px; font-size: var(--text-md); }
+.edit-attr-form { display: flex; flex-direction: column; gap: 10px; }
+.edit-draw-controls { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
+.edit-hint { margin: 0; font-size: var(--text-sm); color: var(--ink-2); flex-basis: 100%; }
 .edit-form-actions { display: flex; gap: 8px; margin-top: 4px; }
-.edit-toolbar button { cursor: pointer; padding: 6px 10px; border-radius: 6px; border: none; }
 
 .edit-existing { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
-.edit-mode-toggle { display: flex; flex-direction: column; gap: 6px; }
-.edit-mode-toggle button, .edit-delete-btn { cursor: pointer; padding: 6px 10px; border-radius: 6px; border: none; }
-.edit-delete-btn { background: #fee2e2; color: #b91c1c; }
+.edit-mode-toggle { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 
 /* Shell layout restructure: left = doing, right = seeing */
 /* Admin route: full-screen over a live map */
 .admin-users-route {
   position: absolute; top: var(--topbar-height); left: 0; right: 0; bottom: 0;
   z-index: 90; overflow: auto; padding: 24px;
-  background: rgba(248, 250, 252, 0.97);
+  background: var(--paper);
 }
-.user-mgmt-back {
-  margin-top: 16px; padding: 8px 14px; border: none; border-radius: 8px;
-  cursor: pointer; font: inherit;
+.user-mgmt-panel { max-width: 960px; margin: 0 auto; display: grid; gap: 16px; }
+.user-mgmt { display: grid; gap: 12px; }
+.user-mgmt-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.user-mgmt-header h2 { margin: 0; font-size: var(--text-xl); }
+.user-mgmt-footer { display: flex; }
+.user-table { width: 100%; border-collapse: collapse; background: var(--sheet); font-size: var(--text-md); }
+.user-table th {
+  text-align: left; font-weight: 600; color: var(--ink);
+  padding: 8px 10px; border-bottom: 2px solid var(--ink);
 }
+.user-table td { padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+.user-table td:nth-child(5) { font-variant-numeric: tabular-nums; }
+.user-actions { display: flex; gap: 6px; }
+.user-form { display: grid; gap: 12px; min-width: 320px; }
+.user-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+/* Status badge: ink; filled when on, outline when off. */
+.badge {
+  display: inline-block; padding: 1px 8px; border: 1px solid var(--ink); border-radius: 999px;
+  color: var(--ink); background: transparent; font-size: var(--text-xs); font-weight: 600;
+}
+.badge.on { background: var(--ink); color: var(--sheet); }
 
 /* Layers panel: real-catalog replacement for the legacy LayerTree */
 .layers-panel { padding: var(--space-3) var(--space-4); }
@@ -832,10 +843,14 @@ body {
 .profile-chart-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted, #6b7280); }
 
 /* Print / export the map */
-/* Full-screen print sheet: must outrank the top bar, since the map and its chrome
-   stay mounted underneath (see App.tsx). */
-.print-route { position: fixed; inset: 0; z-index: 1500; background: #e5e7eb; overflow: auto; display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
-.print-controls { width: 260px; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 12px; }
+/* A page over the map, below the top bar (spec, Screens); the map and its chrome stay mounted
+   underneath (see App.tsx). */
+.print-route {
+  position: absolute; top: var(--topbar-height); left: 0; right: 0; bottom: 0; z-index: 90;
+  background: var(--paper); overflow: auto; display: flex; gap: 16px; padding: 16px; align-items: flex-start;
+}
+.print-controls { width: 260px; flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+.print-controls-title { margin: 0; font-size: var(--text-lg); }
 .print-toggle { display: flex; gap: 6px; align-items: center; }
 /* Width AND height both fixed to the paper's PRINTABLE area (physical size
    minus the @page margin above, 10mm each side) — verified in a real browser

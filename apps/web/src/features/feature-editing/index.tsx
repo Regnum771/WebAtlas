@@ -10,6 +10,8 @@ import { DrawControlsView } from './ui/DrawControls.view';
 import { AttributeFormView } from './ui/AttributeForm.view';
 import { EditModeToggleView } from './ui/EditModeToggle.view';
 import { ConfirmDialog } from '../../shared/ui/ConfirmDialog';
+import { Button } from '../../shared/ui/Button';
+import { Message } from '../../shared/ui/Message';
 
 function EditToolbar() {
   const toolbar = useEditToolbarPresenter();
@@ -76,7 +78,7 @@ function EditForm({ sel, geometryToSave, onSaved, onCancel, onDelete }: {
         fieldErrors={form.fieldErrors} error={form.error} canSave={form.canSave}
         saving={form.saving} onField={form.setField} onSubmit={form.submit} onCancel={onCancel}
       />
-      <button type="button" className="edit-delete-btn" onClick={onDelete}>Delete feature</button>
+      <Button variant="danger" onClick={onDelete}>Xoá đối tượng</Button>
     </>
   );
 }
@@ -91,7 +93,7 @@ function EditExisting() {
         editMode={edit.editMode}
         onEnter={edit.enter}
         onExit={edit.exit}
-        hint="Click a feature on an editable layer to edit it."
+        hint="Bấm một đối tượng trên bản đồ để sửa."
       />
       {sel && (
         <EditForm
@@ -104,12 +106,12 @@ function EditExisting() {
           onDelete={edit.requestDelete}
         />
       )}
-      {sel && edit.error && <p className="edit-form-error" role="alert">{edit.error}</p>}
+      {sel && edit.error && <Message tone="error" title={edit.error} />}
       <ConfirmDialog
         open={edit.confirmOpen}
-        title="Delete feature"
-        message="Delete this feature? This cannot be undone."
-        confirmLabel="Delete"
+        title="Xoá đối tượng này?"
+        message="Không khôi phục được."
+        confirmLabel="Xoá"
         irreversible
         busy={edit.deleting}
         onConfirm={edit.confirmDelete}

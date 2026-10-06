@@ -61,7 +61,7 @@ describe('useProposedEditPresenter', () => {
     const { result } = renderHook(() => useProposedEditPresenter(P, { onSaved: vi.fn() }));
     act(() => result.current.setSourceProvider('Sở Công Thương'));
     await act(() => result.current.submit());
-    expect(result.current.error).toBe('Someone else changed this layer while you were saving. Please try again.');
+    expect(result.current.error).toBe('Lớp này vừa được người khác thay đổi. Thử lưu lại.');
   });
 
   it('maps a 403 to a Vietnamese permission message and keeps the values', async () => {

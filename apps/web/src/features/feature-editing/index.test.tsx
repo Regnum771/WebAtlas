@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, act, fireEvent, waitFor, within } from '@testing-library/react';
 
 const bridge = vi.hoisted(() => ({
   enterEditMode: vi.fn(), startModify: vi.fn(), updateFeature: vi.fn(),
@@ -31,16 +31,33 @@ import FeatureEditing from './index';
 describe('FeatureEditing', () => {
   it('renders the toolbar with the layer picker and a draw control for an admin', () => {
     render(<FeatureEditing />);
-    expect(screen.getByText('Add a feature')).toBeInTheDocument();
+    expect(screen.getByText('Thêm đối tượng')).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /dams/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /draw/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /edit existing/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /vẽ/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sửa đối tượng có sẵn/i })).toBeInTheDocument();
   });
 
   it('sits in the Biên tập menu as a plain block, not a glass panel', () => {
     const { container } = render(<FeatureEditing />);
     expect(container.querySelector('.edit-toolbar')).not.toBeNull();
     expect(container.querySelector('.glass-panel')).toBeNull();
+  });
+});
+
+describe('FeatureEditing: deleting', () => {
+  it('asks before deleting with a red Xoá and says it cannot be recovered', () => {
+    render(<FeatureEditing />);
+    fireEvent.click(screen.getByRole('button', { name: /sửa đối tượng có sẵn/i }));
+    const onSelected = bridge.enterEditMode.mock.calls[0][0];
+    act(() => onSelected({
+      layerKey: 'dams', featureId: 'f1', geometry: { type: 'Point', coordinates: [108, 13] },
+      isoProps: { id: 'f1', layerKey: 'dams', geographicalName: 'Hồ A' },
+    }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xoá đối tượng' }));
+    const dialog = screen.getByRole('dialog', { name: 'Xoá đối tượng này?' });
+    expect(within(dialog).getByText('Không khôi phục được.')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Xoá' })).toHaveClass('danger');
+    expect(within(dialog).getByRole('button', { name: 'Huỷ' })).toBeInTheDocument();
   });
 });
 
@@ -57,7 +74,7 @@ describe('FeatureEditing: saving an edited river', () => {
 
   function selectRiver() {
     render(<FeatureEditing />);
-    fireEvent.click(screen.getByRole('button', { name: /edit existing/i }));
+    fireEvent.click(screen.getByRole('button', { name: /sửa đối tượng có sẵn/i }));
     const onSelected = bridge.enterEditMode.mock.calls[0][0];
     act(() => onSelected({
       layerKey: 'rivers', featureId: 'u1', geometry: simplified,
@@ -67,7 +84,7 @@ describe('FeatureEditing: saving an edited river', () => {
 
   it('an attribute-only save sends no geometry, so the stored shape is kept', async () => {
     selectRiver();
-    fireEvent.click(screen.getByRole('button', { name: 'Save feature' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
     await waitFor(() => expect(bridge.updateFeature).toHaveBeenCalledTimes(1));
     const [key, id, payload] = bridge.updateFeature.mock.calls[0];
     expect([key, id]).toEqual(['rivers', 'u1']);
@@ -79,7 +96,7 @@ describe('FeatureEditing: saving an edited river', () => {
     selectRiver();
     const onGeometryChange = bridge.startModify.mock.calls[0][0];
     act(() => onGeometryChange(moved));
-    fireEvent.click(screen.getByRole('button', { name: 'Save feature' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
     await waitFor(() => expect(bridge.updateFeature).toHaveBeenCalledTimes(1));
     expect(bridge.updateFeature.mock.calls[0][2].geometry).toEqual(moved);
   });

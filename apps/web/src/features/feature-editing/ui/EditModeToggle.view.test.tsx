@@ -4,10 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { EditModeToggleView } from './EditModeToggle.view';
 
 describe('EditModeToggleView', () => {
-  it('shows "Edit existing" when off and calls onEnter', async () => {
+  it('shows "Sửa đối tượng có sẵn" when off and calls onEnter', async () => {
     const onEnter = vi.fn();
     render(<EditModeToggleView editMode={false} onEnter={onEnter} onExit={vi.fn()} hint="" />);
-    await userEvent.click(screen.getByRole('button', { name: /edit existing/i }));
+    await userEvent.click(screen.getByRole('button', { name: /sửa đối tượng có sẵn/i }));
     expect(onEnter).toHaveBeenCalled();
   });
 
@@ -15,7 +15,7 @@ describe('EditModeToggleView', () => {
     const onExit = vi.fn();
     render(<EditModeToggleView editMode onEnter={vi.fn()} onExit={onExit} hint="Click a feature to edit" />);
     expect(screen.getByText('Click a feature to edit')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /exit edit/i }));
+    await userEvent.click(screen.getByRole('button', { name: /thoát sửa/i }));
     expect(onExit).toHaveBeenCalled();
   });
 });

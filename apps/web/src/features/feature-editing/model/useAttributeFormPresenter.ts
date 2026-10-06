@@ -15,10 +15,10 @@ interface Args {
 }
 
 function messageFor(e: ApiError): { error: string | null; fieldErrors: Record<string, string> } {
-  if (e.status === 422) return { error: 'Invalid geometry — please redraw', fieldErrors: {} };
-  if (e.code === 'STALE_EDIT') return { error: 'Someone else changed this layer while you were saving. Please try again.', fieldErrors: {} };
-  if (e.status === 409) return { error: 'A feature like this already exists', fieldErrors: {} };
-  if (e.status === 404) return { error: 'This feature no longer exists', fieldErrors: {} };
+  if (e.status === 422) return { error: 'Hình vẽ không hợp lệ. Vẽ lại.', fieldErrors: {} };
+  if (e.code === 'STALE_EDIT') return { error: 'Lớp này vừa được người khác thay đổi. Thử lưu lại.', fieldErrors: {} };
+  if (e.status === 409) return { error: 'Đã có đối tượng như thế này.', fieldErrors: {} };
+  if (e.status === 404) return { error: 'Đối tượng này không còn nữa.', fieldErrors: {} };
   if (e.status === 400) {
     const details = e.details as { formErrors?: unknown; fieldErrors?: unknown } | null | undefined;
     const rawFieldErrors = details?.fieldErrors;
@@ -63,7 +63,7 @@ export function useAttributeFormPresenter({
   }, []);
 
   const submit = useCallback(async () => {
-    if (mode === 'create' && !geometry) { setError('Draw a geometry first'); return; }
+    if (mode === 'create' && !geometry) { setError('Vẽ hình trước khi lưu.'); return; }
     setSaving(true);
     setError(null);
     setFieldErrors({});
@@ -84,7 +84,7 @@ export function useAttributeFormPresenter({
         setError(mapped.error);
         setFieldErrors(mapped.fieldErrors);
       } else {
-        setError('Something went wrong');
+        setError('Chưa lưu được. Thử lại.');
       }
     } finally {
       setSaving(false);

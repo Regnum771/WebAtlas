@@ -1,3 +1,5 @@
+import { Button } from '../../../shared/ui/Button';
+
 export interface EditModeToggleViewProps {
   editMode: boolean;
   onEnter: () => void;
@@ -11,11 +13,11 @@ export function EditModeToggleView({ editMode, onEnter, onExit, hint }: EditMode
     <div className="edit-mode-toggle">
       {editMode ? (
         <>
-          <button type="button" onClick={onExit}>Exit edit</button>
+          <Button onClick={onExit}>Thoát sửa</Button>
           {hint && <p className="edit-hint">{hint}</p>}
         </>
       ) : (
-        <button type="button" onClick={onEnter}>Edit existing</button>
+        <Button onClick={onEnter}>Sửa đối tượng có sẵn</Button>
       )}
     </div>
   );

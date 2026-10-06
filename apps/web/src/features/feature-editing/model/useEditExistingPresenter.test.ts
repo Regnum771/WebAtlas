@@ -57,7 +57,7 @@ describe('useEditExistingPresenter', () => {
     const onSelected = enterEditMode.mock.calls[0][0];
     act(() => onSelected({ layerKey: 'dams', featureId: 'f1', geometry: { type: 'Point', coordinates: [108, 13] }, isoProps: {} }));
     await act(async () => { await result.current.confirmDelete(); });
-    expect(result.current.error).toBe('Someone else changed this layer while you were saving. Please try again.');
+    expect(result.current.error).toBe('Lớp này vừa được người khác thay đổi. Thử lưu lại.');
   });
 
   it('exit() leaves edit mode and clears selection', () => {
@@ -67,5 +67,15 @@ describe('useEditExistingPresenter', () => {
     expect(exitEditMode).toHaveBeenCalled();
     expect(result.current.editMode).toBe(false);
     expect(result.current.selection).toBeNull();
+  });
+
+  it('confirmDelete shows a Vietnamese failure message on other errors', async () => {
+    deleteFeature.mockRejectedValue(new Error('boom'));
+    const { result } = renderHook(() => useEditExistingPresenter());
+    act(() => result.current.enter());
+    const onSelected = enterEditMode.mock.calls[0][0];
+    act(() => onSelected({ layerKey: 'dams', featureId: 'f1', geometry: { type: 'Point', coordinates: [108, 13] }, isoProps: {} }));
+    await act(async () => { await result.current.confirmDelete(); });
+    expect(result.current.error).toBe('Chưa xoá được. Thử lại.');
   });
 });

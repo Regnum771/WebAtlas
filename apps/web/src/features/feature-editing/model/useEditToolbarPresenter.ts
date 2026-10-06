@@ -31,7 +31,7 @@ export function useEditToolbarPresenter() {
   }, []);
 
   const startDrawing = useCallback(() => {
-    if (!selected || !hasMap) { setError('Select a layer first'); return; }
+    if (!selected || !hasMap) { setError('Chọn lớp trước.'); return; }
     setError(null);
     setPendingGeometry(null);
     setMode('drawing');

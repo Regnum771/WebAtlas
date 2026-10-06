@@ -1,4 +1,7 @@
 import type { ReactNode } from 'react';
+import { Button } from '../../../shared/ui/Button';
+import { Message } from '../../../shared/ui/Message';
+import { TextField } from '../../../shared/ui/TextField';
 import { PAPER_SIZES, type PaperId, type PrintToggles } from '../model/usePrintPage';
 
 export interface PrintPageViewProps {
@@ -34,9 +37,8 @@ export function PrintPageView(p: PrintPageViewProps) {
   return (
     <div className="print-route">
       <style>{`@page { size: ${PAPER_SIZES[p.paper].css}; margin: 10mm; }`}</style>
-      <aside className="print-controls glass-panel" aria-label="Tuỳ chọn in">
-        <h2 className="panel-title">In / Xuất bản đồ</h2>
-        <label htmlFor="print-title">Tiêu đề</label>
+      <aside className="print-controls float" aria-label="Tuỳ chọn in">
+        <h2 className="print-controls-title">In và xuất</h2>
         {/* maxLength=120 keeps the title within ~2 wrapped lines on the sheet
             at any paper width/size (see .print-title in main.css) — without
             it, an arbitrarily long title can grow tall enough to squeeze
@@ -45,21 +47,23 @@ export function PrintPageView(p: PrintPageViewProps) {
             unconditionally-sized grid row on .print-sheet, not a sibling in
             this flex column — see .print-sheet's and .print-attribution's
             comments in main.css (the licence footer must always print). */}
-        <input id="print-title" type="text" maxLength={120} value={p.title} onChange={(e) => p.onTitle(e.target.value)} />
-        <label htmlFor="print-paper">Khổ giấy</label>
-        <select id="print-paper" value={p.paper} onChange={(e) => p.onPaper(e.target.value as PaperId)}>
-          {(Object.keys(PAPER_SIZES) as PaperId[]).map((id) => <option key={id} value={id}>{PAPER_SIZES[id].label}</option>)}
-        </select>
+        <TextField id="print-title" label="Tiêu đề" type="text" maxLength={120} value={p.title} onChange={(e) => p.onTitle(e.target.value)} />
+        <div className="field">
+          <label htmlFor="print-paper">Khổ giấy</label>
+          <select id="print-paper" className="input" value={p.paper} onChange={(e) => p.onPaper(e.target.value as PaperId)}>
+            {(Object.keys(PAPER_SIZES) as PaperId[]).map((id) => <option key={id} value={id}>{PAPER_SIZES[id].label}</option>)}
+          </select>
+        </div>
         {(Object.keys(TOGGLE_LABELS) as (keyof PrintToggles)[]).map((k) => (
           <label key={k} className="print-toggle">
             <input type="checkbox" checked={p.toggles[k]} onChange={() => p.onToggle(k)} /> {TOGGLE_LABELS[k]}
           </label>
         ))}
-        {p.exportError && <p className="edit-form-error" role="alert">{p.exportError}</p>}
+        {p.exportError && <Message tone="error" title={p.exportError} />}
         <div className="analysis-actions">
-          <button type="button" onClick={p.onDownload} disabled={!p.imageUrl}>Tải PNG</button>
-          <button type="button" onClick={p.onPrint} disabled={!p.imageUrl}>In / PDF</button>
-          <button type="button" onClick={p.onClose}>Đóng</button>
+          <Button onClick={p.onDownload} disabled={!p.imageUrl}>Tải PNG</Button>
+          <Button variant="solid" onClick={p.onPrint} disabled={!p.imageUrl}>In / PDF</Button>
+          <Button variant="quiet" onClick={p.onClose}>Đóng</Button>
         </div>
       </aside>
 

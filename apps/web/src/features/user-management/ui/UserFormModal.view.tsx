@@ -1,4 +1,8 @@
 import { Dialog } from '../../../shared/ui/Dialog';
+import { Button } from '../../../shared/ui/Button';
+import { Message } from '../../../shared/ui/Message';
+import { TextField } from '../../../shared/ui/TextField';
+import { ROLE_LABELS } from '../../../entities/session/model/roleLabels';
 import type { Role } from '../../../entities/session/model/session.types';
 
 interface Values { email: string; password: string; full_name: string; role: Role; }
@@ -16,39 +20,44 @@ export function UserFormModalView({ open, mode, values, fieldErrors, formError, 
   onClose: () => void;
 }) {
   return (
-    <Dialog open={open} title={mode === 'create' ? 'New user' : 'Edit user'} onClose={onClose}>
+    <Dialog open={open} title={mode === 'create' ? 'Thêm người dùng' : 'Sửa người dùng'} onClose={onClose}>
       <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className="user-form">
-        <label htmlFor="uf-email">Email</label>
-        <input
-          id="uf-email" type="email" value={values.email}
-          readOnly={mode === 'edit'}
+        <TextField
+          id="uf-email" label="Email" type="email" value={values.email}
+          readOnly={mode === 'edit'} error={fieldErrors.email}
           onChange={(e) => onField('email', e.target.value)}
         />
-        {fieldErrors.email && <p className="field-error" role="alert">{fieldErrors.email}</p>}
 
         {mode === 'create' && (
-          <>
-            <label htmlFor="uf-password">Password</label>
-            <input id="uf-password" type="password" value={values.password} onChange={(e) => onField('password', e.target.value)} />
-            {fieldErrors.password && <p className="field-error" role="alert">{fieldErrors.password}</p>}
-          </>
+          <TextField
+            id="uf-password" label="Mật khẩu" type="password" value={values.password}
+            error={fieldErrors.password}
+            onChange={(e) => onField('password', e.target.value)}
+          />
         )}
 
-        <label htmlFor="uf-name">Full name</label>
-        <input id="uf-name" type="text" value={values.full_name} onChange={(e) => onField('full_name', e.target.value)} />
+        <TextField
+          id="uf-name" label="Họ tên" type="text" value={values.full_name}
+          error={fieldErrors.full_name}
+          onChange={(e) => onField('full_name', e.target.value)}
+        />
 
-        <label htmlFor="uf-role">Role</label>
-        <select id="uf-role" value={values.role} onChange={(e) => onField('role', e.target.value)}>
-          <option value="admin">admin</option>
-          <option value="editor">editor (chỉ xem)</option>
-          <option value="viewer">viewer</option>
-        </select>
+        <div className="field">
+          <label htmlFor="uf-role">Vai trò</label>
+          <select id="uf-role" className="input" value={values.role} onChange={(e) => onField('role', e.target.value)}>
+            <option value="admin">{ROLE_LABELS.admin}</option>
+            <option value="editor">{ROLE_LABELS.editor} (chỉ xem)</option>
+            <option value="viewer">{ROLE_LABELS.viewer}</option>
+          </select>
+        </div>
 
-        {formError && <p className="form-error" role="alert">{formError}</p>}
+        {formError && <Message tone="error" title={formError} />}
 
         <div className="user-form-actions">
-          <button type="button" onClick={onClose}>Cancel</button>
-          <button type="submit" disabled={!canSave || saving}>{mode === 'create' ? 'Create' : 'Save'}</button>
+          <Button onClick={onClose}>Huỷ</Button>
+          <Button type="submit" variant="solid" busy={saving} disabled={!canSave && !saving}>
+            {mode === 'create' ? 'Tạo' : 'Lưu'}
+          </Button>
         </div>
       </form>
     </Dialog>

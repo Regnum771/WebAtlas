@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 export function EditToolbarView({ children }: { children: ReactNode }) {
   return (
     <div className="edit-toolbar">
-      <h3 className="edit-toolbar-title">Add a feature</h3>
+      <h3 className="edit-toolbar-title">Thêm đối tượng</h3>
       {children}
     </div>
   );

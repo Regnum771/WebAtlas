@@ -1,3 +1,5 @@
+import { TextField } from '../../../shared/ui/TextField';
+
 export interface AttributeFieldViewProps {
   column: string;
   label: string;
@@ -8,12 +10,13 @@ export interface AttributeFieldViewProps {
 
 // Passive: one attribute field — ISO label + text input, reused per attribute.
 export function AttributeFieldView({ column, label, value, error, onChange }: AttributeFieldViewProps) {
-  const id = `attr-${column}`;
   return (
-    <div className="edit-attr-field">
-      <label htmlFor={id}>{label}</label>
-      <input id={id} type="text" value={value} onChange={(e) => onChange(e.target.value)} />
-      {error && <span className="edit-attr-error" role="alert">{error}</span>}
-    </div>
+    <TextField
+      id={`attr-${column}`}
+      label={label}
+      value={value}
+      error={error}
+      onChange={(e) => onChange(e.target.value)}
+    />
   );
 }

@@ -24,7 +24,7 @@ describe('UserManagementPanel', () => {
   it('calls onClose from the back control (the route owns dismissal)', async () => {
     const onClose = vi.fn();
     render(<UserManagementPanel onClose={onClose} />);
-    await userEvent.click(screen.getByRole('button', { name: /back to map/i }));
+    await userEvent.click(screen.getByRole('button', { name: /về bản đồ/i }));
     expect(onClose).toHaveBeenCalled();
   });
 });

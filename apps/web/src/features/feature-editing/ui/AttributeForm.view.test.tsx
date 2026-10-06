@@ -25,18 +25,18 @@ describe('AttributeFormView', () => {
 
   it('disables save when canSave is false', () => {
     render(<AttributeFormView {...baseProps} canSave={false} />);
-    expect(screen.getByRole('button', { name: /save/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /lưu/i })).toBeDisabled();
   });
 
   it('calls onSubmit when the form is submitted', async () => {
     const onSubmit = vi.fn();
     render(<AttributeFormView {...baseProps} onSubmit={onSubmit} />);
-    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    await userEvent.click(screen.getByRole('button', { name: /lưu/i }));
     expect(onSubmit).toHaveBeenCalled();
   });
 
   it('shows a form-level error', () => {
-    render(<AttributeFormView {...baseProps} error="Invalid geometry — please redraw" />);
-    expect(screen.getByText('Invalid geometry — please redraw')).toBeInTheDocument();
+    render(<AttributeFormView {...baseProps} error="Hình vẽ không hợp lệ. Vẽ lại." />);
+    expect(screen.getByText('Hình vẽ không hợp lệ. Vẽ lại.')).toBeInTheDocument();
   });
 });

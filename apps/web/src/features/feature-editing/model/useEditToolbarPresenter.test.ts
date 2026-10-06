@@ -56,4 +56,10 @@ describe('useEditToolbarPresenter', () => {
     expect(result.current.mode).toBe('idle');
     expect(result.current.pendingGeometry).toBeNull();
   });
+
+  it('asks for a layer in Vietnamese when drawing starts with none selected', () => {
+    const { result } = renderHook(() => useEditToolbarPresenter());
+    act(() => result.current.startDrawing());
+    expect(result.current.error).toBe('Chọn lớp trước.');
+  });
 });

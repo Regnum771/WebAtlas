@@ -11,17 +11,17 @@ const base = {
 describe('UserFormModalView', () => {
   it('create mode shows a password field', () => {
     render(<UserFormModalView open mode="create" {...base} />);
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/mật khẩu/i)).toBeInTheDocument();
   });
 
   it('edit mode hides password and shows email read-only', () => {
     render(<UserFormModalView open mode="edit" {...base} />);
-    expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/mật khẩu/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toHaveAttribute('readonly');
   });
 
-  it('disables Save when canSave is false', () => {
+  it('disables Lưu when canSave is false', () => {
     render(<UserFormModalView open mode="create" {...base} canSave={false} />);
-    expect(screen.getByRole('button', { name: /save|create/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /lưu|tạo/i })).toBeDisabled();
   });
 });

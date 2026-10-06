@@ -1,4 +1,6 @@
 import { AttributeFieldView } from './AttributeField.view';
+import { Button } from '../../../shared/ui/Button';
+import { Message } from '../../../shared/ui/Message';
 
 export interface AttributeFormViewProps {
   attributes: string[];
@@ -28,10 +30,11 @@ export function AttributeFormView(props: AttributeFormViewProps) {
           onChange={(v) => onField(col, v)}
         />
       ))}
-      {error && <p className="edit-form-error" role="alert">{error}</p>}
+      {error && <Message tone="error" title={error} />}
       <div className="edit-form-actions">
-        <button type="submit" disabled={!canSave}>{saving ? 'Saving…' : 'Save feature'}</button>
-        <button type="button" onClick={onCancel}>Cancel</button>
+        {/* A saving button stays enabled so it keeps focus; Button swallows the second press. */}
+        <Button type="submit" variant="solid" busy={saving} busyLabel="Đang lưu" disabled={!canSave && !saving}>Lưu</Button>
+        <Button onClick={onCancel}>Huỷ</Button>
       </div>
     </form>
   );

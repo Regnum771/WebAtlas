@@ -10,25 +10,41 @@ const users: AdminUser[] = [
 ];
 
 describe('UserTableView', () => {
-  it('renders a row per user with role and an inactive badge', () => {
+  it('renders a row per user with role and a locked badge', () => {
     render(<UserTableView users={users} canModify={() => true} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={vi.fn()} loading={false} listError={null} />);
     expect(screen.getByText('me@b.test')).toBeInTheDocument();
     expect(screen.getByText('ed@b.test')).toBeInTheDocument();
-    expect(screen.getByText(/inactive/i)).toBeInTheDocument();
+    expect(screen.getByText('Đã khoá')).toBeInTheDocument();
+    expect(screen.getByText('Đang hoạt động')).toBeInTheDocument();
   });
 
-  it('disables Edit/Deactivate on a row that cannot be modified', () => {
+  it('disables Sửa/Khoá on a row that cannot be modified', () => {
     const canModify = (u: AdminUser) => u.id !== 'me';
     render(<UserTableView users={users} canModify={canModify} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={vi.fn()} loading={false} listError={null} />);
     // the "me" row's edit button is disabled
-    const editButtons = screen.getAllByRole('button', { name: /edit/i });
+    const editButtons = screen.getAllByRole('button', { name: 'Sửa' });
     expect(editButtons[0]).toBeDisabled();
   });
 
-  it('calls onNew when the New user button is clicked', async () => {
+  it('calls onNew when the Thêm người dùng button is clicked', async () => {
     const onNew = vi.fn();
     render(<UserTableView users={users} canModify={() => true} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={onNew} loading={false} listError={null} />);
-    await userEvent.click(screen.getByRole('button', { name: /new user/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Thêm người dùng' }));
     expect(onNew).toHaveBeenCalled();
+  });
+
+  it('shows roles and dates in Vietnamese', () => {
+    render(<UserTableView users={users} canModify={() => true} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={vi.fn()} loading={false} listError={null} />);
+    expect(screen.getByText('Quản trị viên')).toBeInTheDocument();
+    expect(screen.getByText('Biên tập viên')).toBeInTheDocument();
+    expect(screen.getByText(new Date('2026-01-01T00:00:00Z').toLocaleDateString('vi-VN'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mở khoá' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Khoá' })).toBeInTheDocument();
+  });
+
+  it('shows a spinner status while loading and no table', () => {
+    render(<UserTableView users={[]} canModify={() => true} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={vi.fn()} loading listError={null} />);
+    expect(screen.getByRole('status', { name: 'Đang tải' })).toBeInTheDocument();
+    expect(screen.queryByRole('table')).toBeNull();
   });
 });

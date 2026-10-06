@@ -52,7 +52,7 @@ describe('useAttributeFormPresenter', () => {
     createFeature.mockRejectedValue(new ApiError(422, 'GEOMETRY_ERROR', 'bad geom'));
     const { result } = renderHook(() => useAttributeFormPresenter(baseArgs));
     await act(async () => { await result.current.submit(); });
-    expect(result.current.error).toBe('Invalid geometry — please redraw');
+    expect(result.current.error).toBe('Hình vẽ không hợp lệ. Vẽ lại.');
     expect(baseArgs.onSaved).not.toHaveBeenCalled();
   });
 
@@ -108,7 +108,7 @@ describe('useAttributeFormPresenter (edit mode)', () => {
       mode: 'edit', featureId: 'f1', initialValues: { name: 'A' }, onSaved: vi.fn(),
     }));
     await act(async () => { await result.current.submit(); });
-    expect(result.current.error).toBe('Someone else changed this layer while you were saving. Please try again.');
+    expect(result.current.error).toBe('Lớp này vừa được người khác thay đổi. Thử lưu lại.');
   });
 
   it('maps a 404 to a friendly message', async () => {
@@ -118,6 +118,23 @@ describe('useAttributeFormPresenter (edit mode)', () => {
       mode: 'edit', featureId: 'f1', initialValues: { name: 'A' }, onSaved: vi.fn(),
     }));
     await act(async () => { await result.current.submit(); });
-    expect(result.current.error).toBe('This feature no longer exists');
+    expect(result.current.error).toBe('Đối tượng này không còn nữa.');
+  });
+
+  it('asks for a drawing first and reports unknown failures in Vietnamese', async () => {
+    const { result } = renderHook(() => useAttributeFormPresenter({ ...baseArgs, geometry: null }));
+    await act(async () => { await result.current.submit(); });
+    expect(result.current.error).toBe('Vẽ hình trước khi lưu.');
+    createFeature.mockRejectedValue(new Error('boom'));
+    const { result: r2 } = renderHook(() => useAttributeFormPresenter(baseArgs));
+    await act(async () => { await r2.current.submit(); });
+    expect(r2.current.error).toBe('Chưa lưu được. Thử lại.');
+  });
+
+  it('maps a 409 to the duplicate message', async () => {
+    createFeature.mockRejectedValue(new ApiError(409, 'CONFLICT', 'dupe'));
+    const { result } = renderHook(() => useAttributeFormPresenter(baseArgs));
+    await act(async () => { await result.current.submit(); });
+    expect(result.current.error).toBe('Đã có đối tượng như thế này.');
   });
 });
