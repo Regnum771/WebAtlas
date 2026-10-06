@@ -7,6 +7,7 @@
      30   toast host
      40   feature popup
      90   routed page
+     95   assistant floating over the map and routed pages (below 1100px)
      100  top bar
      110  search results
      200  dialog
@@ -68,6 +69,14 @@
      "1:12.800.000" at weight 650 with tabular figures, measures 81.2px in Chrome,
      plus 16px padding and 2px border = 99.2px, rounded up. */
   --scale-column: 100px;
+  /* The toast band's bottom edge: 12px above the tallest bottom-corner stack. On
+     the right the CRS select tops the coordinate and elevation readouts at 92px
+     above the stage's bottom edge (measured in Chrome); on the left the scale bar
+     reaches 65px. 92px + 12px = 104px. */
+  --toast-band-bottom: 104px;
+  /* A two-line toast: two lines of 13px text at 1.35 (35.1px), 18px padding and
+     a 2px border on each side = 57.1px, rounded up. */
+  --toast-band-height: 58px;
   position: relative;
   flex: 1;
   min-height: 0;
@@ -84,14 +93,16 @@
   font-size: var(--text-sm);
 }
 
+/* A band at the bottom of the stage, centred, directly above every bottom-corner
+   readout; the tool dock keeps clear of it (see .tool-dock). */
 .toast-host {
   position: absolute;
-  top: 58px;
+  bottom: var(--toast-band-bottom);
   left: 0;
   right: 0;
   margin-inline: auto;
   width: max-content;
-  max-width: calc(100% - 70px);
+  max-width: calc(100% - 24px);
   z-index: 30;
   display: flex;
   flex-direction: column;
@@ -138,9 +149,9 @@
    Width: the column keeps 12px (its left), the scale control's column and 24px
    (that column's right gutter and a gap) of the stage free, so neither the
    buttons, which wrap, nor a menu can reach the slider or the readout.
-   Height: 12px above, and 69px kept clear at the bottom of the stage for the
-   scale bar (12px from the edge, 53px tall with its ratio text) and the
-   coordinate readouts, plus a 4px gap; the open menu scrolls inside that.
+   Height: 12px above; below, the bottom-corner readouts and the toast band above
+   them (--toast-band-bottom, then a two-line toast, --toast-band-height) stay
+   clear, plus a 12px gap; the open menu scrolls inside that.
    The column itself takes no pointer events (it would cover map between its
    children); it creates no stacking context, so the group (10) and the menu (20)
    stack by the scale above. */
@@ -153,7 +164,7 @@
   align-items: flex-start;
   gap: 4px;
   max-width: calc(100% - 12px - var(--scale-column) - 24px);
-  max-height: calc(100% - 81px);
+  max-height: calc(100% - 12px - var(--toast-band-bottom) - var(--toast-band-height) - 12px);
   pointer-events: none;
 }
 
@@ -474,7 +485,17 @@
     right: 0;
     bottom: 0;
     width: min(var(--assistant-width), calc(100vw - var(--panel-width)));
-    z-index: 50;
+    /* Above routed pages (90), so Trợ lý also works on /print and /admin/users. */
+    z-index: 95;
+  }
+}
+
+@media (min-width: 1100px) {
+  /* While the assistant is docked, a routed page stops at the dock's left edge, so
+     Trợ lý works on every screen. Routed pages are later siblings of .app-shell. */
+  .app-shell.with-assistant ~ .print-route,
+  .app-shell.with-assistant ~ .admin-users-route {
+    right: var(--assistant-width);
   }
 }
 

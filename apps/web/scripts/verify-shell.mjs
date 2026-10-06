@@ -3,7 +3,9 @@
  * scale bar or the coordinate readout, the page never scrolls sideways, the map
  * controls stay inside the map stage, Archivo loaded, the signed-in columns keep
  * their widths, the map survives navigation, the print page sits under the top bar,
- * and the scale slider's thumb and focus ring render where they should.
+ * the scale slider's thumb and focus ring render where they should, a toast stays
+ * clear of an open menu and of the bottom-corner readouts, and Trợ lý opens a
+ * visible assistant on the routed pages.
  *
  * Every check runs at 1440x900 and at 768x900 and prints one PASS / FAIL / SKIPPED
  * line. SKIPPED is not a pass: the signed-in checks need VERIFY_EMAIL and
@@ -178,7 +180,10 @@ async function hoverOpenMap(page) {
   await sleep(300);
 }
 
-/** Check 1: the scale bar and the readout are painted on top and touched by nothing. */
+/**
+ * Check 1: the scale bar and the readout are painted on top and touched by nothing.
+ * Every coverer listed must be on the page, or the check would pass by looking at nothing.
+ */
 async function nothingCoversReadouts(page, coverers) {
   const problems = await page.evaluate(() => {
     const describe = (el) => (el
@@ -209,10 +214,19 @@ async function nothingCoversReadouts(page, coverers) {
     }
     return out;
   });
-  return [...problems, ...(await overlaps(page, ['.map-scaleline', '.map-mouseposition'], coverers))];
+  return [
+    ...problems,
+    ...(await present(page, coverers)),
+    ...(await overlaps(page, ['.map-scaleline', '.map-mouseposition'], coverers)),
+  ];
 }
 
-const COVERERS = ['.tool-group', '.tool-menu:not([hidden])', '.scale-slider', '.scale-readout', '.toast-host > *'];
+/**
+ * What could cover the readouts with every menu closed (1a) and with Vùng phân tích
+ * open (1b). Toasts are not listed: none is raised here, and check 11 places one.
+ */
+const COVERERS_CLOSED = ['.tool-group', '.scale-slider', '.scale-readout'];
+const COVERERS_OPEN = [...COVERERS_CLOSED, '.tool-menu:not([hidden])'];
 
 /** Check 2: no sideways scroll on the page or in the top bar. */
 const noSidewaysScroll = (page) =>
@@ -380,6 +394,94 @@ async function openAssistant(page) {
   await sleep(500); // the map stage resizes; MapView follows with a ResizeObserver
 }
 
+/** Opens or closes the assistant from the top bar, whichever `open` asks for. */
+async function setAssistant(page, open) {
+  if (Boolean(await page.$('.assistant-dock')) === open) return;
+  await clickButton(page, '.top-bar', 'Trợ lý');
+  await page.waitForFunction(
+    (wanted) => Boolean(document.querySelector('.assistant-dock')) === wanted,
+    { timeout: 5000 },
+    open,
+  );
+  await sleep(500);
+}
+
+/** The routed pages, each with how a reader reaches it from the map. */
+const ROUTED_PAGES = [
+  {
+    selector: '.print-route',
+    open: (page) => page.$eval('.side-panel-footer a[href="/print"]', (a) => a.click()),
+  },
+  {
+    selector: '.admin-users-route',
+    open: async (page) => {
+      await page.$eval('.account-trigger', (b) => b.click());
+      await page.waitForSelector('.account-menu a[href="/admin/users"]', { timeout: 5000 });
+      await page.$eval('.account-menu a[href="/admin/users"]', (a) => a.click());
+    },
+  },
+];
+
+/**
+ * Check 10: on each routed page, Trợ lý (pressed there) opens an assistant that can be
+ * seen: the element at the dock's centre is inside it, and at 1440 the page stops at
+ * the dock's edge.
+ */
+async function assistantOnRoutedPages(page, vp) {
+  const problems = [];
+  for (const { selector, open } of ROUTED_PAGES) {
+    await setAssistant(page, false);
+    await open(page);
+    await page.waitForSelector(selector, { visible: true, timeout: 10000 });
+    await clickButton(page, '.top-bar', 'Trợ lý');
+    try {
+      await page.waitForSelector('.assistant-dock', { visible: true, timeout: 5000 });
+    } catch {
+      problems.push(`on ${selector}, Trợ lý opened no .assistant-dock`);
+    }
+    await sleep(300);
+    const hit = await page.evaluate(() => {
+      const dock = document.querySelector('.assistant-dock');
+      if (!dock) return null;
+      const r = dock.getBoundingClientRect();
+      const el = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+      if (el && dock.contains(el)) return null;
+      return el ? `${el.tagName.toLowerCase()}.${String(el.className).trim().split(/\s+/).join('.')}` : 'nothing';
+    });
+    if (hit) problems.push(`on ${selector}, the centre of .assistant-dock is under ${hit}`);
+    if (vp === 1440) problems.push(...(await overlaps(page, ['.assistant-dock'], [selector])));
+    await page.$eval('.top-bar .wordmark', (a) => a.click());
+    await page.waitForFunction((s) => !document.querySelector(s), { timeout: 10000 }, selector);
+  }
+  return problems;
+}
+
+/** What a toast must not touch while Thêm dữ liệu is open; all but the elevation must be on the page. */
+const TOAST_REQUIRED = ['.tool-menu:not([hidden])', '.tool-group', '.map-scaleline', '.map-mouseposition', '.map-crs-select'];
+const TOAST_AVOIDS = [...TOAST_REQUIRED, '.map-cursor-elevation'];
+
+/**
+ * Check 11: with Thêm dữ liệu open, adding a WMS layer whose server does not answer
+ * raises the sticky error toast; it touches neither the menu nor the corner readouts.
+ */
+async function toastClearsMenu(page, shot) {
+  await clickButton(page, '.tool-group', 'Thêm dữ liệu');
+  await page.waitForSelector('#wms-url', { visible: true, timeout: 5000 });
+  await hoverOpenMap(page);
+  await page.type('#wms-url', 'http://127.0.0.1:9/wms');
+  await page.type('#wms-layer', 'kiem_tra:khong_co');
+  await page.$eval('#wms-url', (el) => el.form.requestSubmit());
+  await page.waitForSelector('.toast-host > .toast.bad', { visible: true, timeout: 15000 });
+  await sleep(300);
+  const problems = await present(page, ['.toast-host > .toast.bad', ...TOAST_REQUIRED]);
+  problems.push(...(await overlaps(page, ['.toast-host > *'], TOAST_AVOIDS)));
+  await page.screenshot({ path: shot });
+  // Leave the page as it was: the sticky toast dismissed, the menu closed.
+  await page.$$eval('.toast-host button[aria-label="Đóng thông báo"]', (buttons) => buttons.forEach((b) => b.click()));
+  await clickButton(page, '.tool-group', 'Thêm dữ liệu');
+  return problems;
+}
+
 async function runViewport(browser, viewport) {
   const vp = viewport.width;
   const context = await browser.createBrowserContext();
@@ -397,11 +499,11 @@ async function runViewport(browser, viewport) {
 
   await hoverOpenMap(page);
   await check(vp, '1a', 'nothing covers the scale bar or the readout (menus closed)',
-    () => nothingCoversReadouts(page, COVERERS));
+    () => nothingCoversReadouts(page, COVERERS_CLOSED));
   await setRoiMenu(page, true);
   await hoverOpenMap(page);
   await check(vp, '1b', 'nothing covers the scale bar or the readout (Vùng phân tích open)',
-    () => nothingCoversReadouts(page, COVERERS));
+    () => nothingCoversReadouts(page, COVERERS_OPEN));
   await check(vp, '2', 'the page does not scroll sideways', () => noSidewaysScroll(page));
   await check(vp, '3', 'controls sit inside the map stage', () => controlsInsideStage(page));
   await setRoiMenu(page, false);
@@ -472,6 +574,15 @@ async function runViewport(browser, viewport) {
   console.log(`shot    ${vp}  ${shot}`);
   await setRoiMenu(page, false);
 
+  // At 1440 the toast is placed against the docked assistant. Below 1100 px the
+  // assistant floats over the map's right edge, so it is closed for this check.
+  const toastShot = join(OUT, `verify-shell-toast-${viewport.width}x${viewport.height}.png`);
+  await signedInCheck('11', `a toast clears the open Thêm dữ liệu menu and the corner readouts${vp === 1440 ? ' (assistant docked)' : ''}`, async () => {
+    await setAssistant(page, vp === 1440);
+    return toastClearsMenu(page, toastShot);
+  });
+  if (signedIn) console.log(`shot    ${vp}  ${toastShot}`);
+
   await check(vp, '6', 'the map survives navigation to /print and back', async () => {
     await page.evaluate(() => {
       window.__verifyCanvas = document.querySelector('.map-container canvas');
@@ -511,6 +622,9 @@ async function runViewport(browser, viewport) {
     return problems;
   });
   printPage = null;
+
+  await signedInCheck('10', 'signed in, Trợ lý opens a visible assistant on /print and on /admin/users',
+    () => assistantOnRoutedPages(page, vp));
 
   await context.close();
 }
