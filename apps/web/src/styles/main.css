@@ -1,15 +1,6 @@
 @import '../shared/ui/tokens.css';
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
-
-:root {
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
-  --bg-panel: rgba(255, 255, 255, 0.75);
-  --bg-panel-hover: rgba(255, 255, 255, 0.9);
-  /* --text-main / --text-muted now come from tokens.css (single source of truth) */
-  --border-color: rgba(255, 255, 255, 0.4);
-  --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
-}
+@import '../shared/ui/ui.css';
+@import './shell.css';
 
 * {
   box-sizing: border-box;
@@ -18,9 +9,13 @@
 }
 
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: var(--leading);
+  font-stretch: 100%;
   overflow: hidden;
-  color: var(--text-main);
+  color: var(--ink);
+  background: var(--paper);
 }
 
 .app-container {

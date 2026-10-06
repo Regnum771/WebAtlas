@@ -1,22 +1,24 @@
-/* Design tokens. Dark chrome (top bar + rail) framing light content panels.
-   Chrome greens are chosen to sit away from the hazard-layer palette so the
-   frame never competes with data colours. */
+/* Design tokens: colour, type, shape and layout constants. */
 :root {
-  --chrome-bg: #14532d;
-  --chrome-bg-hover: #166534;
-  --chrome-fg: #dcfce7;
-  --chrome-fg-muted: #86efac;
+  --green: #14532D;
+  --on-green: #FFFFFF;
+  --on-green-2: #CBE0D2;
+  --ink: #18213A;
+  --ink-2: #55607A;
+  --rule: #C8CEDA;
+  --paper: #F3F5F4;
+  --sheet: #FFFFFF;
+  --mark: #FFD928;
+  --alert: #B3261E;
+  --alert-soft: #FBEDEC;
 
-  --surface: #ffffff;
-  --surface-raised: #f8fafc;
-  --surface-sunken: #f1f5f9;
-  --border: #d4d4d8;
-  --border-strong: #a1a1aa;
-
-  --text-main: #18181b;
-  --text-muted: #52525b;
-  --accent: #0f766e;
-  --danger: #b91c1c;
+  --font-ui: "Archivo", "Segoe UI", system-ui, sans-serif;
+  --text-xs: 11.5px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 21px;
+  --leading: 1.35;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -24,31 +26,41 @@
   --space-4: 16px;
   --space-5: 24px;
 
-  --radius-sm: 3px;
-  --radius-md: 6px;
+  --radius: 3px;
 
-  --elev-1: 0 1px 3px rgba(15, 23, 42, 0.12);
-  --elev-2: 0 4px 12px rgba(15, 23, 42, 0.16);
-
-  --rail-width: 48px;
-  --flyout-width: 320px;
-  --topbar-height: 48px;
+  --topbar-height: 52px;
+  --panel-width: 348px;
+  --assistant-width: 360px;
 }
 
-/* Minimum supported viewport width: ~768px.
-   This app has no responsive layout by design (one @media query exists in
-   the whole stylesheet). Below ~504px .icon-rail on the left and
-   .ogc-trigger-btn on the right collide with the floating controls between
-   them, and .map-controls (436px wide) overflows the viewport outright.
-   Measured (pre-Task-9, search still a floating .search-bar-container):
-     390px -> 22px of map visible, .map-controls overflows, both collisions
-     504px -> 136px of map visible, no collisions
-     768px -> 400px of map visible, no collisions (minimum supported)
-     1440px -> 1072px of map visible, no collisions
-   Task 9 moved search into .top-bar (.top-bar-search), so it no longer
-   floats over the map or factors into this collision set — see
-   task-9-report.md for the post-move rectangles at 768/1440px.
-   Narrow-viewport support would need to address the remaining floating
-   controls as a set (rail, flyout, map-controls, OGC button), not one at a
-   time — see rail-width/flyout-width/topbar-height above, which drive the
-   arithmetic. */
+/* Supported viewport: 768px wide and up. See scripts/verify-shell.mjs. */
+
+/* Legacy aliases — deleted in Task 11 */
+:root {
+  --text-main: var(--ink);
+  --text-muted: var(--ink-2);
+  --border: var(--rule);
+  --border-strong: var(--rule);
+  --border-color: var(--rule);
+  --surface: var(--sheet);
+  --surface-raised: var(--paper);
+  --surface-sunken: var(--paper);
+  --primary: var(--ink);
+  --primary-hover: var(--ink);
+  --accent: var(--ink);
+  --color-primary: var(--ink);
+  --danger: var(--alert);
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
+  --bg-panel: var(--sheet);
+  --bg-panel-hover: var(--sheet);
+  --chrome-bg: var(--green);
+  --chrome-bg-hover: var(--green);
+  --chrome-fg: var(--on-green);
+  --chrome-fg-muted: var(--on-green-2);
+  --glass-shadow: none;
+  --elev-1: none;
+  --elev-2: none;
+  --rail-width: 0px;
+  --flyout-width: var(--panel-width);
+}
