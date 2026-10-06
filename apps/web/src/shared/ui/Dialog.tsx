@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/** Open dialogs, oldest first; only the last one reacts to Escape. */
+const openDialogs: object[] = [];
+
 export interface DialogProps {
   open: boolean;
   title: string;
@@ -23,9 +26,11 @@ export function Dialog({ open, title, onClose, children }: DialogProps) {
     const first = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
     (first ?? panelRef.current)?.focus();
 
-    // Capture phase on document: Escape closes this dialog and never reaches a menu or popup behind it.
+    // Capture phase on document: Escape closes the topmost dialog and never reaches a menu or popup behind it.
+    const token = {};
+    openDialogs.push(token);
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || openDialogs[openDialogs.length - 1] !== token) return;
       event.stopImmediatePropagation();
       event.preventDefault();
       onCloseRef.current();
@@ -33,6 +38,7 @@ export function Dialog({ open, title, onClose, children }: DialogProps) {
     document.addEventListener('keydown', onKeyDown, true);
     return () => {
       document.removeEventListener('keydown', onKeyDown, true);
+      openDialogs.splice(openDialogs.indexOf(token), 1);
       opener?.focus();
     };
   }, [open]);
