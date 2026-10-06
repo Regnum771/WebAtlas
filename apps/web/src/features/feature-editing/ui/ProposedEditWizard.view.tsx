@@ -1,4 +1,4 @@
-import { Modal } from '../../../shared/ui/Modal';
+import { Dialog } from '../../../shared/ui/Dialog';
 import { AttributeFieldView } from './AttributeField.view';
 
 export interface ProposedEditWizardViewProps {
@@ -23,12 +23,11 @@ export interface ProposedEditWizardViewProps {
 // Passive: every piece of state lives in useProposedEditPresenter.
 export function ProposedEditWizardView(p: ProposedEditWizardViewProps) {
   return (
-    <Modal open onClose={p.onCancel}>
+    <Dialog open title="Đề xuất cập nhật" onClose={p.onCancel}>
       <form
         className="proposal-wizard"
         onSubmit={(e) => { e.preventDefault(); p.onSubmit(); }}
       >
-        <h2 className="panel-title">Đề xuất cập nhật</h2>
         <p className="proposal-subtitle">
           {p.title} — trợ lý đã điền sẵn giá trị đề xuất. Kiểm tra lại trước khi lưu.
         </p>
@@ -62,6 +61,6 @@ export function ProposedEditWizardView(p: ProposedEditWizardViewProps) {
           <button type="button" onClick={p.onCancel}>Huỷ</button>
         </div>
       </form>
-    </Modal>
+    </Dialog>
   );
 }

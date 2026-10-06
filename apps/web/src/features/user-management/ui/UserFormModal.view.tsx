@@ -1,4 +1,4 @@
-import { Modal } from '../../../shared/ui/Modal';
+import { Dialog } from '../../../shared/ui/Dialog';
 import type { Role } from '../../../entities/session/model/session.types';
 
 interface Values { email: string; password: string; full_name: string; role: Role; }
@@ -16,10 +16,8 @@ export function UserFormModalView({ open, mode, values, fieldErrors, formError, 
   onClose: () => void;
 }) {
   return (
-    <Modal open={open} onClose={onClose}>
+    <Dialog open={open} title={mode === 'create' ? 'New user' : 'Edit user'} onClose={onClose}>
       <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className="user-form">
-        <h3>{mode === 'create' ? 'New user' : 'Edit user'}</h3>
-
         <label htmlFor="uf-email">Email</label>
         <input
           id="uf-email" type="email" value={values.email}
@@ -53,6 +51,6 @@ export function UserFormModalView({ open, mode, values, fieldErrors, formError, 
           <button type="submit" disabled={!canSave || saving}>{mode === 'create' ? 'Create' : 'Save'}</button>
         </div>
       </form>
-    </Modal>
+    </Dialog>
   );
 }

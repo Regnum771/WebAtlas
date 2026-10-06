@@ -110,6 +110,7 @@ function EditExisting() {
         title="Delete feature"
         message="Delete this feature? This cannot be undone."
         confirmLabel="Delete"
+        irreversible
         busy={edit.deleting}
         onConfirm={edit.confirmDelete}
         onCancel={edit.cancelDelete}

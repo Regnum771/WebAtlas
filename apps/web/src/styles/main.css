@@ -841,8 +841,6 @@ body {
 .admin-login-btn, .user-badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: none; border-radius: 8px; }
 .user-badge { flex-direction: row; }
 .user-badge-logout { display: inline-flex; align-items: center; gap: 6px; border: none; background: transparent; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.modal-content { min-width: 320px; max-width: 90vw; padding: 20px; border-radius: 12px; }
 .login-form { display: flex; flex-direction: column; gap: 8px; }
 .login-form input { padding: 8px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.2); }
 .login-error { color: #c0392b; margin: 0; }
@@ -861,11 +859,8 @@ body {
 
 .edit-existing { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .edit-mode-toggle { display: flex; flex-direction: column; gap: 6px; }
-.edit-mode-toggle button, .edit-delete-btn, .confirm-actions button { cursor: pointer; padding: 6px 10px; border-radius: 6px; border: none; }
+.edit-mode-toggle button, .edit-delete-btn { cursor: pointer; padding: 6px 10px; border-radius: 6px; border: none; }
 .edit-delete-btn { background: #fee2e2; color: #b91c1c; }
-.confirm-dialog { display: flex; flex-direction: column; gap: 10px; min-width: 280px; }
-.confirm-actions { display: flex; gap: 8px; }
-.confirm-actions button:first-child { background: #ef4444; color: #fff; }
 
 /* Shell layout restructure: left = doing, right = seeing */
 .top-bar {

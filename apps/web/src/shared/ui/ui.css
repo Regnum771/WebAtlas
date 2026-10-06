@@ -171,3 +171,68 @@
   gap: var(--space-2);
   margin-top: var(--space-2);
 }
+
+/* Dialog */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(24, 33, 58, 0.4);
+}
+.dialog {
+  box-sizing: border-box;
+  min-width: 320px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 14px;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+}
+.dialog-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+.dialog-message {
+  margin: 0 0 14px;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* Toast */
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 10px 9px 14px;
+  background: var(--ink);
+  color: var(--sheet);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+}
+.toast .btn {
+  background: transparent;
+  color: var(--sheet);
+  border-color: var(--sheet);
+}
+.toast.bad {
+  background: var(--sheet);
+  color: var(--ink);
+  border: 2px solid var(--alert);
+}
+.toast.bad > svg {
+  color: var(--alert);
+}
+.toast.bad .btn {
+  color: var(--ink);
+  border-color: var(--ink);
+}

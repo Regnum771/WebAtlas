@@ -1,4 +1,4 @@
-import { Modal } from '../../../shared/ui/Modal';
+import { Dialog } from '../../../shared/ui/Dialog';
 
 // Passive view: props only. Must not import apiClient/session/ol.
 export interface LoginModalViewProps {
@@ -16,12 +16,11 @@ export interface LoginModalViewProps {
 export function LoginModalView(props: LoginModalViewProps) {
   const { open, email, password, loading, error, onEmail, onPassword, onSubmit, onClose } = props;
   return (
-    <Modal open={open} onClose={onClose}>
+    <Dialog open={open} title="Admin login" onClose={onClose}>
       <form
         className="login-form"
         onSubmit={(e) => { e.preventDefault(); onSubmit(); }}
       >
-        <h2>Admin login</h2>
         <label htmlFor="login-email">Email</label>
         <input
           id="login-email" type="email" autoComplete="username" value={email}
@@ -37,6 +36,6 @@ export function LoginModalView(props: LoginModalViewProps) {
         {error && <p className="login-error" role="alert">{error}</p>}
         <button type="submit" disabled={loading}>{loading ? 'Logging in…' : 'Log in'}</button>
       </form>
-    </Modal>
+    </Dialog>
   );
 }
