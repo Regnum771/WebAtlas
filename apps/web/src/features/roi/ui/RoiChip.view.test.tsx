@@ -17,9 +17,25 @@ const ready: RoiState = {
 const handlers = () => ({ onRadius: vi.fn(), onClear: vi.fn(), onDismiss: vi.fn() });
 
 describe('RoiChipView — the five states (U-3)', () => {
-  it('empty: says how to set one', () => {
-    render(<RoiChipView state={base} {...handlers()} />);
-    expect(screen.getByText(/Chưa có vùng phân tích/)).toBeInTheDocument();
+  it('empty: renders nothing; the shared line under the tools says what to do', () => {
+    const { container } = render(<RoiChipView state={base} {...handlers()} />);
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText(/Chưa có vùng phân tích/)).toBeNull();
+  });
+
+  it('empty with a failed pick: shows only the reason, dismissible', async () => {
+    const h = handlers();
+    render(<RoiChipView state={{ ...base, error: 'Không xác định được vùng phân tích.' }} {...h} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Không xác định được vùng phân tích.');
+    expect(screen.queryByText(/Chưa có vùng phân tích/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Đóng thông báo' }));
+    expect(h.onDismiss).toHaveBeenCalled();
+  });
+
+  it('empty with a hint: shows the hint', () => {
+    render(<RoiChipView state={{ ...base, hint: 'Vùng tự cắt nhau — hãy vẽ lại' }} {...handlers()} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Vùng tự cắt nhau — hãy vẽ lại');
+    expect(screen.queryByText(/Chưa có vùng phân tích/)).toBeNull();
   });
 
   it('drawing: shows the hint for the kind, and a live measure when given', () => {

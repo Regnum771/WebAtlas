@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { CircleAlert } from 'lucide-react';
 import { ROI_MAX_RADIUS_KM, type Roi } from '@webatlas/shared';
 import { Spinner } from '../../../shared/ui/Spinner';
@@ -28,7 +28,10 @@ export interface RoiChipViewProps {
   onDismiss: () => void;
 }
 
-/** The region status at the top of the Vùng phân tích menu: its five states (U-3) and the radius editor (U-4). */
+/**
+ * The region status at the top of the Vùng phân tích menu: its five states (U-3) and the
+ * radius editor (U-4). Idle with no region and nothing to report, it renders nothing.
+ */
 export function RoiChipView({ state, drawHint, liveMeasure, onRadius, onClear, onDismiss }: RoiChipViewProps) {
   const [editing, setEditing] = useState(false);
   useEffect(() => { setEditing(false); }, [state.resolved]);
@@ -51,7 +54,7 @@ export function RoiChipView({ state, drawHint, liveMeasure, onRadius, onClear, o
     }
   };
 
-  let body;
+  let body: ReactNode;
   if (state.status === 'drawing' && state.drawKind) {
     body = (
       <>
@@ -62,11 +65,8 @@ export function RoiChipView({ state, drawHint, liveMeasure, onRadius, onClear, o
   } else if (state.status === 'resolving') {
     body = (<><Spinner /><span className="roi-status-muted">Đang xác định vùng…</span></>);
   } else if (!r) {
-    body = (
-      <span className="roi-status-muted">
-        Chưa có vùng phân tích — vẽ một hình, hoặc chọn một đối tượng trên bản đồ hay trong tìm kiếm
-      </span>
-    );
+    // No region: the analysis tools' shared line below already says what to do.
+    body = null;
   } else if (editing) {
     body = (
       <>
@@ -100,6 +100,8 @@ export function RoiChipView({ state, drawHint, liveMeasure, onRadius, onClear, o
       </>
     );
   }
+
+  if (body === null && !state.error && !state.hint) return null;
 
   return (
     <div className="roi-status" role="status">

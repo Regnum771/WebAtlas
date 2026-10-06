@@ -5,7 +5,14 @@ import { LoginModalView } from './ui/LoginModal.view';
 
 export default function AuthWidget() {
   const [open, setOpen] = useState(false);
-  const presenter = useLoginPresenter(() => setOpen(false));
+  const presenter = useLoginPresenter(() => close());
+
+  // However the dialog closes (Escape, backdrop, a successful sign-in), the typed
+  // password and the form error go with it; the email stays for the next attempt.
+  function close() {
+    setOpen(false);
+    presenter.clearSecret();
+  }
 
   return (
     <>
@@ -19,7 +26,7 @@ export default function AuthWidget() {
         onField={presenter.set}
         onBlur={presenter.blur}
         onSubmit={presenter.submit}
-        onClose={() => setOpen(false)}
+        onClose={close}
       />
     </>
   );

@@ -161,6 +161,16 @@ describe('LoginModalView', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it('closing hides the password again, so reopening never shows it in clear text', async () => {
+    const { rerender } = render(<LoginModalView {...baseProps} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Hiện' }));
+    expect(screen.getByLabelText('Mật khẩu')).toHaveAttribute('type', 'text');
+    rerender(<LoginModalView {...baseProps} open={false} />);
+    rerender(<LoginModalView {...baseProps} />);
+    expect(screen.getByLabelText('Mật khẩu')).toHaveAttribute('type', 'password');
+    expect(screen.getByRole('button', { name: 'Hiện' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('does not use the browser validation bubbles', () => {
     render(<LoginModalView {...baseProps} />);
     expect(screen.getByLabelText('Email')).not.toBeRequired();

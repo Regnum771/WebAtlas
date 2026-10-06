@@ -64,4 +64,19 @@ describe('useFormFields', () => {
     expect(first).toBeNull();
     expect(result.current.errors).toEqual({});
   });
+
+  it('clear empties one field and drops its error, leaving the others', () => {
+    const { result } = setup();
+    act(() => result.current.set('a', 'x'));
+    act(() => result.current.set('b', 'y'));
+    act(() => result.current.blur('a'));
+    act(() => result.current.set('b', ''));
+    act(() => result.current.blur('b'));
+    expect(result.current.errors.b).toBe('trống');
+    act(() => result.current.clear('b'));
+    expect(result.current.values).toEqual({ a: 'x', b: '' });
+    expect(result.current.errors).toEqual({});
+    act(() => result.current.set('b', ''));
+    expect(result.current.errors.b).toBeUndefined();
+  });
 });

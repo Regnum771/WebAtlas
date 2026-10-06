@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Dialog } from '../../../shared/ui/Dialog';
 import { TextField } from '../../../shared/ui/TextField';
@@ -23,6 +23,8 @@ export interface LoginModalViewProps {
 export function LoginModalView(props: LoginModalViewProps) {
   const { open, values, errors, formError, loading, onField, onBlur, onSubmit, onClose } = props;
   const [shown, setShown] = useState(false);
+  // A closed dialog forgets Hiện, so reopening never shows the password in clear text.
+  useEffect(() => { if (!open) setShown(false); }, [open]);
   const inputs = {
     email: useRef<HTMLInputElement>(null),
     password: useRef<HTMLInputElement>(null),

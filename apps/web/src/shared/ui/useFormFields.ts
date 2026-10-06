@@ -40,6 +40,18 @@ export function useFormFields<K extends string>(initial: Record<K, string>, vali
 
   const blur = useCallback((name: K) => check(name, valuesRef.current[name]), [check]);
 
+  /** Empties one field and drops its error, as if it had never been touched. */
+  const clear = useCallback(
+    (name: K) => {
+      valuesRef.current = { ...valuesRef.current, [name]: '' };
+      setValues(valuesRef.current);
+      const next = { ...errorsRef.current };
+      delete next[name];
+      writeErrors(next);
+    },
+    [writeErrors],
+  );
+
   const validateAll = useCallback((): K | null => {
     let first: K | null = null;
     const next: Partial<Record<K, string>> = {};
@@ -54,5 +66,5 @@ export function useFormFields<K extends string>(initial: Record<K, string>, vali
     return first;
   }, [writeErrors]);
 
-  return { values, errors, set, blur, validateAll };
+  return { values, errors, set, blur, clear, validateAll };
 }

@@ -26,7 +26,7 @@ function formErrorFor(e: unknown): LoginFormError {
 
 export function useLoginPresenter(onSuccess?: () => void) {
   const { login } = useSession();
-  const { values, errors, set, blur, validateAll } = useFormFields({ email: '', password: '' }, VALIDATORS);
+  const { values, errors, set, blur, clear, validateAll } = useFormFields({ email: '', password: '' }, VALIDATORS);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState<LoginFormError | null>(null);
   // True from the moment a request starts until it settles; blocks a second request.
@@ -58,5 +58,11 @@ export function useLoginPresenter(onSuccess?: () => void) {
     return null;
   }, [login, onSuccess, validateAll]);
 
-  return { values, errors, set, blur, loading, formError, submit };
+  /** For a dialog that closes: drops the typed password and the form error; the email stays. */
+  const clearSecret = useCallback(() => {
+    clear('password');
+    setFormError(null);
+  }, [clear]);
+
+  return { values, errors, set, blur, loading, formError, submit, clearSecret };
 }
