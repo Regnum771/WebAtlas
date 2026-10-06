@@ -82,13 +82,21 @@
 .toast-host {
   position: absolute;
   top: 58px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: max-content;
   max-width: calc(100% - 70px);
   z-index: 30;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* The host box must not swallow map clicks; only the toasts take them. */
+  pointer-events: none;
+}
+
+.toast-host > * {
+  pointer-events: auto;
 }
 
 .assistant-dock {
