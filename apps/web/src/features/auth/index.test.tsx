@@ -8,25 +8,10 @@ vi.mock('../../entities/session/model/session.store', () => ({ useSession: () =>
 import AuthWidget from './index';
 
 describe('AuthWidget', () => {
-  it('shows the Admin login button when anonymous and opens the modal', async () => {
+  it('opens the sign-in dialog from the Đăng nhập button', async () => {
     render(<AuthWidget />);
-    const btn = screen.getByRole('button', { name: /admin login/i });
-    expect(btn).toBeInTheDocument();
-    await userEvent.click(btn);
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+    expect(screen.getByRole('dialog', { name: 'Đăng nhập' })).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-  });
-});
-
-describe('AuthWidget (authenticated)', () => {
-  it('shows the user badge with logout', async () => {
-    vi.resetModules();
-    vi.doMock('../../entities/session/model/session.store', () => ({
-      useSession: () => ({ status: 'authenticated', currentUser: { id: '1', email: 'a@webatlas.test', full_name: 'A', role: 'admin' }, login: vi.fn(), logout: vi.fn() }),
-    }));
-    const { default: Fresh } = await import('./index');
-    render(<Fresh />);
-    expect(screen.getByText('a@webatlas.test')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /log out/i })).toBeInTheDocument();
   });
 });

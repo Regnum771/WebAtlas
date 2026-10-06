@@ -16,6 +16,11 @@ describe('LoginModalView', () => {
     expect(screen.getByRole('button', { name: /log in/i })).toBeInTheDocument();
   });
 
+  it('titles the dialog Đăng nhập', () => {
+    render(<LoginModalView {...baseProps} />);
+    expect(screen.getByRole('dialog', { name: 'Đăng nhập' })).toBeInTheDocument();
+  });
+
   it('shows an error message when provided', () => {
     render(<LoginModalView {...baseProps} error="Invalid email or password" />);
     expect(screen.getByText('Invalid email or password')).toBeInTheDocument();

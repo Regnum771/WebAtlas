@@ -1,29 +1,39 @@
-import { Link } from 'react-router-dom';
-import { LogOut, Users } from 'lucide-react';
-import type { Role } from '../../../entities/session/model/session.types';
+import type { ReactNode } from 'react';
+import { Link, NavLink } from 'react-router-dom';
+import { Button } from '../../../shared/ui/Button';
+import type { NavItem } from '../model/nav';
 
 export interface TopBarViewProps {
-  email: string;
-  role: Role;
-  onLogout: () => void;
+  nav: NavItem[];
+  search: ReactNode;
+  /** null: no assistant button (a visitor who is not signed in). */
+  assistant: { open: boolean; onToggle: () => void } | null;
+  /** The sign-in button or the account menu. */
+  account: ReactNode;
 }
 
-// Props-only. The admin entry is a UX reveal: the API enforces admin on every
-// /api/users route regardless of whether this link is rendered.
-export function TopBarView({ email, role, onLogout }: TopBarViewProps) {
+export function TopBarView({ nav, search, assistant, account }: TopBarViewProps) {
   return (
-    <div className="top-bar-profile">
-      <span className="top-bar-email">{email}</span>
-      {role === 'admin' && (
-        <Link to="/admin/users" className="top-bar-link">
-          <Users size={16} />
-          <span>Manage users</span>
-        </Link>
+    <header className="top-bar">
+      <Link to="/" className="wordmark">WebATLAS</Link>
+      <nav aria-label="Điều hướng chính" className="top-nav">
+        {nav.map((item) => (
+          <NavLink key={item.to} to={item.to} end={item.to === '/'} className="top-nav-link">
+            {item.label}
+          </NavLink>
+        ))}
+      </nav>
+      <div className="top-bar-search">{search}</div>
+      {assistant && (
+        <Button
+          className="on-green"
+          aria-pressed={assistant.open}
+          onClick={assistant.onToggle}
+        >
+          Trợ lý
+        </Button>
       )}
-      <button type="button" className="top-bar-logout" onClick={onLogout}>
-        <LogOut size={16} />
-        <span>Log out</span>
-      </button>
-    </div>
+      {account}
+    </header>
   );
 }

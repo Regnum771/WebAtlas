@@ -45,7 +45,7 @@ async function renderAndSelectFirstHit() {
   vi.spyOn(api, 'fetchSearch').mockResolvedValue(hits);
   render(<Search />);
 
-  const input = screen.getByPlaceholderText('Tìm kiếm đối tượng…') as HTMLInputElement;
+  const input = screen.getByRole('textbox', { name: 'Tìm kiếm' }) as HTMLInputElement;
   fireEvent.change(input, { target: { value: 'la' } });
   await act(async () => { vi.advanceTimersByTime(500); });
   await waitFor(() => expect(screen.getByRole('button', { name: /^(?!Dùng ).*Hồ Lắk/ })).toBeInTheDocument());
@@ -103,7 +103,7 @@ describe('Search (feature slice)', () => {
     vi.spyOn(api, 'fetchSearch').mockResolvedValue([referenceHit]);
     render(<Search />);
 
-    const input = screen.getByPlaceholderText('Tìm kiếm đối tượng…') as HTMLInputElement;
+    const input = screen.getByRole('textbox', { name: 'Tìm kiếm' }) as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'quoc lo' } });
     await act(async () => { vi.advanceTimersByTime(500); });
     await waitFor(() => expect(screen.getByRole('button', { name: /^(?!Dùng ).*Quốc lộ 14/ })).toBeInTheDocument());

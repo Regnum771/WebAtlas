@@ -16,7 +16,7 @@ export interface LoginModalViewProps {
 export function LoginModalView(props: LoginModalViewProps) {
   const { open, email, password, loading, error, onEmail, onPassword, onSubmit, onClose } = props;
   return (
-    <Dialog open={open} title="Admin login" onClose={onClose}>
+    <Dialog open={open} title="Đăng nhập" onClose={onClose}>
       <form
         className="login-form"
         onSubmit={(e) => { e.preventDefault(); onSubmit(); }}

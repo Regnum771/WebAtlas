@@ -51,7 +51,8 @@ export function SearchBoxView({ query, results, loading, onQuery, onSelect, rend
       <input
         type="text"
         className="search-input"
-        placeholder="Tìm kiếm đối tượng…"
+        placeholder="Tìm địa danh, hồ, sông"
+        aria-label="Tìm kiếm"
         value={query}
         onChange={(e) => onQuery(e.target.value)}
         onBlur={() => setDismissed(true)}

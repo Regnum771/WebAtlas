@@ -13,7 +13,7 @@ vi.mock('../../entities/session/model/session.store', () => ({
     logout,
   }),
 }));
-vi.mock('../../features/auth', () => ({ default: () => <div>AUTH_WIDGET</div> }));
+vi.mock('../../features/auth', () => ({ default: () => <button type="button">Đăng nhập</button> }));
 vi.mock('../../features/search', () => ({ default: () => <div>SEARCH_WIDGET</div> }));
 
 import TopBar from './index';
@@ -23,43 +23,23 @@ beforeEach(() => { mockUser = null; logout.mockClear(); resetShell(); });
 const renderBar = () => render(<MemoryRouter><TopBar /></MemoryRouter>);
 
 describe('TopBar', () => {
-  it('shows the brand always', () => {
+  it('an anonymous visitor sees Đăng nhập and no Trợ lý', () => {
     renderBar();
-    expect(screen.getByText('WebATLAS')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'WebATLAS' })).toBeInTheDocument();
+    expect(screen.getByText('SEARCH_WIDGET')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Đăng nhập' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Trợ lý' })).toBeNull();
   });
 
-  it('anonymous sees the auth widget (login), not a profile', () => {
-    renderBar();
-    expect(screen.getByText('AUTH_WIDGET')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /log out/i })).not.toBeInTheDocument();
-  });
-
-  it('an authenticated admin sees the profile with Manage users', () => {
+  it('a signed-in user sees Trợ lý and the account menu, and no Đăng nhập', async () => {
     mockUser = { id: '1', email: 'admin@b.test', full_name: 'A', role: 'admin' };
     renderBar();
-    expect(screen.getByText('admin@b.test')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /manage users/i })).toBeInTheDocument();
-  });
-
-  it('an authenticated viewer sees the profile without Manage users', () => {
-    mockUser = { id: '2', email: 'v@b.test', full_name: 'V', role: 'viewer' };
-    renderBar();
-    expect(screen.getByText('v@b.test')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /manage users/i })).not.toBeInTheDocument();
-  });
-
-  it('an anonymous visitor has no assistant button', () => {
-    renderBar();
-    expect(screen.queryByRole('button', { name: 'Trợ lý' })).not.toBeInTheDocument();
-  });
-
-  it('a signed-in user can toggle the assistant from the top bar', async () => {
-    mockUser = { id: '2', email: 'v@b.test', full_name: 'V', role: 'viewer' };
-    renderBar();
-    const button = screen.getByRole('button', { name: 'Trợ lý' });
-    expect(button).toHaveAttribute('aria-pressed', 'false');
-    await userEvent.setup().click(button);
+    expect(screen.queryByRole('button', { name: 'Đăng nhập' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Quản trị viên' })).toBeInTheDocument();
+    const assistant = screen.getByRole('button', { name: 'Trợ lý' });
+    expect(assistant).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.setup().click(assistant);
     expect(getShell().assistantOpen).toBe(true);
-    expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(assistant).toHaveAttribute('aria-pressed', 'true');
   });
 });

@@ -476,3 +476,128 @@
     z-index: 50;
   }
 }
+
+/* Top bar: wordmark, navigation, search, assistant, account. */
+.top-bar {
+  grid-column: 1 / -1;
+  position: relative;
+  z-index: 100;
+  height: var(--topbar-height);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 16px;
+  background: var(--green);
+  color: var(--on-green);
+}
+
+.wordmark {
+  color: var(--on-green);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.top-nav {
+  display: flex;
+  align-self: stretch;
+  gap: 18px;
+}
+
+.top-nav-link {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  color: var(--on-green-2);
+  font-size: var(--text-md);
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+}
+
+.top-nav-link[aria-current="page"] {
+  color: var(--on-green);
+  font-weight: 650;
+  border-bottom-color: var(--on-green);
+}
+
+.top-bar-search {
+  margin-left: auto;
+  width: 270px;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+/* Buttons on the green bar: white outline, white text; pressed is a white fill. */
+.btn.on-green {
+  background: transparent;
+  border-color: var(--on-green);
+  color: var(--on-green);
+}
+
+.btn.on-green[aria-pressed="true"] {
+  background: var(--on-green);
+  color: var(--green);
+}
+
+.account {
+  position: relative;
+}
+
+.account-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--on-green);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--on-green);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 110;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: 280px;
+  padding: var(--space-2);
+  color: var(--ink);
+  font-size: var(--text-md);
+}
+
+.account-email {
+  padding: var(--space-2) var(--space-3);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-item {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.account-item:hover {
+  background: var(--paper);
+}

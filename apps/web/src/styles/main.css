@@ -194,17 +194,8 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Search (features/search) — lives inside .top-bar now, not floating over the
-   map, so it needs no standalone top/left offset. .top-bar-search sizes the
-   flex slot between the brand and the profile/auth widget; .search-box just
-   fills it and anchors the results dropdown. */
-.top-bar-search {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 360px;
-  margin: 0 var(--space-3);
-}
-
+/* Search (features/search) — lives inside the top bar; .search-box fills the
+   slot (.top-bar-search, styled in shell.css) and anchors the results dropdown. */
 .search-box {
   position: relative;
   width: 100%;
@@ -626,10 +617,7 @@ body {
   color: #dc2626;
 }
 
-.admin-login-btn, .user-badge, .user-badge-logout, .login-form button { cursor: pointer; }
-.admin-login-btn, .user-badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: none; border-radius: 8px; }
-.user-badge { flex-direction: row; }
-.user-badge-logout { display: inline-flex; align-items: center; gap: 6px; border: none; background: transparent; }
+.login-form button { cursor: pointer; }
 .login-form { display: flex; flex-direction: column; gap: 8px; }
 .login-form input { padding: 8px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.2); }
 .login-error { color: #c0392b; margin: 0; }
@@ -652,22 +640,6 @@ body {
 .edit-delete-btn { background: #fee2e2; color: #b91c1c; }
 
 /* Shell layout restructure: left = doing, right = seeing */
-.top-bar {
-  grid-column: 1 / -1; position: relative; height: var(--topbar-height);
-  z-index: 100; display: flex; align-items: center; justify-content: space-between;
-  padding: 0 12px; border-radius: 0;
-  background: var(--chrome-bg); color: var(--chrome-fg);
-}
-.top-bar-brand { font-weight: 700; letter-spacing: 0.02em; }
-.top-bar-right, .top-bar-profile { display: flex; align-items: center; gap: 12px; }
-.top-bar-email { opacity: 0.75; font-size: 13px; }
-.top-bar-link, .top-bar-logout {
-  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px;
-  border: none; background: transparent; border-radius: 8px; cursor: pointer;
-  font: inherit; color: inherit; text-decoration: none;
-}
-.top-bar-link:hover, .top-bar-logout:hover { background: rgba(56, 189, 248, 0.18); }
-
 /* Admin route: full-screen over a live map */
 .admin-users-route {
   position: absolute; top: var(--topbar-height); left: 0; right: 0; bottom: 0;
@@ -866,7 +838,6 @@ body {
 .profile-chart-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted, #6b7280); }
 
 /* Print / export the map */
-.top-bar-print { display: inline-flex; align-items: center; color: inherit; padding: 6px; border-radius: 6px; margin-right: 8px; }
 /* Full-screen print sheet: must outrank the top bar, since the map and its chrome
    stay mounted underneath (see App.tsx). */
 .print-route { position: fixed; inset: 0; z-index: 1500; background: #e5e7eb; overflow: auto; display: flex; gap: 16px; padding: 16px; align-items: flex-start; }

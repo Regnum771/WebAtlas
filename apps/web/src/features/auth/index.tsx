@@ -1,25 +1,15 @@
 import { useState } from 'react';
-import { LogIn } from 'lucide-react';
-import { useSession } from '../../entities/session/model/session.store';
+import { Button } from '../../shared/ui/Button';
 import { useLoginPresenter } from './model/useLoginPresenter';
 import { LoginModalView } from './ui/LoginModal.view';
-import { UserBadgeView } from './ui/UserBadge.view';
 
 export default function AuthWidget() {
-  const { status, currentUser, logout } = useSession();
   const [open, setOpen] = useState(false);
   const presenter = useLoginPresenter(() => setOpen(false));
 
-  if (status === 'authenticated' && currentUser) {
-    return <UserBadgeView email={currentUser.email} onLogout={logout} />;
-  }
-
   return (
     <>
-      <button type="button" className="admin-login-btn glass-panel" onClick={() => setOpen(true)}>
-        <LogIn size={16} />
-        <span>Admin login</span>
-      </button>
+      <Button className="on-green" onClick={() => setOpen(true)}>Đăng nhập</Button>
       <LoginModalView
         open={open}
         email={presenter.email}

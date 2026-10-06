@@ -11,7 +11,8 @@ const hits = [
 describe('SearchBoxView', () => {
   it('renders the input with its placeholder', () => {
     render(<SearchBoxView query="" results={[]} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
-    expect(screen.getByPlaceholderText('Tìm kiếm đối tượng…')).toBeInTheDocument();
+    const input = screen.getByRole('textbox', { name: 'Tìm kiếm' });
+    expect(input).toHaveAttribute('placeholder', 'Tìm địa danh, hồ, sông');
   });
 
   it('renders each result name', () => {
@@ -66,7 +67,7 @@ describe('SearchBoxView', () => {
   it('forwards typing to onQuery', async () => {
     const onQuery = vi.fn();
     render(<SearchBoxView query="" results={[]} loading={false} onQuery={onQuery} onSelect={vi.fn()} />);
-    await userEvent.type(screen.getByPlaceholderText('Tìm kiếm đối tượng…'), 'h');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Tìm kiếm' }), 'h');
     expect(onQuery).toHaveBeenCalledWith('h');
   });
 
@@ -74,7 +75,7 @@ describe('SearchBoxView', () => {
     render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Hồ Lắk' })).toBeInTheDocument();
 
-    fireEvent.blur(screen.getByPlaceholderText('Tìm kiếm đối tượng…'));
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Tìm kiếm' }));
 
     expect(screen.queryByRole('button', { name: 'Hồ Lắk' })).not.toBeInTheDocument();
   });
@@ -83,7 +84,7 @@ describe('SearchBoxView', () => {
     render(<SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Hồ Lắk' })).toBeInTheDocument();
 
-    fireEvent.keyDown(screen.getByPlaceholderText('Tìm kiếm đối tượng…'), { key: 'Escape' });
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Tìm kiếm' }), { key: 'Escape' });
 
     expect(screen.queryByRole('button', { name: 'Hồ Lắk' })).not.toBeInTheDocument();
   });
@@ -92,7 +93,7 @@ describe('SearchBoxView', () => {
     const { rerender } = render(
       <SearchBoxView query="th" results={hits} loading={false} onQuery={vi.fn()} onSelect={vi.fn()} />
     );
-    fireEvent.blur(screen.getByPlaceholderText('Tìm kiếm đối tượng…'));
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Tìm kiếm' }));
     expect(screen.queryByRole('button', { name: 'Hồ Lắk' })).not.toBeInTheDocument();
 
     const moreHits = [...hits, { layerKey: 'rivers' as const, featureId: 'r1', name: 'Sông Thu Bồn', source: 'layer' as const, lonLat: [108.3, 15.8] as [number, number] }];
