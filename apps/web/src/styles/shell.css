@@ -63,6 +63,11 @@
 }
 
 .map-stage {
+  /* Width of the scale control's column (slider and readout), fixed rather than
+     content-sized so the tool dock can reserve it: the longest readout,
+     "1:12.800.000" at weight 650 with tabular figures, measures 81.2px in Chrome,
+     plus 16px padding and 2px border = 99.2px, rounded up. */
+  --scale-column: 100px;
   position: relative;
   flex: 1;
   min-height: 0;
@@ -130,9 +135,9 @@
    just under them; one menu is open at a time. .tool-dock is one column holding
    the buttons and then the menus, so an open menu follows however many rows the
    buttons wrap onto.
-   Width: the scale slider is 34px wide at right: 12px, so the column keeps
-   12 (left) + 12 + 34 + 12 (slider column) + 12 (gap) = 82px of the stage free
-   and the buttons wrap before they can reach the slider.
+   Width: the column keeps 12px (its left), the scale control's column and 24px
+   (that column's right gutter and a gap) of the stage free, so neither the
+   buttons, which wrap, nor a menu can reach the slider or the readout.
    Height: 12px above, and 56px kept clear at the bottom of the stage for the
    scale bar and the coordinate readouts; the open menu scrolls inside that.
    The column itself takes no pointer events (it would cover map between its
@@ -146,7 +151,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
-  max-width: calc(100% - 82px);
+  max-width: calc(100% - 12px - var(--scale-column) - 24px);
   max-height: calc(100% - 68px);
   pointer-events: none;
 }
@@ -194,8 +199,7 @@
 /* Its height is bounded by .tool-dock; min-height: 0 lets it shrink and scroll. */
 .tool-menu {
   z-index: 20;
-  width: 320px;
-  max-width: 100%;
+  width: min(320px, 100%);
   flex: 0 1 auto;
   min-height: 0;
   overflow: auto;
@@ -328,14 +332,16 @@
   font: inherit;
 }
 
+/* One fixed-width column: the slider centred in it, the readout filling it. */
 .scale-control {
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 10;
+  width: var(--scale-column);
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: 6px;
 }
 
@@ -437,6 +443,7 @@
 }
 
 .scale-readout {
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
