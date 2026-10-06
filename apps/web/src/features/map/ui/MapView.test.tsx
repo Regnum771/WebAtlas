@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 
 const setBusy = vi.fn();
@@ -37,47 +37,49 @@ vi.mock('../model/MapModel', () => ({
 
 import MapView from './MapView';
 
-describe('MapView flyout inset', () => {
+describe('MapView', () => {
   beforeEach(() => {
     updateSize.mockClear();
     init.mockClear();
     setLoadingListener.mockClear();
     setBusy.mockClear();
   });
+  afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('adds the flyout-open modifier class when a flyout is open', () => {
-    const { container } = render(<MapView flyoutOpen />);
-    expect(container.querySelector('.map-container')?.className).toContain('flyout-open');
-  });
-
-  it('does not add the flyout-open modifier class when no flyout is open', () => {
-    const { container } = render(<MapView flyoutOpen={false} />);
-    expect(container.querySelector('.map-container')?.className).not.toContain('flyout-open');
-  });
-
-  it('calls model.updateSize() once the container finishes its inset transition', () => {
-    const { container } = render(<MapView flyoutOpen={false} />);
-    updateSize.mockClear(); // drop any call made at mount
-    const el = container.querySelector('.map-container')!;
-    act(() => {
-      el.dispatchEvent(new Event('transitionend', { bubbles: true }));
-    });
-    expect(updateSize).toHaveBeenCalled();
-  });
-
-  it('calls model.updateSize() on a flyoutOpen change even without a transitionend event (no-motion fallback)', () => {
-    const { container, rerender } = render(<MapView flyoutOpen={false} />);
+  it('tells OpenLayers when its own box changes size', () => {
+    let fire: () => void = () => {};
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    vi.stubGlobal('ResizeObserver', vi.fn().mockImplementation((cb: () => void) => {
+      fire = cb;
+      return { observe, disconnect, unobserve: vi.fn() };
+    }));
+    const { container, unmount } = render(<MapView />);
+    expect(observe).toHaveBeenCalledWith(container.querySelector('.map-container'));
     updateSize.mockClear();
-    rerender(<MapView flyoutOpen={true} />);
-    expect(container.querySelector('.map-container')).toBeTruthy();
-    expect(updateSize).toHaveBeenCalled();
+    act(() => { fire(); });
+    expect(updateSize).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(disconnect).toHaveBeenCalled();
+  });
+
+  it('mounts where ResizeObserver does not exist', () => {
+    vi.stubGlobal('ResizeObserver', undefined);
+    const { unmount } = render(<MapView />);
+    updateSize.mockClear();
+    act(() => { window.dispatchEvent(new Event('resize')); });
+    expect(updateSize).toHaveBeenCalledTimes(1);
+    unmount();
+    updateSize.mockClear();
+    window.dispatchEvent(new Event('resize'));
+    expect(updateSize).not.toHaveBeenCalled();
   });
 
   it('registers setBusy (from MapProvider) as the model load-tracking listener on mount', () => {
-    render(<MapView flyoutOpen={false} />);
-    // Không có assertion này, xoá dòng model.setLoadingListener(setBusy) trong
-    // MapView.tsx sẽ không làm hỏng test nào — thanh báo tải sẽ câm lặng vĩnh
-    // viễn mà không ai biết (xem finding review round 1).
+    render(<MapView />);
+    // Without this assertion, deleting model.setLoadingListener(setBusy) in
+    // MapView.tsx would break no test and the loading bar would stay silent
+    // for good (see review round 1 finding).
     expect(setLoadingListener).toHaveBeenCalledTimes(1);
     expect(setLoadingListener).toHaveBeenCalledWith(setBusy);
   });

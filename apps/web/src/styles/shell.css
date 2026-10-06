@@ -1,1 +1,134 @@
-/* Shell layout styles (top bar, panels) are added in later tasks. */
+/* The app frame: one grid of top bar, docked panel, map column and optional
+   assistant column.
+
+   z-index scale, shared by every layer of the interface:
+     10   floats in the map stage (toolbar, loading bar)
+     20   open tool menu
+     30   toast host
+     40   feature popup
+     90   routed page
+     100  top bar
+     110  search results
+     200  dialog
+   .app-shell and .map-stage must NOT create a stacking context (no z-index,
+   transform, filter, isolation or contain): routed pages and the feature popup
+   are their siblings and stack against their children by this scale. */
+
+.app-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: var(--topbar-height) minmax(0, 1fr);
+  grid-template-columns: var(--panel-width) minmax(0, 1fr);
+}
+
+.app-shell.with-assistant {
+  grid-template-columns: var(--panel-width) minmax(0, 1fr) var(--assistant-width);
+}
+
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--sheet);
+  color: var(--ink);
+  border-right: 1px solid var(--ink);
+  font-stretch: 92%;
+}
+
+.side-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.side-panel-rule {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 0;
+}
+
+.side-panel-footer {
+  flex: none;
+  padding: 10px 14px;
+  border-top: 1px solid var(--rule);
+}
+
+.map-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.map-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.connection-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--sheet);
+  color: var(--ink);
+  border-bottom: 2px solid var(--ink);
+  font-size: var(--text-sm);
+}
+
+.toast-host {
+  position: absolute;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 70px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.assistant-dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--sheet);
+  color: var(--ink);
+  border-left: 1px solid var(--ink);
+}
+
+.assistant-dock-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+@media (max-width: 1099px) {
+  /* Too narrow for three columns: the assistant floats over the map's right edge. */
+  .app-shell.with-assistant {
+    grid-template-columns: var(--panel-width) minmax(0, 1fr);
+  }
+  .assistant-dock {
+    position: absolute;
+    top: var(--topbar-height);
+    right: 0;
+    bottom: 0;
+    width: min(var(--assistant-width), calc(100vw - var(--panel-width)));
+    z-index: 50;
+  }
+}

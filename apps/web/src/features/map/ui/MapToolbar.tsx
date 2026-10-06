@@ -14,8 +14,6 @@ const BASEMAP_OPTIONS: { id: BasemapName; label: string; icon: React.ReactNode }
 ];
 
 export interface MapToolbarViewProps {
-  /** The rail flyout is open, so the pill must re-centre over the narrower map area. */
-  flyoutOpen: boolean;
   /** Index into ZOOM_STOPS — where the handle sits. */
   stopIndex: number;
   onStopChange: (index: number) => void;
@@ -42,7 +40,6 @@ export interface MapToolbarViewProps {
  * callbacks into typed `MapCommand`s.
  */
 export function MapToolbarView({
-  flyoutOpen,
   stopIndex,
   onStopChange,
   zoom,
@@ -64,7 +61,7 @@ export function MapToolbarView({
   const isMaxZoom = zoom >= MAX_ZOOM - 0.05;
 
   return (
-    <div className={`map-toolbar${flyoutOpen ? ' flyout-open' : ''}`}>
+    <div className="map-toolbar">
       {measureValue && <div className="measure-result glass-panel">{measureValue}</div>}
 
       {analysisPanel}
@@ -188,13 +185,11 @@ export function MapToolbarView({
  * `createCommandExecutor`, never called directly.
  */
 export default function MapToolbar({
-  flyoutOpen,
   analysisButtons,
   analysisPanel,
   roiChip,
   drawButtons,
 }: {
-  flyoutOpen: boolean;
   analysisButtons?: ReactNode;
   analysisPanel?: ReactNode;
   roiChip?: ReactNode;
@@ -246,7 +241,6 @@ export default function MapToolbar({
 
   return (
     <MapToolbarView
-      flyoutOpen={flyoutOpen}
       stopIndex={stopIndex}
       onStopChange={onStopChange}
       zoom={zoom}

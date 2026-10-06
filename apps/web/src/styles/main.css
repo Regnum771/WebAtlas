@@ -24,24 +24,12 @@ body {
   height: 100vh;
 }
 
-/* Docked, not overlaid: the rail (always) and the flyout (when open) push the
-   map's own box inward rather than sitting over it — see IconRail/.rail-flyout
-   below. transition matches JS: MapView listens for transitionend on this
-   element and calls MapModel#updateSize() once it fires (OL caches viewport
-   size and does not observe container resizes on its own). */
+/* Fills .map-stage (position: relative, see shell.css). OpenLayers caches its
+   viewport size; MapView watches this box with a ResizeObserver. */
 .map-container {
   position: absolute;
-  top: 0;
-  left: var(--rail-width);
-  width: calc(100% - var(--rail-width));
-  height: 100%;
+  inset: 0;
   z-index: 0;
-  transition: left 200ms ease, width 200ms ease;
-}
-
-.map-container.flyout-open {
-  left: calc(var(--rail-width) + var(--flyout-width));
-  width: calc(100% - var(--rail-width) - var(--flyout-width));
 }
 
 /* Custom styling for high-resolution green terrain hillshade basemap */
@@ -100,15 +88,13 @@ body {
    Positioned BELOW .ogc-trigger-btn (top: topbar+space-3, 40px circle) with its
    own space-3 gap, so the rail's top edge never overlaps that button regardless
    of viewport width — both are anchored to the same `right` offset. */
-/* Bottom-centred floating pill over the map area. MapToolbar is a sibling of
-   .map-container, not a child, so it repeats that element's left/width maths
-   (including the flyout offset and its transition) rather than inheriting it. */
+/* Bottom-centred floating pill over the map stage. */
 .map-toolbar {
   position: absolute;
   bottom: var(--space-3);
-  left: var(--rail-width);
-  width: calc(100% - var(--rail-width));
-  z-index: 20;
+  left: 0;
+  width: 100%;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -116,36 +102,23 @@ body {
   /* The strip spans the map so its contents can centre; only the panels inside
      may take pointer events, or it would swallow clicks on the map. */
   pointer-events: none;
-  transition: left 200ms ease, width 200ms ease;
-}
-
-.map-toolbar.flyout-open {
-  left: calc(var(--rail-width) + var(--flyout-width));
-  width: calc(100% - var(--rail-width) - var(--flyout-width));
 }
 
 .map-toolbar > * {
   pointer-events: auto;
 }
 
-/* Thanh báo tải: bám cạnh trên vùng bản đồ, lặp lại phép tính left/width của
-   .map-container giống .map-toolbar để dịch cùng nhịp khi bảng trượt đóng mở. */
+/* Loading bar: hugs the top edge of the map stage. */
 .map-loading-bar {
   position: absolute;
-  top: var(--topbar-height);
-  left: var(--rail-width);
-  width: calc(100% - var(--rail-width));
+  top: 0;
+  left: 0;
+  width: 100%;
   height: 3px;
-  z-index: 30;
+  z-index: 10;
   overflow: hidden;
   pointer-events: none;
   background: transparent;
-  transition: left 200ms ease, width 200ms ease;
-}
-
-.map-loading-bar.flyout-open {
-  left: calc(var(--rail-width) + var(--flyout-width));
-  width: calc(100% - var(--rail-width) - var(--flyout-width));
 }
 
 .map-loading-bar-fill {
@@ -431,6 +404,7 @@ body {
 /* Dynamic Popup */
 .dynamic-popup {
   position: absolute;
+  z-index: 40;
   width: 260px;
   padding: 16px;
   transform: translate(0, -100%);
@@ -864,8 +838,8 @@ body {
 
 /* Shell layout restructure: left = doing, right = seeing */
 .top-bar {
-  position: absolute; top: 0; left: 0; right: 0; height: var(--topbar-height);
-  z-index: 1200; display: flex; align-items: center; justify-content: space-between;
+  grid-column: 1 / -1; position: relative; height: var(--topbar-height);
+  z-index: 100; display: flex; align-items: center; justify-content: space-between;
   padding: 0 12px; border-radius: 0;
   background: var(--chrome-bg); color: var(--chrome-fg);
 }
@@ -886,11 +860,7 @@ body {
   width: 40px; height: 40px; border: none; cursor: pointer; border-radius: 10px;
 }
 .edit-drawer {
-  /* left starts past the icon rail (var(--rail-width)) so the rail's opaque
-     strip does not clip the drawer's own header/content when both are open —
-     see the .icon-rail comment below for why the rail now outranks this
-     z-index. */
-  position: absolute; top: 64px; bottom: 12px; left: calc(var(--rail-width) + 12px);
+  position: absolute; top: 64px; bottom: 12px; left: 12px;
   width: 360px; max-width: 88vw;
   z-index: 1101; display: flex; flex-direction: column; overflow: hidden;
 }
@@ -905,43 +875,12 @@ body {
 /* Admin route: full-screen over a live map */
 .admin-users-route {
   position: absolute; top: var(--topbar-height); left: 0; right: 0; bottom: 0;
-  z-index: 1500; overflow: auto; padding: 24px;
+  z-index: 90; overflow: auto; padding: 24px;
   background: rgba(248, 250, 252, 0.97);
 }
 .user-mgmt-back {
   margin-top: 16px; padding: 8px 14px; border: none; border-radius: 8px;
   cursor: pointer; font: inherit;
-}
-
-/* Icon rail + docked flyout: replaces the floating panels-wrapper.
-   z-index sits ABOVE .edit-drawer (1101): the drawer (left: 12px, width: 360px)
-   spans the same x-range as the rail (0-48px) and flyout (48-368px), so at the
-   old z-index (19/20) an open drawer made the rail completely unreachable —
-   an editor/admin could never get to Lớp dữ liệu / Chú giải. Raising the rail
-   above the drawer trades that for the flyout covering the drawer's content
-   while both are open; toggling the rail item again (or closing the drawer)
-   clears it. See features/shell/model/useRail.ts — unifying the drawer into
-   the rail (RailItemId already has 'edit') is a larger change, out of scope. */
-.icon-rail {
-  position: absolute; top: var(--topbar-height); left: 0; bottom: 0;
-  width: var(--rail-width);
-  background: var(--chrome-bg); color: var(--chrome-fg);
-  display: flex; flex-direction: column; gap: var(--space-2);
-  padding-top: var(--space-2); z-index: 1102;
-}
-.icon-rail-btn {
-  width: 100%; height: var(--rail-width);
-  background: transparent; border: none; color: var(--chrome-fg-muted);
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-}
-.icon-rail-btn:hover { background: var(--chrome-bg-hover); color: var(--chrome-fg); }
-.icon-rail-btn.active { background: var(--surface); color: var(--chrome-bg); }
-
-.rail-flyout {
-  position: absolute; top: var(--topbar-height); left: var(--rail-width); bottom: 0;
-  width: var(--flyout-width);
-  background: var(--surface); border-right: 1px solid var(--border);
-  overflow-y: auto; z-index: 1102;
 }
 
 /* Layers panel: real-catalog replacement for the legacy LayerTree */
@@ -1141,10 +1080,8 @@ body {
 
 /* In / Xuất bản đồ */
 .top-bar-print { display: inline-flex; align-items: center; color: inherit; padding: 6px; border-radius: 6px; margin-right: 8px; }
-/* 1500 matches .admin-users-route: must outrank .top-bar (1200), .icon-rail/
-   .rail-flyout (1102) and .edit-drawer (1101/1300) — the map and its chrome
-   stay mounted underneath (see App.tsx), so a lower z-index left the layers
-   panel and top bar visible on top of the print sheet. */
+/* Full-screen print sheet: must outrank the top bar and the edit drawer, since the
+   map and its chrome stay mounted underneath (see App.tsx). */
 .print-route { position: fixed; inset: 0; z-index: 1500; background: #e5e7eb; overflow: auto; display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
 .print-controls { width: 260px; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 12px; }
 .print-toggle { display: flex; gap: 6px; align-items: center; }

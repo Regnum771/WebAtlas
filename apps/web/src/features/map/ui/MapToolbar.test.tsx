@@ -14,7 +14,6 @@ const baseProps = {
   onReset: vi.fn(),
   onMeasure: vi.fn(),
   onBasemap: vi.fn(),
-  flyoutOpen: false,
   stopIndex: 0,
   onStopChange: vi.fn(),
 };
@@ -40,16 +39,6 @@ describe('MapToolbarView', () => {
   it('marks the active measure tool as pressed', () => {
     render(<MapToolbarView {...baseProps} measureMode="area" />);
     expect(screen.getByRole('button', { name: /Đo diện tích/ })).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  it('lays out as a bottom pill that clears the flyout when one is open', () => {
-    const { container, rerender } = render(<MapToolbarView {...baseProps} flyoutOpen={false} />);
-    const bar = container.querySelector('.map-toolbar');
-    expect(bar).not.toBeNull();
-    expect(bar).not.toHaveClass('flyout-open');
-
-    rerender(<MapToolbarView {...baseProps} flyoutOpen />);
-    expect(container.querySelector('.map-toolbar')).toHaveClass('flyout-open');
   });
 
   it('still reports every existing action after the layout change', async () => {
