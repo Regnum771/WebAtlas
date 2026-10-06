@@ -1,20 +1,27 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import TopBar from '../widgets/top-bar';
 import MapView from '../features/map/ui/MapView';
 import MapLoadingBar from '../features/map/ui/MapLoadingBar';
 import ScaleSlider from '../features/map/ui/ScaleSlider';
-import MapToolbar from '../features/map/ui/MapToolbar';
+import { ToolGroupView, type ToolDef } from '../features/map/ui/ToolGroup.view';
+import MeasureTool from '../features/map/ui/MeasureTool';
+import BasemapTool from '../features/map/ui/BasemapTool';
+import AddData from '../features/add-data';
+import FeatureEditing from '../features/feature-editing';
 import LayersPanel from '../features/layers-panel';
 import Legend from '../features/legend';
 import Assistant from '../features/assistant';
 import RoiChip from '../features/roi/ui/RoiChip';
 import RoiDrawButtons from '../features/roi/ui/RoiDrawButtons';
+import { stopDrawing, useRoi } from '../features/roi/model/roi.store';
 import { useAnalysisTools } from '../features/analysis';
 import { AppShellView } from '../features/shell/ui/AppShell.view';
 import { SidePanelView } from '../features/shell/ui/SidePanel.view';
 import { AssistantDockView } from '../features/shell/ui/AssistantDock.view';
-import { closeAssistant, useShell } from '../features/shell/model/shell.store';
+import {
+  closeAssistant, closeTool, getShell, openTool, toggleTool, useShell, type ToolId,
+} from '../features/shell/model/shell.store';
 import { useSession } from '../entities/session/model/session.store';
 import { primeAdminUnits } from '../entities/admin-unit/adminUnits.store';
 import { ConnectionStrip } from '../shared/ui/ConnectionStrip';
@@ -22,9 +29,11 @@ import { ToastHost } from '../shared/ui/ToastHost';
 
 /** The map page: one grid holding the top bar, the docked panel, the map stage and the assistant. */
 export default function MapScreen() {
-  const { status } = useSession();
-  const { assistantOpen } = useShell();
+  const { status, currentUser } = useSession();
+  const { assistantOpen, tool } = useShell();
+  const roi = useRoi();
   const analysis = useAnalysisTools();
+  const isAdmin = currentUser?.role === 'admin';
 
   // Logging out hides the top bar's assistant button but would leave an
   // already-open dock behind. Only reacts to `status` leaving 'authenticated'.
@@ -32,11 +41,60 @@ export default function MapScreen() {
     if (status !== 'authenticated') closeAssistant();
   }, [status]);
 
+  // Biên tập is listed for admins only. A session that ends, or changes role, while
+  // its menu is open would otherwise leave the store pointing at a tool nobody can see.
+  useEffect(() => {
+    if (!isAdmin && getShell().tool === 'edit') closeTool();
+  }, [isAdmin, tool]);
+
+  // Closing Vùng phân tích cancels a drawing in progress; a finished region and any
+  // result stay. stopDrawing does nothing unless a drawing is under way.
+  useEffect(() => {
+    if (tool !== 'roi') stopDrawing();
+  }, [tool]);
+
+  // Any change to the region — a pick from search or a popup, a failed pick, a message —
+  // opens Vùng phân tích so its effect is seen. Compares with the previous state, so an
+  // idle store on first mount, or a region that merely still exists, opens nothing.
+  const seenRoi = useRef({ status: roi.status, error: roi.error, hint: roi.hint });
+  useEffect(() => {
+    const seen = seenRoi.current;
+    seenRoi.current = { status: roi.status, error: roi.error, hint: roi.hint };
+    const startedResolving = roi.status === 'resolving' && seen.status !== 'resolving';
+    const newError = roi.error !== null && roi.error !== seen.error;
+    const newHint = roi.hint !== null && roi.hint !== seen.hint;
+    if (startedResolving || newError || newHint) openTool('roi');
+  }, [roi.status, roi.error, roi.hint]);
+
   useEffect(() => { void primeAdminUnits(); }, []);
 
   // The assistant costs API tokens per message, so it is authenticated-only;
   // showing it to an anonymous visitor would only ever produce a 401.
   const dockOpen = status === 'authenticated' && assistantOpen;
+
+  // Every tool's content stays mounted while its menu is closed (see ToolGroupView):
+  // RoiChip keeps the map's ROI layer in step with the store, and the measure and
+  // analysis tools hold state that must outlive a closed menu.
+  const tools: (ToolDef & { id: ToolId })[] = [
+    { id: 'measure', label: 'Đo', content: <MeasureTool active={tool === 'measure'} /> },
+    {
+      id: 'roi',
+      label: 'Vùng phân tích',
+      on: roi.resolved !== null,
+      content: (
+        <>
+          <RoiChip />
+          <RoiDrawButtons />
+          {analysis.buttons}
+          {analysis.panel}
+        </>
+      ),
+    },
+    { id: 'add-data', label: 'Thêm dữ liệu', content: <AddData /> },
+    { id: 'basemap', label: 'Nền bản đồ', content: <BasemapTool /> },
+  ];
+  // UX only: FeatureEditing keeps its own RequireRole gate and the backend enforces every write.
+  if (isAdmin) tools.push({ id: 'edit', label: 'Biên tập', content: <FeatureEditing /> });
 
   return (
     <AppShellView
@@ -55,7 +113,12 @@ export default function MapScreen() {
               /admin/users overlays a live map instead of unmounting it. */}
           <MapView />
           <MapLoadingBar />
-          <MapToolbar analysisButtons={analysis.buttons} analysisPanel={analysis.panel} roiChip={<RoiChip />} drawButtons={<RoiDrawButtons />} />
+          <ToolGroupView
+            tools={tools}
+            open={tool}
+            onToggle={(id) => toggleTool(id as ToolId)}
+            onClose={closeTool}
+          />
           <ScaleSlider />
           <ToastHost />
         </>

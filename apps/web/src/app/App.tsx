@@ -1,11 +1,9 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AppProviders } from './providers/AppProviders';
-import Shell from '../features/shell';
 import AdminUsersRoute from '../pages/admin-users';
 import PrintRoute from '../pages/print';
 import MapScreen from './MapScreen';
 import DynamicPopup from '../components/DynamicPopup';
-import OGCClient from '../components/OGCClient';
 import ProposedEdit from '../features/feature-editing/ProposedEdit';
 import '../styles/main.css';
 
@@ -18,11 +16,6 @@ function App() {
               inside one: navigating to /admin/users overlays a live map instead
               of unmounting it, so center/zoom/layer state survives navigation. */}
           <MapScreen />
-
-          {/* Left: doing. Burger drawer with the editing tools (admin only). */}
-          <Shell />
-
-          <OGCClient />
 
           <DynamicPopup />
 

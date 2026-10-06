@@ -2,8 +2,8 @@ import { useMemo } from 'react';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { createCommandExecutor } from './mapCommands';
 
-/** The command executor wired to the live map — the same wiring MapToolbar and
- *  features/analysis build by hand, in one place for the new ROI components. */
+/** The command executor wired to the live map, in one place for every component
+ *  that issues map commands (the basemap tool, the ROI components, analysis). */
 export function useMapCommands() {
   const { map, setBasemap, toggleLayerVisibility, setLayerOpacity, layersState } = useMapContext();
   return useMemo(

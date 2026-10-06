@@ -1,4 +1,6 @@
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
+import { Button } from '../../../shared/ui/Button';
+import { Message } from '../../../shared/ui/Message';
 import type { RoiTool } from '../../roi/model/toolAvailability';
 import { ANALYSIS_TOOL_LABELS, type AnalysisParams } from '../model/tools';
 import type { AnalysisStatus } from '../model/useAnalysis';
@@ -31,7 +33,7 @@ export interface AnalysisParamsViewProps {
 export function AnalysisParamsView({ tool, roiLabel, params, status, error, onParams, onRun, onCancel }: AnalysisParamsViewProps) {
   const busy = status === 'running';
   return (
-    <section className="analysis-card glass-panel" aria-label={ANALYSIS_TOOL_LABELS[tool]}>
+    <section className="analysis-card" aria-label={ANALYSIS_TOOL_LABELS[tool]}>
       <h3 className="analysis-card-title">{ANALYSIS_TOOL_LABELS[tool]}</h3>
       {roiLabel && <p className="analysis-note">Vùng phân tích: {roiLabel}</p>}
       <p className="analysis-note">{HINT[tool]}</p>
@@ -68,12 +70,15 @@ export function AnalysisParamsView({ tool, roiLabel, params, status, error, onPa
         </label>
       )}
 
-      {error && <p className="edit-form-error" role="alert">{error}</p>}
+      {error && <Message tone="error" title={error} />}
       <div className="analysis-actions">
-        <button type="button" onClick={onRun} disabled={busy || (tool === 'select_within' && params.layerKeys.length === 0)}>
-          {busy ? 'Đang tính…' : 'Chạy'}
-        </button>
-        <button type="button" onClick={onCancel}>Huỷ</button>
+        <Button
+          variant="solid" size="sm" busy={busy} busyLabel="Đang tính" onClick={onRun}
+          disabled={tool === 'select_within' && params.layerKeys.length === 0}
+        >
+          Chạy
+        </Button>
+        <Button variant="quiet" size="sm" onClick={onCancel}>Huỷ</Button>
       </div>
     </section>
   );

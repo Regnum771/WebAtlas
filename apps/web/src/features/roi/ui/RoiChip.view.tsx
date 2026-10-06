@@ -1,5 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
+import { CircleAlert } from 'lucide-react';
 import { ROI_MAX_RADIUS_KM, type Roi } from '@webatlas/shared';
+import { Spinner } from '../../../shared/ui/Spinner';
 import { KIND_LABELS, formatMeasure } from '../model/format';
 import type { RoiDrawKind, RoiState } from '../model/roi.store';
 
@@ -26,7 +28,7 @@ export interface RoiChipViewProps {
   onDismiss: () => void;
 }
 
-/** The ROI chip above the toolbar: its five states (U-3) and the radius editor (U-4). */
+/** The region status at the top of the Vùng phân tích menu: its five states (U-3) and the radius editor (U-4). */
 export function RoiChipView({ state, drawHint, liveMeasure, onRadius, onClear, onDismiss }: RoiChipViewProps) {
   const [editing, setEditing] = useState(false);
   useEffect(() => { setEditing(false); }, [state.resolved]);
@@ -42,68 +44,73 @@ export function RoiChipView({ state, drawHint, liveMeasure, onRadius, onClear, o
   };
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') apply(Number(draft));
-    if (e.key === 'Escape') setEditing(false);
+    if (e.key === 'Escape') {
+      // Esc belongs to the editor here: it must not also close the menu around it.
+      e.stopPropagation();
+      setEditing(false);
+    }
   };
 
   let body;
   if (state.status === 'drawing' && state.drawKind) {
     body = (
       <>
-        <span className="roi-chip-muted">{drawHint ?? DRAW_HINTS[state.drawKind]}</span>
-        {liveMeasure && <span className="roi-chip-measure">{liveMeasure}</span>}
+        <span className="roi-status-muted">{drawHint ?? DRAW_HINTS[state.drawKind]}</span>
+        {liveMeasure && <span className="roi-status-measure">{liveMeasure}</span>}
       </>
     );
   } else if (state.status === 'resolving') {
-    body = (<><span className="roi-chip-spinner" aria-hidden="true" /><span className="roi-chip-muted">Đang xác định vùng…</span></>);
+    body = (<><Spinner /><span className="roi-status-muted">Đang xác định vùng…</span></>);
   } else if (!r) {
     body = (
-      <span className="roi-chip-muted">
+      <span className="roi-status-muted">
         Chưa có vùng phân tích — vẽ một hình, hoặc chọn một đối tượng trên bản đồ hay trong tìm kiếm
       </span>
     );
   } else if (editing) {
     body = (
       <>
-        <b className="roi-chip-label" title={r.label}>{r.label}</b>
-        <span className="roi-chip-muted">+</span>
+        <b className="roi-status-label" title={r.label}>{r.label}</b>
+        <span className="roi-status-muted">+</span>
         <input
           type="number" min={0.1} max={ROI_MAX_RADIUS_KM} step={0.1} value={draft} autoFocus
           aria-label="Bán kính (km)" onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey}
         />
-        <span className="roi-chip-muted">km</span>
+        <span className="roi-status-muted">km</span>
         {PRESETS.map((km) => (
-          <button key={km} type="button" aria-label={`${km} km`} onClick={() => apply(km)}>{km}</button>
+          <button key={km} type="button" className="link" aria-label={`${km} km`} onClick={() => apply(km)}>{km}</button>
         ))}
-        <button type="button" aria-label="Áp dụng bán kính" disabled={!validRadius(Number(draft))} onClick={() => apply(Number(draft))}>✓</button>
-        {current !== null && <button type="button" onClick={() => apply(null)}>Bỏ bán kính</button>}
+        <button type="button" className="link roi-status-glyph" aria-label="Áp dụng bán kính" disabled={!validRadius(Number(draft))} onClick={() => apply(Number(draft))}>✓</button>
+        {current !== null && <button type="button" className="link" onClick={() => apply(null)}>Bỏ bán kính</button>}
       </>
     );
   } else {
     const measure = formatMeasure(r.measure);
     body = (
       <>
-        <span className="roi-chip-muted">Vùng phân tích:</span>
-        <b className="roi-chip-label" title={r.label}>{r.label}</b>
-        <span className="roi-chip-measure">{`· ${KIND_LABELS[r.kind]}${measure ? ` · ${measure}` : ''}`}</span>
+        <span className="roi-status-muted">Vùng phân tích:</span>
+        <b className="roi-status-label" title={r.label}>{r.label}</b>
+        <span className="roi-status-measure">{`· ${KIND_LABELS[r.kind]}${measure ? ` · ${measure}` : ''}`}</span>
         {canRadius && (
-          <button type="button" onClick={() => { setDraft(String(current ?? 5)); setEditing(true); }}>
+          <button type="button" className="link" onClick={() => { setDraft(String(current ?? 5)); setEditing(true); }}>
             {current === null ? 'Bán kính' : `Bán kính: ${current} km`}
           </button>
         )}
-        <button type="button" aria-label="Bỏ vùng phân tích" onClick={onClear}>✕</button>
+        <button type="button" className="link roi-status-glyph" aria-label="Bỏ vùng phân tích" onClick={onClear}>✕</button>
       </>
     );
   }
 
   return (
-    <div className="roi-chip glass-panel" role="status">
+    <div className="roi-status" role="status">
       {body}
       {(state.error || state.hint) && (
         <>
-          <span className={state.error ? 'roi-chip-error' : 'roi-chip-muted'} role={state.error ? 'alert' : undefined}>
+          <span className={state.error ? 'roi-status-error' : 'roi-status-muted'} role={state.error ? 'alert' : undefined}>
+            {state.error && <CircleAlert size={14} aria-hidden="true" />}
             {state.error ?? state.hint}
           </span>
-          <button type="button" aria-label="Đóng thông báo" onClick={onDismiss}>×</button>
+          <button type="button" className="link roi-status-glyph" aria-label="Đóng thông báo" onClick={onDismiss}>×</button>
         </>
       )}
     </div>

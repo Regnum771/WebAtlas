@@ -3,8 +3,6 @@ import { render, screen } from '@testing-library/react';
 
 vi.mock('../features/map/ui/MapView', () => ({ default: () => <div>MAP_VIEW</div> }));
 vi.mock('../components/DynamicPopup', () => ({ default: () => <div>POPUP</div> }));
-vi.mock('../components/OGCClient', () => ({ default: () => <div>OGC</div> }));
-vi.mock('../features/map/ui/MapToolbar', () => ({ default: () => <div>TOOLBAR</div> }));
 vi.mock('../features/map/ui/MapLoadingBar', () => ({ default: () => null }));
 vi.mock('../features/layers-panel', () => ({ default: () => <div>LAYERS</div> }));
 vi.mock('../features/legend', () => ({ default: () => <div>LEGEND</div> }));
@@ -15,7 +13,6 @@ vi.mock('../features/roi/ui/RoiDrawButtons', () => ({ default: () => null }));
 vi.mock('../features/feature-editing/ProposedEdit', () => ({ default: () => null }));
 vi.mock('../entities/admin-unit/adminUnits.store', () => ({ primeAdminUnits: vi.fn(() => Promise.resolve()) }));
 vi.mock('../widgets/top-bar', () => ({ default: () => <div>TOP_BAR</div> }));
-vi.mock('../features/shell', () => ({ default: () => <div>SHELL</div> }));
 vi.mock('../pages/admin-users', () => ({ default: () => <div>ADMIN_USERS</div> }));
 
 import App from './App';

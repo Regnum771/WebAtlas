@@ -30,12 +30,19 @@ import { getRoiState, resetRoiStore, setRoiResolver } from '../model/roi.store';
 import { claimDrawing, getDrawFeedback, resetDrawing } from '../../map/model/drawingState';
 
 describe('RoiDrawButtonsView', () => {
-  it('offers the four draw tools in the Vẽ group (D5)', () => {
+  it('offers the four draw tools under the Vẽ vùng heading (D5)', () => {
     render(<RoiDrawButtonsView active={null} onDraw={vi.fn()} />);
-    const group = screen.getByRole('group', { name: 'Vẽ' });
+    expect(screen.getByRole('heading', { name: 'Vẽ vùng' })).toBeInTheDocument();
+    const group = screen.getByRole('group', { name: 'Vẽ vùng' });
     for (const name of ['Vẽ đa giác', 'Vẽ hình chữ nhật', 'Vẽ đường', 'Chọn một điểm']) {
       expect(within(group).getByRole('button', { name })).toBeInTheDocument();
     }
+  });
+
+  it('shows each tool\'s short name as text beside its icon', () => {
+    render(<RoiDrawButtonsView active={null} onDraw={vi.fn()} />);
+    const group = screen.getByRole('group', { name: 'Vẽ vùng' });
+    expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual(['Đa giác', 'Hình chữ nhật', 'Đường', 'Điểm']);
   });
 
   it('marks the active one and reports presses', async () => {

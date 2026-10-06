@@ -1,61 +1,53 @@
-import { Fragment, type ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { SquareDashed, Sigma, TrendingUp, LocateFixed } from 'lucide-react';
-import type { Availability, RoiTool } from '../../roi/model/toolAvailability';
+import { ROI_TOOLS, type Availability, type RoiTool } from '../../roi/model/toolAvailability';
 import { ANALYSIS_TOOL_LABELS } from '../model/tools';
 
 const ICONS: Record<RoiTool, ReactNode> = {
-  select_within: <SquareDashed size={18} />,
-  zonal_elevation: <Sigma size={18} />,
-  elevation_profile: <TrendingUp size={18} />,
-  nearest: <LocateFixed size={18} />,
+  select_within: <SquareDashed size={16} aria-hidden="true" />,
+  zonal_elevation: <Sigma size={16} aria-hidden="true" />,
+  elevation_profile: <TrendingUp size={16} aria-hidden="true" />,
+  nearest: <LocateFixed size={16} aria-hidden="true" />,
 };
-
-/** Grouped by what each tool needs from the ROI (spec §8, U-10). */
-const GROUPS: { label: string; tools: RoiTool[] }[] = [
-  { label: 'Vùng', tools: ['select_within', 'zonal_elevation'] },
-  { label: 'Tuyến', tools: ['elevation_profile'] },
-  { label: 'Lân cận', tools: ['nearest'] },
-];
 
 export interface AnalysisButtonsViewProps {
   active: RoiTool | null;
   availability: Record<RoiTool, Availability>;
+  /** False: there is no region at all, so the tools share one line instead of a reason each. */
+  hasRegion: boolean;
   onOpen: (tool: RoiTool) => void;
 }
 
 /**
- * A disabled tool uses aria-disabled, not `disabled`: it stays focusable and hoverable, so
- * its reason is reachable, and pressing it shows the reason in the chip (U-2, NFR-4).
+ * A tool that cannot run uses aria-disabled, not `disabled`: it stays focusable, so its
+ * reason — the text beside it, tied with aria-describedby — is reachable (U-2, NFR-4).
+ * These are plain `.btn` buttons because the shared Button reserves aria-disabled for `busy`.
  */
-export function AnalysisButtonsView({ active, availability, onOpen }: AnalysisButtonsViewProps) {
+export function AnalysisButtonsView({ active, availability, hasRegion, onOpen }: AnalysisButtonsViewProps) {
+  const baseId = useId();
+  const sharedReasonId = `${baseId}-no-region`;
   return (
-    <>
-      {GROUPS.map((group, i) => (
-        <Fragment key={group.label}>
-          {i > 0 && <div className="control-divider" />}
-          <div className="control-group" role="group" aria-label={group.label}>
-            <span className="control-group-label" aria-hidden="true">{group.label}</span>
-            {group.tools.map((tool) => {
-              const a = availability[tool];
-              const label = ANALYSIS_TOOL_LABELS[tool];
-              return (
-                <button
-                  key={tool}
-                  type="button"
-                  className={`control-btn ${active === tool ? 'active' : ''}`}
-                  aria-pressed={active === tool}
-                  aria-disabled={!a.enabled}
-                  aria-label={label}
-                  title={a.enabled ? label : `${label} — ${a.reason}`}
-                  onClick={() => onOpen(tool)}
-                >
-                  {ICONS[tool]}
-                </button>
-              );
-            })}
+    <div className="tool-section" role="group" aria-label="Phân tích">
+      {ROI_TOOLS.map((tool) => {
+        const a = availability[tool];
+        const reasonId = a.enabled ? undefined : hasRegion ? `${baseId}-${tool}` : sharedReasonId;
+        return (
+          <div key={tool} className="analysis-tool">
+            <button
+              type="button"
+              className={active === tool ? 'btn sm solid' : 'btn sm'}
+              aria-pressed={active === tool}
+              aria-disabled={a.enabled ? undefined : true}
+              aria-describedby={reasonId}
+              onClick={() => { if (a.enabled) onOpen(tool); }}
+            >
+              {ICONS[tool]}{ANALYSIS_TOOL_LABELS[tool]}
+            </button>
+            {!a.enabled && hasRegion && <span id={reasonId} className="analysis-tool-reason">{a.reason}</span>}
           </div>
-        </Fragment>
-      ))}
-    </>
+        );
+      })}
+      {!hasRegion && <p id={sharedReasonId} className="analysis-tool-reason">Vẽ hoặc chọn một vùng trước.</p>}
+    </div>
   );
 }

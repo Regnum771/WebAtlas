@@ -52,6 +52,31 @@ describe('RoiChipView — the five states (U-3)', () => {
   });
 });
 
+describe('RoiChipView — inside the Vùng phân tích menu', () => {
+  it('is a plain status block, not a floating pill', () => {
+    render(<RoiChipView state={ready} {...handlers()} />);
+    const block = screen.getByRole('status');
+    expect(block).toHaveClass('roi-status');
+    expect(block).not.toHaveClass('roi-chip');
+    expect(block).not.toHaveClass('glass-panel');
+  });
+
+  it('draws its text buttons as links', () => {
+    render(<RoiChipView state={ready} {...handlers()} />);
+    expect(screen.getByRole('button', { name: 'Bán kính' })).toHaveClass('link');
+    expect(screen.getByRole('button', { name: 'Bỏ vùng phân tích' })).toHaveClass('link');
+  });
+
+  it('Esc in the radius editor closes the editor only, not the menu around it', async () => {
+    const onMenuKey = vi.fn();
+    render(<div onKeyDown={onMenuKey}><RoiChipView state={ready} {...handlers()} /></div>);
+    await userEvent.click(screen.getByRole('button', { name: 'Bán kính' }));
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('spinbutton')).toBeNull();
+    expect(onMenuKey.mock.calls.filter(([e]) => e.key === 'Escape')).toHaveLength(0);
+  });
+});
+
 describe('RoiChipView — the radius editor (U-4)', () => {
   it('offers a radius only for a line or point, or to change an existing one', () => {
     const { rerender } = render(<RoiChipView state={ready} {...handlers()} />);

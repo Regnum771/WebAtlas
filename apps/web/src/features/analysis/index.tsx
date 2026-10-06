@@ -9,8 +9,8 @@ import { UseAsRoiButton } from '../roi/ui/UseAsRoiButton';
 import { AnalysisResultCardView } from './ui/AnalysisResultCard.view';
 
 /**
- * Returns the toolbar buttons and the panel above the toolbar as two nodes sharing one
- * presenter — the toolbar renders them in different places.
+ * Returns the tool buttons and the parameter form or result as two nodes sharing one
+ * presenter — MapScreen lays them out one under the other in the Vùng phân tích menu.
  */
 export function useAnalysisTools(): { buttons: ReactNode; panel: ReactNode } {
   const run = useMapCommands();
@@ -20,7 +20,9 @@ export function useAnalysisTools(): { buttons: ReactNode; panel: ReactNode } {
     ROI_TOOLS.map((tool) => [tool, toolAvailability(tool, roi.resolved)])
   ) as Record<RoiTool, Availability>;
 
-  const buttons = <AnalysisButtonsView active={a.active} availability={availability} onOpen={a.open} />;
+  const buttons = (
+    <AnalysisButtonsView active={a.active} availability={availability} hasRegion={roi.resolved !== null} onOpen={a.open} />
+  );
   const panel = a.active ? (
     <AnalysisParamsView
       tool={a.active} roiLabel={roi.resolved?.label ?? null} params={a.params} status={a.status} error={a.error}

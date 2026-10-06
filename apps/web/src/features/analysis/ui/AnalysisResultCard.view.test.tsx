@@ -38,6 +38,26 @@ describe('AnalysisResultCardView', () => {
     expect(screen.getByText('Kết quả cho: Sông Thu Bồn + 5 km')).toBeInTheDocument();
   });
 
+  it('says so in ink when nothing was found', () => {
+    const { container } = render(
+      <AnalysisResultCardView result={{ ...R, summary: { 'Tổng số': 0 }, rows: [] }} onRow={vi.fn()} onExport={vi.fn()} onClear={vi.fn()} />,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Không tìm thấy đối tượng nào trong vùng này.');
+    expect(container.querySelector('.bad')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('list')).toBeNull();
+  });
+
+  it('says nothing about missing rows when the tool returns none by design', () => {
+    render(<AnalysisResultCardView result={{ ...R, op: 'zonal_elevation', rows: undefined }} onRow={vi.fn()} onExport={vi.fn()} onClear={vi.fn()} />);
+    expect(screen.queryByText('Không tìm thấy đối tượng nào trong vùng này.')).toBeNull();
+  });
+
+  it('sits in the tool menu as a plain block, not a glass card', () => {
+    const { container } = render(<AnalysisResultCardView result={R} onRow={vi.fn()} onExport={vi.fn()} onClear={vi.fn()} />);
+    expect(container.querySelector('.glass-panel')).toBeNull();
+  });
+
   it('renders a row action beside each row that has one', () => {
     render(<AnalysisResultCardView result={R} onRow={vi.fn()} onExport={vi.fn()} onClear={vi.fn()}
       renderRowAction={(row) => <button type="button">Dùng {row.name}</button>} />);

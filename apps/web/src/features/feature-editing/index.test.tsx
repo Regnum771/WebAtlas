@@ -36,6 +36,12 @@ describe('FeatureEditing', () => {
     expect(screen.getByRole('button', { name: /draw/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /edit existing/i })).toBeInTheDocument();
   });
+
+  it('sits in the Biên tập menu as a plain block, not a glass panel', () => {
+    const { container } = render(<FeatureEditing />);
+    expect(container.querySelector('.edit-toolbar')).not.toBeNull();
+    expect(container.querySelector('.glass-panel')).toBeNull();
+  });
 });
 
 describe('FeatureEditing: saving an edited river', () => {

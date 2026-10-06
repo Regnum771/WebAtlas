@@ -84,30 +84,6 @@ body {
   color: var(--primary);
 }
 
-/* Map Toolbar (features/map/ui/MapToolbar) — vertical rail docked top-right.
-   Positioned BELOW .ogc-trigger-btn (top: topbar+space-3, 40px circle) with its
-   own space-3 gap, so the rail's top edge never overlaps that button regardless
-   of viewport width — both are anchored to the same `right` offset. */
-/* Bottom-centred floating pill over the map stage. */
-.map-toolbar {
-  position: absolute;
-  bottom: var(--space-3);
-  left: 0;
-  width: 100%;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  /* The strip spans the map so its contents can centre; only the panels inside
-     may take pointer events, or it would swallow clicks on the map. */
-  pointer-events: none;
-}
-
-.map-toolbar > * {
-  pointer-events: auto;
-}
-
 /* Loading bar: hugs the top edge of the map stage. */
 .map-loading-bar {
   position: absolute;
@@ -134,20 +110,22 @@ body {
   100% { transform: translateX(400%); }
 }
 
-/* Không chạy hoạt cảnh với người đã tắt hiệu ứng chuyển động; thanh vẫn hiện,
-   chỉ đứng yên, nên thông tin "đang tải" không mất. */
+/* No animation for people who turned motion off: the bar still shows, standing
+   still, so the "loading" information is not lost. */
 @media (prefers-reduced-motion: reduce) {
   .map-loading-bar-fill { animation: none; width: 100%; opacity: 0.5; }
 }
 
-/* Thanh công cụ chiếm giữa cạnh dưới, nên hai góc còn trống — đúng chỗ quy ước
-   đặt thanh tỷ lệ (trái) và toạ độ con trỏ (phải). Cả hai control OL này nhận
-   className riêng nên mất hết CSS mặc định của ol/ol.css dành cho .ol-scale-line
-   và .ol-mouse-position (phần tử gốc + phần tử -inner) — ta tự cấp nền/khung để
-   đọc được trên cả nền phố sáng lẫn ảnh vệ tinh tối màu. Các phần tử con bên
-   trong thanh tỷ lệ (vạch chia .ol-scale-singlebar, chữ .ol-scale-step-text/
-   .ol-scale-text) vẫn giữ nguyên class ol-scale-* cứng (ScaleLine.js không suy
-   className cho chúng từ option className) nên vẫn ăn theo biến --ol-* mặc định. */
+/* The two bottom corners of the map are, by convention, where the scale bar
+   (left) and the pointer coordinates (right) go; nothing else sits there. Both
+   OL controls are given their own className, so they lose all of ol/ol.css's
+   default styling for .ol-scale-line and .ol-mouse-position (root and -inner
+   elements) — the ground and outline are supplied here so they read on a light
+   street map as well as on dark satellite imagery. The children inside the
+   scale bar (the .ol-scale-singlebar segments, the .ol-scale-step-text /
+   .ol-scale-text labels) keep their hard-coded ol-scale-* classes (ScaleLine.js
+   does not derive their class names from the className option), so they still
+   follow the default --ol-* variables. */
 .map-scaleline {
   position: absolute;
   left: var(--space-3);
@@ -161,18 +139,20 @@ body {
   box-shadow: var(--glass-shadow);
 }
 
-/* .ol-scale-bar-inner mặc định là `display: flex` (xếp các đoạn vạch theo
-   hàng ngang) — mất đi cùng lúc với .ol-scale-bar vì className đã đổi tên
-   phần tử -inner thành map-scaleline-inner. Thiếu dòng này các đoạn vạch xếp
-   dọc thay vì tạo thành một thanh liền mạch. */
+/* .ol-scale-bar-inner is `display: flex` by default (it lays the bar segments
+   out in a row) — lost together with .ol-scale-bar, because the className
+   renamed the -inner element to map-scaleline-inner. Without this line the
+   segments stack vertically instead of forming one continuous bar. */
 .map-scaleline-inner {
   display: flex;
 }
 
-/* Ô độ cao xếp NGAY TRÊN ô toạ độ, dùng chung toàn bộ kiểu dáng để hai ô đọc như một
-   khối. Không gộp vào cùng một ô: toạ độ do OpenLayers vẽ lại tức thì theo con trỏ, còn
-   độ cao về sau một nhịp mạng — nhét chung một dòng thì hoặc phải giữ con số cũ bên cạnh
-   toạ độ mới (sai), hoặc phải vẽ lại cả dòng mỗi lần (nháy). */
+/* The elevation box sits DIRECTLY ABOVE the coordinate box and shares all of its
+   styling, so the two read as one block. They are not merged into one box: the
+   coordinates are redrawn by OpenLayers at once as the pointer moves, while the
+   elevation arrives a network round-trip later — on one line that would mean either
+   keeping the old number beside the new coordinates (wrong) or redrawing the whole
+   line every time (flicker). */
 .map-mouseposition,
 .map-cursor-elevation {
   position: absolute;
@@ -180,7 +160,7 @@ body {
   bottom: var(--space-3);
   z-index: 20;
   font-size: 12px;
-  font-variant-numeric: tabular-nums; /* số không nhảy ngang khi con trỏ di chuyển */
+  font-variant-numeric: tabular-nums; /* digits do not shift sideways as the pointer moves */
   pointer-events: none;
   background: var(--bg-panel);
   color: var(--text-main);
@@ -190,13 +170,14 @@ body {
   box-shadow: var(--glass-shadow);
 }
 
-/* Chiều cao một ô đọc số (12px * 1.4 + padding + viền) ~ 26px, cộng khoảng cách. */
+/* Height of one readout box (12px * 1.4 + padding + border) ~ 26px, plus the gap. */
 .map-cursor-elevation {
   bottom: calc(var(--space-3) + 30px);
 }
 
-/* Bộ chọn hệ quy chiếu: xếp thêm một bậc 30px lên trên ô độ cao, theo đúng cấp
-   số cộng đã dùng để xếp ô độ cao lên trên ô toạ độ (var(--space-3), +30px, +30px). */
+/* The CRS picker: one more 30px step above the elevation box, on the same
+   arithmetic progression that stacks the elevation box above the coordinate box
+   (var(--space-3), +30px, +30px). */
 .map-crs-select {
   position: absolute;
   right: var(--space-3);
@@ -206,92 +187,6 @@ body {
   font-size: 12px;
   padding: 2px 4px;
   border-radius: var(--radius-sm);
-}
-
-.toolbar-rail {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  /* Wrapping is what guarantees the pill cannot overflow: at 768px with the
-     flyout open the map area is ~400px, too narrow for a single row. */
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 10px;
-  max-width: calc(100% - var(--space-4));
-}
-
-.control-group {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
-}
-
-.toolbar-rail > .control-divider {
-  width: 1px;
-  height: auto;
-  align-self: stretch;
-  margin: 2px 4px;
-}
-
-.control-divider {
-  width: 1px;
-  align-self: stretch;
-  margin: 4px 4px;
-  background: var(--text-muted);
-  opacity: 0.25;
-}
-
-.control-btn {
-  background: transparent;
-  border: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--text-main);
-  transition: all 0.2s;
-}
-
-.control-btn:hover {
-  background: rgba(255, 255, 255, 0.5);
-}
-
-.control-btn.active {
-  background: var(--primary);
-  color: white;
-}
-
-.control-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  background: transparent !important;
-  color: var(--text-muted) !important;
-  transform: none !important;
-}
-
-.measure-result {
-  font-size: 14px;
-  animation: fadeIn 0.3s ease-out;
-  padding: 8px 12px;
-  font-weight: 600;
-  color: var(--primary);
-  /* Bounded + wrapping, not nowrap: a large drawn area can format to a long
-     string (e.g. "Diện tích: 244666.48 km²"). Left unbounded, that string's
-     width could push this right-docked pill's LEFT edge into neighbouring
-     chrome at the 768px minimum viewport (originally measured against the
-     floating .search-bar-container — see task-7-report.md; search now lives
-     inside .top-bar instead, but the same 768px width budget is still tight,
-     so the bound stays). Wrapping to a second line keeps the value fully
-     visible without growing sideways. */
-  max-width: 160px;
-  white-space: normal;
-  overflow-wrap: break-word;
-  text-align: right;
 }
 
 @keyframes fadeIn {
@@ -500,33 +395,8 @@ body {
 .legend-entry { display: flex; align-items: center; gap: var(--space-2); font-size: 12px; }
 .legend-section-title { font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: var(--space-2); }
 
-/* OGC Client */
-.ogc-trigger-btn {
-  position: absolute;
-  /* Docked top-right, below the top bar — kept out of the bottom-right
-     .map-controls stack, whose height grows with its content (e.g. an
-     active measurement pill) and cannot be bounded to guarantee clearance
-     from a fixed bottom offset. */
-  top: calc(var(--topbar-height) + var(--space-3));
-  right: var(--space-3);
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  cursor: pointer;
-  color: var(--primary);
-  box-shadow: var(--glass-shadow);
-  transition: all 0.2s;
-}
-
-.ogc-trigger-btn:hover {
-  transform: scale(1.05);
-  background: white;
-}
-
+/* Modal shell of the dam-details dialog (components/DynamicPopup). The names are
+   left over from the removed WMS dialog, which used the same shell. */
 .ogc-modal-overlay {
   position: absolute;
   inset: 0;
@@ -557,51 +427,8 @@ body {
   color: var(--text-muted);
 }
 
-.input-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.input-group label {
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.input-group input {
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: rgba(255, 255, 255, 0.5);
-  outline: none;
-}
-
-.input-group input:focus {
-  border-color: var(--primary);
-  background: white;
-}
-
-.add-layer-btn {
-  width: 100%;
-  padding: 12px;
-  background: var(--primary);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
-/* Utility Classes (thay thế Tailwind) */
-.mb-2 { margin-bottom: 8px; }
+/* Utility classes (stand-ins for Tailwind), still used by components/DynamicPopup */
 .text-blue-500 { color: var(--primary); }
-.font-semibold { font-weight: 600; }
-.text-sm { font-size: 14px; }
 .flex { display: flex; }
 .items-center { align-items: center; }
 .gap-2 { gap: 8px; }
@@ -808,7 +635,7 @@ body {
 .login-error { color: #c0392b; margin: 0; }
 .admin-region-placeholder { padding: 8px 12px; border-radius: 8px; }
 
-.edit-toolbar { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 10px; min-width: 260px; }
+.edit-toolbar { display: flex; flex-direction: column; gap: 10px; }
 .edit-toolbar-title { margin: 0 0 2px; font-size: 14px; }
 .edit-layer-picker, .edit-draw-controls, .edit-attr-form { display: flex; flex-direction: column; gap: 6px; }
 .edit-draw-controls { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
@@ -831,7 +658,7 @@ body {
   padding: 0 12px; border-radius: 0;
   background: var(--chrome-bg); color: var(--chrome-fg);
 }
-.top-bar-brand { font-weight: 700; letter-spacing: 0.02em; margin-left: 44px; }
+.top-bar-brand { font-weight: 700; letter-spacing: 0.02em; }
 .top-bar-right, .top-bar-profile { display: flex; align-items: center; gap: 12px; }
 .top-bar-email { opacity: 0.75; font-size: 13px; }
 .top-bar-link, .top-bar-logout {
@@ -840,25 +667,6 @@ body {
   font: inherit; color: inherit; text-decoration: none;
 }
 .top-bar-link:hover, .top-bar-logout:hover { background: rgba(56, 189, 248, 0.18); }
-
-/* Burger + left drawer (editor/admin only) */
-.burger-btn {
-  position: absolute; top: 6px; left: 12px; z-index: 1300;
-  display: flex; align-items: center; justify-content: center;
-  width: 40px; height: 40px; border: none; cursor: pointer; border-radius: 10px;
-}
-.edit-drawer {
-  position: absolute; top: 64px; bottom: 12px; left: 12px;
-  width: 360px; max-width: 88vw;
-  z-index: 1101; display: flex; flex-direction: column; overflow: hidden;
-}
-.edit-drawer-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px; flex-shrink: 0;
-}
-.edit-drawer-header h2 { font-size: 15px; font-weight: 600; }
-.edit-drawer-close { border: none; background: transparent; cursor: pointer; display: flex; }
-.edit-drawer-body { overflow-y: auto; padding: 0 12px 12px; flex: 1; }
 
 /* Admin route: full-screen over a live map */
 .admin-users-route {
@@ -892,15 +700,15 @@ body {
 .layer-row {
   display: flex; align-items: center; gap: var(--space-2);
   padding: var(--space-1) 0;
-  /* Cho phép .layer-suboptions (flex-basis 100%, bên dưới) rơi xuống dòng
-     riêng. Các hàng bình thường (nhãn + thanh trượt, hoặc nhãn + gợi ý
-     ngưỡng zoom) hiện vẫn vừa một dòng, nhưng KHÔNG PHẢI vì có quy tắc nào
-     chặn wrap cho chúng — flex-wrap: wrap áp dụng cho mọi phần tử con như
-     nhau, bất kể flex-basis. Chúng vừa một dòng chỉ vì độ dài chuỗi hiện tại
-     (nhãn lớp + số liệu) đủ ngắn so với bề rộng bảng. Một tên lớp dài hơn
-     trong tương lai vẫn có thể khiến hàng đó wrap âm thầm, giống hệt
-     .layer-suboptions — flex-basis 100% ở dưới chỉ đảm bảo NÓ luôn rơi
-     xuống dòng riêng, không đảm bảo các phần tử khác không rơi theo. */
+  /* Lets .layer-suboptions (flex-basis 100%, below) drop onto its own line.
+     Ordinary rows (label + slider, or label + zoom-threshold hint) still fit
+     on one line today, but NOT because any rule stops them wrapping —
+     flex-wrap: wrap applies to every child alike, whatever its flex-basis.
+     They fit only because today's strings (layer label + figures) are short
+     enough for the panel's width. A longer layer name in future can still
+     make such a row wrap silently, exactly like .layer-suboptions — the
+     flex-basis 100% below only guarantees that IT always drops onto its own
+     line, not that the other children never follow. */
   flex-wrap: wrap;
 }
 .layer-row.gated { opacity: 0.7; }
@@ -913,10 +721,11 @@ body {
 }
 .layer-row input[type='range'] { width: 72px; }
 
-/* Tuỳ chọn con: thụt vào để thấy rõ là thuộc về hàng bên trên, và chỉ hiện khi lớp bật.
- * flex-basis: 100% buộc nó không bao giờ vừa chung dòng với nhãn/thanh trượt phía
- * trên (xem flex-wrap ở .layer-row) nên luôn rơi xuống dòng riêng, đủ rộng bằng
- * cả hàng — tránh tràn ra ngoài bảng như trước khi có hai quy tắc này.
+/* Sub-options: indented to show they belong to the row above, and shown only while
+ * the layer is on. flex-basis: 100% means it can never share a line with the label
+ * or slider above it (see flex-wrap on .layer-row), so it always drops onto its own
+ * line, as wide as the row — instead of spilling out of the panel, as it did before
+ * these two rules.
  */
 .layer-suboptions {
   display: flex;
@@ -927,10 +736,10 @@ body {
   flex: 1 1 100%;
   min-width: 0;
 }
-/* select co giãn theo đúng bề rộng bảng: min-width:0 để không bị neo theo bề rộng
- * chữ dài nhất ("Tự động theo mức thu phóng"), max-width/overflow để phần đóng
- * (control) cắt gọn bằng dấu ba chấm thay vì tràn — danh sách mở (dropdown) vẫn do
- * trình duyệt vẽ riêng nên chữ trong đó luôn hiện đầy đủ, không bị quy tắc này ảnh hưởng. */
+/* The select follows the panel's width: min-width: 0 so it is not pinned to its
+ * longest option ("Tự động theo mức thu phóng"), max-width/overflow so the closed
+ * control is cut with an ellipsis instead of overflowing — the open list is drawn by
+ * the browser on its own, so its text always shows in full, unaffected by this rule. */
 .layer-suboptions select {
   max-width: 100%;
   min-width: 0;
@@ -939,9 +748,9 @@ body {
   white-space: nowrap;
 }
 
-/* Chú giải — các quy tắc còn thiếu từ slice legend (Task 6): view dùng
-   .legend-panel/.legend-layer/.legend-layer-title/.legend-note nhưng chưa có
-   CSS, nên h3 rơi về cỡ mặc định của trình duyệt và panel trông như vỡ. */
+/* Legend — the rules the legend slice left out: the view uses
+   .legend-panel/.legend-layer/.legend-layer-title/.legend-note, and without CSS
+   for them the h3 fell back to the browser's default size and the panel looked broken. */
 .legend-panel {
   padding: var(--space-3);
   color: var(--text-main);
@@ -969,7 +778,7 @@ body {
   margin-top: var(--space-2);
 }
 
-/* Trợ lý — khung chat trong flyout. Dùng chung token với các bảng khác. */
+/* Assistant — the chat frame in its dock. Shares its tokens with the other panels. */
 .assistant-panel {
   display: flex; flex-direction: column; height: 100%;
   padding: var(--space-3); color: var(--text-main);
@@ -983,8 +792,8 @@ body {
 }
 .assistant-turn-bot p { margin: 0 0 var(--space-2); }
 
-/* Khối kiến thức chung: viền và nền riêng, có nhãn hiện rõ — theo thiết kế,
-   KHÔNG dùng chữ nghiêng, vì nhãn mờ là thứ người đọc lướt qua. */
+/* The general-knowledge block: its own border and ground, with a clearly visible
+   label — by design NOT italic text, because a faint label is what readers skim past. */
 .assistant-knowledge {
   border: 1px solid #d97706; border-left-width: 3px;
   background: #fffbeb; border-radius: var(--radius-sm);
@@ -1032,15 +841,15 @@ body {
 }
 .assistant-composer button:disabled { background: var(--border-strong); cursor: default; }
 
-/* Đề xuất cập nhật từ trợ lý */
+/* Edits proposed by the assistant */
 .proposal-wizard { display: flex; flex-direction: column; gap: 8px; min-width: 360px; max-height: 80vh; overflow-y: auto; }
 .proposal-subtitle { margin: 0 0 4px; font-size: 13px; color: var(--text-muted, #6b7280); }
 .proposal-field.changed { border-left: 3px solid #d97706; padding-left: 8px; }
 .proposal-previous { font-size: 12px; color: #92400e; }
 .proposal-source { display: flex; flex-direction: column; gap: 4px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
 
-/* Phân tích không gian */
-.analysis-card { max-width: 340px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+/* Spatial analysis: the parameter form and the result, inside the Vùng phân tích menu */
+.analysis-card { display: flex; flex-direction: column; gap: 6px; font-size: var(--text-sm); }
 .analysis-card label { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .analysis-card-title { margin: 0; font-size: 14px; font-weight: 600; }
 .analysis-summary { border-collapse: collapse; width: 100%; }
@@ -1056,10 +865,10 @@ body {
 .profile-chart { margin: 0; }
 .profile-chart-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted, #6b7280); }
 
-/* In / Xuất bản đồ */
+/* Print / export the map */
 .top-bar-print { display: inline-flex; align-items: center; color: inherit; padding: 6px; border-radius: 6px; margin-right: 8px; }
-/* Full-screen print sheet: must outrank the top bar and the edit drawer, since the
-   map and its chrome stay mounted underneath (see App.tsx). */
+/* Full-screen print sheet: must outrank the top bar, since the map and its chrome
+   stay mounted underneath (see App.tsx). */
 .print-route { position: fixed; inset: 0; z-index: 1500; background: #e5e7eb; overflow: auto; display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
 .print-controls { width: 260px; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 12px; }
 .print-toggle { display: flex; gap: 6px; align-items: center; }
@@ -1182,25 +991,10 @@ body {
   .print-sheet { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none; padding: 0; }
 }
 
-/* Vùng phân tích (Phase 4) */
-.roi-chip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 12px; border-radius: 999px;
-  font-size: 13px; max-width: min(680px, calc(100% - var(--space-4))); }
-.roi-chip-label { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Region of interest, outside the tool menu: the popup's candidates and the
+   "use as region" button. The region status itself is .roi-status in shell.css;
+   .roi-chip-muted stays for RoiCandidates.view. */
 .roi-chip-muted { color: var(--text-muted, #6b7280); }
-.roi-chip-measure { color: var(--text-muted, #6b7280); white-space: nowrap; }
-.roi-chip-error { color: #b91c1c; }
-.roi-chip button { background: none; border: none; color: var(--primary); cursor: pointer; padding: 2px 4px; font: inherit; }
-.roi-chip button:disabled { color: var(--text-muted, #6b7280); cursor: not-allowed; }
-.roi-chip input { width: 64px; }
-.roi-chip-spinner { width: 12px; height: 12px; border: 2px solid #93c5fd; border-top-color: #2563eb; border-radius: 50%;
-  animation: roi-spin 0.8s linear infinite; }
-@keyframes roi-spin { to { transform: rotate(360deg); } }
-.control-group-label { font-size: 10px; color: var(--text-muted, #6b7280); margin-right: 2px; white-space: nowrap; }
-.control-btn[aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
-@media (max-width: 600px) {
-  .control-group-label { display: none; }
-  .roi-chip-label { max-width: 140px; }
-}
 
 .use-as-roi { background: none; border: 1px solid var(--primary); color: var(--primary); border-radius: 6px;
   padding: 0 6px; margin-left: 6px; font-size: 12px; cursor: pointer; }

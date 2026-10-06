@@ -76,7 +76,7 @@ export function useLayersPanel(currentZoom: number) {
     .filter((layerStateId) => LAYER_DISPLAY[layerStateId] === undefined);
 
   // Panel mutations go through the same command layer every other layer
-  // mutator uses (MapToolbar, search) — see mapCommands.ts. Before this, the
+  // mutator uses (the map tools, search) — see mapCommands.ts. Before this, the
   // panel called the context setters directly, so setLayerVisible/
   // setLayerOpacity had zero UI producers.
   const run = useMemo(

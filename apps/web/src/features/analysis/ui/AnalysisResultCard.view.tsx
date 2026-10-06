@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import type { AnalysisResult, AnalysisRow } from '@webatlas/shared';
+import { Button } from '../../../shared/ui/Button';
+import { Message } from '../../../shared/ui/Message';
 import { ANALYSIS_TOOL_LABELS } from '../model/tools';
 import { ProfileChartView } from './ProfileChart.view';
 
@@ -14,7 +16,7 @@ export interface AnalysisResultCardViewProps {
 
 export function AnalysisResultCardView({ result, roiLabel, onRow, onExport, onClear, renderRowAction }: AnalysisResultCardViewProps) {
   return (
-    <section className="analysis-card glass-panel" aria-label="Kết quả phân tích">
+    <section className="analysis-card" aria-label="Kết quả phân tích">
       <h3 className="analysis-card-title">{ANALYSIS_TOOL_LABELS[result.op]}</h3>
       {roiLabel && <p className="analysis-note">Kết quả cho: {roiLabel}</p>}
       <table className="analysis-summary">
@@ -38,11 +40,13 @@ export function AnalysisResultCardView({ result, roiLabel, onRow, onExport, onCl
           ))}
         </ul>
       )}
+      {/* A tool that lists features and found none says so; a tool with no list (rows absent) says nothing. */}
+      {result.rows && result.rows.length === 0 && <Message title="Không tìm thấy đối tượng nào trong vùng này." />}
       {result.truncated && <p className="analysis-note">Chỉ hiển thị một phần kết quả trên bản đồ.</p>}
       {result.attribution && <p className="analysis-attribution">{result.attribution}</p>}
       <div className="analysis-actions">
-        <button type="button" onClick={onExport}>Xuất CSV</button>
-        <button type="button" onClick={onClear}>Xoá kết quả</button>
+        <Button size="sm" onClick={onExport}>Xuất CSV</Button>
+        <Button size="sm" variant="quiet" onClick={onClear}>Xoá kết quả</Button>
       </div>
     </section>
   );
