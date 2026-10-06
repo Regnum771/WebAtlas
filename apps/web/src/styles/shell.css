@@ -2,7 +2,7 @@
    assistant column.
 
    z-index scale, shared by every layer of the interface:
-     10   floats in the map stage (toolbar, loading bar)
+     10   floats in the map stage (toolbar, loading bar, scale slider)
      20   open tool menu
      30   toast host
      40   feature popup
@@ -124,6 +124,133 @@
   border: 1px solid var(--ink);
   border-radius: var(--radius);
   cursor: pointer;
+}
+
+.scale-control {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.scale-slider {
+  width: 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.scale-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  cursor: pointer;
+}
+
+.scale-step:disabled {
+  color: var(--rule);
+  cursor: default;
+}
+
+/* The track is 280 px: eleven stops, 28 px apart, the first at the bottom. */
+.scale-track {
+  position: relative;
+  width: 100%;
+  height: 280px;
+}
+
+.scale-tick {
+  position: absolute;
+  right: 0;
+  width: 10px;
+  height: 1.5px;
+  margin-top: -0.75px;
+  background: var(--ink);
+  pointer-events: none;
+}
+
+.scale-tick.named {
+  width: 18px;
+  height: 3px;
+  margin-top: -1.5px;
+}
+
+/* The native range is 16 px taller than the track so the thumb centre travels
+   exactly the 280 px the ticks span. */
+.scale-range {
+  position: absolute;
+  top: -8px;
+  left: 0;
+  width: 100%;
+  height: 296px;
+  margin: 0;
+  padding: 0;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.scale-range::-webkit-slider-runnable-track {
+  width: 2px;
+  background: var(--ink);
+}
+
+.scale-range::-moz-range-track {
+  width: 2px;
+  background: var(--ink);
+}
+
+.scale-range::-webkit-slider-thumb {
+  appearance: none;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  margin-left: -7px;
+  background: var(--ink);
+  border: 3px solid var(--sheet);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--ink);
+}
+
+.scale-range::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  background: var(--ink);
+  border: 3px solid var(--sheet);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--ink);
+}
+
+.scale-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 6px 8px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.scale-readout-value {
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.scale-readout-name {
+  font-size: var(--text-xs);
+  color: var(--ink-2);
 }
 
 @media (max-width: 1099px) {

@@ -19,6 +19,10 @@ import {
   SIGNIFICANT_DIGITS,
   settleZoomCorrection,
   scaleAtResolution,
+  NAMED_SCALES,
+  isNamedStop,
+  namedScaleAt,
+  stepStopIndex,
 } from './zoomScale';
 
 describe('zoomScale', () => {
@@ -238,5 +242,42 @@ describe('the widened scale range', () => {
     // but it is the constraint that ruled out anchoring MIN_SCALE on 1:6.400.000.
     const heightPx = (1_725_000 / MIN_SCALE / 0.0254) * 96;
     expect(heightPx).toBeLessThanOrEqual(900);
+  });
+});
+
+describe('named scales and stepping', () => {
+  it('D4: the stops are exactly these eleven', () => {
+    expect(ZOOM_SCALE_LEVELS).toEqual([12_800_000, 7_500_000, 5_000_000, 3_000_000, 1_750_000, 1_000_000, 500_000, 250_000, 100_000, 50_000, 25_000]);
+  });
+
+  it('names 1:100.000 cấp tỉnh and 1:250.000 cấp vùng, and nothing else', () => {
+    expect(NAMED_SCALES.size).toBe(2);
+    expect(namedScaleAt(zoomForScale(100_000))).toBe('cấp tỉnh');
+    expect(namedScaleAt(zoomForScale(250_000))).toBe('cấp vùng');
+    expect(namedScaleAt(zoomForScale(500_000))).toBeNull();
+    expect(namedScaleAt(zoomForScale(249_000))).toBeNull(); // near is not resting on it
+  });
+
+  it('marks stops 7 and 8 as named', () => {
+    expect(ZOOM_STOPS.map((_, i) => isNamedStop(i)).flatMap((named, i) => (named ? [i] : []))).toEqual([7, 8]);
+  });
+
+  it('+ from a stop goes to the next stop; from between stops it goes to the nearer one ahead', () => {
+    expect(stepStopIndex(ZOOM_STOPS[3], 1)).toBe(4);
+    expect(stepStopIndex(ZOOM_STOPS[3], -1)).toBe(2);
+    // Between stops 3 and 4, nearer to 3: + goes ahead to 4, − goes back to 3.
+    const nearThree = ZOOM_STOPS[3] + (ZOOM_STOPS[4] - ZOOM_STOPS[3]) * 0.3;
+    expect(stepStopIndex(nearThree, 1)).toBe(4);
+    expect(stepStopIndex(nearThree, -1)).toBe(3);
+    // Between stops 3 and 4, nearer to 4: + lands on 4, − goes back to 3.
+    const nearFour = ZOOM_STOPS[3] + (ZOOM_STOPS[4] - ZOOM_STOPS[3]) * 0.7;
+    expect(stepStopIndex(nearFour, 1)).toBe(4);
+    expect(stepStopIndex(nearFour, -1)).toBe(3);
+  });
+
+  it('− at the first stop and + at the last stay put', () => {
+    const last = ZOOM_STOPS.length - 1;
+    expect(stepStopIndex(ZOOM_STOPS[0], -1)).toBe(0);
+    expect(stepStopIndex(ZOOM_STOPS[last], 1)).toBe(last);
   });
 });

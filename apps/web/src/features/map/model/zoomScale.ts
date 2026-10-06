@@ -1,23 +1,23 @@
 /**
- * Quy đổi giữa mức zoom Web Mercator và tỷ lệ bản đồ (scale denominator).
+ * Conversions between the Web Mercator zoom level and the map scale (scale denominator).
  *
- * Công thức chuẩn OGC: scale = resolution * (DPI / 0.0254), trong đó
+ * Standard OGC formula: scale = resolution * (DPI / 0.0254), where
  * resolution (m/px) = (2 * PI * R / 256) / 2^zoom * cos(latitude).
  *
- * Tỷ lệ phụ thuộc vĩ độ, nên mọi con số ở đây quy chiếu về REFERENCE_LATITUDE
- * (~16°N, giữa Việt Nam) để một mức zoom luôn ứng với một tỷ lệ ổn định.
+ * The scale depends on latitude, so every number here refers to REFERENCE_LATITUDE
+ * (~16°N, the middle of Vietnam) so that one zoom level always maps to one stable scale.
  */
 
-/** Bán kính Trái Đất theo WGS84 (m). */
+/** WGS84 Earth radius (m). */
 const EARTH_RADIUS_M = 6378137;
-/** DPI quy ước của màn hình theo OGC. */
+/** Conventional screen DPI per OGC. */
 const SCREEN_DPI = 96;
 const INCH_M = 0.0254;
 
-/** Vĩ độ quy chiếu để tính tỷ lệ — giữa Việt Nam. */
+/** Reference latitude for scale calculations — the middle of Vietnam. */
 export const REFERENCE_LATITUDE = 16;
 
-/** Độ phân giải (m/px) tại mức zoom, ở vĩ độ cho trước. */
+/** Resolution (m/px) at a zoom level, at the given latitude. */
 export function resolutionAtZoom(zoom: number, latitude = REFERENCE_LATITUDE): number {
   return (
     ((2 * Math.PI * EARTH_RADIUS_M) / 256 / Math.pow(2, zoom)) *
@@ -25,73 +25,73 @@ export function resolutionAtZoom(zoom: number, latitude = REFERENCE_LATITUDE): n
   );
 }
 
-/** Mẫu số tỷ lệ bản đồ tại mức zoom (vd. 100000 nghĩa là 1:100.000). */
+/** Map scale denominator at a zoom level (e.g. 100000 means 1:100.000). */
 export function scaleAtZoom(zoom: number, latitude = REFERENCE_LATITUDE): number {
   return resolutionAtZoom(zoom, latitude) * (SCREEN_DPI / INCH_M);
 }
 
-/** Mức zoom ứng với một mẫu số tỷ lệ (nghịch đảo của scaleAtZoom). */
+/** Zoom level for a scale denominator (the inverse of scaleAtZoom). */
 export function zoomForScale(scale: number, latitude = REFERENCE_LATITUDE): number {
   const resolution = scale / (SCREEN_DPI / INCH_M);
   return Math.log2(((2 * Math.PI * EARTH_RADIUS_M) / 256) * Math.cos((latitude * Math.PI) / 180) / resolution);
 }
 
 /**
- * Thu nhỏ hết cỡ: 1:12.800.000 — trọn VIETNAM_EXTENT_4326 (~1.725 km Bắc–Nam)
- * lọt vào khung nhìn cao ~900 px (chiếm 509 px), còn dư nhiều lề.
+ * Fully zoomed out: 1:12.800.000 — the whole of VIETNAM_EXTENT_4326 (~1,725 km
+ * north–south) fits in a ~900 px tall viewport (taking 509 px) with room to spare.
  *
- * VÌ SAO ĐÚNG CON SỐ NÀY, KHÔNG PHẢI 7.500.000 NHƯ TRƯỚC: ol/View tính
+ * WHY EXACTLY THIS NUMBER, NOT 7.500.000 AS BEFORE: ol/View computes
  *   maxZoom = minZoom + floor(log2(maxResolution / minResolution))
- * nên khoảng thu phóng bị CẮT XUỐNG số nguyên mức zoom gần nhất. Cặp cũ
- * 7.500.000 -> 100.000 rộng log2(75) = 6,2289 mức, bị cắt còn 6, khiến bản đồ
- * dừng ở 1:117.188 chứ không bao giờ tới được 1:100.000 mà hằng số quảng cáo.
+ * so the zoom range is TRUNCATED down to a whole number of zoom levels. The old
+ * pair 7.500.000 -> 100.000 spanned log2(75) = 6.2289 levels, truncated to 6, so
+ * the map stopped at 1:117.188 and never reached the 1:100.000 the constant advertised.
  *
- * Cặp hiện tại rộng ĐÚNG 9 mức (12.800.000 / 25.000 = 512 = 2^9) nên không có
- * gì bị cắt. Muốn đổi giới hạn thì tỷ số MIN_SCALE/MAX_SCALE phải là luỹ thừa
- * của 2 — có một ca kiểm thử giữ điều kiện đó. Lưu ý DPI và vĩ độ KHÔNG giúp
- * được gì ở đây: chúng triệt tiêu khỏi tỷ số.
+ * The current pair spans EXACTLY 9 levels (12.800.000 / 25.000 = 512 = 2^9), so
+ * nothing is truncated. To change the limits, the MIN_SCALE/MAX_SCALE ratio must
+ * be a power of 2 — a test keeps that condition. Note that DPI and latitude do NOT
+ * help here: they cancel out of the ratio.
  */
 export const MIN_SCALE = 12_800_000;
-/** Phóng to hết cỡ: 1:25.000. Xem MIN_SCALE về ràng buộc luỹ thừa của 2. */
+/** Fully zoomed in: 1:25.000. See MIN_SCALE for the power-of-2 constraint. */
 export const MAX_SCALE = 25_000;
 
 export const MIN_ZOOM = zoomForScale(MIN_SCALE);
 export const MAX_ZOOM = zoomForScale(MAX_SCALE);
 
-/** Bao toàn bộ lãnh thổ đất liền Việt Nam (lon/lat, EPSG:4326). */
+/** Bounding box of all of mainland Vietnam (lon/lat, EPSG:4326). */
 export const VIETNAM_EXTENT_4326: [number, number, number, number] = [102.0, 8.0, 110.0, 23.5];
 
-/** Tâm mặc định khi bấm "về toàn cảnh" (lon/lat). */
+/** Default centre for "back to the full view" (lon/lat). */
 export const VIETNAM_CENTER_4326: [number, number] = [106.5, 16.0];
 
 /**
- * Khung nhìn KHI MỞ ỨNG DỤNG — vùng công tác (Nam Trung Bộ & Tây Nguyên),
- * phần ĐẤT LIỀN: 107,2–110,6°Đ / 7,3–16,2°B, tức 374 x 988 km.
- * (Bỏ Hoàng Sa/Trường Sa: tuy thuộc Đà Nẵng/Khánh Hòa nhưng nằm xa ngoài khơi,
- * lấy vào sẽ đẩy tâm bản đồ ra giữa Biển Đông.)
+ * The view WHEN THE APP OPENS — the working region (South Central Coast & Central
+ * Highlands), the MAINLAND part: 107.2–110.6°E / 7.3–16.2°N, i.e. 374 x 988 km.
+ * (Hoàng Sa/Trường Sa are left out: they belong to Đà Nẵng/Khánh Hòa but lie far
+ * offshore, and including them would pull the map centre into the East Sea.)
  *
- * Vì sao mở ở đây thay vì toàn quốc: dữ liệu chuyên đề chỉ tồn tại trong vùng
- * công tác, nên mở ở mức toàn quốc vừa hiển thị vùng trống mênh mông vừa buộc
- * chiến lược bbox phải tải TOÀN BỘ dữ liệu ngay từ đầu (khung nhìn ở MIN_ZOOM
- * rộng 2.172 km, bao trọn Việt Nam). Mở đúng vùng công tác giúp bbox chỉ tải
- * phần thực sự nhìn thấy.
+ * Why open here rather than nationwide: the thematic data exists only inside the
+ * working region, so opening nationwide would both show a vast empty area and force
+ * the bbox strategy to load ALL the data up front (the viewport at MIN_ZOOM is
+ * 2,172 km wide, enclosing all of Vietnam). Opening on the working region lets the
+ * bbox load only what is actually visible.
  *
- * Đây KHÔNG phải giới hạn: người dùng vẫn thu nhỏ được tới MIN_ZOOM để xem cả nước.
+ * This is NOT a limit: users can still zoom out to MIN_ZOOM to see the whole country.
  */
 export const INITIAL_CENTER_4326: [number, number] = [108.93, 11.77];
 
-/** Mức zoom khi mở ứng dụng — vừa đủ trọn chiều Bắc–Nam của vùng công tác. */
+/** Zoom level when the app opens — just enough to cover the working region north to south. */
 export const INITIAL_ZOOM = 7;
 
-/** Định dạng mẫu số tỷ lệ thành nhãn "1:100.000" (dấu chấm ngăn nghìn kiểu VN). */
+/** Formats a scale denominator as a "1:100.000" label (Vietnamese dot thousands separator). */
 export function formatScale(scale: number): string {
   const rounded = Math.round(scale);
   return `1:${rounded.toLocaleString('vi-VN')}`;
 }
 
 /**
- * Các nấc tỷ lệ tròn số cho slider zoom, từ nhỏ (xa) đến lớn (gần).
- * Chỉ giữ các nấc nằm trong [MIN_SCALE, MAX_SCALE].
+ * Round-number scale stops for the zoom slider, from small (far) to large (near).
+ * Only stops inside [MIN_SCALE, MAX_SCALE] are kept.
  */
 export const ZOOM_SCALE_LEVELS: number[] = [
   12_800_000, 7_500_000, 5_000_000, 3_000_000, 1_750_000, 1_000_000, 500_000, 250_000, 100_000,
@@ -99,9 +99,9 @@ export const ZOOM_SCALE_LEVELS: number[] = [
 ];
 
 /**
- * The eight scale stops as zoom levels, ascending — index 0 is the most zoomed
- * out (1:7.500.000), the last index the most zoomed in (1:100.000). Sorted
- * rather than mapped positionally so the slider keeps working left-to-right if
+ * The eleven scale stops as zoom levels, ascending — index 0 is the most zoomed
+ * out (1:12.800.000), the last index the most zoomed in (1:25.000). Sorted
+ * rather than mapped positionally so the slider keeps working bottom-to-top if
  * someone reorders ZOOM_SCALE_LEVELS.
  */
 export const ZOOM_STOPS: readonly number[] = ZOOM_SCALE_LEVELS.map((scale) => zoomForScale(scale)).sort(
@@ -119,21 +119,54 @@ export function nearestStopIndex(zoom: number): number {
   return best;
 }
 
-/** Số chữ số có nghĩa mà số tỷ lệ được làm tròn về khi khung nhìn dừng. */
+/** The two scales section 22 names. */
+export const NAMED_SCALES: ReadonlyMap<number, string> = new Map([
+  [100_000, 'cấp tỉnh'],
+  [250_000, 'cấp vùng'],
+]);
+
+/** Is the stop at this ZOOM_STOPS index one of the named scales? */
+export function isNamedStop(index: number): boolean {
+  return namedScaleAt(ZOOM_STOPS[index]) !== null;
+}
+
+/** The name to show under the readout: only while the view's scale is within 1 of a named scale. */
+export function namedScaleAt(zoom: number): string | null {
+  const scale = scaleAtZoom(zoom);
+  for (const [named, name] of NAMED_SCALES) {
+    if (Math.abs(scale - named) < 1) return name;
+  }
+  return null;
+}
+
+/**
+ * The stop the + (1) or − (−1) button moves to: the nearest stop; if the view is
+ * already short of that stop in the direction of travel, that stop itself,
+ * otherwise the next one in that direction. Clamped to the stop range.
+ */
+export function stepStopIndex(zoom: number, direction: 1 | -1): number {
+  const nearest = nearestStopIndex(zoom);
+  const stop = ZOOM_STOPS[nearest];
+  const shortOfStop = direction === 1 ? stop > zoom + 0.05 : stop < zoom - 0.05;
+  const target = shortOfStop ? nearest : nearest + direction;
+  return Math.min(ZOOM_STOPS.length - 1, Math.max(0, target));
+}
+
+/** Significant digits the scale number is rounded to when the view settles. */
 export const SIGNIFICANT_DIGITS = 3;
 
 /**
- * Làm tròn mẫu số tỷ lệ về SIGNIFICANT_DIGITS chữ số có nghĩa, kẹp trong giới
- * hạn thu phóng để một lần bám không đẩy khung nhìn vượt MIN_SCALE/MAX_SCALE.
+ * Rounds a scale denominator to SIGNIFICANT_DIGITS significant digits, clamped to
+ * the zoom limits so one snap cannot push the view past MIN_SCALE/MAX_SCALE.
  *
- * TRƯỚC ĐÂY là lưới cố định 1.000 đơn vị. Lưới cố định ổn khi dải chỉ tới
- * 1:100.000 (bước 1%), nhưng ở 1:25.000 nó thành bước 4% — đủ thô để thấy số
- * nhảy giật khi thu phóng ở đầu gần. Ba chữ số có nghĩa là lưới TỶ LỆ THUẬN,
- * nên bước nhảy cảm giác như nhau ở mọi chỗ trong dải.
+ * IT USED TO be a fixed 1.000-unit grid. A fixed grid was fine while the range only
+ * reached 1:100.000 (a 1% step), but at 1:25.000 it becomes a 4% step — coarse
+ * enough to see the number jump when zooming at the near end. Three significant
+ * digits is a PROPORTIONAL grid, so the step feels the same everywhere in the range.
  *
- * Mọi nấc trong ZOOM_SCALE_LEVELS đều đã là số 3 chữ số có nghĩa, nên lần thu
- * phóng do thanh trượt hay nút bấm tạo ra rơi đúng vào giá trị hàm này để yên —
- * hai kiểu bám không đá nhau. Có ca kiểm thử giữ điều đó.
+ * Every stop in ZOOM_SCALE_LEVELS is already a 3-significant-digit number, so a
+ * zoom made by the slider or the buttons lands on a value this function leaves
+ * alone — the two snappings do not fight. A test keeps that true.
  */
 export function snapScaleForReadout(scale: number): number {
   const exponent = Math.floor(Math.log10(scale)) - (SIGNIFICANT_DIGITS - 1);
@@ -170,11 +203,12 @@ export function settleZoomCorrection(zoom: number): number | null {
 }
 
 /**
- * Mẫu số tỷ lệ ứng với một resolution của OpenLayers (mét Mercator, EPSG:3857).
+ * Scale denominator for an OpenLayers resolution (Mercator metres, EPSG:3857).
  *
- * OL trả resolution chưa hiệu chỉnh vĩ độ, trong khi resolutionAtZoom ở trên trả
- * resolution MẶT ĐẤT (đã nhân cos). Nhân cos ở đây để hai đường tính ra cùng một
- * tỷ lệ — nếu không, ngưỡng LOD và số tỷ lệ trên thanh công cụ sẽ lệch nhau.
+ * OL returns a resolution without latitude correction, whereas resolutionAtZoom
+ * above returns the GROUND resolution (already multiplied by cos). Multiplying by
+ * cos here makes both paths yield the same scale — otherwise the LOD thresholds and
+ * the scale number on the toolbar would disagree.
  */
 export function scaleAtResolution(resolution: number, latitude = REFERENCE_LATITUDE): number {
   return resolution * Math.cos((latitude * Math.PI) / 180) * (SCREEN_DPI / INCH_M);

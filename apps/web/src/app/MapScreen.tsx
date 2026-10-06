@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import TopBar from '../widgets/top-bar';
 import MapView from '../features/map/ui/MapView';
 import MapLoadingBar from '../features/map/ui/MapLoadingBar';
+import ScaleSlider from '../features/map/ui/ScaleSlider';
 import MapToolbar from '../features/map/ui/MapToolbar';
 import LayersPanel from '../features/layers-panel';
 import Legend from '../features/legend';
@@ -55,6 +56,7 @@ export default function MapScreen() {
           <MapView />
           <MapLoadingBar />
           <MapToolbar analysisButtons={analysis.buttons} analysisPanel={analysis.panel} roiChip={<RoiChip />} drawButtons={<RoiDrawButtons />} />
+          <ScaleSlider />
           <ToastHost />
         </>
       )}

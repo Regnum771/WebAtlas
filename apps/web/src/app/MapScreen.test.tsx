@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 vi.mock('../features/map/ui/MapView', () => ({ default: () => <div>MAP_VIEW</div> }));
 vi.mock('../features/map/ui/MapLoadingBar', () => ({ default: () => <div>LOADING</div> }));
 vi.mock('../features/map/ui/MapToolbar', () => ({ default: () => <div>TOOLBAR</div> }));
+vi.mock('../features/map/ui/ScaleSlider', () => ({ default: () => <div>SCALE_SLIDER</div> }));
 vi.mock('../features/layers-panel', () => ({ default: () => <div>LAYERS</div> }));
 vi.mock('../features/legend', () => ({ default: () => <div>LEGEND</div> }));
 vi.mock('../features/assistant', () => ({ default: () => <div>ASSISTANT</div> }));
@@ -40,6 +41,7 @@ describe('MapScreen', () => {
     const stage = container.querySelector('.map-stage') as HTMLElement;
     expect(within(stage).getByText('MAP_VIEW')).toBeInTheDocument();
     expect(within(stage).getByText('TOOLBAR')).toBeInTheDocument();
+    expect(within(stage).getByText('SCALE_SLIDER')).toBeInTheDocument();
     expect(screen.getByText('TOP_BAR')).toBeInTheDocument();
   });
 
