@@ -32,8 +32,10 @@ export function ToolGroupView({ tools, open, onToggle, onClose }: ToolGroupViewP
     buttons.current.get(open)?.focus();
   };
 
+  // One column: the button rows, then the menus, so an open menu sits directly under
+  // the buttons however many rows they wrap onto.
   return (
-    <>
+    <div className="tool-dock">
       <div className="tool-group float" onKeyDown={onKeyDown}>
         {tools.map((tool) => (
           <button
@@ -65,6 +67,6 @@ export function ToolGroupView({ tools, open, onToggle, onClose }: ToolGroupViewP
           {tool.content}
         </section>
       ))}
-    </>
+    </div>
   );
 }
