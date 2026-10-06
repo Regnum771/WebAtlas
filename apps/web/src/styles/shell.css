@@ -138,8 +138,9 @@
    Width: the column keeps 12px (its left), the scale control's column and 24px
    (that column's right gutter and a gap) of the stage free, so neither the
    buttons, which wrap, nor a menu can reach the slider or the readout.
-   Height: 12px above, and 56px kept clear at the bottom of the stage for the
-   scale bar and the coordinate readouts; the open menu scrolls inside that.
+   Height: 12px above, and 69px kept clear at the bottom of the stage for the
+   scale bar (12px from the edge, 53px tall with its ratio text) and the
+   coordinate readouts, plus a 4px gap; the open menu scrolls inside that.
    The column itself takes no pointer events (it would cover map between its
    children); it creates no stacking context, so the group (10) and the menu (20)
    stack by the scale above. */
@@ -152,7 +153,7 @@
   align-items: flex-start;
   gap: 4px;
   max-width: calc(100% - 12px - var(--scale-column) - 24px);
-  max-height: calc(100% - 68px);
+  max-height: calc(100% - 81px);
   pointer-events: none;
 }
 

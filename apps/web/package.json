@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "profile": "node scripts/profile-map.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify:shell": "node scripts/verify-shell.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",

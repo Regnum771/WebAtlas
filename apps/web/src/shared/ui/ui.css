@@ -14,6 +14,16 @@
   text-underline-offset: 3px;
 }
 
+/* A button that reads as a link: none of the browser's button chrome. */
+button.link {
+  padding: 0;
+  background: none;
+  border: 0;
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -182,7 +192,7 @@
 .dialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 2000;
+  z-index: 200; /* dialog, on the z-index scale in shell.css */
   display: flex;
   align-items: center;
   justify-content: center;

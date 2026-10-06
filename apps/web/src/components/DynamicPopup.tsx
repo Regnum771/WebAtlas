@@ -232,21 +232,21 @@ const DynamicPopup: React.FC = () => {
     if (props.layerKey === 'dams') {
       return (
         <>
-          <div className="info-row"><Database size={14} className="text-blue-500" />
+          <div className="info-row"><Database size={14} />
             <span>Công suất: <strong>{props.ratedPower} MW</strong></span></div>
           {props.annualGeneration != null && (
-            <div className="info-row"><Droplets size={14} className="text-blue-500" />
+            <div className="info-row"><Droplets size={14} />
               <span>Sản lượng điện: <strong>{props.annualGeneration} GWh/năm</strong></span></div>)}
           {props.commissioningYear && (
-            <div className="info-row"><Activity size={14} className="text-blue-500" />
+            <div className="info-row"><Activity size={14} />
               <span>Năm vận hành: <strong>{props.commissioningYear}</strong></span></div>)}
           {props.constructionYear && (
-            <div className="info-row"><Info size={14} className="text-blue-500" />
+            <div className="info-row"><Info size={14} />
               <span>Khởi công: <strong>{props.constructionYear}</strong></span></div>)}
           {(() => {
             const st = damStatusDisplay(props.statusSlug ?? props.operationalStatus);
             return (
-              <div className="info-row"><Activity size={14} className="text-blue-500" />
+              <div className="info-row"><Activity size={14} />
                 <span>Trạng thái: <strong className="status-text" style={{ color: st.color }}>{st.label}</strong></span></div>
             );
           })()}
@@ -291,22 +291,22 @@ const DynamicPopup: React.FC = () => {
       return (
         <>
           {props.fclass && (
-            <div className="info-row"><Info size={14} className="text-blue-500" />
+            <div className="info-row"><Info size={14} />
               <span>Loại: <strong>{FCLASS_LABELS[props.fclass] ?? props.fclass}</strong></span></div>)}
           {props.ref && (
-            <div className="info-row"><Database size={14} className="text-blue-500" />
+            <div className="info-row"><Database size={14} />
               <span>Số hiệu: <strong>{props.ref}</strong></span></div>)}
           {props.maxspeed != null && (
-            <div className="info-row"><Activity size={14} className="text-blue-500" />
+            <div className="info-row"><Activity size={14} />
               <span>Tốc độ tối đa: <strong>{props.maxspeed} km/h</strong></span></div>)}
           {props.oneway === 'yes' && (
-            <div className="info-row"><Info size={14} className="text-blue-500" />
+            <div className="info-row"><Info size={14} />
               <span>Chiều: <strong>Một chiều</strong></span></div>)}
           {props.bridge === 'T' && (
-            <div className="info-row"><Info size={14} className="text-blue-500" />
+            <div className="info-row"><Info size={14} />
               <span><strong>Cầu</strong></span></div>)}
           {props.tunnel === 'T' && (
-            <div className="info-row"><Info size={14} className="text-blue-500" />
+            <div className="info-row"><Info size={14} />
               <span><strong>Hầm</strong></span></div>)}
         </>
       );
@@ -316,14 +316,14 @@ const DynamicPopup: React.FC = () => {
       return (
         <>
           {props.hydroId && (
-            <div className="info-row"><Database size={14} className="text-blue-500" />
+            <div className="info-row"><Database size={14} />
               <span>Mã phân đoạn: <strong>{props.hydroId}</strong></span></div>)}
           {/* stream_order is now a rank by KIND of watercourse (OSM), not a Strahler
               order, so the kind's label is shown instead of "Cấp N". */}
           {props.streamOrder != null && STREAM_ORDER_LABELS[props.streamOrder] && (
-            <div className="info-row"><Info size={14} className="text-blue-500" />
+            <div className="info-row"><Info size={14} />
               <span>Loại: <strong>{STREAM_ORDER_LABELS[props.streamOrder]}</strong></span></div>)}
-          <div className="info-row"><Droplets size={14} className="text-blue-500" />
+          <div className="info-row"><Droplets size={14} />
             <span>Chiều dài: <strong>{lengthStr}</strong></span></div>
         </>
       );
@@ -332,16 +332,16 @@ const DynamicPopup: React.FC = () => {
       return (
         <>
           {props.lakeType && (
-            <div className="info-row"><Info size={14} className="text-blue-500" />
+            <div className="info-row"><Info size={14} />
               <span>Phân loại: <strong>{props.lakeType}</strong></span></div>)}
           {props.area != null && (
-            <div className="info-row"><Database size={14} className="text-blue-500" />
+            <div className="info-row"><Database size={14} />
               <span>Diện tích: <strong>{props.area} km²</strong></span></div>)}
           {props.volume != null && (
-            <div className="info-row"><Droplets size={14} className="text-blue-500" />
+            <div className="info-row"><Droplets size={14} />
               <span>Dung tích: <strong>{props.volume} triệu m³</strong></span></div>)}
           {props.shorelineLength != null && (
-            <div className="info-row"><Activity size={14} className="text-blue-500" />
+            <div className="info-row"><Activity size={14} />
               <span>Chiều dài bờ: <strong>{props.shorelineLength} km</strong></span></div>)}
         </>
       );
@@ -349,11 +349,11 @@ const DynamicPopup: React.FC = () => {
     if (props.layerKey === 'stations') {
       return (
         <>
-          <div className="info-row"><Database size={14} className="text-blue-500" />
+          <div className="info-row"><Database size={14} />
             <span>Loại trạm: <strong>{props.measurementType}</strong></span></div>
-          <div className="info-row"><Activity size={14} className="text-blue-500" />
+          <div className="info-row"><Activity size={14} />
             <span>Giá trị đo: <strong>{props.measurementValue}</strong></span></div>
-          <div className="info-row"><Info size={14} className="text-blue-500" />
+          <div className="info-row"><Info size={14} />
             <span>Trạng thái hoạt động: <strong>{props.operationalStatus}</strong></span></div>
         </>
       );
@@ -361,9 +361,9 @@ const DynamicPopup: React.FC = () => {
     if (props.layerKey === 'flood_zones') {
       return (
         <>
-          <div className="info-row"><Database size={14} className="text-blue-500" />
+          <div className="info-row"><Database size={14} />
             <span>Phân loại: <strong>{props.hazardType}</strong></span></div>
-          <div className="info-row"><Droplets size={14} className="text-blue-500" />
+          <div className="info-row"><Droplets size={14} />
             <span>Diện tích ảnh hưởng: <strong>{props.affectedArea}</strong></span></div>
         </>
       );
@@ -371,12 +371,12 @@ const DynamicPopup: React.FC = () => {
     if (props.layerKey === 'drought_points') {
       return (
         <>
-          <div className="info-row"><Info size={14} className="text-blue-500" />
+          <div className="info-row"><Info size={14} />
             <span>Phân loại: <strong>Khảo sát hạn hán</strong></span></div>
-          <div className="info-row"><Activity size={14} className="text-blue-500" />
+          <div className="info-row"><Activity size={14} />
             <span>Trạng thái: <strong>{props.observedStatus}</strong></span></div>
           {props.observationDate && (
-            <div className="info-row"><Database size={14} className="text-blue-500" />
+            <div className="info-row"><Database size={14} />
               <span>Ngày khảo sát: <strong>{props.observationDate}</strong></span></div>)}
         </>
       );
@@ -384,11 +384,11 @@ const DynamicPopup: React.FC = () => {
     if (props.layerKey === 'saltwater_intrusion') {
       return (
         <>
-          <div className="info-row"><Info size={14} className="text-blue-500" />
+          <div className="info-row"><Info size={14} />
             <span>Phân loại: <strong>Xâm nhập mặn</strong></span></div>
-          <div className="info-row"><Droplets size={14} className="text-blue-500" />
+          <div className="info-row"><Droplets size={14} />
             <span>Độ mặn đo được: <strong>{props.salinity}</strong></span></div>
-          <div className="info-row"><Activity size={14} className="text-blue-500" />
+          <div className="info-row"><Activity size={14} />
             <span>Trạng thái: <strong>{props.observedStatus}</strong></span></div>
         </>
       );
@@ -396,11 +396,11 @@ const DynamicPopup: React.FC = () => {
     if (props.layerKey === 'flood_generation') {
       return (
         <>
-          <div className="info-row"><Info size={14} className="text-blue-500" />
+          <div className="info-row"><Info size={14} />
             <span>Phân loại: <strong>Vùng sinh lũ</strong></span></div>
-          <div className="info-row"><Database size={14} className="text-blue-500" />
+          <div className="info-row"><Database size={14} />
             <span>Diện tích lưu vực: <strong>{props.catchmentArea}</strong></span></div>
-          <div className="info-row"><Activity size={14} className="text-blue-500" />
+          <div className="info-row"><Activity size={14} />
             <span>Đặc điểm lũ: <strong>{props.flowCharacteristics}</strong></span></div>
         </>
       );
@@ -411,13 +411,13 @@ const DynamicPopup: React.FC = () => {
       return (
         <>
           <div className="info-row">
-            <Info size={14} className="text-blue-500" />
+            <Info size={14} />
             <span>Tên đầy đủ: <strong>{props.fullName}</strong></span>
           </div>
           {props.truocsn && (
             <div className="info-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Database size={14} className="text-blue-500" />
+                <Database size={14} />
                 <span>Trước sáp nhập:</span>
               </div>
               <strong className="text-gray-700 text-xs ml-5 leading-normal" style={{ whiteSpace: 'pre-wrap' }}>{props.truocsn}</strong>
@@ -432,18 +432,18 @@ const DynamicPopup: React.FC = () => {
       return (
         <>
           <div className="info-row">
-            <Info size={14} className="text-blue-500" />
+            <Info size={14} />
             <span>Cấp hành chính: <strong>{props.type}</strong></span>
           </div>
           {props.population && (
             <div className="info-row">
-              <Database size={14} className="text-blue-500" />
+              <Database size={14} />
               <span>Dân số ước tính: <strong>{props.population}</strong></span>
             </div>
           )}
           {props.province && (
             <div className="info-row">
-              <Droplets size={14} className="text-blue-500" />
+              <Droplets size={14} />
               <span>Thuộc tỉnh: <strong>{props.province}</strong></span>
             </div>
           )}
@@ -454,7 +454,7 @@ const DynamicPopup: React.FC = () => {
     // The default for every other kind.
     return (
       <div className="info-row">
-        <Info size={14} className="text-blue-500" />
+        <Info size={14} />
         <span>Phân loại: <strong>{props.type || 'Chưa phân loại'}</strong></span>
       </div>
     );
@@ -483,7 +483,7 @@ const DynamicPopup: React.FC = () => {
   return (
     <>
       <div 
-        className="dynamic-popup glass-panel"
+        className="dynamic-popup float"
         style={{
           left: popupLeft,
           top: popupTop,
@@ -530,10 +530,10 @@ const DynamicPopup: React.FC = () => {
 
       {detailedDam && detail && (
         <div className="ogc-modal-overlay" onClick={() => setDetailedDam(null)}>
-          <div className="ogc-modal glass-panel dam-details-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="ogc-modal float dam-details-modal" onClick={(e) => e.stopPropagation()}>
             <div className="ogc-modal-header">
               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <Database size={18} className="text-blue-500" />
+                <Database size={18} />
                 <span>Chi tiết chuyên sâu: {detail.ten}</span>
               </h3>
               <button className="close-btn" onClick={() => setDetailedDam(null)}>

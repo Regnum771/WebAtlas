@@ -34,33 +34,3 @@
 }
 
 /* Supported viewport: 768px wide and up. See scripts/verify-shell.mjs. */
-
-/* Legacy aliases — deleted in Task 11 */
-:root {
-  --text-main: var(--ink);
-  --text-muted: var(--ink-2);
-  --border: var(--rule);
-  --border-strong: var(--rule);
-  --border-color: var(--rule);
-  --surface: var(--sheet);
-  --surface-raised: var(--paper);
-  --surface-sunken: var(--paper);
-  --primary: var(--ink);
-  --primary-hover: var(--ink);
-  --accent: var(--ink);
-  --color-primary: var(--ink);
-  --danger: var(--alert);
-  --radius-sm: var(--radius);
-  --radius-md: var(--radius);
-  --bg-panel: var(--sheet);
-  --bg-panel-hover: var(--sheet);
-  --chrome-bg: var(--green);
-  --chrome-bg-hover: var(--green);
-  --chrome-fg: var(--on-green);
-  --chrome-fg-muted: var(--on-green-2);
-  --glass-shadow: none;
-  --elev-1: none;
-  --elev-2: none;
-  --rail-width: 0px;
-  --flyout-width: var(--panel-width);
-}
