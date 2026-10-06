@@ -10,7 +10,13 @@ vi.mock('../features/map/ui/ScaleSlider', () => ({ default: () => <div>SCALE_SLI
 vi.mock('../features/map/ui/MeasureTool', () => ({ default: ({ active }: { active: boolean }) => <div>{`MEASURE:${active}`}</div> }));
 vi.mock('../features/map/ui/BasemapTool', () => ({ default: () => <div>BASEMAP</div> }));
 vi.mock('../features/add-data', () => ({ default: () => <div>ADD_DATA</div> }));
-vi.mock('../features/feature-editing', () => ({ default: () => <div>FEATURE_EDITING</div> }));
+const editing = vi.hoisted(() => ({ onBusyChange: undefined as ((busy: boolean) => void) | undefined }));
+vi.mock('../features/feature-editing', () => ({
+  default: ({ active, onBusyChange }: { active: boolean; onBusyChange?: (busy: boolean) => void }) => {
+    editing.onBusyChange = onBusyChange;
+    return <div>{`FEATURE_EDITING:${active}`}</div>;
+  },
+}));
 vi.mock('../features/layers-panel', () => ({ default: () => <div>LAYERS</div> }));
 vi.mock('../features/legend', () => ({ default: () => <div>LEGEND</div> }));
 vi.mock('../features/assistant', () => ({ default: () => <div>ASSISTANT</div> }));
@@ -139,21 +145,21 @@ describe('MapScreen tool group', () => {
     signIn('admin');
     const { unmount } = renderScreen();
     expect(screen.getByRole('button', { name: 'Biên tập' })).toBeInTheDocument();
-    expect(within(menuOf('Biên tập')).getByText('FEATURE_EDITING')).toBeInTheDocument();
+    expect(within(menuOf('Biên tập')).getByText(/^FEATURE_EDITING/)).toBeInTheDocument();
     unmount();
 
     for (const role of ['viewer', 'editor'] as const) {
       signIn(role);
       const view = renderScreen();
       expect(screen.queryByRole('button', { name: 'Biên tập' })).toBeNull();
-      expect(screen.queryByText('FEATURE_EDITING')).toBeNull();
+      expect(screen.queryByText(/^FEATURE_EDITING/)).toBeNull();
       view.unmount();
     }
 
     signOut();
     renderScreen();
     expect(screen.queryByRole('button', { name: 'Biên tập' })).toBeNull();
-    expect(screen.queryByText('FEATURE_EDITING')).toBeNull();
+    expect(screen.queryByText(/^FEATURE_EDITING/)).toBeNull();
   });
 
   it('closes Biên tập when the session ends', () => {
@@ -167,6 +173,27 @@ describe('MapScreen tool group', () => {
     expect(getShell().tool).toBeNull();
     expect(screen.queryByRole('button', { name: 'Biên tập' })).toBeNull();
     expect(screen.queryAllByRole('region')).toHaveLength(0);
+  });
+
+  it('tells Biên tập whether its menu is open', async () => {
+    signIn('admin');
+    renderScreen();
+    expect(screen.getByText('FEATURE_EDITING:false')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Biên tập' }));
+    expect(screen.getByText('FEATURE_EDITING:true')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Đo' }));
+    expect(screen.getByText('FEATURE_EDITING:false')).toBeInTheDocument();
+  });
+
+  it('fills Biên tập while a feature drawing or edit-existing mode is active', () => {
+    signIn('admin');
+    renderScreen();
+    const button = screen.getByRole('button', { name: 'Biên tập' });
+    expect(button).not.toHaveClass('is-on');
+    act(() => { editing.onBusyChange?.(true); });
+    expect(button).toHaveClass('is-on');
+    act(() => { editing.onBusyChange?.(false); });
+    expect(button).not.toHaveClass('is-on');
   });
 
   it('does not let a non-admin open Biên tập', () => {

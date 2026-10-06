@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import TopBar from '../widgets/top-bar';
 import MapView from '../features/map/ui/MapView';
@@ -34,6 +34,8 @@ export default function MapScreen() {
   const roi = useRoi();
   const analysis = useAnalysisTools();
   const isAdmin = currentUser?.role === 'admin';
+  // A feature drawing or edit-existing mode is active in Biên tập.
+  const [editBusy, setEditBusy] = useState(false);
 
   // Logging out hides the top bar's assistant button but would leave an
   // already-open dock behind. Only reacts to `status` leaving 'authenticated'.
@@ -94,7 +96,16 @@ export default function MapScreen() {
     { id: 'basemap', label: 'Nền bản đồ', content: <BasemapTool /> },
   ];
   // UX only: FeatureEditing keeps its own RequireRole gate and the backend enforces every write.
-  if (isAdmin) tools.push({ id: 'edit', label: 'Biên tập', content: <FeatureEditing /> });
+  // Closing Biên tập (or the session ending, which unmounts it) cancels a feature
+  // drawing and leaves edit-existing mode: FeatureEditing does it when `active` drops.
+  if (isAdmin) {
+    tools.push({
+      id: 'edit',
+      label: 'Biên tập',
+      on: editBusy,
+      content: <FeatureEditing active={tool === 'edit'} onBusyChange={setEditBusy} />,
+    });
+  }
 
   return (
     <AppShellView
