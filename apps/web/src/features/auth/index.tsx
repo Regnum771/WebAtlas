@@ -12,12 +12,12 @@ export default function AuthWidget() {
       <Button className="on-green" onClick={() => setOpen(true)}>Đăng nhập</Button>
       <LoginModalView
         open={open}
-        email={presenter.email}
-        password={presenter.password}
+        values={presenter.values}
+        errors={presenter.errors}
+        formError={presenter.formError}
         loading={presenter.loading}
-        error={presenter.error}
-        onEmail={presenter.setEmail}
-        onPassword={presenter.setPassword}
+        onField={presenter.set}
+        onBlur={presenter.blur}
         onSubmit={presenter.submit}
         onClose={() => setOpen(false)}
       />

@@ -96,6 +96,12 @@
   }
 }
 
+/* Vertical stack of fields and a closing action */
+.form-stack {
+  display: grid;
+  gap: var(--space-3);
+}
+
 /* Text field */
 .field {
   display: grid;

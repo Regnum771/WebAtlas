@@ -617,10 +617,6 @@ body {
   color: #dc2626;
 }
 
-.login-form button { cursor: pointer; }
-.login-form { display: flex; flex-direction: column; gap: 8px; }
-.login-form input { padding: 8px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.2); }
-.login-error { color: #c0392b; margin: 0; }
 .admin-region-placeholder { padding: 8px 12px; border-radius: 8px; }
 
 .edit-toolbar { display: flex; flex-direction: column; gap: 10px; }
