@@ -27,7 +27,7 @@ ENV PATH="/opt/atlas-venv/bin:${PATH}"
 
 # Fail the build, not a stage hours later, if anything is missing.
 RUN command -v raster2pgsql && command -v psql && command -v curl \
- && python3 -c "import geopandas, pyogrio, rasterio, psycopg2, sqlalchemy, geoalchemy2, requests"
+ && python3 -c "import geopandas, pyogrio, rasterio, psycopg2, sqlalchemy, geoalchemy2, requests, scipy"
 
 # A tools image, not a database: nothing starts a server.
 ENTRYPOINT []
