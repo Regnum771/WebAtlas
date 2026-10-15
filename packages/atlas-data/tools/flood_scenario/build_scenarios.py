@@ -223,8 +223,8 @@ def main():
             log(f"  vs bulletin at-risk (in data): matched {sorted(wet & in_box)}")
             log(f"  missing {sorted(in_box - wet)}; extra {sorted(wet - in_box)}")
         size = sum(p.stat().st_size for p in (FRAMES / sid).glob("*.png"))
-        check(f"{sid}: 97 frames, {size / 1e6:.1f} MB <= 25 MB",
-              len(list((FRAMES / sid).glob("*.png"))) == 97 and size <= MAX_FRAMES_BYTES)
+        check(f"{sid}: {levels.HOURS + 1} frames, {size / 1e6:.1f} MB <= 25 MB",
+              len(list((FRAMES / sid).glob("*.png"))) == levels.HOURS + 1 and size <= MAX_FRAMES_BYTES)
 
     write_db(engine, all_levels, forecast, hourly, grid[3], road_rows, ward_rows, shelters, plan_rows)
     log(f"done in {time.time() - t0:.0f} s")
