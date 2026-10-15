@@ -20,6 +20,9 @@ import { zonalElevationTool } from './data/zonalElevation';
 import { featuresInAdminUnitTool } from './data/featuresInAdminUnit';
 import { runSqlTool } from './data/runSql';
 import { proposeFeatureUpdateTool } from './command/proposeFeatureUpdate';
+import {
+  evacuationPlanTool, floodImpactsTool, listFloodScenariosTool, runFloodScenarioTool,
+} from './data/floodScenario';
 
 /**
  * The whole tool surface, in a fixed order.
@@ -63,6 +66,11 @@ const FACTORIES: ToolFactory[] = [
   zonalElevationTool,
   // Đóng dấu sẵn mã hành chính nên đây là tra chỉ mục, không phải phép giao hình học.
   featuresInAdminUnitTool,
+  // Flood scenario demo (2026-10-15): appended, never inserted.
+  listFloodScenariosTool,
+  runFloodScenarioTool,
+  floodImpactsTool,
+  evacuationPlanTool,
 ];
 
 /**

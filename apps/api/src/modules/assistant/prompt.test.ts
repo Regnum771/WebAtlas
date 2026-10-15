@@ -26,6 +26,15 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toMatch(/không.{0,40}tự.{0,20}toạ độ|toạ độ.{0,60}trí nhớ/i);
   });
 
+  it('guides flood evacuation advice in both prompts', () => {
+    for (const prompt of [SYSTEM_PROMPT, ADMIN_SYSTEM_PROMPT]) {
+      expect(prompt).toContain('evacuation_plan');
+      expect(prompt).toContain('4 tại chỗ');
+      expect(prompt).toContain('cứu hộ');
+      expect(prompt).toMatch(/thực đo.{0,80}mô phỏng/);
+    }
+  });
+
   it('is stable across calls — a varying prefix would miss the cache every turn', () => {
     expect(SYSTEM_PROMPT).toBe(SYSTEM_PROMPT);
     expect(SYSTEM_PROMPT).not.toMatch(/\d{4}-\d{2}-\d{2}T/);

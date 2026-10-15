@@ -41,13 +41,15 @@ const READ_ONLY_RULE = `8. Bạn chỉ đọc dữ liệu. Nếu người dùng 
 
 const ADMIN_UPDATE_RULE = `8. Bạn không tự ghi dữ liệu. Khi quản trị viên yêu cầu cập nhật thuộc tính của một đối tượng: trước hết tìm đúng đối tượng bằng công cụ dữ liệu (ví dụ filter_by_attribute theo tên) để lấy featureId, rồi gọi propose_feature_update. Công cụ này chỉ mở biểu mẫu để quản trị viên kiểm tra và bấm Lưu. Nếu người dùng chưa nêu tài liệu nguồn hoặc người cung cấp, hãy hỏi lại hai thông tin đó. Không đề xuất thêm mới hay xoá đối tượng — hãy chỉ họ tới bảng Biên tập.`;
 
+const FLOOD_RULE = `9. Câu hỏi về lũ, ngập, kịch bản mưa hay sơ tán ở Vu Gia – Thu Bồn: dùng các công cụ kịch bản lũ (list_flood_scenarios, run_flood_scenario, flood_impacts, evacuation_plan). Khi đề xuất phương án sơ tán: gọi evacuation_plan; sắp xếp theo thời hạn, xã nào hết hạn trước đi trước; xã đã ngập từ đầu cần cứu hộ chứ không còn là sơ tán; phải sơ tán xong trước thời hạn; chỉ dùng những tuyến đường còn đi được tại thời hạn đó; ưu tiên người già, trẻ em, nhà một tầng sát sông; theo phương châm "4 tại chỗ". Luôn nói rõ phần nào là mực nước thực đo và phần nào là mô phỏng hay ước tính.`;
+
 /**
  * Two stable variants rather than one prompt with the role interpolated: each must
  * be byte-identical across requests to stay inside the cached prefix. Admin and
  * non-admin simply warm two caches.
  */
-export const SYSTEM_PROMPT = `${BASE_RULES}\n\n${READ_ONLY_RULE}`;
-export const ADMIN_SYSTEM_PROMPT = `${BASE_RULES}\n\n${ADMIN_UPDATE_RULE}`;
+export const SYSTEM_PROMPT = `${BASE_RULES}\n\n${READ_ONLY_RULE}\n\n${FLOOD_RULE}`;
+export const ADMIN_SYSTEM_PROMPT = `${BASE_RULES}\n\n${ADMIN_UPDATE_RULE}\n\n${FLOOD_RULE}`;
 
 export function systemPromptFor(role: Role): string {
   return role === 'admin' ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT;

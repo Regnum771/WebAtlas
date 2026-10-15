@@ -33,6 +33,13 @@ describe('buildTools', () => {
     expect(names).toContain('locate_place');
   });
 
+  it('appends the four flood tools after every earlier tool, so the cached prefix keeps its order', () => {
+    const names = buildTools(ctx).map((t) => (t as { name: string }).name);
+    const flood = ['list_flood_scenarios', 'run_flood_scenario', 'flood_impacts', 'evacuation_plan'];
+    const at = names.indexOf('features_in_admin_unit');
+    expect(names.slice(at + 1, at + 5)).toEqual(flood);
+  });
+
   it('returns tools in a stable order — the definitions sit in the cached prefix', () => {
     const a = buildTools(ctx).map((t) => (t as { name: string }).name);
     const b = buildTools(ctx).map((t) => (t as { name: string }).name);
