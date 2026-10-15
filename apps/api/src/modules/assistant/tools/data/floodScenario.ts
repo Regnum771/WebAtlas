@@ -12,6 +12,12 @@ export type FloodRepo = Pick<typeof scenarios, 'listScenarios' | 'getScenario' |
 const NO_DATA = 'Hệ thống chưa có dữ liệu kịch bản lũ (chưa có dữ liệu kịch bản).';
 const LIST_MAX = 30;
 
+/** OSM classes of gathering points, as a reader would say them. */
+const SHELTER_KINDS: Record<string, string> = {
+  school: 'trường học', kindergarten: 'trường mầm non', college: 'trường cao đẳng', university: 'trường đại học',
+  community_centre: 'nhà văn hoá', town_hall: 'trụ sở UBND', place_of_worship: 'cơ sở tôn giáo',
+};
+
 /** What the provenance chip credits: recorded levels for the replay, an estimate for presets. */
 function basisOf(id: FloodScenarioId): string {
   return id === 'kttv-2025-10' || id === 'preset-1000'
@@ -140,7 +146,8 @@ export const evacuationPlanWith = (repo: FloodRepo): ToolFactory => (ctx) =>
         'Phương án sơ tán (thứ tự ưu tiên; hướng sơ tán là đường thẳng tới điểm tập kết, không phải lộ trình):',
         ...rows.map((r) => {
           const when = r.alreadyWet ? 'đã ngập — cứu hộ' : `sơ tán xong trước ${r.deadlineTime}`;
-          const shelter = r.shelter.name ?? `điểm tập kết (${r.shelter.kind})`;
+          const kind = SHELTER_KINDS[r.shelter.kind] ?? 'điểm tập kết';
+          const shelter = r.shelter.name ? `${r.shelter.name} (${kind})` : kind;
           const roads = r.openRoads.length ? `; đường còn đi được: ${r.openRoads.join(', ')}` : '; không còn tuyến đường có tên nào chưa ngập';
           return `${r.priority}. ${r.wardName}: ${when}; ~${r.peopleEst} người; tới ${shelter}, cách ${(r.distanceM / 1000).toFixed(1)} km${roads}.`;
         }),

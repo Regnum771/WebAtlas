@@ -21,7 +21,7 @@ const PLAN: FloodPlanRow[] = [
   { priority: 1, wardCode: '1', wardName: 'Phường Hội An Tây', deadlineHour: 0, deadlineTime: '21:00 27/10/2025', alreadyWet: true, peopleEst: 400,
     shelter: { id: 's1', name: 'Trường A', kind: 'school', lonLat: [108.3, 15.88] }, distanceM: 1200, openRoads: [], arrow: { type: 'LineString', coordinates: [[108.32, 15.87], [108.3, 15.88]] } },
   { priority: 2, wardCode: '2', wardName: 'Xã Đại Lộc', deadlineHour: 9, deadlineTime: '06:00 28/10/2025', alreadyWet: false, peopleEst: 900,
-    shelter: { id: 's2', name: null, kind: 'school', lonLat: [108.1, 15.86] }, distanceM: 2500, openRoads: ['ĐT609'], arrow: { type: 'LineString', coordinates: [[108.12, 15.87], [108.1, 15.86]] } },
+    shelter: { id: 's2', name: null, kind: 'place_of_worship', lonLat: [108.1, 15.86] }, distanceM: 2500, openRoads: ['ĐT609'], arrow: { type: 'LineString', coordinates: [[108.12, 15.87], [108.1, 15.86]] } },
 ];
 
 function makeCtx() {
@@ -99,6 +99,8 @@ describe('flood scenario tools', () => {
     ]);
     expect(text).toContain('đã ngập — cứu hộ');
     expect(text).toContain('ĐT609');
+    expect(text).toContain('cơ sở tôn giáo');
+    expect(text).not.toContain('place_of_worship');
     expect(records[0].rowCount).toBe(2);
   });
 });

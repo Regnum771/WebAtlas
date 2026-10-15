@@ -192,7 +192,12 @@ def main():
     buildings = gpd.sjoin(buildings, wards[["geometry"]].reset_index(names="ward_code"), predicate="within")
     pois = pd.concat([osm("gis_osm_pois_free_1", columns=["osm_id", "fclass", "name"]),
                       osm("gis_osm_pois_a_free_1", columns=["osm_id", "fclass", "name"])])
-    pois = pois[pois["fclass"].isin(exposure.SHELTER_CLASSES)].copy()
+    pois = pois[pois["fclass"].isin(exposure.SHELTER_CLASSES)]
+    # Pagodas, temples and churches are customary flood shelters in central Viet Nam; with schools
+    # and halls alone (77 in the box) many xa shared one gathering point 10+ km away.
+    worship = pd.concat([osm("gis_osm_pofw_free_1", columns=["osm_id", "fclass", "name"]),
+                         osm("gis_osm_pofw_a_free_1", columns=["osm_id", "fclass", "name"])])
+    pois = pd.concat([pois, worship.assign(fclass="place_of_worship")]).copy()
     pois["geometry"] = pois.geometry.centroid
     log(f"  roads {len(roads)}, buildings {len(buildings)}, candidate shelters {len(pois)}")
     shelters = exposure.dry_shelters(pois, arrays["preset-1300"]["max_depth"], transform)
