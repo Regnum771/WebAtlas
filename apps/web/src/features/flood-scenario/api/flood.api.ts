@@ -1,5 +1,5 @@
 import type {
-  FloodPlanRow, FloodScenarioDetail, FloodScenarioId, FloodScenarioSummary,
+  FloodImpacts, FloodPlanRow, FloodScenarioDetail, FloodScenarioId, FloodScenarioSummary,
 } from '@webatlas/shared';
 import { apiRequest } from '../../../shared/api/apiClient';
 import { API_BASE_URL } from '../../../shared/config';
@@ -19,6 +19,10 @@ export function fetchScenario(id: FloodScenarioId): Promise<FloodScenarioDetail>
 
 export function fetchRoads(id: FloodScenarioId): Promise<FloodRoadsCollection> {
   return apiRequest<FloodRoadsCollection>(`/api/scenarios/${id}/roads`);
+}
+
+export function fetchImpacts(id: FloodScenarioId, hour: number): Promise<FloodImpacts> {
+  return apiRequest<FloodImpacts>(`/api/scenarios/${id}/impacts?hour=${hour}`);
 }
 
 export function fetchPlan(id: FloodScenarioId): Promise<FloodPlanRow[]> {

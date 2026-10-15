@@ -21,7 +21,7 @@ function props(overrides: Partial<FloodDockViewProps> = {}): FloodDockViewProps 
     scenarios: [summary], scenarioId: 'kttv-2025-10', detail, hour: 30, playing: false, speed: 1, status: 'ready',
     loaded: 97, error: null, stationId: 'cau-lau',
     onScenario: vi.fn(), onHour: vi.fn(), onPlay: vi.fn(), onPause: vi.fn(), onSpeed: vi.fn(), onStation: vi.fn(),
-    onRetry: vi.fn(), onClose: vi.fn(), planShown: false, onTogglePlan: vi.fn(),
+    onRetry: vi.fn(), onClose: vi.fn(), planShown: false, onTogglePlan: vi.fn(), impacts: null,
     ...overrides,
   };
 }
@@ -71,5 +71,10 @@ describe('FloodDockView', () => {
     expect(p.onTogglePlan).toHaveBeenCalled();
     rerender(<FloodDockView {...p} planShown />);
     expect(screen.getByRole('button', { name: 'Phương án sơ tán' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('summarises what is flooded by the current hour', () => {
+    render(<FloodDockView {...props({ impacts: { roadsCutKm: 34.5, wardsWet: 7, peopleEst: 12000 } })} />);
+    expect(screen.getByText('34,5 km đường ngập · 7 xã/phường · ~12.000 người', { exact: false })).toBeInTheDocument();
   });
 });

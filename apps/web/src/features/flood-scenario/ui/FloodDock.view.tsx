@@ -26,6 +26,8 @@ export interface FloodDockViewProps {
   onClose: () => void;
   planShown: boolean;
   onTogglePlan: () => void;
+  /** What is flooded by the current hour; null while unknown. */
+  impacts: { roadsCutKm: number; wardsWet: number; peopleEst: number } | null;
 }
 
 const SPEEDS: FloodSpeed[] = [1, 2, 4];
@@ -68,6 +70,11 @@ export function FloodDockView(p: FloodDockViewProps) {
           <p className="flood-dock-error" role="alert">
             {p.error ?? 'Không tải được kịch bản lũ.'}{' '}
             <button type="button" className="link" onClick={p.onRetry}>Thử lại</button>
+          </p>
+        )}
+        {ready && p.impacts && (
+          <p className="flood-dock-impacts">
+            Đến {time}: {p.impacts.roadsCutKm.toLocaleString('vi-VN')} km đường ngập · {p.impacts.wardsWet} xã/phường · ~{p.impacts.peopleEst.toLocaleString('vi-VN')} người
           </p>
         )}
         {ready && station && series && start && (

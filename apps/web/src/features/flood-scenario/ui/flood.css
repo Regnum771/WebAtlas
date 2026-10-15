@@ -63,6 +63,11 @@
   color: var(--ink);
 }
 
+.flood-dock-impacts {
+  margin: 0;
+  font-weight: 600;
+}
+
 .flood-dock-error {
   margin: 0;
   color: var(--alert);
