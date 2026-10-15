@@ -53,9 +53,12 @@ def lum(p):
 check("deeper is darker", lum(rgba[0, 1]) > lum(rgba[0, 2]) > lum(rgba[0, 3]))
 check("capped at max", (rgba[0, 3] == rgba[0, 4]).all())
 
-s = depth.water_surface({"a": 10.0, "b": 2.0}, {"a": (0, 0), "b": (0, 4)}, (1, 5))
-check("surface falls a to b", s[0, 0] > s[0, 2] > s[0, 4])
-check("station cell takes its own level", s[0, 0] == 10.0 and s[0, 4] == 2.0)
+coast_dist = np.array([[0.0, 1.0, 2.0, 3.0, 4.0, 6.0]], "float32")  # km from the sea
+prof = depth.profile_surface({"down": 2.0, "up": 10.0}, {"down": 1.0, "up": 4.0}, coast_dist, sea_level=0.5)
+check("profile: sea level at the coast", abs(prof[0, 0] - 0.5) < 1e-6)
+check("profile: station takes its level", abs(prof[0, 1] - 2.0) < 1e-6 and abs(prof[0, 4] - 10.0) < 1e-6)
+check("profile: linear between stations", abs(prof[0, 2] - (2.0 + 8.0 / 3)) < 1e-5)
+check("profile: holds beyond the last station", abs(prof[0, 5] - 10.0) < 1e-6)
 
 if failures:
     print(f"\n{len(failures)} failed")

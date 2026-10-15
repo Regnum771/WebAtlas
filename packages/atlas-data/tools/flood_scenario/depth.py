@@ -1,7 +1,7 @@
 """
 Flood depth on a grid: a planar ("bathtub") approximation, not a hydraulic model.
 
-A water surface is interpolated from station levels, ground is subtracted, and only water that
+A water surface is interpolated from station levels by distance from the sea, ground is subtracted, and only water that
 connects to a river channel is kept, so closed hollows far from the river stay dry.
 """
 import numpy as np
@@ -12,23 +12,14 @@ RAMP = [(0.0, (0xC6, 0xDB, 0xEF)), (1.5, (0x42, 0x92, 0xC6)), (4.0, (0x08, 0x30,
 ALPHA = 190
 
 
-def water_surface(levels, station_rc, shape, power=2.0):
-    """Inverse-distance-weighted surface (float32) from station levels at fractional (row, col)."""
-    rows, cols = np.indices(shape, dtype="float64")
-    num = np.zeros(shape)
-    den = np.zeros(shape)
-    exact = np.full(shape, np.nan)
-    for sid, level in levels.items():
-        r, c = station_rc[sid]
-        dist = np.hypot(rows - r, cols - c)
-        on_cell = dist < 0.5
-        exact[on_cell] = level
-        w = 1.0 / np.maximum(dist, 0.5) ** power
-        num += w * level
-        den += w
-    surface = num / den
-    surface[~np.isnan(exact)] = exact[~np.isnan(exact)]
-    return surface.astype("float32")
+def profile_surface(levels, station_dist_km, coast_dist_km, sea_level=0.8):
+    """Water level by distance from the sea: sea level at the coast, each station's level at its own
+    distance, linear in between, the furthest station's level beyond it. On a delta plain levels
+    fall towards the sea, which a 2-D interpolation between stations does not respect."""
+    order = sorted(levels, key=lambda k: station_dist_km[k])
+    xp = [0.0] + [float(station_dist_km[k]) for k in order]
+    fp = [sea_level] + [float(levels[k]) for k in order]
+    return np.interp(coast_dist_km, xp, fp).astype("float32")
 
 
 def flood_depth(surface, dem, channel):
