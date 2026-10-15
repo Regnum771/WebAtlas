@@ -13,6 +13,7 @@ import { REGION_PROVINCE_CODES } from './region.js';
 // top-level initialization depend on module-cycle load order.
 import { LAYER_ATTRIBUTE_MAP } from './layer-attributes.js';
 import { isGeoJsonGeometry, countVertices } from './geometry.js';
+import { isFloodScenarioId } from './flood.js';
 export const MAP_COMMAND_KINDS = [
     'zoomToRegion',
     'zoomToFeature',
@@ -27,6 +28,9 @@ export const MAP_COMMAND_KINDS = [
     'showRoi',
     'clearRoi',
     'proposeFeatureEdit',
+    'showFloodScenario',
+    'showEvacuationPlan',
+    'clearFloodScenario',
 ];
 export const BASEMAP_TYPES = ['street', 'satellite', 'dem'];
 /**
@@ -187,6 +191,14 @@ export function isMapCommand(value) {
                 typeof c.label === 'string' &&
                 (c.fit === undefined || typeof c.fit === 'boolean' || c.fit === 'ifOutside'));
         case 'clearRoi':
+            return true;
+        case 'showFloodScenario':
+            return (isFloodScenarioId(c.scenarioId) &&
+                (c.hour === undefined || (Number.isInteger(c.hour) && c.hour >= 0)) &&
+                (c.play === undefined || typeof c.play === 'boolean'));
+        case 'showEvacuationPlan':
+            return isFloodScenarioId(c.scenarioId);
+        case 'clearFloodScenario':
             return true;
         case 'proposeFeatureEdit': {
             if (!isLayerKey(c.layerKey) || typeof c.featureId !== 'string')

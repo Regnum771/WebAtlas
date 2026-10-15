@@ -18,6 +18,8 @@ const EnvSchema = z.object({
   ASSISTANT_SESSION_TTL_MS: z.coerce.number().int().min(60000).default(1800000),
   /** Connection string for the read-only webatlas_assistant role (Task 8). */
   ASSISTANT_DATABASE_URL: z.string().url().optional(),
+  /** Where build_scenarios.py wrote the flood frames; defaults to the repo cache path. */
+  FLOOD_FRAMES_DIR: z.string().optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 });
 

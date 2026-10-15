@@ -1,0 +1,103 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import type { Pool } from 'pg';
+import { buildApp } from '../../server';
+import { getPool, closePool } from '../../db/pool';
+import { listScenarios } from './repository';
+
+let app: ReturnType<typeof buildApp>;
+
+/**
+ * Whether THIS machine has run packages/atlas-data/tools/flood_scenario/build_scenarios.py
+ * (docs/runbooks/flood-scenario-demo.md). Probed at module scope so `skipIf` sees it at
+ * collection time (see elevation.test.ts for why beforeAll is too late).
+ */
+const scenariosBuilt = await (async () => {
+  const { rows } = await getPool().query<{ built: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                     WHERE table_schema = 'scenario' AND table_name = 'flood_scenario') AS built`
+  );
+  return rows[0].built;
+})();
+if (!scenariosBuilt) console.warn('scenario schema missing: run build_scenarios.py; data tests skipped');
+
+beforeAll(async () => {
+  app = buildApp();
+  await app.ready();
+});
+afterAll(async () => {
+  await app.close();
+  await closePool();
+});
+
+describe('listScenarios', () => {
+  it('returns an empty list when the scenario schema was never built', async () => {
+    const pool = { query: async () => { throw Object.assign(new Error('missing'), { code: '42P01' }); } } as unknown as Pool;
+    await expect(listScenarios(pool)).resolves.toEqual([]);
+  });
+});
+
+describe('GET /api/scenarios', () => {
+  it('404s an unknown scenario with a Vietnamese message', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/scenarios/nope' });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.message).toBe('Không có kịch bản lũ này.');
+  });
+
+  it('refuses a frame path that is not a scenario id and an integer hour', async () => {
+    for (const url of ['/api/scenarios/..%2F..%2Fx/frames/1', '/api/scenarios/kttv-2025-10/frames/abc',
+      '/api/scenarios/kttv-2025-10/frames/..%2F..%2Fpackage.json']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect([400, 404]).toContain(res.statusCode);
+      expect(res.headers['content-type']).not.toContain('image/png');
+    }
+  });
+
+  it.skipIf(!scenariosBuilt)('lists the four scenarios', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/scenarios' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().map((s: { id: string }) => s.id)).toEqual(['kttv-2025-10', 'preset-500', 'preset-1000', 'preset-1300']);
+  });
+
+  it.skipIf(!scenariosBuilt)('returns a scenario with 97 levels per station and the frame extent', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/scenarios/kttv-2025-10' });
+    const body = res.json();
+    expect(body.bulletinHour).toBe(24);
+    expect(body.series['cau-lau'].level).toHaveLength(97);
+    expect(Math.max(...body.series['cau-lau'].level)).toBeCloseTo(5.62, 2);
+    expect(body.series['cau-lau'].forecast.filter((v: number | null) => v !== null)).toHaveLength(4);
+    expect(body.floodedKm2).toHaveLength(97);
+    expect(body.frameExtent).toHaveLength(4);
+    expect(body.stations.map((s: { id: string }) => s.id)).toContain('hoi-an');
+  });
+
+  it.skipIf(!scenariosBuilt)('clamps an impacts hour beyond the scenario to its last hour', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/scenarios/kttv-2025-10/impacts?hour=999' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.hour).toBe(96);
+    expect(body.time).toBe('21:00 31/10/2025');
+    expect(body.totals.wardsWet).toBe(body.wards.length);
+  });
+
+  it.skipIf(!scenariosBuilt)('returns the plan in priority order from 1', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/scenarios/kttv-2025-10/plan' });
+    const rows = res.json();
+    expect(rows.length).toBeGreaterThan(0);
+    rows.forEach((r: { priority: number }, i: number) => expect(r.priority).toBe(i + 1));
+    expect(rows[0].arrow.type).toBe('LineString');
+  });
+
+  it.skipIf(!scenariosBuilt)('serves a frame as a cacheable PNG', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/scenarios/kttv-2025-10/frames/24' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(res.headers['cache-control']).toContain('max-age=3600');
+  });
+
+  it.skipIf(!scenariosBuilt)('lets a client preload more frames than the global rate limit allows', async () => {
+    for (let i = 0; i < 150; i++) {
+      const res = await app.inject({ method: 'GET', url: `/api/scenarios/preset-500/frames/${i % 97}` });
+      expect(res.statusCode).toBe(200);
+    }
+  });
+});

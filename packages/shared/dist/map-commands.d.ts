@@ -8,7 +8,8 @@
  */
 import { type EditableLayerKey } from './index.js';
 import { type GeoJsonGeometry } from './geometry.js';
-export declare const MAP_COMMAND_KINDS: readonly ["zoomToRegion", "zoomToFeature", "zoomTo", "resetView", "setLayerVisible", "setLayerOpacity", "setBasemap", "highlightFeatures", "clearHighlights", "showGeometries", "showRoi", "clearRoi", "proposeFeatureEdit"];
+import { type FloodScenarioId } from './flood.js';
+export declare const MAP_COMMAND_KINDS: readonly ["zoomToRegion", "zoomToFeature", "zoomTo", "resetView", "setLayerVisible", "setLayerOpacity", "setBasemap", "highlightFeatures", "clearHighlights", "showGeometries", "showRoi", "clearRoi", "proposeFeatureEdit", "showFloodScenario", "showEvacuationPlan", "clearFloodScenario"];
 export type MapCommandKind = (typeof MAP_COMMAND_KINDS)[number];
 export declare const BASEMAP_TYPES: readonly ["street", "satellite", "dem"];
 export type BasemapName = (typeof BASEMAP_TYPES)[number];
@@ -136,6 +137,18 @@ export type MapCommand = {
     fit?: boolean | 'ifOutside';
 } | {
     kind: 'clearRoi';
+}
+/** Opens the Kịch bản lũ dock on a scenario, at an hour, optionally playing. */
+ | {
+    kind: 'showFloodScenario';
+    scenarioId: FloodScenarioId;
+    hour?: number;
+    play?: boolean;
+} | {
+    kind: 'showEvacuationPlan';
+    scenarioId: FloodScenarioId;
+} | {
+    kind: 'clearFloodScenario';
 } | FeatureEditProposal;
 /**
  * Runtime guard. The API validates assistant-produced commands with this before

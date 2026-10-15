@@ -99,9 +99,27 @@ describe('isMapCommand', () => {
 
   it('lists every kind in MAP_COMMAND_KINDS', () => {
     expect([...MAP_COMMAND_KINDS].sort()).toEqual([
-      'clearHighlights', 'clearRoi', 'highlightFeatures', 'proposeFeatureEdit', 'resetView', 'setBasemap',
-      'setLayerOpacity', 'setLayerVisible', 'showGeometries', 'showRoi', 'zoomTo', 'zoomToFeature', 'zoomToRegion',
+      'clearFloodScenario', 'clearHighlights', 'clearRoi', 'highlightFeatures', 'proposeFeatureEdit', 'resetView',
+      'setBasemap', 'setLayerOpacity', 'setLayerVisible', 'showEvacuationPlan', 'showFloodScenario', 'showGeometries',
+      'showRoi', 'zoomTo', 'zoomToFeature', 'zoomToRegion',
     ]);
+  });
+
+  it('accepts showFloodScenario for a known scenario with an optional hour and play flag', () => {
+    expect(isMapCommand({ kind: 'showFloodScenario', scenarioId: 'kttv-2025-10' })).toBe(true);
+    expect(isMapCommand({ kind: 'showFloodScenario', scenarioId: 'kttv-2025-10', hour: 30, play: true })).toBe(true);
+  });
+
+  it('rejects showFloodScenario with an unknown scenario or a bad hour', () => {
+    expect(isMapCommand({ kind: 'showFloodScenario', scenarioId: 'x' })).toBe(false);
+    expect(isMapCommand({ kind: 'showFloodScenario', scenarioId: 'kttv-2025-10', hour: -1 })).toBe(false);
+    expect(isMapCommand({ kind: 'showFloodScenario', scenarioId: 'kttv-2025-10', hour: 1.5 })).toBe(false);
+  });
+
+  it('accepts showEvacuationPlan for a known scenario and clearFloodScenario', () => {
+    expect(isMapCommand({ kind: 'showEvacuationPlan', scenarioId: 'preset-1300' })).toBe(true);
+    expect(isMapCommand({ kind: 'showEvacuationPlan', scenarioId: 'nope' })).toBe(false);
+    expect(isMapCommand({ kind: 'clearFloodScenario' })).toBe(true);
   });
 
   it('accepts setLayerVisible with a known layerStateId', () => {

@@ -13,6 +13,7 @@ import { REGION_PROVINCE_CODES } from './region.js';
 // top-level initialization depend on module-cycle load order.
 import { LAYER_ATTRIBUTE_MAP } from './layer-attributes.js';
 import { isGeoJsonGeometry, countVertices, type GeoJsonGeometry } from './geometry.js';
+import { isFloodScenarioId, type FloodScenarioId } from './flood.js';
 
 export const MAP_COMMAND_KINDS = [
   'zoomToRegion',
@@ -28,6 +29,9 @@ export const MAP_COMMAND_KINDS = [
   'showRoi',
   'clearRoi',
   'proposeFeatureEdit',
+  'showFloodScenario',
+  'showEvacuationPlan',
+  'clearFloodScenario',
 ] as const;
 
 export type MapCommandKind = (typeof MAP_COMMAND_KINDS)[number];
@@ -172,6 +176,10 @@ export type MapCommand =
    *  only if it has left the viewport — used after a radius change (U-5). */
   | { kind: 'showRoi'; geometry: GeoJsonGeometry; label: string; fit?: boolean | 'ifOutside' }
   | { kind: 'clearRoi' }
+  /** Opens the Kịch bản lũ dock on a scenario, at an hour, optionally playing. */
+  | { kind: 'showFloodScenario'; scenarioId: FloodScenarioId; hour?: number; play?: boolean }
+  | { kind: 'showEvacuationPlan'; scenarioId: FloodScenarioId }
+  | { kind: 'clearFloodScenario' }
   | FeatureEditProposal;
 
 function isLonLat(value: unknown): value is [number, number] {
@@ -271,6 +279,16 @@ export function isMapCommand(value: unknown): value is MapCommand {
         (c.fit === undefined || typeof c.fit === 'boolean' || c.fit === 'ifOutside')
       );
     case 'clearRoi':
+      return true;
+    case 'showFloodScenario':
+      return (
+        isFloodScenarioId(c.scenarioId) &&
+        (c.hour === undefined || (Number.isInteger(c.hour) && (c.hour as number) >= 0)) &&
+        (c.play === undefined || typeof c.play === 'boolean')
+      );
+    case 'showEvacuationPlan':
+      return isFloodScenarioId(c.scenarioId);
+    case 'clearFloodScenario':
       return true;
     case 'proposeFeatureEdit': {
       if (!isLayerKey(c.layerKey) || typeof c.featureId !== 'string') return false;
