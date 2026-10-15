@@ -12,6 +12,8 @@ import { drawRoi, eraseRoi } from './roiLayer';
 import { getProvinceBbox } from '../../../entities/admin-unit/adminUnits.store';
 import { MIN_ZOOM, MAX_ZOOM, INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
 import { showHighlights, showResults, clearHighlights } from './highlightLayer';
+import { openTool } from '../../shell/model/shell.store';
+import { closeScenario, openScenario, showPlan } from '../../flood-scenario/model/flood.store';
 
 // Guard: BasemapName (shared contract) and BasemapType (MapModel) are independent
 // types with the same literal set. If either drifts, this fails to compile.
@@ -139,6 +141,20 @@ export function createCommandExecutor(deps: CommandDeps) {
       case 'clearRoi': {
         if (deps.map) eraseRoi(deps.map);
         return { ok: true, text: 'Đã bỏ vùng phân tích.' };
+      }
+      case 'showFloodScenario': {
+        openTool('flood');
+        void openScenario(cmd.scenarioId, cmd.hour, cmd.play ?? false);
+        return { ok: true, text: 'Đã mở kịch bản lũ.' };
+      }
+      case 'showEvacuationPlan': {
+        openTool('flood');
+        void showPlan(cmd.scenarioId);
+        return { ok: true, text: 'Đã vẽ phương án sơ tán.' };
+      }
+      case 'clearFloodScenario': {
+        closeScenario();
+        return { ok: true, text: 'Đã đóng kịch bản lũ.' };
       }
       case 'proposeFeatureEdit': {
         if (!deps.onProposeEdit) return { ok: false, reason: 'Không mở được biểu mẫu cập nhật.' };

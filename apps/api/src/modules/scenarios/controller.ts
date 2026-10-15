@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { FLOOD_SCENARIO_IDS } from '@webatlas/shared';
 import { validate } from '../../lib/validate';
 import { NotFoundError } from '../../errors';
-import { framePath, getImpacts, getPlan, getScenario, listScenarios } from './repository';
+import { framePath, getImpacts, getPlan, getRoads, getScenario, listScenarios } from './repository';
 
 const NOT_FOUND = 'Không có kịch bản lũ này.';
 
@@ -41,6 +41,10 @@ export async function impacts(req: FastifyRequest, reply: FastifyReply) {
 
 export async function plan(req: FastifyRequest, reply: FastifyReply) {
   reply.send(found(await getPlan(req.server.pg, scenarioId(req.params))));
+}
+
+export async function roads(req: FastifyRequest, reply: FastifyReply) {
+  reply.send(found(await getRoads(req.server.pg, scenarioId(req.params))));
 }
 
 export async function frame(req: FastifyRequest, reply: FastifyReply) {

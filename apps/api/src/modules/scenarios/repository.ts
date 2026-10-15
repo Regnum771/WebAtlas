@@ -166,6 +166,22 @@ export async function getPlan(pool: Pool, id: FloodScenarioId): Promise<FloodPla
   }));
 }
 
+/** Every road segment the scenario cuts, with the hour it is cut: the map colours them by the slider hour. */
+export async function getRoads(pool: Pool, id: FloodScenarioId): Promise<unknown | null> {
+  const row = await scenarioRow(pool, id);
+  if (!row) return null;
+  const { rows } = await pool.query(
+    `SELECT json_build_object('type', 'FeatureCollection', 'features', coalesce(json_agg(json_build_object(
+              'type', 'Feature',
+              'geometry', ST_AsGeoJSON(geom, 5)::json,
+              'properties', json_build_object('cutHour', cut_hour, 'name', name)
+            ) ORDER BY cut_hour), '[]'::json)) AS fc
+       FROM scenario.flood_road WHERE scenario_id = $1`,
+    [id]
+  );
+  return rows[0].fc;
+}
+
 /** Where the build script writes frames; FLOOD_FRAMES_DIR overrides it. */
 export function framesDir(): string {
   return config.FLOOD_FRAMES_DIR ?? path.resolve(process.cwd(), '../../packages/atlas-data/data/cache/flood/frames');

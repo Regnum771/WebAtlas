@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-export type ToolId = 'measure' | 'roi' | 'add-data' | 'basemap' | 'edit';
+export type ToolId = 'measure' | 'roi' | 'add-data' | 'basemap' | 'edit' | 'flood';
 export interface ShellState { assistantOpen: boolean; tool: ToolId | null }
 
 /** Which shell pieces are open. A module store, like toast.store.ts, so any widget can drive it. */

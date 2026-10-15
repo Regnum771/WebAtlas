@@ -3,6 +3,8 @@ import { createCommandExecutor, type CommandDeps } from './mapCommands';
 import { INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
 import { fromLonLat } from 'ol/proj';
 import { setProvinceBboxes } from '../../../entities/admin-unit/adminUnits.store';
+import { getShell, resetShell } from '../../shell/model/shell.store';
+import { getFloodState, resetFloodStore, setFloodLoader } from '../../flood-scenario/model/flood.store';
 
 function makeDeps(
   overrides: Partial<CommandDeps> = {},
@@ -208,5 +210,27 @@ describe('zoomToRegion uses real extents when they are loaded', () => {
     const result = createCommandExecutor(deps)({ kind: 'zoomToRegion', provinceCode: '66' });
     expect(deps.animate).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ ok: true, text: 'Đã phóng to tới Đắk Lắk.' });
+  });
+
+  it('showFloodScenario opens the Kịch bản lũ tool and the scenario', async () => {
+    resetShell();
+    resetFloodStore();
+    setFloodLoader({
+      fetchScenario: vi.fn(async (id) => ({ id, name: id, kind: 'kttv', rainTotalMm: null, startTime: '2025-10-27T14:00:00Z',
+        hours: 96, bulletinHour: 24, basis: '', stations: [], series: {}, floodedKm2: [], frameExtent: [0, 0, 1, 1] })),
+      fetchRoads: vi.fn(async () => ({ type: 'FeatureCollection' as const, features: [] })),
+      fetchPlan: vi.fn(async () => []),
+      preloadFrames: vi.fn(async () => {}),
+    });
+    const result = createCommandExecutor(makeDeps())({ kind: 'showFloodScenario', scenarioId: 'kttv-2025-10', hour: 30 });
+    expect(result).toEqual({ ok: true, text: 'Đã mở kịch bản lũ.' });
+    expect(getShell().tool).toBe('flood');
+    await vi.waitFor(() => expect(getFloodState().hour).toBe(30));
+  });
+
+  it('clearFloodScenario closes the scenario', () => {
+    const result = createCommandExecutor(makeDeps())({ kind: 'clearFloodScenario' });
+    expect(result).toEqual({ ok: true, text: 'Đã đóng kịch bản lũ.' });
+    expect(getFloodState().scenarioId).toBeNull();
   });
 });

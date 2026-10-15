@@ -43,6 +43,11 @@ describe('GET /api/scenarios', () => {
     expect(res.json().error.message).toBe('Không có kịch bản lũ này.');
   });
 
+  it('404s the roads of an unknown scenario', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/scenarios/nope/roads' });
+    expect(res.statusCode).toBe(404);
+  });
+
   it('refuses a frame path that is not a scenario id and an integer hour', async () => {
     for (const url of ['/api/scenarios/..%2F..%2Fx/frames/1', '/api/scenarios/kttv-2025-10/frames/abc',
       '/api/scenarios/kttv-2025-10/frames/..%2F..%2Fpackage.json']) {
@@ -85,6 +90,15 @@ describe('GET /api/scenarios', () => {
     expect(rows.length).toBeGreaterThan(0);
     rows.forEach((r: { priority: number }, i: number) => expect(r.priority).toBe(i + 1));
     expect(rows[0].arrow.type).toBe('LineString');
+  });
+
+  it.skipIf(!scenariosBuilt)('returns the cut roads as GeoJSON with the hour each is cut', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/scenarios/kttv-2025-10/roads' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.type).toBe('FeatureCollection');
+    expect(body.features.length).toBeGreaterThan(0);
+    expect(body.features.every((f: { properties: { cutHour: number } }) => Number.isInteger(f.properties.cutHour))).toBe(true);
   });
 
   it.skipIf(!scenariosBuilt)('serves a frame as a cacheable PNG', async () => {

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { detail, frame, impacts, list, plan } from './controller';
+import { detail, frame, impacts, list, plan, roads } from './controller';
 
 /**
  * Read-only flood scenario demo (docs/superpowers/specs/2026-10-15-flood-scenario-demo-design.md).
@@ -13,5 +13,6 @@ export default async function scenariosRoutes(app: FastifyInstance) {
   app.get('/scenarios/:id', detail);
   app.get('/scenarios/:id/impacts', impacts);
   app.get('/scenarios/:id/plan', plan);
+  app.get('/scenarios/:id/roads', roads);
   app.get('/scenarios/:id/frames/:hour', { config: { rateLimit: { max: 3000, timeWindow: '1 minute' } } }, frame);
 }
