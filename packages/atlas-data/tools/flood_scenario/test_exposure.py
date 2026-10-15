@@ -32,7 +32,7 @@ def check(name, cond):
 line = LineString([(108.0, 15.8), (108.01, 15.8)])  # ~1.07 km east-west at 15.8 N
 roads = gpd.GeoDataFrame({
     "osm_id": ["a", "b", "c", "d"],
-    "fclass": ["primary", "primary", "residential", "footway"],
+    "fclass": ["primary", "primary", "residential", "motorway"],
     "name": ["QL1", "Cầu X", None, None],
     "ref": [None, None, None, None],
     "bridge": ["F", "T", "F", "F"],
@@ -41,7 +41,7 @@ roads = gpd.GeoDataFrame({
 
 kept = exposure.floodable_roads(roads)
 check("bridges are dropped: they stand above the water", "b" not in set(kept["osm_id"]))
-check("road classes outside the list are dropped", "d" not in set(kept["osm_id"]))
+check("motorways are dropped: their embankments vanish in a 30 m DEM", "d" not in set(kept["osm_id"]))
 check("ordinary roads are kept", set(kept["osm_id"]) == {"a", "c"})
 
 transform = from_origin(107.99, 15.81, 0.001, 0.001)

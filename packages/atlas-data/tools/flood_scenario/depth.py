@@ -32,6 +32,12 @@ def flood_depth(surface, dem, channel):
     return np.where(keep, raw, 0.0).astype("float32")
 
 
+def above_baseline(depth, baseline):
+    """Flood is new water: cells already wet in the pre-flood state (river beds, ponds, low fields the
+    bathtub wets even below BD1) are background water, not flood."""
+    return np.where(baseline > 0, 0.0, depth).astype("float32")
+
+
 def depth_rgba(depth, max_m=4.0):
     """H x W x 4 uint8 image: continuous blue ramp by depth, transparent where dry."""
     d = np.clip(depth, 0.0, max_m)

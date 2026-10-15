@@ -132,7 +132,7 @@ def cell_km2(transform):
     return abs(transform.a) * 111.320 * np.cos(np.radians(lat)) * abs(transform.e) * 110.574
 
 
-def run_scenario(sid, lv, dem, transform, crs, channel, coast_km, station_km, grid):
+def run_scenario(sid, lv, dem, transform, crs, channel, coast_km, station_km, grid, baseline):
     out_dir = FRAMES / sid
     out_dir.mkdir(parents=True, exist_ok=True)
     first_wet = np.full(dem.shape, -1, dtype="int16")
@@ -142,7 +142,7 @@ def run_scenario(sid, lv, dem, transform, crs, channel, coast_km, station_km, gr
     km2 = cell_km2(transform)
     for h in range(levels.HOURS + 1):
         surface = depth.profile_surface({k: v[h] for k, v in lv.items()}, station_km, coast_km)
-        dep = depth.flood_depth(surface, dem, channel)
+        dep = depth.above_baseline(depth.flood_depth(surface, dem, channel), baseline)
         first_wet[(first_wet < 0) & (dep >= WET_M)] = h
         first_cut[(first_cut < 0) & (dep >= CUT_M)] = h
         np.maximum(max_depth, dep, out=max_depth)
@@ -167,6 +167,10 @@ def main():
     readings = levels.load_readings(str(CSV))
     forecast = levels.load_forecast(str(CSV))
     all_levels = {s["id"]: levels.scenario_levels(s["id"], readings) for s in levels.SCENARIOS}
+    # Hour 0 is the same pre-flood river (below BD1) in every scenario; what is wet then is background.
+    base_levels = {k: v[0] for k, v in all_levels["kttv-2025-10"].items()}
+    baseline = depth.flood_depth(depth.profile_surface(base_levels, station_km, coast_km), dem, channel)
+    log(f"  background water at hour 0: {(baseline > 0).sum() * cell_km2(transform):.0f} km2")
 
     if FRAMES.exists():
         shutil.rmtree(FRAMES)
@@ -176,7 +180,7 @@ def main():
         if sid == "preset-1000":
             continue  # identical levels to kttv-2025-10; copied below
         log(f"scenario {sid} ...")
-        arrays[sid], rows = run_scenario(sid, all_levels[sid], dem, transform, crs, channel, coast_km, station_km, grid)
+        arrays[sid], rows = run_scenario(sid, all_levels[sid], dem, transform, crs, channel, coast_km, station_km, grid, baseline)
         hourly += rows
     arrays["preset-1000"] = arrays["kttv-2025-10"]
     shutil.copytree(FRAMES / "kttv-2025-10", FRAMES / "preset-1000")

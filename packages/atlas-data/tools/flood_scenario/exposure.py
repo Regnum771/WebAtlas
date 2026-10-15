@@ -14,9 +14,10 @@ from rasterio.transform import rowcol
 from shapely.geometry import LineString, Point
 
 UTM = "EPSG:32649"
+# No motorways: the expressway runs on an embankment a 30 m DEM flattens, so it read as "6 m deep".
 ROAD_CLASSES = [
-    "motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential",
-    "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link",
+    "trunk", "primary", "secondary", "tertiary", "unclassified", "residential",
+    "trunk_link", "primary_link", "secondary_link", "tertiary_link",
 ]
 ROAD_RANK = {c: i for i, c in enumerate(ROAD_CLASSES)}
 SHELTER_CLASSES = ["school", "college", "university", "community_centre", "town_hall", "kindergarten"]

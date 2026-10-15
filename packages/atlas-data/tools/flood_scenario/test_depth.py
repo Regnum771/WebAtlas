@@ -60,6 +60,13 @@ check("profile: station takes its level", abs(prof[0, 1] - 2.0) < 1e-6 and abs(p
 check("profile: linear between stations", abs(prof[0, 2] - (2.0 + 8.0 / 3)) < 1e-5)
 check("profile: holds beyond the last station", abs(prof[0, 5] - 10.0) < 1e-6)
 
+base = np.array([[0.4, 0.0, 0.0]], "float32")
+now = np.array([[1.4, 0.7, 0.0]], "float32")
+fl = depth.above_baseline(now, base)
+check("baseline: water already there before the flood is not flood", fl[0, 0] == 0.0)
+check("baseline: new water is flood at its full depth", abs(fl[0, 1] - 0.7) < 1e-6)
+check("baseline: dry stays dry", fl[0, 2] == 0.0)
+
 if failures:
     print(f"\n{len(failures)} failed")
     sys.exit(1)
