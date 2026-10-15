@@ -261,12 +261,16 @@
 }
 
 .flood-legend-ticks {
-  display: flex;
-  justify-content: space-between;
+  position: relative;
+  height: 16px;
   font-size: var(--text-xs);
   color: var(--ink-2);
   margin-bottom: 6px;
 }
+
+.flood-legend-ticks span { position: absolute; transform: translateX(-50%); }
+.flood-legend-ticks span:first-child { transform: none; }
+.flood-legend-ticks span:last-child { transform: translateX(-100%); }
 
 .flood-legend-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .flood-legend-rows li { display: flex; align-items: center; gap: 8px; }

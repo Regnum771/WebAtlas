@@ -76,6 +76,35 @@ describe('flood scenario tools', () => {
     expect(records[0].datasetVersion).toContain('Trung tâm Dự báo KTTV');
   });
 
+  it('tells the model which hour is which clock time, so it need not do date arithmetic', () => {
+    const { ctx } = makeCtx();
+    for (const tool of [runFloodScenarioTool(ctx), floodImpactsTool(ctx)]) {
+      const d = (tool as unknown as { description: string }).description;
+      expect(d).toContain('giờ 0 = 05:00 26/10/2025');
+      expect(d).toContain('giờ 97 = 06:00 30/10/2025');
+    }
+  });
+
+  it('run_flood_scenario says so when it clamps an hour', async () => {
+    const { ctx, commands } = makeCtx();
+    const text = await run(runFloodScenarioTool(ctx), { scenarioId: 'kttv-2025-10', hour: 500 });
+    expect(text).toContain('Đã giới hạn về giờ 96');
+    expect(commands[0]).toMatchObject({ hour: 96 });
+  });
+
+  it('flood_impacts names the people as living in xã that have started to flood, not flooded by that hour', async () => {
+    const { ctx } = makeCtx();
+    repo.getImpacts.mockResolvedValue({
+      ...EMPTY, hour: 40, time: '21:00 27/10/2025', roads: [],
+      wards: [{ code: '1', name: 'Xã A', firstHour: 10, firstTime: '15:00 26/10/2025', buildingsFlooded: 10, peopleEst: 40, maxDepth: 1 }],
+      totals: { roadsCut: 0, roadsCutKm: 0, wardsWet: 1, buildingsFlooded: 10, peopleEst: 40 },
+    });
+    const text = await run(floodImpactsTool(ctx), { scenarioId: 'kttv-2025-10', hour: 40 });
+    expect(text).toContain('đã bắt đầu ngập');
+    expect(text).toContain('tính đến đỉnh lũ');
+    expect(text).not.toContain('Tuyến đường (ngập từ');
+  });
+
   it('flood_impacts clamps an hour beyond the scenario and says so', async () => {
     const { ctx } = makeCtx();
     repo.getImpacts.mockResolvedValue({ ...EMPTY, hour: 96, time: '21:00 31/10/2025' });

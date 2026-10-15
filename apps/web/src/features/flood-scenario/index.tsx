@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMapContext } from '../../app/providers/MapProvider';
-import type { FloodImpacts } from '@webatlas/shared';
-import { fetchImpacts } from './api/flood.api';
+import { useImpactsSummary } from './model/useImpactsSummary';
 import { clearFloodLayers, syncFloodLayers } from './model/floodLayers';
 import {
   closeScenario, hidePlan, loadScenarios, openScenario, pause, play, retry, setHour, setSpeed, showPlan, useFloodScenario,
@@ -16,15 +15,7 @@ export default function FloodScenario() {
   const { map } = useMapContext();
   const [stationId, setStationId] = useState('cau-lau');
   const fitted = useRef<string | null>(null);
-  const [impacts, setImpacts] = useState<FloodImpacts['totals'] | null>(null);
-
-  // The summary line follows the slider; an answer for an hour already left behind is dropped.
-  useEffect(() => {
-    if (!s.scenarioId || s.status !== 'ready') { setImpacts(null); return; }
-    let current = true;
-    fetchImpacts(s.scenarioId, s.hour).then((d) => { if (current) setImpacts(d.totals); }).catch(() => { if (current) setImpacts(null); });
-    return () => { current = false; };
-  }, [s.scenarioId, s.status, s.hour]);
+  const impacts = useImpactsSummary(s.scenarioId, s.status === 'ready', s.hour);
 
   useEffect(() => { void loadScenarios(); }, []);
 

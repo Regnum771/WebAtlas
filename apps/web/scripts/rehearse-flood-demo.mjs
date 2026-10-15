@@ -119,6 +119,22 @@ async function main() {
     }
     await shot('1-replay');
 
+    // Step 1a: drag the slider across every hour, then switch scenario: must not trip a rate limit.
+    await page.$eval('.flood-dock-slider input', async (input) => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      for (let h = 0; h <= Number(input.max); h++) {
+        set.call(input, String(h));
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 5));
+      }
+    });
+    await page.select('.flood-dock-select', 'preset-1300');
+    const switched = await page.waitForFunction(() => document.querySelector('.flood-dock [aria-label="Phát"]:not([disabled])'), { timeout: 60000 }).then(() => true).catch(() => false);
+    const apiOk = await page.evaluate(async () => (await fetch('http://localhost:3001/api/scenarios')).status);
+    report(switched && apiOk === 200, 'slider drag then scenario switch still loads, API not rate-limited', `GET /api/scenarios → ${apiOk}`);
+    await page.select('.flood-dock-select', 'kttv-2025-10');
+    await page.waitForFunction(() => document.querySelector('.flood-dock [aria-label="Phát"]:not([disabled])'), { timeout: 60000 });
+
     // Step 1b: the plan from the dock button, the fallback if the assistant cannot answer.
     await clickButton(page, '.flood-dock', 'Phương án sơ tán');
     const planFromDock = await page.waitForFunction(() => document.querySelector('.flood-legend')?.textContent.includes('Điểm tập kết'), { timeout: 30000 }).then(() => true).catch(() => false);

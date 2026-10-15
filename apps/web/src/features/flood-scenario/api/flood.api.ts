@@ -41,6 +41,8 @@ export async function preloadFrames(id: FloodScenarioId, hours: number, onProgre
   let loaded = 0;
   const one = (hour: number) => new Promise<void>((resolve, reject) => {
     const img = new Image();
+    // Same CORS mode as the map's ImageStatic, so the cached image is reused when it is drawn.
+    img.crossOrigin = 'anonymous';
     img.onload = () => resolve();
     img.onerror = () => reject(new Error(`frame ${hour}`));
     img.src = frameUrl(id, hour);

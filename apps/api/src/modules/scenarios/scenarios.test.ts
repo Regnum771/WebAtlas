@@ -122,6 +122,13 @@ describe('GET /api/scenarios', () => {
     expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
   });
 
+  it.skipIf(!scenariosBuilt)('lets the slider ask for impacts more often than the global rate limit allows', async () => {
+    for (let i = 0; i < 150; i++) {
+      const res = await app.inject({ method: 'GET', url: `/api/scenarios/kttv-2025-10/impacts?hour=${i % 137}` });
+      expect(res.statusCode).toBe(200);
+    }
+  });
+
   it.skipIf(!scenariosBuilt)('lets a client preload more frames than the global rate limit allows', async () => {
     for (let i = 0; i < 150; i++) {
       const res = await app.inject({ method: 'GET', url: `/api/scenarios/preset-500/frames/${i % 137}` });

@@ -143,6 +143,20 @@ describe('flood.store', () => {
     expect(getFloodState().scenarios).toEqual([]);
   });
 
+  it('draws the plan when the assistant opens the scenario at an hour in the same turn', async () => {
+    const l = loader();
+    // evacuation_plan emits showEvacuationPlan then showFloodScenario{hour}, run back to back.
+    const plan = showPlan('preset-1300');
+    const open = openScenario('preset-1300', 40);
+    await Promise.all([plan, open]);
+    const s = getFloodState();
+    expect(s.status).toBe('ready');
+    expect(s.planShown).toBe(true);
+    expect(s.hour).toBe(40);
+    expect(l.fetchPlan).toHaveBeenCalledTimes(1);
+    expect(l.preloadFrames).toHaveBeenCalledTimes(1);
+  });
+
   it('hides the plan and shows it again without refetching', async () => {
     const l = loader();
     await showPlan('kttv-2025-10');

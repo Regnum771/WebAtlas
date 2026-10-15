@@ -35,7 +35,7 @@ const SPEEDS: FloodSpeed[] = [1, 2, 4];
 /** The Kịch bản lũ dock along the bottom of the map: scenario, river level chart, time slider. */
 export function FloodDockView(p: FloodDockViewProps) {
   const summary = p.scenarios.find((s) => s.id === p.scenarioId) ?? null;
-  const hours = p.detail?.hours ?? summary?.hours ?? 96;
+  const hours = p.detail?.hours ?? summary?.hours ?? 136;
   const start = p.detail?.startTime ?? summary?.startTime ?? null;
   const ready = p.status === 'ready' && p.detail !== null;
   const station = p.detail?.stations.find((s) => s.id === p.stationId) ?? p.detail?.stations[0] ?? null;
@@ -74,7 +74,7 @@ export function FloodDockView(p: FloodDockViewProps) {
         )}
         {ready && p.impacts && (
           <p className="flood-dock-impacts">
-            Đến {time}: {p.impacts.roadsCutKm.toLocaleString('vi-VN')} km đường ngập · {p.impacts.wardsWet} xã/phường · ~{p.impacts.peopleEst.toLocaleString('vi-VN')} người
+            Đến {time}: {p.impacts.roadsCutKm.toLocaleString('vi-VN')} km đường ngập · {p.impacts.wardsWet} xã/phường đã bắt đầu ngập (~{p.impacts.peopleEst.toLocaleString('vi-VN')} người sống ở các xã này)
           </p>
         )}
         {ready && station && series && start && (

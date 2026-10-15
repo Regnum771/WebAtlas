@@ -52,7 +52,7 @@ let seq = 0;
 /** Tests only. */
 export function setFloodLoader(l: FloodLoader): void { loader = l; }
 /** Tests only. */
-export function resetFloodStore(): void { stopTimer(); seq++; listing = null; loader = api; publish(INITIAL); }
+export function resetFloodStore(): void { stopTimer(); seq++; listing = null; pending = null; loader = api; publish(INITIAL); }
 
 function stopTimer() { if (timer !== null) { clearInterval(timer); timer = null; } }
 
@@ -61,12 +61,31 @@ function clamp(hour: number): number {
   return Math.min(Math.max(Math.trunc(hour), 0), max);
 }
 
+/** The load in flight: a second open of the same scenario joins it instead of restarting it. */
+interface LoadJob { id: FloodScenarioId; promise: Promise<void>; hour?: number; play: boolean }
+let pending: LoadJob | null = null;
+
 export async function openScenario(id: FloodScenarioId, hour?: number, playNow = false): Promise<void> {
   if (state.scenarioId === id && state.status === 'ready') {
     if (hour !== undefined) setHour(hour);
     if (playNow) play();
     return;
   }
+  if (pending && pending.id === id && state.status === 'loading') {
+    // The assistant emits showEvacuationPlan then showFloodScenario{hour} in one turn: the later
+    // command's hour wins, and the plan request waiting on this load still runs.
+    if (hour !== undefined) pending.hour = hour;
+    pending.play = pending.play || playNow;
+    return pending.promise;
+  }
+  const job: LoadJob = { id, promise: Promise.resolve(), hour, play: playNow };
+  pending = job;
+  job.promise = load(job);
+  return job.promise;
+}
+
+async function load(job: LoadJob): Promise<void> {
+  const id = job.id;
   stopTimer();
   const mine = ++seq;
   update({ ...INITIAL, scenarios: state.scenarios, scenarioId: id, speed: state.speed, status: 'loading' });
@@ -77,11 +96,13 @@ export async function openScenario(id: FloodScenarioId, hour?: number, playNow =
     await loader.preloadFrames(id, detail.hours, (loaded) => { if (mine === seq) update({ loaded }); });
     if (mine !== seq) return;
     // Hour 0 is the decision moment, before the rise; the bulletin hour is only marked on the slider.
-    update({ status: 'ready', loaded: detail.hours + 1, hour: Math.min(Math.max(hour ?? 0, 0), detail.hours) });
-    if (playNow) play();
+    update({ status: 'ready', loaded: detail.hours + 1, hour: Math.min(Math.max(job.hour ?? 0, 0), detail.hours) });
+    if (job.play) play();
   } catch {
     if (mine !== seq) return;
     update({ status: 'error', error: 'Không tải được kịch bản lũ.' });
+  } finally {
+    if (pending === job) pending = null;
   }
 }
 
@@ -121,7 +142,7 @@ export async function showPlan(id: FloodScenarioId): Promise<void> {
 
 export function hidePlan(): void { update({ planShown: false }); }
 
-export function closeScenario(): void { stopTimer(); seq++; publish({ ...INITIAL, scenarios: state.scenarios, speed: state.speed }); }
+export function closeScenario(): void { stopTimer(); seq++; pending = null; publish({ ...INITIAL, scenarios: state.scenarios, speed: state.speed }); }
 
 let listing: Promise<void> | null = null;
 /** Fetches the scenario list once per session. */

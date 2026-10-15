@@ -12,6 +12,12 @@ export type FloodRepo = Pick<typeof scenarios, 'listScenarios' | 'getScenario' |
 const NO_DATA = 'Hệ thống chưa có dữ liệu kịch bản lũ (chưa có dữ liệu kịch bản).';
 const LIST_MAX = 30;
 
+/** Fixed clock anchors of every scenario's hours, so the model need not count days itself. */
+const HOUR_ANCHORS =
+  'Giờ là số giờ tính từ đầu kịch bản: giờ 0 = 05:00 26/10/2025; giờ 19 = 00:00 27/10; giờ 43 = 00:00 28/10; '
+  + 'giờ 64 = 21:00 28/10 (bản tin); giờ 67 = 00:00 29/10; giờ 91 = 00:00 30/10; giờ 97 = 06:00 30/10/2025; '
+  + 'giờ 115 = 00:00 31/10; giờ 136 = 21:00 31/10/2025.';
+
 /** OSM classes of gathering points, as a reader would say them. */
 const SHELTER_KINDS: Record<string, string> = {
   school: 'trường học', kindergarten: 'trường mầm non', college: 'trường cao đẳng', university: 'trường đại học',
@@ -64,7 +70,7 @@ export const runFloodScenarioWith = (repo: FloodRepo): ToolFactory => (ctx) =>
   betaZodTool({
     name: 'run_flood_scenario',
     description:
-      'Run a flood scenario: opens the Kịch bản lũ dock on the map at an hour (default: hour 0, the decision moment before the rise) and returns peak river levels vs alarm levels and records, the bulletin forecast vs what was recorded, and flooded area over time.',
+      `Run a flood scenario: opens the Kịch bản lũ dock on the map at an hour (default: hour 0, the decision moment before the rise). ${HOUR_ANCHORS} Returns peak river levels vs alarm levels and records, the bulletin forecast vs what was recorded, and flooded area over time.`,
     inputSchema: z.object({ scenarioId: scenarioIdSchema, hour: z.number().int().optional() }),
     run: async (input) => {
       const d = await repo.getScenario(ctx.pool, input.scenarioId);
@@ -80,6 +86,8 @@ export const runFloodScenarioWith = (repo: FloodRepo): ToolFactory => (ctx) =>
         .map(({ km2, h }) => `${formatScenarioTime(d.startTime, h)}: ${km2.toFixed(0)} km²`);
       return [
         `${d.name}. Cơ sở: ${d.basis}; ngập là mô phỏng nhanh dựa trên địa hình và mực nước, không phải mô hình thủy lực.`,
+        ...(input.hour !== undefined && input.hour !== hour
+          ? [`Đã giới hạn về giờ ${hour} (${formatScenarioTime(d.startTime, hour)}).`] : []),
         `Kịch bản bắt đầu ${formatScenarioTime(d.startTime, 0)}, khi mực nước các trạm còn dưới BĐ1 (giá trị ước tính) và KTTV dự báo đỉnh lũ BĐ1–BĐ2; thực tế lên trên BĐ3. Bản tin có bảng dự báo: ${formatScenarioTime(d.startTime, d.bulletinHour)}. Đã mở kịch bản tại ${formatScenarioTime(d.startTime, hour)}.`,
         'Mực nước:',
         ...stationLines(d),
@@ -93,7 +101,7 @@ export const floodImpactsWith = (repo: FloodRepo): ToolFactory => (ctx) =>
   betaZodTool({
     name: 'flood_impacts',
     description:
-      'Roads cut (water ≥ 0.3 m) and xã/phường with flooded buildings BY a given hour of a flood scenario, each with the time it first flooded. Hour 0 = start of the scenario; use run_flood_scenario first to learn the clock times.',
+      `Roads cut (water ≥ 0.3 m) and xã/phường with flooded buildings BY a given hour of a flood scenario, each with the time it first flooded. ${HOUR_ANCHORS}`,
     inputSchema: z.object({ scenarioId: scenarioIdSchema, hour: z.number().int() }),
     run: async (input) => {
       const d = await repo.getImpacts(ctx.pool, input.scenarioId, input.hour);
@@ -106,7 +114,7 @@ export const floodImpactsWith = (repo: FloodRepo): ToolFactory => (ctx) =>
         lines.push(`Đến ${d.time} chưa có tuyến đường hay xã nào bị ngập trong kịch bản này.`);
         return lines.join('\n');
       }
-      lines.push(`Đến ${d.time}: khoảng ${d.totals.roadsCutKm.toLocaleString('vi-VN')} km đường bị ngập ≥ 0,3 m; ${d.totals.wardsWet} xã/phường có nhà ngập, khoảng ${d.totals.buildingsFlooded} nhà, ước tính ${d.totals.peopleEst} người (4 người/nhà).`);
+      lines.push(`Đến ${d.time}: khoảng ${d.totals.roadsCutKm.toLocaleString('vi-VN')} km đường bị ngập ≥ 0,3 m; ${d.totals.wardsWet} xã/phường đã bắt đầu ngập; các xã này có khoảng ${d.totals.buildingsFlooded} nhà ngập, ước tính ${d.totals.peopleEst} người (4 người/nhà, tính đến đỉnh lũ, không phải riêng đến giờ này).`);
       const byName = new Map<string, { cutTime: string; maxDepth: number; ref: string | null }>();
       for (const r of d.roads) {
         const key = r.name ?? '';
@@ -115,12 +123,12 @@ export const floodImpactsWith = (repo: FloodRepo): ToolFactory => (ctx) =>
         else seen.maxDepth = Math.max(seen.maxDepth, r.maxDepth);
       }
       const roads = [...byName.entries()];
-      lines.push('Tuyến đường (ngập từ, sâu nhất):');
+      if (roads.length) lines.push('Tuyến đường (ngập từ, sâu nhất):');
       for (const [name, r] of roads.slice(0, LIST_MAX)) {
         lines.push(`- ${name}${r.ref && r.ref !== name ? ` (${r.ref})` : ''}: từ ${r.cutTime}, sâu nhất ${r.maxDepth.toFixed(1)} m`);
       }
       if (roads.length > LIST_MAX) lines.push(`- và ${roads.length - LIST_MAX} tuyến khác`);
-      lines.push('Xã/phường (ngập từ):');
+      if (d.wards.length) lines.push('Xã/phường (bắt đầu ngập từ; số nhà, người tính đến đỉnh lũ):');
       for (const w of d.wards.slice(0, LIST_MAX)) {
         lines.push(`- ${w.name}: từ ${w.firstTime}, ${w.buildingsFlooded} nhà, ~${w.peopleEst} người, sâu nhất ${w.maxDepth.toFixed(1)} m`);
       }

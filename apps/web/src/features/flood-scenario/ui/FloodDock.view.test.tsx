@@ -75,6 +75,6 @@ describe('FloodDockView', () => {
 
   it('summarises what is flooded by the current hour', () => {
     render(<FloodDockView {...props({ impacts: { roadsCutKm: 34.5, wardsWet: 7, peopleEst: 12000 } })} />);
-    expect(screen.getByText('34,5 km đường ngập · 7 xã/phường · ~12.000 người', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('34,5 km đường ngập · 7 xã/phường đã bắt đầu ngập (~12.000 người sống ở các xã này)', { exact: false })).toBeInTheDocument();
   });
 });
