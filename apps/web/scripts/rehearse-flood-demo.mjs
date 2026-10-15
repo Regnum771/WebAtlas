@@ -102,7 +102,7 @@ async function main() {
     await page.$$eval('.flood-menu-item', (items) => items.find((b) => b.textContent.includes('Bản tin KTTV'))?.click());
     await page.waitForFunction(() => document.querySelector('.flood-dock [aria-label="Phát"]:not([disabled])'), { timeout: 60000 });
     const time = await page.$eval('.flood-dock-time', (el) => el.textContent);
-    report(time.startsWith('21:00 28/10/2025'), 'dock opens at the bulletin hour', time);
+    report(time.startsWith('05:00 26/10/2025'), 'dock opens at the decision moment, before the rise', time);
     await clickButton(page, '.tool-group', 'Kịch bản lũ');
     await clickButton(page, '.flood-dock', 'Phát');
     await sleep(4000);

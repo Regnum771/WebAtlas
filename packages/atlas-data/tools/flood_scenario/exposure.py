@@ -36,6 +36,13 @@ def cells(transform, shape, lons, lats):
     return np.clip(r, 0, shape[0] - 1), np.clip(c, 0, shape[1] - 1), inside
 
 
+def floodable_roads(roads):
+    """Roads in the listed classes that sit on the ground. Bridges and tunnels are dropped: a bridge
+    sampled over the river reads the riverbed and came out "8.9 m deep"."""
+    keep = roads["fclass"].isin(ROAD_CLASSES) & (roads["bridge"] != "T") & (roads["tunnel"] != "T")
+    return roads[keep].reset_index(drop=True)
+
+
 def road_samples(roads):
     """Points every 30 m along each road, in EPSG:4326, with the index of their road."""
     utm = roads.to_crs(UTM)
@@ -65,6 +72,7 @@ def roads_exposure(roads, samples, arrays, transform):
         cut_hour[i] = hours.min() if len(hours) else -1
         road_max[i] = dep[sel].max() if sel.any() else 0.0
     out = roads[["osm_id", "name", "ref", "fclass", "geometry"]].copy()
+    out["length_m"] = np.round(roads.to_crs(UTM).length.to_numpy(), 1)
     out["cut_hour"] = [None if h < 0 else int(h) for h in cut_hour]
     out["max_depth"] = np.round(road_max, 2)
     return out

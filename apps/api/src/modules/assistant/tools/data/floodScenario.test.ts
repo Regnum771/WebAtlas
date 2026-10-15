@@ -16,7 +16,7 @@ const DETAIL: FloodScenarioDetail = {
   floodedKm2: Array.from({ length: 97 }, (_, h) => (h === 53 ? 120 : 50)),
   frameExtent: [0, 0, 1, 1],
 };
-const EMPTY: FloodImpacts = { hour: 0, time: '21:00 27/10/2025', roads: [], wards: [], totals: { roadsCut: 0, wardsWet: 0, buildingsFlooded: 0, peopleEst: 0 } };
+const EMPTY: FloodImpacts = { hour: 0, time: '21:00 27/10/2025', roads: [], wards: [], totals: { roadsCut: 0, roadsCutKm: 0, wardsWet: 0, buildingsFlooded: 0, peopleEst: 0 } };
 const PLAN: FloodPlanRow[] = [
   { priority: 1, wardCode: '1', wardName: 'Phường Hội An Tây', deadlineHour: 0, deadlineTime: '21:00 27/10/2025', alreadyWet: true, peopleEst: 400,
     shelter: { id: 's1', name: 'Trường A', kind: 'school', lonLat: [108.3, 15.88] }, distanceM: 1200, openRoads: [], arrow: { type: 'LineString', coordinates: [[108.32, 15.87], [108.3, 15.88]] } },
@@ -66,10 +66,10 @@ describe('flood scenario tools', () => {
     expect(await run(listFloodScenariosTool(ctx), {})).toContain('chưa có dữ liệu kịch bản');
   });
 
-  it('run_flood_scenario opens the dock at the bulletin hour by default and reports the peak', async () => {
+  it('run_flood_scenario opens the dock at the decision moment (hour 0) by default and reports the peak', async () => {
     const { ctx, commands, records } = makeCtx();
     const text = await run(runFloodScenarioTool(ctx), { scenarioId: 'kttv-2025-10' });
-    expect(commands).toEqual([{ kind: 'showFloodScenario', scenarioId: 'kttv-2025-10', hour: 24, play: false }]);
+    expect(commands).toEqual([{ kind: 'showFloodScenario', scenarioId: 'kttv-2025-10', hour: 0, play: false }]);
     expect(text).toContain('5.62');
     expect(text).toContain('02:00 30/10/2025');
     expect(records[0]).toMatchObject({ tool: 'run_flood_scenario', layerKey: null });
@@ -88,6 +88,18 @@ describe('flood scenario tools', () => {
     const text = await run(floodImpactsTool(ctx), { scenarioId: 'preset-500', hour: 0 });
     expect(text).toContain('Đến 21:00 27/10/2025 chưa có tuyến đường hay xã nào bị ngập trong kịch bản này.');
     expect(commands).toEqual([{ kind: 'showFloodScenario', scenarioId: 'preset-500', hour: 0, play: false }]);
+  });
+
+  it('flood_impacts reports kilometres of road, not segment counts', async () => {
+    const { ctx } = makeCtx();
+    repo.getImpacts.mockResolvedValue({
+      ...EMPTY, hour: 40, time: '00:00 29/10/2025',
+      roads: [{ name: 'Quốc lộ 1', ref: 'QL.1', fclass: 'trunk', cutHour: 30, cutTime: '14:00 28/10/2025', maxDepth: 0.8 }],
+      wards: [], totals: { roadsCut: 120, roadsCutKm: 34.5, wardsWet: 0, buildingsFlooded: 0, peopleEst: 0 },
+    });
+    const text = await run(floodImpactsTool(ctx), { scenarioId: 'kttv-2025-10', hour: 40 });
+    expect(text).toContain('34,5 km đường');
+    expect(text).not.toContain('120 đoạn');
   });
 
   it('evacuation_plan draws the plan, moves to the earliest deadline and counts its rows', async () => {

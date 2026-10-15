@@ -66,11 +66,11 @@ describe('GET /api/scenarios', () => {
   it.skipIf(!scenariosBuilt)('returns a scenario with 97 levels per station and the frame extent', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/scenarios/kttv-2025-10' });
     const body = res.json();
-    expect(body.bulletinHour).toBe(24);
-    expect(body.series['cau-lau'].level).toHaveLength(97);
+    expect(body.bulletinHour).toBe(64);
+    expect(body.series['cau-lau'].level).toHaveLength(137);
     expect(Math.max(...body.series['cau-lau'].level)).toBeCloseTo(5.62, 2);
     expect(body.series['cau-lau'].forecast.filter((v: number | null) => v !== null)).toHaveLength(4);
-    expect(body.floodedKm2).toHaveLength(97);
+    expect(body.floodedKm2).toHaveLength(137);
     expect(body.frameExtent).toHaveLength(4);
     expect(body.stations.map((s: { id: string }) => s.id)).toContain('hoi-an');
   });
@@ -79,9 +79,21 @@ describe('GET /api/scenarios', () => {
     const res = await app.inject({ method: 'GET', url: '/api/scenarios/kttv-2025-10/impacts?hour=999' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.hour).toBe(96);
+    expect(body.hour).toBe(136);
     expect(body.time).toBe('21:00 31/10/2025');
     expect(body.totals.wardsWet).toBe(body.wards.length);
+    expect(body.totals.roadsCutKm).toBeGreaterThan(0);
+    // No bridge reads as flooded: bridges stand above the water.
+    expect(body.roads.some((r: { name: string }) => /^Cầu /.test(r.name))).toBe(false);
+  });
+
+  it.skipIf(!scenariosBuilt)('lists major roads before small ones within the same hour', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/scenarios/kttv-2025-10/impacts?hour=136' });
+    const roads = res.json().roads as { cutHour: number; fclass: string }[];
+    const rank = (f: string) => (['motorway', 'trunk', 'primary', 'secondary', 'tertiary'].some((c) => f.startsWith(c)) ? 0 : 1);
+    for (let i = 1; i < roads.length; i++) {
+      if (roads[i].cutHour === roads[i - 1].cutHour) expect(rank(roads[i].fclass)).toBeGreaterThanOrEqual(rank(roads[i - 1].fclass));
+    }
   });
 
   it.skipIf(!scenariosBuilt)('returns the plan in priority order from 1', async () => {
@@ -112,7 +124,7 @@ describe('GET /api/scenarios', () => {
 
   it.skipIf(!scenariosBuilt)('lets a client preload more frames than the global rate limit allows', async () => {
     for (let i = 0; i < 150; i++) {
-      const res = await app.inject({ method: 'GET', url: `/api/scenarios/preset-500/frames/${i % 97}` });
+      const res = await app.inject({ method: 'GET', url: `/api/scenarios/preset-500/frames/${i % 137}` });
       expect(res.statusCode).toBe(200);
     }
   });

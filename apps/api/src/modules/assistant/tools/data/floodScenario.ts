@@ -64,12 +64,12 @@ export const runFloodScenarioWith = (repo: FloodRepo): ToolFactory => (ctx) =>
   betaZodTool({
     name: 'run_flood_scenario',
     description:
-      'Run a flood scenario: opens the Kịch bản lũ dock on the map at an hour (default: the bulletin hour) and returns peak river levels vs alarm levels and records, the bulletin forecast vs what was recorded, and flooded area over time.',
+      'Run a flood scenario: opens the Kịch bản lũ dock on the map at an hour (default: hour 0, the decision moment before the rise) and returns peak river levels vs alarm levels and records, the bulletin forecast vs what was recorded, and flooded area over time.',
     inputSchema: z.object({ scenarioId: scenarioIdSchema, hour: z.number().int().optional() }),
     run: async (input) => {
       const d = await repo.getScenario(ctx.pool, input.scenarioId);
       if (!d) return NO_DATA;
-      const hour = clampHour(input.hour ?? d.bulletinHour, d.hours);
+      const hour = clampHour(input.hour ?? 0, d.hours);
       ctx.collect({ kind: 'showFloodScenario', scenarioId: d.id, hour, play: false });
       record(ctx, 'run_flood_scenario', d.id, d.stations.length);
       const peakKm2 = Math.max(...d.floodedKm2);
@@ -80,7 +80,7 @@ export const runFloodScenarioWith = (repo: FloodRepo): ToolFactory => (ctx) =>
         .map(({ km2, h }) => `${formatScenarioTime(d.startTime, h)}: ${km2.toFixed(0)} km²`);
       return [
         `${d.name}. Cơ sở: ${d.basis}; ngập là mô phỏng nhanh dựa trên địa hình và mực nước, không phải mô hình thủy lực.`,
-        `Bản tin dự báo lúc ${formatScenarioTime(d.startTime, d.bulletinHour)}. Đã mở kịch bản tại ${formatScenarioTime(d.startTime, hour)}.`,
+        `Kịch bản bắt đầu ${formatScenarioTime(d.startTime, 0)}, khi mực nước các trạm còn dưới BĐ1 (giá trị ước tính) và KTTV dự báo đỉnh lũ BĐ1–BĐ2; thực tế lên trên BĐ3. Bản tin có bảng dự báo: ${formatScenarioTime(d.startTime, d.bulletinHour)}. Đã mở kịch bản tại ${formatScenarioTime(d.startTime, hour)}.`,
         'Mực nước:',
         ...stationLines(d),
         `Diện tích ngập lớn nhất ${peakKm2.toFixed(0)} km² lúc ${formatScenarioTime(d.startTime, peakAt)}.`,
@@ -106,7 +106,7 @@ export const floodImpactsWith = (repo: FloodRepo): ToolFactory => (ctx) =>
         lines.push(`Đến ${d.time} chưa có tuyến đường hay xã nào bị ngập trong kịch bản này.`);
         return lines.join('\n');
       }
-      lines.push(`Đến ${d.time}: ${d.totals.roadsCut} đoạn đường bị ngập ≥ 0,3 m; ${d.totals.wardsWet} xã/phường có nhà ngập, khoảng ${d.totals.buildingsFlooded} nhà, ước tính ${d.totals.peopleEst} người (4 người/nhà).`);
+      lines.push(`Đến ${d.time}: khoảng ${d.totals.roadsCutKm.toLocaleString('vi-VN')} km đường bị ngập ≥ 0,3 m; ${d.totals.wardsWet} xã/phường có nhà ngập, khoảng ${d.totals.buildingsFlooded} nhà, ước tính ${d.totals.peopleEst} người (4 người/nhà).`);
       const byName = new Map<string, { cutTime: string; maxDepth: number; ref: string | null }>();
       for (const r of d.roads) {
         const key = r.name ?? '';

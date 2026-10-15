@@ -183,8 +183,8 @@ def main():
     hourly += [{**r, "scenario_id": "preset-1000"} for r in hourly if r["scenario_id"] == "kttv-2025-10"]
 
     log("reading OSM layers ...")
-    roads = osm("gis_osm_roads_free_1", columns=["osm_id", "fclass", "name", "ref"])
-    roads = roads[roads["fclass"].isin(exposure.ROAD_CLASSES)].reset_index(drop=True)
+    roads = exposure.floodable_roads(
+        osm("gis_osm_roads_free_1", columns=["osm_id", "fclass", "name", "ref", "bridge", "tunnel"]))
     samples = exposure.road_samples(roads)
     wards = gpd.read_file(WARDS).set_index("code")
     buildings = osm("gis_osm_buildings_a_free_1", columns=["osm_id"])

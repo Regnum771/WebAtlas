@@ -110,8 +110,13 @@ export async function getImpacts(pool: Pool, id: FloodScenarioId, hour: number):
   const start = row.start_time.toISOString();
   const [roads, wards] = await Promise.all([
     pool.query(
-      `SELECT name, ref, fclass, cut_hour::int AS cut_hour, max_depth FROM scenario.flood_road
-        WHERE scenario_id = $1 AND cut_hour <= $2 ORDER BY cut_hour, name NULLS LAST`,
+      // Major roads first within an hour: the list is cut to 30 names and the highways matter most.
+      `SELECT name, ref, fclass, cut_hour::int AS cut_hour, max_depth, length_m FROM scenario.flood_road
+        WHERE scenario_id = $1 AND cut_hour <= $2
+        ORDER BY cut_hour,
+                 coalesce(array_position(ARRAY['motorway','trunk','primary','secondary','tertiary',
+                   'motorway_link','trunk_link','primary_link','secondary_link','tertiary_link'], fclass), 99),
+                 name NULLS LAST`,
       [id, h]
     ),
     pool.query(
@@ -136,6 +141,7 @@ export async function getImpacts(pool: Pool, id: FloodScenarioId, hour: number):
     wards: wardRows,
     totals: {
       roadsCut: roads.rows.length,
+      roadsCutKm: Math.round(roads.rows.reduce((m, r) => m + Number(r.length_m), 0) / 100) / 10,
       wardsWet: wardRows.length,
       buildingsFlooded: wardRows.reduce((n, w) => n + w.buildingsFlooded, 0),
       peopleEst: wardRows.reduce((n, w) => n + w.peopleEst, 0),

@@ -10,9 +10,11 @@ import csv
 from datetime import datetime, timedelta, timezone
 
 ICT = timezone(timedelta(hours=7))
-START = datetime(2025, 10, 27, 21, tzinfo=ICT)
-HOURS = 96
-BULLETIN_HOUR = 24  # 21:00 28/10/2025, the bulletin read as "the forecast"
+# 05:00 26/10/2025: the decision moment. All four stations were below BD1 and KTTV forecast a peak
+# of BD1-BD2; the real peak was BD3 + 1.6 m. Evacuation deadlines fall after this hour.
+START = datetime(2025, 10, 26, 5, tzinfo=ICT)
+HOURS = 136
+BULLETIN_HOUR = 64  # 21:00 28/10/2025, the bulletin whose forecast table the chart shows
 
 EVENT_MM = 1000.0
 EXPONENT = 0.6
@@ -41,9 +43,9 @@ SCENARIOS = [
      "rain_total_mm": 1300, "basis": "Ước tính từ lũ 10/2025"},
 ]
 
-# Pre-event levels: the first reading minus 3 m (Ai Nghia) and 2.5 m (Cau Lau). Presets scale
-# each station's rise above these.
-BASES = {"ai-nghia": 7.04, "cau-lau": 2.31}
+# Pre-event levels: the estimated readings at 05:00 26/10 ("below BD1"). Presets scale each
+# station's rise above these, so every scenario starts from the same calm river.
+BASES = {"ai-nghia": 6.3, "cau-lau": 1.9}
 
 # Da Nang xa/phuong listed at flood risk in the 21:00 28/10/2025 bulletin.
 BULLETIN_AT_RISK = [
@@ -68,7 +70,11 @@ def _load(path, kind):
 
 
 def load_readings(path):
-    return _load(path, "recorded")
+    """Recorded readings plus the estimated pre-event anchors, which the series interpolates through."""
+    out = _load(path, "recorded")
+    for sid, pts in _load(path, "estimated").items():
+        out[sid] = sorted(out.get(sid, []) + pts)
+    return out
 
 
 def load_forecast(path):

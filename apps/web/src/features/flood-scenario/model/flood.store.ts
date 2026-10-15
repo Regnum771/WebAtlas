@@ -76,7 +76,8 @@ export async function openScenario(id: FloodScenarioId, hour?: number, playNow =
     update({ detail, roads });
     await loader.preloadFrames(id, detail.hours, (loaded) => { if (mine === seq) update({ loaded }); });
     if (mine !== seq) return;
-    update({ status: 'ready', loaded: detail.hours + 1, hour: Math.min(Math.max(hour ?? detail.bulletinHour, 0), detail.hours) });
+    // Hour 0 is the decision moment, before the rise; the bulletin hour is only marked on the slider.
+    update({ status: 'ready', loaded: detail.hours + 1, hour: Math.min(Math.max(hour ?? 0, 0), detail.hours) });
     if (playNow) play();
   } catch {
     if (mine !== seq) return;

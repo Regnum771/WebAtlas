@@ -49,7 +49,7 @@ export interface FloodImpacts {
   time: string;
   roads: { name: string | null; ref: string | null; fclass: string; cutHour: number; cutTime: string; maxDepth: number }[];
   wards: { code: string; name: string; firstHour: number; firstTime: string; buildingsFlooded: number; peopleEst: number; maxDepth: number }[];
-  totals: { roadsCut: number; wardsWet: number; buildingsFlooded: number; peopleEst: number };
+  totals: { roadsCut: number; roadsCutKm: number; wardsWet: number; buildingsFlooded: number; peopleEst: number };
 }
 
 export interface FloodPlanRow {

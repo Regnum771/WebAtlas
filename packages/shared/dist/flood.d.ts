@@ -61,6 +61,7 @@ export interface FloodImpacts {
     }[];
     totals: {
         roadsCut: number;
+        roadsCutKm: number;
         wardsWet: number;
         buildingsFlooded: number;
         peopleEst: number;

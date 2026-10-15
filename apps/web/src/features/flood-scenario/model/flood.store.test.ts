@@ -31,12 +31,12 @@ beforeEach(() => { resetFloodStore(); vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });
 
 describe('flood.store', () => {
-  it('opens a scenario at its bulletin hour once every frame is preloaded', async () => {
+  it('opens a scenario at the decision moment (hour 0) once every frame is preloaded', async () => {
     loader();
     await openScenario('kttv-2025-10');
     const s = getFloodState();
     expect(s.status).toBe('ready');
-    expect(s.hour).toBe(24);
+    expect(s.hour).toBe(0);
     expect(s.loaded).toBe(97);
     expect(s.playing).toBe(false);
   });
@@ -90,7 +90,7 @@ describe('flood.store', () => {
     expect(getFloodState().hour).toBe(13);
   });
 
-  it('switching scenario while playing stops playback and goes to the bulletin hour', async () => {
+  it('switching scenario while playing stops playback and goes back to the decision moment', async () => {
     loader();
     await openScenario('kttv-2025-10', 60);
     play();
@@ -98,7 +98,7 @@ describe('flood.store', () => {
     const s = getFloodState();
     expect(s.scenarioId).toBe('preset-1300');
     expect(s.playing).toBe(false);
-    expect(s.hour).toBe(24);
+    expect(s.hour).toBe(0);
     expect(s.planShown).toBe(false);
   });
 

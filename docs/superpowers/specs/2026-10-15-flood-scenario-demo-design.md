@@ -21,6 +21,7 @@ The system has no forecast feed and no hydraulic model. Instead the demo **repla
 | F5 | Approach A: **scenarios are computed offline and stored in PostGIS**; the demo makes no heavy calls. |
 | F6 | The demo is at 10:00, so **road routing is cut**: the plan draws a straight arrow from each xã to its gathering point and lists roads still open. Real routing is a stretch goal only. |
 | F7 | **Historical data approximates the forecast and the evacuation**: the October 2025 event is the basis of the demo; the invented 1999 analogue is dropped. |
+| F9 | **The decision moment is 05:00 26/10/2025**, before the rise (ruling made during execution, 2026-10-15, after the tools showed 18 of 21 xã already wet at 21:00 27/10). At that hour all four stations were below BĐ1 and KTTV forecast a BĐ1–BĐ2 peak (Tiền Phong, 26/10/2025); the real peak was BĐ3 + 1.6 m. The rise to the first bulletin reading (20:00 27/10) is interpolated from estimated anchors (Ái Nghĩa 6.30 m, Câu Lâu 1.90 m) and labelled as such. Scenarios run 136 h (137 frames); the dock and `run_flood_scenario` open at hour 0; the 21:00 28/10 bulletin (hour 64) stays marked on the slider with its forecast points. Bridges and tunnels are excluded from road exposure. |
 | F8 | **The flood is shown as a raster**: pre-rendered PNG frames per hour with a continuous depth ramp, preloaded in the browser (not vector polygons, not a GeoServer time-dimension layer). |
 
 ## Scope of the area
