@@ -21,7 +21,7 @@
 - Time zone: clock times are Asia/Ho_Chi_Minh (fixed UTC+7), shown as `HH:mm DD/MM/YYYY`.
 - Every surface says what is recorded and what is computed: "Mực nước thực đo KTTV" / "Ước tính từ lũ 10/2025" / "ngập: mô phỏng nhanh trên FABDEM".
 - Thresholds: road cut at depth ≥ 0.3 m; building wet at ≥ 0.2 m; 4 people per flooded building; deadline = first hour − 3 (floor 0); xã first hour = first hour at which ≥ 5 % of its buildings are wet, else its earliest wet building.
-- Depth classes: 1 = (0, 0.5), 2 = [0.5, 1), 3 = [1, 2), 4 = ≥ 2 m.
+- The flood is a raster (spec F8): one transparent PNG per scenario and hour, EPSG:3857, continuous ramp 0 → 4 m from `#c6dbef` through `#4292c6` to `#08306b`, alpha 190, dry cells alpha 0; ≥ 4 m takes the 4 m colour. Files at `packages/atlas-data/data/cache/flood/frames/<scenario>/<hour:03d>.png`.
 - After editing `packages/shared/src/*`, run `npm run build:shared` and commit the regenerated `dist` (new files need `git add -f packages/shared/dist/<file>.js packages/shared/dist/<file>.d.ts`).
 - No new web dependencies; the chart is hand-drawn SVG.
 
@@ -30,7 +30,7 @@
 1. The assistant asks for an hour outside 0–96 → the tool clamps and says "đã giới hạn về giờ …" (Task 5 test).
 2. An hour at which nothing is wet yet (`preset-500`, hour 0) → impacts answer "chưa có tuyến đường hay xã nào bị ngập" instead of an empty list (Task 5 test).
 3. Switching scenario while playing → playback stops and the hour goes to the bulletin hour (Task 6 test).
-4. Frames fail to load → the dock shows the error and "Thử lại", and the slider is disabled (Task 7 test).
+4. A frame fails to preload (or 97 requests trip a rate limit) → the dock shows "Không tải được kịch bản lũ." and "Thử lại", and the slider is disabled; the frames route has its own limit so a preload never 429s (Task 4 and Task 7 tests).
 5. The `scenario` schema is missing (script never run) → `GET /api/scenarios` returns `[]`, not 500 (Task 4 test).
 
 ---
@@ -90,7 +90,7 @@ check("peak at Cau Lau is 5.62", abs(max(lv["cau-lau"]) - 5.62) < 1e-9)
 - Produces (used by Task 3):
   - `water_surface(levels: dict[str, float], station_rc: dict[str, tuple[float, float]], shape: tuple[int, int], power: float = 2.0) -> np.ndarray` — inverse-distance-weighted surface (float32) from station levels at fractional (row, col).
   - `flood_depth(surface: np.ndarray, dem: np.ndarray, channel: np.ndarray) -> np.ndarray` — `surface - dem` where positive, kept only for 8-connected wet components that touch `channel` (bool); NaN in `dem` → 0.
-  - `depth_class(depth: np.ndarray) -> np.ndarray` (uint8, 0–4 per Global Constraints).
+  - `depth_rgba(depth: np.ndarray, max_m: float = 4.0) -> np.ndarray` (uint8, H×W×4, ramp per Global Constraints; band order R, G, B, A).
 
 - [ ] **Step 1: Add scipy, rebuild the image:** `docker compose -f infra/docker-compose.yml --profile tools build tools`; expect the build's import check to pass.
 - [ ] **Step 2: Write the failing tests:**
@@ -103,7 +103,12 @@ check("connected side is wet", d[1, 1] == 1.0)
 check("cut-off hollow stays dry", d[1, 4] == 0.0)
 check("ridge is dry", d[1, 2] == 0.0)
 check("nan ground is dry", depth.flood_depth(np.array([[2.0]], "float32"), np.array([[np.nan]], "float32"), np.array([[True]]))[0, 0] == 0.0)
-check("classes", depth.depth_class(np.array([0, 0.49, 0.5, 1.0, 2.0], "float32")).tolist() == [0, 1, 2, 3, 4])
+rgba = depth.depth_rgba(np.array([[0.0, 0.3, 2.0, 4.0, 9.0]], "float32"))
+check("dry is transparent", rgba[0, 0, 3] == 0)
+check("wet is drawn", rgba[0, 1, 3] == 190)
+lum = lambda p: 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]
+check("deeper is darker", lum(rgba[0, 1]) > lum(rgba[0, 2]) > lum(rgba[0, 3]))
+check("capped at max", (rgba[0, 3] == rgba[0, 4]).all())
 s = depth.water_surface({"a": 10.0, "b": 2.0}, {"a": (0, 0), "b": (0, 4)}, (1, 5))
 check("surface falls a to b", s[0, 0] > s[0, 2] > s[0, 4])
 ```
@@ -122,15 +127,15 @@ check("surface falls a to b", s[0, 0] > s[0, 2] > s[0, 4])
 
 **Interfaces:**
 - Consumes: Task 1 and Task 2 functions.
-- Produces: the nine tables of the spec's Storage section, exactly those names and columns, plus `scenario.flood_scenario.bulletin_hour` = 24 and `start_time` timestamptz. `flood_series.forecast_m` holds the bulletin's points at their hours (rounded to the nearest hour), null elsewhere. Indexes: `(scenario_id, hour)` on `flood_frame`, `flood_series`; `scenario_id` on `flood_road`, `flood_ward`, `flood_plan`.
+- Produces: the tables of the spec's Storage section, exactly those names and columns, plus `scenario.flood_scenario.bulletin_hour` = 24 and `start_time` timestamptz; the PNG frames on disk. `flood_series.forecast_m` holds the bulletin's points at their hours (rounded to the nearest hour), null elsewhere. Indexes: `(scenario_id, hour)` on `flood_hourly`, `flood_series`; `scenario_id` on `flood_road`, `flood_ward`, `flood_plan`.
 
 - [ ] **Step 1: Inputs.** DEM: `SELECT ST_AsGDALRaster(ST_Union(ST_Clip(rast, env)), 'GTiff') FROM basemap.dem_region, (SELECT ST_MakeEnvelope(107.95,15.70,108.40,15.98,4326) env) e WHERE ST_Intersects(rast, env)` into a `rasterio.MemoryFile`. OSM from `/vsizip/packages/atlas-data/data/cache/basemap/vietnam-261001-free.shp.zip/<layer>.shp` read with `bbox=` (roads, buildings_a, waterways, water_a, pois, pois_a). Xã from `packages/atlas-data/data/seeds/wards-region.geojson`. Channel mask: rasterize waterways `fclass in ('river','canal')` buffered 1 cell, plus water_a `fclass in ('water','river','reservoir')`.
-- [ ] **Step 2: Per scenario, per hour 0–96:** levels → `water_surface` → `flood_depth` → keep running arrays `first_cut` (≥ 0.3), `first_wet` (≥ 0.2) and `max_depth`; polygonise `depth_class` with `rasterio.features.sieve(size=12)` then `shapes`, dissolve per class into one MultiPolygon, `simplify(0.0003)`, insert into `flood_frame`. `preset-1000` copies `kttv-2025-10`'s rows (same levels) instead of recomputing.
+- [ ] **Step 2: Per scenario, per hour 0–96:** levels → `water_surface` → `flood_depth` → keep running arrays `first_cut` (≥ 0.3), `first_wet` (≥ 0.2) and `max_depth`; insert `flooded_km2` (wet cells × cell area at the box's mid-latitude) into `flood_hourly`; warp the depth grid to EPSG:3857 once-computed target grid (`rasterio.warp.calculate_default_transform` for the box, `reproject` with bilinear) and write `depth_rgba` with the GDAL `PNG` driver (4 bands, uint8) to the frames path. Store the 3857 extent in `flood_scenario.frame_extent`. `preset-1000` copies `kttv-2025-10`'s rows and frame files (same levels) instead of recomputing.
 - [ ] **Step 3: Exposure (`exposure.py`).** Roads: fclass list from the spec; sample every 30 m in EPSG:32649; `cut_hour` = min `first_cut` over samples. Buildings: centroid lookups. Xã: aggregates per Global Constraints; only xã with ≥ 1 flooded building get rows. Shelters: spec fclass list from pois + pois_a centroids, dry under `preset-1300`. Plan: per affected xã — priority (deadline asc, people desc), nearest shelter by EPSG:32649 distance, up to five distinct road names inside the xã with `cut_hour` null or > deadline (ordered motorway…residential), arrow from flooded-building centroid to shelter.
 - [ ] **Step 4: Checks printed at the end** (the run fails with a non-zero exit if a check marked hard fails):
   - per scenario: peak flooded area km² and its hour; hard check for `kttv-2025-10`: 40 ≤ area ≤ 400 km².
   - wet xã at the peak of `kttv-2025-10` vs `BULLETIN_AT_RISK`: matched / missing / extra (printed, not hard).
-  - frames payload: total vertices per scenario; hard check ≤ 1,500,000. If it fails, raise `simplify` to 0.0005 and `sieve` to 36 and rerun.
+  - frames: 97 files per scenario; total bytes per scenario printed; hard check ≤ 25 MB.
 - [ ] **Step 5: Run:** `docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools python3 packages/atlas-data/tools/flood_scenario/build_scenarios.py` → all hard checks `ok`; then `psql` count rows in each table (non-zero except `flood_history`).
 - [ ] **Step 6: Write the runbook** (command, duration, what the checks mean, that results are a bathtub approximation).
 - [ ] **Step 7: Commit** `feat(atlas-data): dựng sẵn kịch bản lũ 10/2025 — khung ngập theo giờ, đường, xã, điểm tập kết, phương án sơ tán`.
@@ -148,7 +153,7 @@ check("surface falls a to b", s[0, 0] > s[0, 2] > s[0, 4])
   - `FLOOD_SCENARIO_IDS = ['kttv-2025-10','preset-500','preset-1000','preset-1300'] as const`; `type FloodScenarioId`.
   - `interface FloodScenarioSummary { id: FloodScenarioId; name: string; kind: 'kttv' | 'preset'; rainTotalMm: number | null; startTime: string; hours: number; bulletinHour: number; basis: string }`
   - `interface FloodStation { id: string; name: string; river: string; bd1: number; bd2: number; bd3: number; recordM: number | null; recordYear: number | null; derived: boolean }`
-  - `interface FloodScenarioDetail extends FloodScenarioSummary { stations: FloodStation[]; series: Record<string, { level: number[]; forecast: (number | null)[] }> }`
+  - `interface FloodScenarioDetail extends FloodScenarioSummary { stations: FloodStation[]; series: Record<string, { level: number[]; forecast: (number | null)[] }>; floodedKm2: number[]; frameExtent: [number, number, number, number] /* EPSG:3857 */ }`
   - `interface FloodImpacts { hour: number; time: string; roads: { name: string | null; ref: string | null; fclass: string; cutHour: number; cutTime: string; maxDepth: number }[]; wards: { code: string; name: string; firstHour: number; firstTime: string; buildingsFlooded: number; peopleEst: number; maxDepth: number }[]; totals: { roadsCut: number; wardsWet: number; buildingsFlooded: number; peopleEst: number } }`
   - `interface FloodPlanRow { priority: number; wardCode: string; wardName: string; deadlineHour: number; deadlineTime: string; alreadyWet: boolean; peopleEst: number; shelter: { id: string; name: string | null; kind: string; lonLat: [number, number] }; distanceM: number; openRoads: string[]; arrow: GeoJsonGeometry }`
   - `formatScenarioTime(startIso: string, hour: number): string` → `"21:00 28/10/2025"` for (`2025-10-27T21:00:00+07:00`, 24).
@@ -156,15 +161,15 @@ check("surface falls a to b", s[0, 0] > s[0, 2] > s[0, 4])
 - Produces (API, `apps/api/src/modules/scenarios/repository.ts`, also used by Task 5):
   - `listScenarios(pool): Promise<FloodScenarioSummary[]>` (`[]` on Postgres `42P01`)
   - `getScenario(pool, id): Promise<FloodScenarioDetail | null>`
-  - `getFrames(pool, id): Promise<GeoJSON FeatureCollection>` (properties `hour`, `depthClass`; `ST_AsGeoJSON(geom, 5)`)
+  - `framePath(id: FloodScenarioId, hour: number): string` — `<FLOOD_FRAMES_DIR>/<id>/<hour:03d>.png`; `FLOOD_FRAMES_DIR` is a new optional env in `apps/api/src/config/env.ts`, defaulting to the repo's `packages/atlas-data/data/cache/flood/frames` resolved from the API's cwd.
   - `getImpacts(pool, id, hour): Promise<FloodImpacts>` (roads with `cut_hour <= hour`, xã with `first_hour <= hour`; ordered by hour then name; roads unnamed grouped out of the list but counted in totals)
   - `getPlan(pool, id): Promise<FloodPlanRow[]>` ordered by priority; `alreadyWet` = `first_hour = 0`.
-- Routes: `GET /api/scenarios`, `GET /api/scenarios/:id`, `GET /api/scenarios/:id/frames`, `GET /api/scenarios/:id/impacts?hour=`, `GET /api/scenarios/:id/plan`. Unknown id → 404 `"Không có kịch bản lũ này."`. `hour` validated as integer and clamped to `0..hours`.
+- Routes: `GET /api/scenarios`, `GET /api/scenarios/:id`, `GET /api/scenarios/:id/frames/:hour` (PNG, `Content-Type: image/png`, `Cache-Control: public, max-age=3600`, `config: { rateLimit: { max: 3000, timeWindow: '1 minute' } }` as in `elevation/routes.ts`; id checked against `FLOOD_SCENARIO_IDS` and hour as an integer before any path is built; missing file → 404), `GET /api/scenarios/:id/impacts?hour=`, `GET /api/scenarios/:id/plan`. Unknown id → 404 `"Không có kịch bản lũ này."`. `hour` validated as integer and clamped to `0..hours`.
 
-- [ ] **Step 1: Failing tests.** Shared: `formatScenarioTime('2025-10-27T21:00:00+07:00', 24) === '21:00 28/10/2025'`; `isMapCommand({kind:'showFloodScenario', scenarioId:'kttv-2025-10', hour: 30})` true, with `scenarioId:'x'` false, `hour: -1` false. API (`scenarios.test.ts`, live DB like `elevation.test.ts`; `describe.skipIf(!hasScenarioSchema)` with the reason printed): list returns 4 ids; `/scenarios/nope` → 404 with the message; `/scenarios/kttv-2025-10/impacts?hour=999` → `hour` 96; `/plan` priorities strictly increasing from 1; missing schema → `listScenarios` returns `[]` (test against a pool on a throwaway schema name or by stubbing the query to throw `{ code: '42P01' }`).
+- [ ] **Step 1: Failing tests.** Shared: `formatScenarioTime('2025-10-27T21:00:00+07:00', 24) === '21:00 28/10/2025'`; `isMapCommand({kind:'showFloodScenario', scenarioId:'kttv-2025-10', hour: 30})` true, with `scenarioId:'x'` false, `hour: -1` false. API (`scenarios.test.ts`, live DB like `elevation.test.ts`; `describe.skipIf(!hasScenarioSchema)` with the reason printed): list returns 4 ids; `/scenarios/nope` → 404 with the message; `/scenarios/kttv-2025-10/impacts?hour=999` → `hour` 96; `/plan` priorities strictly increasing from 1; `/frames/24` returns `image/png`; `/frames/..%2F..%2Fx` and `/frames/abc` → 400/404 without touching the disk; 150 sequential frame requests from one client all return 200 (no 429); missing schema → `listScenarios` returns `[]` (test against a pool on a throwaway schema name or by stubbing the query to throw `{ code: '42P01' }`).
 - [ ] **Step 2: Run, expect FAIL:** `npm run test -w @webatlas/shared` and `npm run test -w @webatlas/api -- scenarios`.
 - [ ] **Step 3: Implement** shared, repository, controller (zod via `lib/validate`), routes, registration. `npm run build:shared`.
-- [ ] **Step 4: Run, expect PASS**; `curl -s localhost:3001/api/scenarios/kttv-2025-10/frames | wc -c` and note the size in the commit body.
+- [ ] **Step 4: Run, expect PASS**; `curl -sI localhost:3001/api/scenarios/kttv-2025-10/frames/24` shows `image/png`.
 - [ ] **Step 5: Commit** `feat(api): đọc kịch bản lũ — danh sách, chuỗi mực nước, khung ngập, ảnh hưởng theo giờ, phương án sơ tán`.
 
 ### Task 5: Assistant tools and evacuation guidance
@@ -200,13 +205,13 @@ check("surface falls a to b", s[0, 0] > s[0, 2] > s[0, 4])
 **Interfaces:**
 - Consumes: Task 4 routes and shared types.
 - Produces:
-  - `flood.api.ts`: `fetchScenarios()`, `fetchScenario(id)`, `fetchFrames(id)`, `fetchImpacts(id, hour)`, `fetchPlan(id)` (same fetch helper the other `*.api.ts` use).
-  - `flood.store.ts` (module store with `useSyncExternalStore`, like `roi.store.ts`): state `{ scenarioId: FloodScenarioId | null; hour: number; playing: boolean; speed: 1 | 2 | 4; planShown: boolean; status: 'idle' | 'loading' | 'ready' | 'error'; error: string | null; detail: FloodScenarioDetail | null }`; actions `openScenario(id, hour?, play?)`, `setHour(h)` (clamped to 0..hours), `play()`, `pause()`, `setSpeed(s)`, `tick()` (advances `speed` hours; pauses at the last hour), `showPlan(id)`, `closeScenario()`, `retry()`; `useFloodScenario()`.
+  - `flood.api.ts`: `fetchScenarios()`, `fetchScenario(id)`, `frameUrl(id, hour): string`, `preloadFrames(id, hours, onProgress: (loaded: number) => void): Promise<void>` (6 at a time via `Image()`; rejects on the first failed frame), `fetchImpacts(id, hour)`, `fetchPlan(id)` (same fetch helper the other `*.api.ts` use).
+  - `flood.store.ts` (module store with `useSyncExternalStore`, like `roi.store.ts`): state `{ scenarioId: FloodScenarioId | null; hour: number; playing: boolean; speed: 1 | 2 | 4; planShown: boolean; status: 'idle' | 'loading' | 'ready' | 'error'; loaded: number; error: string | null; detail: FloodScenarioDetail | null }`; actions `openScenario(id, hour?, play?)`, `setHour(h)` (clamped to 0..hours), `play()`, `pause()`, `setSpeed(s)`, `tick()` (advances `speed` hours; pauses at the last hour), `showPlan(id)`, `closeScenario()`, `retry()`; `useFloodScenario()`.
   - Switching to another scenario: `playing=false`, `hour = hour ?? bulletinHour`, `planShown=false`.
-  - `floodLayers.ts`: `syncFloodLayers(map, { frames, roads, plan, hour })` draws, on their own vector layers at zIndex 990–994: depth classes (`#c6dbef`, `#6baed6`, `#2171b5`, `#08306b`, fill 0.55); roads with `cutHour <= hour` red `#d7301f` 3 px, later orange `#fd8d3c` 2 px; plan shelters (numbered circles) and arrows (dark ink `#18213A`, arrowhead); `clearFloodLayers(map)`. Frames are filtered by `hour` client-side from the one fetched collection.
+  - `floodLayers.ts`: `syncFloodLayers(map, { scenarioId, frameExtent, roads, plan, hour })` draws the frame as an `ImageLayer` with an `ImageStatic` source (`url: frameUrl(id, hour)`, `imageExtent: frameExtent`, `projection: 'EPSG:3857'`, `interpolate: false`) at zIndex 990, replacing the source only when the hour changes; then on vector layers at zIndex 991–994: roads with `cutHour <= hour` red `#d7301f` 3 px, later orange `#fd8d3c` 2 px; plan shelters (numbered circles) and arrows (dark ink `#18213A`, arrowhead); `clearFloodLayers(map)`. `openScenario` fetches the detail, then `preloadFrames`, updating `loaded`; `status` is `ready` only when all 97 are in.
   - `mapCommands.ts` cases: `showFloodScenario` → `openTool('flood')` + `openScenario(...)`; `showEvacuationPlan` → `showPlan(id)`; `clearFloodScenario` → `closeScenario()`; texts "Đã mở kịch bản lũ.", "Đã vẽ phương án sơ tán.", "Đã đóng kịch bản lũ.".
 
-- [ ] **Step 1: Failing tests** (store): `setHour(500)` on a 96-hour scenario → 96; `tick()` at speed 4 from 94 → 96 and `playing` false; switching scenario while playing → `playing` false and `hour` 24; `retry()` after an error refetches. Map commands: `showFloodScenario` opens tool `'flood'`.
+- [ ] **Step 1: Failing tests** (store, with `flood.api` mocked): a preload rejecting → `status` `error` with "Không tải được kịch bản lũ."; progress updates `loaded`; `setHour(500)` on a 96-hour scenario → 96; `tick()` at speed 4 from 94 → 96 and `playing` false; switching scenario while playing → `playing` false and `hour` 24; `retry()` after an error refetches. Map commands: `showFloodScenario` opens tool `'flood'`.
 - [ ] **Step 2: Run, expect FAIL:** `npm run test -w @webatlas/web -- flood mapCommands`.
 - [ ] **Step 3: Implement.** The play loop is a `setInterval(tick, 1000)` owned by the store while `playing`.
 - [ ] **Step 4: Run, expect PASS.**
@@ -216,12 +221,12 @@ check("surface falls a to b", s[0, 0] > s[0, 2] > s[0, 4])
 
 **Files:**
 - Create: `apps/web/src/features/flood-scenario/ui/FloodDock.view.tsx` (+ `.test.tsx`), `apps/web/src/features/flood-scenario/ui/LevelChart.view.tsx`, `apps/web/src/features/flood-scenario/index.tsx` (container wiring store ↔ view ↔ `syncFloodLayers`)
-- Modify: `apps/web/src/app/MapScreen.tsx` (tool `{ id: 'flood', label: 'Kịch bản lũ', on: scenarioId !== null, content: <FloodScenarioToolContent/> }` holding the picker; `<FloodDock/>` rendered in `stage` after `ScaleSlider` when a scenario is open), the CSS file the shell views use (dock along the bottom of `.map-stage`, full width minus the scale column, above `ToastHost`), `apps/web/src/features/legend/*` (rows for depth classes, cut/later roads, shelters, arrows, credits line)
+- Modify: `apps/web/src/app/MapScreen.tsx` (tool `{ id: 'flood', label: 'Kịch bản lũ', on: scenarioId !== null, content: <FloodScenarioToolContent/> }` holding the picker; `<FloodDock/>` rendered in `stage` after `ScaleSlider` when a scenario is open), the CSS file the shell views use (dock along the bottom of `.map-stage`, full width minus the scale column, above `ToastHost`), `apps/web/src/features/legend/*` (a gradient bar for depth labelled 0 · 0,5 · 1 · 2 · ≥ 4 m, rows for cut/later roads, shelters, arrows, and the basis/credits line)
 
 **Interfaces:**
 - Consumes: Task 6 store and layers.
 - Produces: `FloodDockView` props `{ scenarios, scenarioId, detail, hour, playing, speed, status, error, stationId, onScenario, onHour, onPlay, onPause, onSpeed, onStation, onRetry, onClose }`; `LevelChartView` props `{ station: FloodStation; level: number[]; forecast: (number | null)[]; hour: number; bulletinHour: number }` drawing level line, BĐ1–3 dashed, record dotted, forecast markers, a cursor at `hour`, and the bulletin hour marker.
-- Copy: title "Kịch bản lũ"; basis line under the picker; slider label `"{time}"` with "Bản tin dự báo" at the bulletin mark; buttons "Phát", "Tạm dừng", "1×", "2×", "4×", "Đóng"; empty "Chưa có dữ liệu kịch bản"; error "Không tải được kịch bản lũ." + "Thử lại".
+- Copy: title "Kịch bản lũ"; basis line under the picker; slider label `"{time}"` with "Bản tin dự báo" at the bulletin mark; buttons "Phát", "Tạm dừng", "1×", "2×", "4×", "Đóng"; empty "Chưa có dữ liệu kịch bản"; loading "Đang tải khung ngập {loaded}/97"; error "Không tải được kịch bản lũ." + "Thử lại".
 
 - [ ] **Step 1: Failing view tests:** status `error` renders "Thử lại" and the slider `disabled`; empty list renders "Chưa có dữ liệu kịch bản"; slider `aria-valuetext` equals `formatScenarioTime(start, hour)`.
 - [ ] **Step 2: Run, expect FAIL.**

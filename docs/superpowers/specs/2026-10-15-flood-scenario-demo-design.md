@@ -21,6 +21,7 @@ The system has no forecast feed and no hydraulic model. Instead the demo **repla
 | F5 | Approach A: **scenarios are computed offline and stored in PostGIS**; the demo makes no heavy calls. |
 | F6 | The demo is at 10:00, so **road routing is cut**: the plan draws a straight arrow from each xã to its gathering point and lists roads still open. Real routing is a stretch goal only. |
 | F7 | **Historical data approximates the forecast and the evacuation**: the October 2025 event is the basis of the demo; the invented 1999 analogue is dropped. |
+| F8 | **The flood is shown as a raster**: pre-rendered PNG frames per hour with a continuous depth ramp, preloaded in the browser (not vector polygons, not a GeoServer time-dimension layer). |
 
 ## Scope of the area
 
@@ -82,9 +83,9 @@ For each hour:
 1. A water-surface elevation is interpolated across the plain from the four station levels (inverse-distance weighting), so the surface falls from Ái Nghĩa/Giao Thủy towards Hội An.
 2. Depth = surface − FABDEM ground; cells with depth ≤ 0 are dry.
 3. Only wet cells **connected to a river channel** are kept (flood fill seeded from OSM `river`/`riverbank` waterways and water areas inside the box).
-4. Depths are classed: 1 = under 0.5 m, 2 = 0.5–1 m, 3 = 1–2 m, 4 = over 2 m; polygonised per class, simplified at 30 m, stored per hour.
+4. The depth grid is **rendered as a raster frame**: warped to EPSG:3857 and written as a transparent PNG with a continuous colour ramp from 0 to 4 m (light blue → dark navy, dry cells transparent), one file per hour. The browser preloads a scenario's frames and lays the current one over the map (decision F8). Flooded area per hour is stored alongside for the assistant.
 
-Two rasters per scenario feed the exposure step: `first_hour` and `max_depth`.
+Running arrays per scenario feed the exposure step: `first_hour` (wet), `first_cut` (road-deep) and `max_depth`.
 
 This is a planar-surface ("bathtub") approximation: the UI and the assistant call it "mô phỏng nhanh dựa trên địa hình và mực nước", never a hydraulic model.
 
@@ -130,17 +131,17 @@ A standalone script owns a `scenario` schema and rebuilds it whole on each run (
 
 | Table | Columns |
 |---|---|
-| `scenario.flood_scenario` | id, name, kind (`kttv` / `preset`), rain_total_mm, start_time, hours, bulletin_hour, description, basis |
+| `scenario.flood_scenario` | id, name, kind (`kttv` / `preset`), rain_total_mm, start_time, hours, bulletin_hour, description, basis, frame_extent (EPSG:3857 minx, miny, maxx, maxy) |
 | `scenario.flood_station` | id, name, river, bd1, bd2, bd3, record_m, record_year, derived (bool), geom |
 | `scenario.flood_series` | scenario_id, station_id, hour, level_m, forecast_m (null except the bulletin's points) |
-| `scenario.flood_frame` | scenario_id, hour, depth_class, geom |
+| `scenario.flood_hourly` | scenario_id, hour, flooded_km2 |
 | `scenario.flood_road` | scenario_id, osm_id, name, ref, fclass, cut_hour, max_depth, geom |
 | `scenario.flood_ward` | scenario_id, ward_code, ward_name, buildings_total, buildings_flooded, people_est, first_hour, deadline_hour, max_depth, centroid |
 | `scenario.shelter` | id, name, kind, geom |
 | `scenario.flood_plan` | scenario_id, ward_code, priority, shelter_id, distance_m, open_roads (text[]), arrow |
 | `scenario.flood_history` | event_id, event_name, observed_on, source, sensor, licence, url, geom |
 
-All geometry is EPSG:4326. Script: `packages/atlas-data/tools/flood_scenario/build_scenarios.py`, run in the `atlas-tools` container; it reads the DEM from `basemap.dem_region` and OSM layers from the cached Geofabrik zip.
+Frames are files, not rows: `packages/atlas-data/data/cache/flood/frames/<scenario>/<hour, 3 digits>.png` (git-ignored, rebuilt by the script). All stored geometry is EPSG:4326; only the frames are EPSG:3857. Script: `packages/atlas-data/tools/flood_scenario/build_scenarios.py`, run in the `atlas-tools` container; it reads the DEM from `basemap.dem_region` and OSM layers from the cached Geofabrik zip.
 
 ## API — `apps/api/src/modules/scenarios`
 
@@ -150,7 +151,7 @@ Read-only, open to anyone who can see the map.
 |---|---|
 | `GET /scenarios` | the scenarios with start time, hours, bulletin hour, basis |
 | `GET /scenarios/:id` | the scenario, stations with BĐ levels and records, hourly levels and forecast points |
-| `GET /scenarios/:id/frames` | GeoJSON FeatureCollection of all frames (`hour`, `depthClass`), fetched once per scenario |
+| `GET /scenarios/:id/frames/:hour` | the PNG frame for that hour, cacheable; its own rate limit (the global 100/minute would block a 97-frame preload) |
 | `GET /scenarios/:id/impacts?hour=h` | roads cut by hour h, xã wet by hour h with first hour and people, totals |
 | `GET /scenarios/:id/plan` | the evacuation plan rows with shelters and arrows |
 | `GET /flood-history` | past satellite extents with source and licence |
@@ -164,11 +165,11 @@ A dock along the bottom of the map, opened from the tool group (a new "Kịch b�
 - Scenario picker; the basis line under it ("Mực nước thực đo KTTV" or "Ước tính từ lũ 10/2025").
 - Chart: level at the chosen station (picker of four) with BĐ1–3 dashed, the station record dotted, and the bulletin's forecast points. Hand-drawn SVG; no new chart library.
 - Play/pause, speed (1×, 2×, 4× = 1, 2, 4 simulated hours per second), and a slider over the scenario's hours labelled with clock time ("21:00 28/10/2025"), with the bulletin hour marked.
-- Map layers while the dock is open: depth classes as four blues; roads cut by the current hour in red, roads cut later in orange; wet xã outlined; when a plan is shown, gathering points and arrows numbered by priority; past flood outlines when chosen.
+- Map layers while the dock is open: the depth raster frame for the current hour, with a gradient legend (0, 0.5, 1, 2, ≥ 4 m); roads cut by the current hour in red, roads cut later in orange; wet xã outlined; when a plan is shown, gathering points and arrows numbered by priority; past flood outlines when chosen.
 - Legend rows for each of those, with credits.
 - Closing the dock removes its layers.
 
-All frames of the chosen scenario are fetched once; scrubbing and playing only switch which hour is drawn.
+All 97 frames of the chosen scenario are preloaded (with progress, "Đang tải khung ngập 37/97"); scrubbing and playing only switch which frame is drawn.
 
 ## Trợ lý
 
@@ -206,7 +207,7 @@ For the demo, `ASSISTANT_MODEL` is set in the local `.env` to a Sonnet model; th
 
 ## Testing
 
-- Python: unit tests for the level interpolation, the preset scaling, the derived stations and the depth classing on a tiny synthetic DEM.
+- Python: unit tests for the level interpolation, the preset scaling, the derived stations, the connectivity rule and the colour ramp on a tiny synthetic DEM.
 - API: route tests against the dev DB after the script has run (skipped with a clear message when the schema is empty).
 - Assistant: tool tests in the existing style (collected commands, provenance).
 - Web: model tests for playback (play, pause, speed, clamp, scenario switch resets the hour).
