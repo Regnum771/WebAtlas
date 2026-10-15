@@ -58,7 +58,7 @@ export function FloodDockView(p: FloodDockViewProps) {
         )}
         {summary && (
           <p className="flood-dock-note">
-            {summary.basis} · ngập: mô phỏng nhanh trên FABDEM · <span className="flood-dock-sample">Dữ liệu mẫu</span>
+            {summary.basis} · ngập: mô phỏng nhanh trên FABDEM, mặt nước trên đồng thấp hơn mực nước sông {summary.floodplainOffsetM.toLocaleString('vi-VN')} m (hiệu chỉnh theo Sentinel-1 28/10) · <span className="flood-dock-sample">Dữ liệu mẫu</span>
           </p>
         )}
         <button type="button" className="flood-dock-close" aria-label="Đóng" onClick={p.onClose}><X size={16} /></button>

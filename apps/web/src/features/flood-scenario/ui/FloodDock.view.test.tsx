@@ -6,7 +6,7 @@ import { FloodDockView, type FloodDockViewProps } from './FloodDock.view';
 
 const summary: FloodScenarioSummary = {
   id: 'kttv-2025-10', name: 'Bản tin KTTV 21:00 28/10/2025 — tái hiện lũ 10/2025', kind: 'kttv', rainTotalMm: null,
-  startTime: '2025-10-27T14:00:00.000Z', hours: 96, bulletinHour: 24, basis: 'Mực nước thực đo KTTV',
+  startTime: '2025-10-27T14:00:00.000Z', hours: 96, bulletinHour: 24, basis: 'Mực nước thực đo KTTV', floodplainOffsetM: 1.5,
 };
 const detail: FloodScenarioDetail = {
   ...summary,
@@ -31,6 +31,7 @@ describe('FloodDockView', () => {
     render(<FloodDockView {...props()} />);
     expect(screen.getByRole('slider', { name: 'Thời điểm' })).toHaveAttribute('aria-valuetext', formatScenarioTime(summary.startTime, 30));
     expect(screen.getByText('Mực nước thực đo KTTV', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/mặt nước trên đồng thấp hơn mực nước sông 1,5 m/)).toBeInTheDocument();
   });
 
   it('shows a retry and disables the slider when the scenario failed to load', async () => {

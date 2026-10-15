@@ -85,7 +85,7 @@ export const runFloodScenarioWith = (repo: FloodRepo): ToolFactory => (ctx) =>
         .filter(({ h }) => h % 6 === 0)
         .map(({ km2, h }) => `${formatScenarioTime(d.startTime, h)}: ${km2.toFixed(0)} km²`);
       return [
-        `${d.name}. Cơ sở: ${d.basis}; ngập là mô phỏng nhanh dựa trên địa hình và mực nước, không phải mô hình thủy lực.`,
+        `${d.name}. Cơ sở: ${d.basis}; ngập là mô phỏng nhanh dựa trên địa hình và mực nước, không phải mô hình thủy lực; mặt nước trên đồng thấp hơn mực nước sông ${d.floodplainOffsetM.toLocaleString('vi-VN')} m (hiệu chỉnh theo ảnh vệ tinh Sentinel-1 lúc 05:36 28/10/2025).`,
         ...(input.hour !== undefined && input.hour !== hour
           ? [`Đã giới hạn về giờ ${hour} (${formatScenarioTime(d.startTime, hour)}).`] : []),
         `Kịch bản bắt đầu ${formatScenarioTime(d.startTime, 0)}, khi mực nước các trạm còn dưới BĐ1 (giá trị ước tính) và KTTV dự báo đỉnh lũ BĐ1–BĐ2; thực tế lên trên BĐ3. Bản tin có bảng dự báo: ${formatScenarioTime(d.startTime, d.bulletinHour)}. Đã mở kịch bản tại ${formatScenarioTime(d.startTime, hour)}.`,

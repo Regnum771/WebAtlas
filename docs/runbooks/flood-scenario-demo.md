@@ -45,6 +45,8 @@ docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps
 
 Hour 0 (05:00 26/10) is the decision moment, before the rise; the rise to the first bulletin reading at 20:00 27/10 is a linear interpolation from the estimated anchors. Bridges and tunnels are left out of road exposure.
 
+The water over the fields is set 1.5 m below the river profile (`FLOODPLAIN_OFFSET_M` in `depth.py`), calibrated against Sentinel-1 on 28/10/2025; see the spec, F10.
+
 A planar ("bathtub") approximation: the water level is interpolated by distance from the sea through the four stations (sea 0.8 m at the coast, Hội An, Câu Lâu, then Giao Thủy and Ái Nghĩa, held upstream), FABDEM ground is subtracted, and only water connected to a river or canal is kept. It is not a hydraulic model; the dock and the assistant say "mô phỏng nhanh trên FABDEM".
 
 Hội An and Giao Thủy levels are derived (Hội An = 2.0 + (Câu Lâu − 4.0) × 0.94; Giao Thủy = Ái Nghĩa − 0.5). BĐ1 values and Giao Thủy's alarm levels are from memory; BĐ2/BĐ3 at Ái Nghĩa, Câu Lâu and Hội An are confirmed by the bulletins.

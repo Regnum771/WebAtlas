@@ -8,7 +8,7 @@ import {
 function detail(id: FloodScenarioDetail['id']): FloodScenarioDetail {
   return {
     id, name: id, kind: 'kttv', rainTotalMm: null, startTime: '2025-10-27T14:00:00.000Z', hours: 96, bulletinHour: 24,
-    basis: 'Mực nước thực đo KTTV', stations: [], series: {}, floodedKm2: [], frameExtent: [0, 0, 1, 1],
+    basis: 'Mực nước thực đo KTTV', floodplainOffsetM: 1.5, stations: [], series: {}, floodedKm2: [], frameExtent: [0, 0, 1, 1],
   };
 }
 

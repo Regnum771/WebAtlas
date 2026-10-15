@@ -218,7 +218,7 @@ describe('zoomToRegion uses real extents when they are loaded', () => {
     resetFloodStore();
     setFloodLoader({
       fetchScenario: vi.fn(async (id: FloodScenarioId): Promise<FloodScenarioDetail> => ({ id, name: id, kind: 'kttv',
-        rainTotalMm: null, startTime: '2025-10-27T14:00:00Z', hours: 96, bulletinHour: 24, basis: '', stations: [],
+        rainTotalMm: null, startTime: '2025-10-27T14:00:00Z', hours: 96, bulletinHour: 24, basis: '', floodplainOffsetM: 1.5, stations: [],
         series: {}, floodedKm2: [], frameExtent: [0, 0, 1, 1] })),
       fetchRoads: vi.fn(async () => ({ type: 'FeatureCollection' as const, features: [] })),
       fetchPlan: vi.fn(async () => []),

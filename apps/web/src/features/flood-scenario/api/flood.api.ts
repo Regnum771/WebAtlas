@@ -30,7 +30,7 @@ export function fetchPlan(id: FloodScenarioId): Promise<FloodPlanRow[]> {
 }
 
 /** Bumped when frames are restyled, so browsers that cached the old colours fetch the new ones. */
-const FRAME_STYLE = 2;
+const FRAME_STYLE = 3;
 
 export function frameUrl(id: FloodScenarioId, hour: number): string {
   return `${API_BASE_URL}/api/scenarios/${id}/frames/${hour}?v=${FRAME_STYLE}`;

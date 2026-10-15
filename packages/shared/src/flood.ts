@@ -22,6 +22,8 @@ export interface FloodScenarioSummary {
   hours: number;
   bulletinHour: number;
   basis: string;
+  /** How far the water over the fields stands below the river gauge level (calibrated on Sentinel-1). */
+  floodplainOffsetM: number;
 }
 
 export interface FloodStation {

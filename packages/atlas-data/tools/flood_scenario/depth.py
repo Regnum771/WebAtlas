@@ -44,6 +44,18 @@ def profile_surface(levels, station_dist_km, coast_dist_km, sea_level=0.8):
     return np.interp(coast_dist_km, xp, fp).astype("float32")
 
 
+# Water over the fields stands below the river channel's gauge level: banks, raised roads and village
+# mounds hold it back. Calibrated against Sentinel-1 on 05:36 28/10/2025: lowering the surface by
+# 1.5 m raised extent agreement from IoU 0.32 to 0.44 (F1 0.49 to 0.62), and the radar's highest
+# flooded ground near the gauges sat 0.6-1.3 m below their readings, independently.
+FLOODPLAIN_OFFSET_M = 1.5
+
+
+def floodplain_surface(levels, station_dist_km, coast_dist_km, sea_level=0.8):
+    """The water surface over the floodplain: the river profile less the calibrated offset."""
+    return profile_surface(levels, station_dist_km, coast_dist_km, sea_level) - FLOODPLAIN_OFFSET_M
+
+
 def flood_depth(surface, dem, channel):
     """Depth where the surface is above ground, kept only for 8-connected wet areas touching a channel."""
     raw = np.where(np.isnan(dem), 0.0, surface - np.nan_to_num(dem, nan=0.0))

@@ -73,6 +73,10 @@ check("baseline: water already there before the flood is not flood", fl[0, 0] ==
 check("baseline: new water is flood at its full depth", abs(fl[0, 1] - 0.7) < 1e-6)
 check("baseline: dry stays dry", fl[0, 2] == 0.0)
 
+check("floodplain offset is the calibrated 1.5 m", depth.FLOODPLAIN_OFFSET_M == 1.5)
+fp = depth.floodplain_surface({"down": 2.0, "up": 10.0}, {"down": 1.0, "up": 4.0}, coast_dist, sea_level=0.5)
+check("floodplain surface sits the offset below the river profile", np.allclose(fp, prof - 1.5))
+
 if failures:
     print(f"\n{len(failures)} failed")
     sys.exit(1)

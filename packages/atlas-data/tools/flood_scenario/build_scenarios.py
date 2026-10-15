@@ -141,7 +141,7 @@ def run_scenario(sid, lv, dem, transform, crs, channel, coast_km, station_km, gr
     hourly = []
     km2 = cell_km2(transform)
     for h in range(levels.HOURS + 1):
-        surface = depth.profile_surface({k: v[h] for k, v in lv.items()}, station_km, coast_km)
+        surface = depth.floodplain_surface({k: v[h] for k, v in lv.items()}, station_km, coast_km)
         dep = depth.above_baseline(depth.flood_depth(surface, dem, channel), baseline)
         first_wet[(first_wet < 0) & (dep >= WET_M)] = h
         first_cut[(first_cut < 0) & (dep >= CUT_M)] = h
@@ -169,7 +169,7 @@ def main():
     all_levels = {s["id"]: levels.scenario_levels(s["id"], readings) for s in levels.SCENARIOS}
     # Hour 0 is the same pre-flood river (below BD1) in every scenario; what is wet then is background.
     base_levels = {k: v[0] for k, v in all_levels["kttv-2025-10"].items()}
-    baseline = depth.flood_depth(depth.profile_surface(base_levels, station_km, coast_km), dem, channel)
+    baseline = depth.flood_depth(depth.floodplain_surface(base_levels, station_km, coast_km), dem, channel)
     log(f"  background water at hour 0: {(baseline > 0).sum() * cell_km2(transform):.0f} km2")
 
     if FRAMES.exists():
@@ -248,7 +248,7 @@ def write_db(engine, all_levels, forecast, hourly, extent, road_rows, ward_rows,
         "id": s["id"], "name": s["name"], "kind": s["kind"], "rain_total_mm": s["rain_total_mm"],
         "start_time": start, "hours": levels.HOURS, "bulletin_hour": levels.BULLETIN_HOUR,
         "description": "Tái hiện trận lũ 26–31/10/2025 trên Vu Gia – Thu Bồn",
-        "basis": s["basis"], "frame_extent": extent,
+        "basis": s["basis"], "frame_extent": extent, "floodplain_offset_m": depth.FLOODPLAIN_OFFSET_M,
     } for s in levels.SCENARIOS]).to_sql("flood_scenario", engine, schema="scenario", index=False,
                                           dtype={"frame_extent": ARRAY(DOUBLE_PRECISION)})
 

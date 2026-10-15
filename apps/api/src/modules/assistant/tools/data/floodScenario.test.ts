@@ -10,7 +10,7 @@ import {
 const START = '2025-10-27T14:00:00.000Z';
 const DETAIL: FloodScenarioDetail = {
   id: 'kttv-2025-10', name: 'Bản tin KTTV 21:00 28/10/2025 — tái hiện lũ 10/2025', kind: 'kttv', rainTotalMm: null,
-  startTime: START, hours: 96, bulletinHour: 24, basis: 'Mực nước thực đo KTTV',
+  startTime: START, hours: 96, bulletinHour: 24, basis: 'Mực nước thực đo KTTV', floodplainOffsetM: 1.5,
   stations: [{ id: 'cau-lau', name: 'Câu Lâu', river: 'Thu Bồn', bd1: 2, bd2: 3, bd3: 4, recordM: 5.62, recordYear: 2025, derived: false }],
   series: { 'cau-lau': { level: Array.from({ length: 97 }, (_, h) => (h === 53 ? 5.62 : 5)), forecast: Array.from({ length: 97 }, (_, h) => (h === 34 ? 5.35 : null)) } },
   floodedKm2: Array.from({ length: 97 }, (_, h) => (h === 53 ? 120 : 50)),
@@ -71,6 +71,8 @@ describe('flood scenario tools', () => {
     const text = await run(runFloodScenarioTool(ctx), { scenarioId: 'kttv-2025-10' });
     expect(commands).toEqual([{ kind: 'showFloodScenario', scenarioId: 'kttv-2025-10', hour: 0, play: false }]);
     expect(text).toContain('5.62');
+    expect(text).toContain('thấp hơn mực nước sông 1,5 m');
+    expect(text).toContain('Sentinel-1');
     expect(text).toContain('02:00 30/10/2025');
     expect(records[0]).toMatchObject({ tool: 'run_flood_scenario', layerKey: null });
     expect(records[0].datasetVersion).toContain('Trung tâm Dự báo KTTV');

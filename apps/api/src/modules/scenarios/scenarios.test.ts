@@ -67,6 +67,7 @@ describe('GET /api/scenarios', () => {
     const res = await app.inject({ method: 'GET', url: '/api/scenarios/kttv-2025-10' });
     const body = res.json();
     expect(body.bulletinHour).toBe(64);
+    expect(body.floodplainOffsetM).toBe(1.5);
     expect(body.series['cau-lau'].level).toHaveLength(137);
     expect(Math.max(...body.series['cau-lau'].level)).toBeCloseTo(5.62, 2);
     expect(body.series['cau-lau'].forecast.filter((v: number | null) => v !== null)).toHaveLength(4);

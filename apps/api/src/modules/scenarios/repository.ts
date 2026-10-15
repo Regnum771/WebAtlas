@@ -29,17 +29,19 @@ interface ScenarioRow {
   bulletin_hour: number;
   basis: string;
   frame_extent: number[];
+  floodplain_offset_m: number;
 }
 
 function summary(r: ScenarioRow): FloodScenarioSummary {
   return {
     id: r.id, name: r.name, kind: r.kind, rainTotalMm: r.rain_total_mm,
     startTime: r.start_time.toISOString(), hours: r.hours, bulletinHour: r.bulletin_hour, basis: r.basis,
+    floodplainOffsetM: Number(r.floodplain_offset_m ?? 0),
   };
 }
 
 // Integer columns are cast: the build writes them through pandas as bigint, which pg returns as strings.
-const SCENARIO_COLUMNS = 'id, name, kind, rain_total_mm::int AS rain_total_mm, start_time, hours::int AS hours, bulletin_hour::int AS bulletin_hour, basis, frame_extent';
+const SCENARIO_COLUMNS = 'id, name, kind, rain_total_mm::int AS rain_total_mm, start_time, hours::int AS hours, bulletin_hour::int AS bulletin_hour, basis, frame_extent, floodplain_offset_m';
 
 export async function listScenarios(pool: Pool): Promise<FloodScenarioSummary[]> {
   try {
