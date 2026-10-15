@@ -40,8 +40,24 @@ interface FloodLayers {
 const layers = new WeakMap<Map, FloodLayers>();
 const format = new GeoJSON();
 
-const cutStyle = new Style({ stroke: new Stroke({ color: FLOOD_COLORS.cut, width: 3 }) });
-const laterStyle = new Style({ stroke: new Stroke({ color: FLOOD_COLORS.later, width: 2 }) });
+const MAJOR = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary',
+  'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
+
+export type RoadStyleKey = 'cut-major' | 'later-major' | 'cut-minor';
+
+/** Major roads carry the colours; a small lane shows only once cut, thin, and not before:
+ *  thousands of lanes in full colour buried the flood raster. */
+export function roadStyleKey(fclass: string, cutHour: number, hour: number): RoadStyleKey | null {
+  const cut = roadStatusAt(cutHour, hour) === 'cut';
+  if (MAJOR.has(fclass)) return cut ? 'cut-major' : 'later-major';
+  return cut ? 'cut-minor' : null;
+}
+
+const ROAD_STYLES: Record<RoadStyleKey, Style> = {
+  'cut-major': new Style({ stroke: new Stroke({ color: FLOOD_COLORS.cut, width: 3.5 }), zIndex: 3 }),
+  'later-major': new Style({ stroke: new Stroke({ color: FLOOD_COLORS.later, width: 2.5 }), zIndex: 2 }),
+  'cut-minor': new Style({ stroke: new Stroke({ color: 'rgba(215, 48, 31, 0.45)', width: 1 }), zIndex: 1 }),
+};
 
 function planStyle(feature: FeatureLike): Style | Style[] {
   const geom = feature.getGeometry();
@@ -78,8 +94,10 @@ function ensure(map: Map): FloodLayers {
     properties: { id: FLOOD_LAYER_IDS.roads },
     zIndex: 991,
   });
-  roads.setStyle((f: FeatureLike): Style =>
-    (roadStatusAt(f.get('cutHour') as number, roads.get('hour') as number) === 'cut' ? cutStyle : laterStyle));
+  roads.setStyle((f: FeatureLike): Style | undefined => {
+    const key = roadStyleKey(f.get('fclass') as string, f.get('cutHour') as number, roads.get('hour') as number);
+    return key ? ROAD_STYLES[key] : undefined;
+  });
   const plan = new VectorLayer({ source: new VectorSource(), properties: { id: FLOOD_LAYER_IDS.plan }, zIndex: 994, style: planStyle });
   for (const l of [frame, roads, plan]) map.addLayer(l);
   const created: FloodLayers = { frame, roads, plan, key: { frameUrl: null, roads: null, plan: null, hour: -1 } };

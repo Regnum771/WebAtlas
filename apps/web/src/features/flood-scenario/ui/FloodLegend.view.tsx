@@ -9,8 +9,9 @@ export function FloodLegendView({ planShown }: { planShown: boolean }) {
       <div className="flood-legend-ramp" aria-hidden="true" />
       <div className="flood-legend-ticks"><span>0</span><span>0,5</span><span>1</span><span>2</span><span>≥ 4</span></div>
       <ul className="flood-legend-rows">
-        <li><span className="flood-legend-line" style={{ background: FLOOD_COLORS.cut }} />Đường đã ngập ≥ 0,3 m</li>
-        <li><span className="flood-legend-line" style={{ background: FLOOD_COLORS.later, height: 2 }} />Đường sẽ ngập trong kịch bản</li>
+        <li><span className="flood-legend-line" style={{ background: FLOOD_COLORS.cut }} />Đường chính đã ngập ≥ 0,3 m</li>
+        <li><span className="flood-legend-line" style={{ background: FLOOD_COLORS.later, height: 2 }} />Đường chính sẽ ngập trong kịch bản</li>
+        <li><span className="flood-legend-line" style={{ background: 'rgba(215, 48, 31, 0.45)', height: 1 }} />Đường nhỏ đã ngập</li>
         {planShown && (
           <>
             <li><span className="flood-legend-point">1</span>Điểm tập kết (số = thứ tự ưu tiên)</li>

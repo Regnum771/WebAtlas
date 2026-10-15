@@ -109,6 +109,7 @@ export function setSpeed(speed: FloodSpeed): void { update({ speed }); }
 export async function showPlan(id: FloodScenarioId): Promise<void> {
   await openScenario(id);
   if (state.scenarioId !== id || state.status !== 'ready') return;
+  if (state.plan) { update({ planShown: true }); return; }
   try {
     const plan = await loader.fetchPlan(id);
     if (state.scenarioId === id) update({ plan, planShown: true });
@@ -116,6 +117,8 @@ export async function showPlan(id: FloodScenarioId): Promise<void> {
     update({ error: 'Không tải được phương án sơ tán.' });
   }
 }
+
+export function hidePlan(): void { update({ planShown: false }); }
 
 export function closeScenario(): void { stopTimer(); seq++; publish({ ...INITIAL, scenarios: state.scenarios, speed: state.speed }); }
 

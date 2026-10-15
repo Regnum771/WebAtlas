@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import type { FloodScenarioDetail } from '@webatlas/shared';
 import {
-  closeScenario, getFloodState, loadScenarios, openScenario, pause, play, resetFloodStore, retry, setFloodLoader, setHour,
+  closeScenario, getFloodState, hidePlan, loadScenarios, openScenario, pause, play, resetFloodStore, retry, setFloodLoader, setHour,
   setSpeed, showPlan, tick,
 } from './flood.store';
 
@@ -141,5 +141,15 @@ describe('flood.store', () => {
     loader({ fetchScenarios: vi.fn().mockRejectedValue(new Error('down')) });
     await loadScenarios();
     expect(getFloodState().scenarios).toEqual([]);
+  });
+
+  it('hides the plan and shows it again without refetching', async () => {
+    const l = loader();
+    await showPlan('kttv-2025-10');
+    hidePlan();
+    expect(getFloodState().planShown).toBe(false);
+    await showPlan('kttv-2025-10');
+    expect(getFloodState().planShown).toBe(true);
+    expect(l.fetchPlan).toHaveBeenCalledTimes(1);
   });
 });

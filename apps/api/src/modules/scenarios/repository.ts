@@ -177,7 +177,7 @@ export async function getRoads(pool: Pool, id: FloodScenarioId): Promise<unknown
     `SELECT json_build_object('type', 'FeatureCollection', 'features', coalesce(json_agg(json_build_object(
               'type', 'Feature',
               'geometry', ST_AsGeoJSON(geom, 5)::json,
-              'properties', json_build_object('cutHour', cut_hour::int, 'name', name)
+              'properties', json_build_object('cutHour', cut_hour::int, 'name', name, 'fclass', fclass)
             ) ORDER BY cut_hour), '[]'::json)) AS fc
        FROM scenario.flood_road WHERE scenario_id = $1`,
     [id]

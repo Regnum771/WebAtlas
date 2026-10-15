@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMapContext } from '../../app/providers/MapProvider';
 import { clearFloodLayers, syncFloodLayers } from './model/floodLayers';
 import {
-  closeScenario, loadScenarios, openScenario, pause, play, retry, setHour, setSpeed, useFloodScenario,
+  closeScenario, hidePlan, loadScenarios, openScenario, pause, play, retry, setHour, setSpeed, showPlan, useFloodScenario,
 } from './model/flood.store';
 import { FloodDockView } from './ui/FloodDock.view';
 import { FloodLegendView } from './ui/FloodLegend.view';
@@ -44,6 +44,7 @@ export default function FloodScenario() {
       speed={s.speed} status={s.status} loaded={s.loaded} error={s.error} stationId={stationId}
       onScenario={(id) => void openScenario(id)} onHour={setHour} onPlay={play} onPause={pause} onSpeed={setSpeed}
       onStation={setStationId} onRetry={() => void retry()} onClose={closeScenario}
+      planShown={s.planShown} onTogglePlan={() => (s.planShown ? hidePlan() : void showPlan(s.scenarioId!))}
     />
   );
 }

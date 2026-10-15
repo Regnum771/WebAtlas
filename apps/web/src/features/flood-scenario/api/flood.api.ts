@@ -6,7 +6,7 @@ import { API_BASE_URL } from '../../../shared/config';
 
 export interface FloodRoadsCollection {
   type: 'FeatureCollection';
-  features: readonly { type: 'Feature'; geometry: unknown; properties: { cutHour: number; name: string | null } }[];
+  features: readonly { type: 'Feature'; geometry: unknown; properties: { cutHour: number; name: string | null; fclass: string } }[];
 }
 
 export function fetchScenarios(): Promise<FloodScenarioSummary[]> {

@@ -21,7 +21,7 @@ function props(overrides: Partial<FloodDockViewProps> = {}): FloodDockViewProps 
     scenarios: [summary], scenarioId: 'kttv-2025-10', detail, hour: 30, playing: false, speed: 1, status: 'ready',
     loaded: 97, error: null, stationId: 'cau-lau',
     onScenario: vi.fn(), onHour: vi.fn(), onPlay: vi.fn(), onPause: vi.fn(), onSpeed: vi.fn(), onStation: vi.fn(),
-    onRetry: vi.fn(), onClose: vi.fn(),
+    onRetry: vi.fn(), onClose: vi.fn(), planShown: false, onTogglePlan: vi.fn(),
     ...overrides,
   };
 }
@@ -60,5 +60,16 @@ describe('FloodDockView', () => {
     rerender(<FloodDockView {...p} playing />);
     await userEvent.click(screen.getByRole('button', { name: 'Tạm dừng' }));
     expect(p.onPause).toHaveBeenCalled();
+  });
+
+  it('toggles the evacuation plan without the assistant', async () => {
+    const p = props();
+    const { rerender } = render(<FloodDockView {...p} />);
+    const button = screen.getByRole('button', { name: 'Phương án sơ tán' });
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(button);
+    expect(p.onTogglePlan).toHaveBeenCalled();
+    rerender(<FloodDockView {...p} planShown />);
+    expect(screen.getByRole('button', { name: 'Phương án sơ tán' })).toHaveAttribute('aria-pressed', 'true');
   });
 });

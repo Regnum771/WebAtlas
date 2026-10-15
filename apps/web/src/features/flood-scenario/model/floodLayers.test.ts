@@ -7,7 +7,7 @@ import View from 'ol/View';
 import ImageStatic from 'ol/source/ImageStatic';
 import { fromLonLat } from 'ol/proj';
 import type { FloodPlanRow } from '@webatlas/shared';
-import { FLOOD_LAYER_IDS, clearFloodLayers, roadStatusAt, syncFloodLayers } from './floodLayers';
+import { FLOOD_LAYER_IDS, clearFloodLayers, roadStatusAt, roadStyleKey, syncFloodLayers } from './floodLayers';
 
 function makeMap(): Map {
   return new Map({ target: document.createElement('div'), view: new View({ center: fromLonLat([108.2, 15.85]), zoom: 10 }) });
@@ -17,8 +17,8 @@ const layer = (map: Map, id: string) => map.getLayers().getArray().find((l) => l
 const roads = {
   type: 'FeatureCollection' as const,
   features: [
-    { type: 'Feature' as const, geometry: { type: 'LineString', coordinates: [[108.2, 15.85], [108.21, 15.86]] }, properties: { cutHour: 10, name: 'ĐT609' } },
-    { type: 'Feature' as const, geometry: { type: 'LineString', coordinates: [[108.3, 15.85], [108.31, 15.86]] }, properties: { cutHour: 50, name: null } },
+    { type: 'Feature' as const, geometry: { type: 'LineString', coordinates: [[108.2, 15.85], [108.21, 15.86]] }, properties: { cutHour: 10, name: 'ĐT609', fclass: 'secondary' } },
+    { type: 'Feature' as const, geometry: { type: 'LineString', coordinates: [[108.3, 15.85], [108.31, 15.86]] }, properties: { cutHour: 50, name: null, fclass: 'residential' } },
   ],
 };
 const plan: FloodPlanRow[] = [{
@@ -45,6 +45,14 @@ describe('floodLayers', () => {
     expect(roadStatusAt(10, 24)).toBe('cut');
     expect(roadStatusAt(50, 24)).toBe('later');
     expect(roadStatusAt(24, 24)).toBe('cut');
+  });
+
+  it('gives major roads the strong colours and keeps small lanes quiet', () => {
+    expect(roadStyleKey('primary', 10, 24)).toBe('cut-major');
+    expect(roadStyleKey('tertiary_link', 30, 24)).toBe('later-major');
+    expect(roadStyleKey('residential', 10, 24)).toBe('cut-minor');
+    // A lane not yet cut is not drawn: thousands of them buried the flood raster.
+    expect(roadStyleKey('residential', 30, 24)).toBeNull();
   });
 
   it('draws the plan only when there is one, and clears everything', () => {

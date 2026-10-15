@@ -106,6 +106,8 @@ describe('GET /api/scenarios', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('image/png');
     expect(res.headers['cache-control']).toContain('max-age=3600');
+    // The web app on another origin draws these as images; helmet's default same-origin would block them.
+    expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
   });
 
   it.skipIf(!scenariosBuilt)('lets a client preload more frames than the global rate limit allows', async () => {

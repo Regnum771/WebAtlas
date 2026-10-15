@@ -24,6 +24,8 @@ export interface FloodDockViewProps {
   onStation: (id: string) => void;
   onRetry: () => void;
   onClose: () => void;
+  planShown: boolean;
+  onTogglePlan: () => void;
 }
 
 const SPEEDS: FloodSpeed[] = [1, 2, 4];
@@ -99,6 +101,9 @@ export function FloodDockView(p: FloodDockViewProps) {
             <span className="flood-dock-bulletin" style={{ left: `${(p.detail!.bulletinHour / hours) * 100}%` }}>Bản tin dự báo</span>
           )}
         </div>
+        <button type="button" className="flood-dock-plan" aria-pressed={p.planShown} disabled={!ready} onClick={p.onTogglePlan}>
+          Phương án sơ tán
+        </button>
         <output className="flood-dock-time">
           {time}{km2 !== undefined ? ` · ngập ${Math.round(km2)} km²` : ''}
         </output>

@@ -56,6 +56,8 @@ export async function frame(req: FastifyRequest, reply: FastifyReply) {
   } catch {
     throw new NotFoundError('Không có khung ngập cho giờ này.');
   }
-  reply.header('Content-Type', 'image/png').header('Cache-Control', 'public, max-age=3600');
+  // The web app (another origin) draws frames as images; helmet's default same-origin policy blocks that.
+  reply.header('Content-Type', 'image/png').header('Cache-Control', 'public, max-age=3600')
+    .header('Cross-Origin-Resource-Policy', 'cross-origin');
   return reply.send(createReadStream(file));
 }
