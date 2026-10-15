@@ -33,7 +33,7 @@ STATIONS = [
 ]
 
 SCENARIOS = [
-    {"id": "kttv-2025-10", "name": "Bản tin KTTV 21:00 28/10/2025 — tái hiện lũ 10/2025", "kind": "kttv",
+    {"id": "kttv-2025-10", "name": "Lũ 26–31/10/2025 — tái hiện từ số liệu thực đo KTTV", "kind": "kttv",
      "rain_total_mm": None, "basis": "Mực nước thực đo KTTV"},
     {"id": "preset-500", "name": "Mưa 500 mm (ước tính từ lũ 10/2025)", "kind": "preset",
      "rain_total_mm": 500, "basis": "Ước tính từ lũ 10/2025"},

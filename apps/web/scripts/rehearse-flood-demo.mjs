@@ -99,7 +99,7 @@ async function main() {
     // Step 1: open the replay and play.
     await clickButton(page, '.tool-group', 'Kịch bản lũ');
     await page.waitForSelector('.flood-menu-item', { visible: true, timeout: 15000 });
-    await page.$$eval('.flood-menu-item', (items) => items.find((b) => b.textContent.includes('Bản tin KTTV'))?.click());
+    await page.$$eval('.flood-menu-item', (items) => items.find((b) => b.textContent.includes('tái hiện'))?.click());
     await page.waitForFunction(() => document.querySelector('.flood-dock [aria-label="Phát"]:not([disabled])'), { timeout: 60000 });
     const time = await page.$eval('.flood-dock-time', (el) => el.textContent);
     report(time.startsWith('05:00 26/10/2025'), 'dock opens at the decision moment, before the rise', time);
