@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import type { FloodScenarioDetail } from '@webatlas/shared';
 import {
-  closeScenario, getFloodState, openScenario, pause, play, resetFloodStore, retry, setFloodLoader, setHour,
+  closeScenario, getFloodState, loadScenarios, openScenario, pause, play, resetFloodStore, retry, setFloodLoader, setHour,
   setSpeed, showPlan, tick,
 } from './flood.store';
 
@@ -19,6 +19,7 @@ function loader(overrides: Partial<Parameters<typeof setFloodLoader>[0]> = {}) {
     fetchScenario: vi.fn(async (id: FloodScenarioDetail['id']) => detail(id)),
     fetchRoads: vi.fn(async () => roads),
     fetchPlan: vi.fn(async () => []),
+    fetchScenarios: vi.fn(async () => [detail('kttv-2025-10')]),
     preloadFrames: vi.fn(async (_id: string, hours: number, onProgress: (n: number) => void) => { onProgress(hours + 1); }),
     ...overrides,
   };
@@ -124,5 +125,21 @@ describe('flood.store', () => {
     closeScenario();
     expect(getFloodState().scenarioId).toBeNull();
     expect(getFloodState().playing).toBe(false);
+  });
+
+  it('loads the scenario list once and keeps it when a scenario closes', async () => {
+    const l = loader();
+    await loadScenarios();
+    await loadScenarios();
+    expect(l.fetchScenarios).toHaveBeenCalledTimes(1);
+    expect(getFloodState().scenarios?.map((s) => s.id)).toEqual(['kttv-2025-10']);
+    closeScenario();
+    expect(getFloodState().scenarios).toHaveLength(1);
+  });
+
+  it('an unreachable list reads as no scenarios', async () => {
+    loader({ fetchScenarios: vi.fn().mockRejectedValue(new Error('down')) });
+    await loadScenarios();
+    expect(getFloodState().scenarios).toEqual([]);
   });
 });

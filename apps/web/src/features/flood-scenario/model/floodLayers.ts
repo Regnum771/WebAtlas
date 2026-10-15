@@ -73,12 +73,13 @@ function ensure(map: Map): FloodLayers {
   const existing = layers.get(map);
   if (existing) return existing;
   const frame = new ImageLayer<ImageStatic>({ properties: { id: FLOOD_LAYER_IDS.frame }, zIndex: 990 });
-  const roads = new VectorLayer({
+  const roads: VectorLayer<VectorSource> = new VectorLayer({
     source: new VectorSource(),
     properties: { id: FLOOD_LAYER_IDS.roads },
     zIndex: 991,
-    style: (f) => (roadStatusAt(f.get('cutHour') as number, roads.get('hour') as number) === 'cut' ? cutStyle : laterStyle),
   });
+  roads.setStyle((f: FeatureLike): Style =>
+    (roadStatusAt(f.get('cutHour') as number, roads.get('hour') as number) === 'cut' ? cutStyle : laterStyle));
   const plan = new VectorLayer({ source: new VectorSource(), properties: { id: FLOOD_LAYER_IDS.plan }, zIndex: 994, style: planStyle });
   for (const l of [frame, roads, plan]) map.addLayer(l);
   const created: FloodLayers = { frame, roads, plan, key: { frameUrl: null, roads: null, plan: null, hour: -1 } };

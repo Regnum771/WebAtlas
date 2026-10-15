@@ -1,0 +1,260 @@
+/* Kịch bản lũ: the dock along the bottom of the map stage, its tool menu and legend rows. */
+
+/* Sits in the toast band, above the bottom-corner readouts, clear of the scale column on the
+   right; toasts move up above it while it is open. */
+.flood-dock {
+  position: absolute;
+  left: 12px;
+  right: calc(var(--scale-column) + 24px);
+  bottom: var(--toast-band-bottom);
+  z-index: 10;
+  max-width: 920px;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+
+.map-stage:has(.flood-dock) .toast-host {
+  bottom: calc(var(--toast-band-bottom) + 232px);
+}
+
+.flood-dock-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding-right: 32px;
+  position: relative;
+}
+
+.flood-dock-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 650;
+}
+
+.flood-dock-select,
+.flood-dock-station {
+  font: inherit;
+  color: var(--ink);
+  background: var(--sheet);
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius);
+  padding: 2px 4px;
+  max-width: 100%;
+}
+
+.flood-dock-note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+}
+
+.flood-dock-sample {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.flood-dock-error {
+  margin: 0;
+  color: var(--alert);
+}
+
+.flood-dock-close {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.flood-dock-chart {
+  position: relative;
+}
+
+.flood-dock-station {
+  position: absolute;
+  top: 0;
+  left: 40px;
+  font-size: var(--text-xs);
+}
+
+.flood-chart {
+  display: block;
+  width: 100%;
+  height: 120px;
+}
+
+.flood-chart-axis { font-size: 10px; fill: var(--ink-2); }
+.flood-chart-label { font-size: 10px; fill: var(--ink-2); }
+.flood-chart-grid { stroke: var(--rule); stroke-width: 1; }
+.flood-chart-alarm { stroke: var(--alert); stroke-width: 1; stroke-dasharray: 5 4; opacity: 0.6; }
+.flood-chart-record { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 1 3; }
+.flood-chart-bulletin { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
+.flood-chart-level { fill: none; stroke: #2171b5; stroke-width: 2; }
+.flood-chart-forecast { fill: var(--sheet); stroke: var(--ink); stroke-width: 1.5; }
+.flood-chart-cursor { stroke: var(--ink); stroke-width: 1.5; }
+.flood-chart-now { fill: var(--mark); stroke: var(--ink); stroke-width: 1.5; }
+
+.flood-dock-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.flood-dock-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  background: var(--ink);
+  color: var(--sheet);
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.flood-dock-play:disabled { opacity: 0.4; cursor: default; }
+
+.flood-dock-speeds {
+  display: flex;
+  flex: none;
+}
+
+.flood-dock-speeds button {
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 3px 6px;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--ink-2);
+  margin-left: -1px;
+  cursor: pointer;
+}
+
+.flood-dock-speeds button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--sheet);
+  border-color: var(--ink);
+}
+
+.flood-dock-slider {
+  position: relative;
+  flex: 1;
+  min-width: 120px;
+  padding-bottom: 12px;
+}
+
+.flood-dock-slider input {
+  width: 100%;
+  accent-color: var(--ink);
+}
+
+.flood-dock-bulletin {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.flood-dock-time {
+  flex: none;
+  min-width: 190px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.flood-menu {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 300px;
+}
+
+.flood-menu-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
+  font: inherit;
+  text-align: left;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.flood-menu-item[aria-pressed='true'] { border-color: var(--ink); box-shadow: inset 3px 0 0 var(--ink); }
+.flood-menu-name { font-weight: 600; }
+.flood-menu-basis, .flood-menu-note { font-size: var(--text-xs); color: var(--ink-2); margin: 0; }
+
+.flood-legend {
+  padding: 10px 14px;
+  border-top: 1px solid var(--rule);
+  font-size: var(--text-sm);
+}
+
+.flood-legend-title { margin: 0 0 6px; font-size: var(--text-sm); font-weight: 650; }
+.flood-legend-label { margin: 0 0 4px; color: var(--ink-2); font-size: var(--text-xs); }
+
+.flood-legend-ramp {
+  height: 10px;
+  border-radius: 2px;
+  /* Same stops as depth.py's RAMP: 0 m, 1.5 m, 4 m. */
+  background: linear-gradient(to right, #c6dbef 0%, #4292c6 37.5%, #08306b 100%);
+  opacity: 0.75;
+}
+
+.flood-legend-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+
+.flood-legend-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.flood-legend-rows li { display: flex; align-items: center; gap: 8px; }
+.flood-legend-line { display: inline-block; width: 22px; height: 3px; flex: none; }
+
+.flood-legend-point {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.flood-legend-arrow { display: inline-block; width: 22px; flex: none; border-top: 2px dashed var(--ink); }
+.flood-legend-credit { margin: 8px 0 0; font-size: var(--text-xs); color: var(--ink-2); }

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { FloodScenarioDetail, FloodScenarioId } from '@webatlas/shared';
 import { createCommandExecutor, type CommandDeps } from './mapCommands';
 import { INITIAL_CENTER_4326, INITIAL_ZOOM } from './zoomScale';
 import { fromLonLat } from 'ol/proj';
@@ -216,10 +217,12 @@ describe('zoomToRegion uses real extents when they are loaded', () => {
     resetShell();
     resetFloodStore();
     setFloodLoader({
-      fetchScenario: vi.fn(async (id) => ({ id, name: id, kind: 'kttv', rainTotalMm: null, startTime: '2025-10-27T14:00:00Z',
-        hours: 96, bulletinHour: 24, basis: '', stations: [], series: {}, floodedKm2: [], frameExtent: [0, 0, 1, 1] })),
+      fetchScenario: vi.fn(async (id: FloodScenarioId): Promise<FloodScenarioDetail> => ({ id, name: id, kind: 'kttv',
+        rainTotalMm: null, startTime: '2025-10-27T14:00:00Z', hours: 96, bulletinHour: 24, basis: '', stations: [],
+        series: {}, floodedKm2: [], frameExtent: [0, 0, 1, 1] })),
       fetchRoads: vi.fn(async () => ({ type: 'FeatureCollection' as const, features: [] })),
       fetchPlan: vi.fn(async () => []),
+      fetchScenarios: vi.fn(async () => []),
       preloadFrames: vi.fn(async () => {}),
     });
     const result = createCommandExecutor(makeDeps())({ kind: 'showFloodScenario', scenarioId: 'kttv-2025-10', hour: 30 });

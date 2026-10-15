@@ -12,6 +12,8 @@ import FeatureEditing from '../features/feature-editing';
 import LayersPanel from '../features/layers-panel';
 import Legend from '../features/legend';
 import Assistant from '../features/assistant';
+import FloodScenario, { FloodLegend, FloodScenarioToolContent } from '../features/flood-scenario';
+import { useFloodScenario } from '../features/flood-scenario/model/flood.store';
 import RoiChip from '../features/roi/ui/RoiChip';
 import RoiDrawButtons from '../features/roi/ui/RoiDrawButtons';
 import { stopDrawing, useRoi } from '../features/roi/model/roi.store';
@@ -33,6 +35,7 @@ export default function MapScreen() {
   const { assistantOpen, tool } = useShell();
   const roi = useRoi();
   const analysis = useAnalysisTools();
+  const flood = useFloodScenario();
   const isAdmin = currentUser?.role === 'admin';
   // A feature drawing or edit-existing mode is active in Biên tập.
   const [editBusy, setEditBusy] = useState(false);
@@ -94,6 +97,7 @@ export default function MapScreen() {
     },
     { id: 'add-data', label: 'Thêm dữ liệu', content: <AddData /> },
     { id: 'basemap', label: 'Nền bản đồ', content: <BasemapTool /> },
+    { id: 'flood', label: 'Kịch bản lũ', on: flood.scenarioId !== null, content: <FloodScenarioToolContent /> },
   ];
   // UX only: FeatureEditing keeps its own RequireRole gate and the backend enforces every write.
   // Closing Biên tập (or the session ending, which unmounts it) cancels a feature
@@ -115,6 +119,7 @@ export default function MapScreen() {
           <LayersPanel />
           <hr className="side-panel-rule" />
           <Legend />
+          <FloodLegend />
         </SidePanelView>
       )}
       strip={<ConnectionStrip />}
@@ -131,6 +136,7 @@ export default function MapScreen() {
             onClose={closeTool}
           />
           <ScaleSlider />
+          <FloodScenario />
           <ToastHost />
         </>
       )}

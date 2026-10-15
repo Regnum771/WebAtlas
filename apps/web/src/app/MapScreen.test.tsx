@@ -20,6 +20,11 @@ vi.mock('../features/feature-editing', () => ({
 vi.mock('../features/layers-panel', () => ({ default: () => <div>LAYERS</div> }));
 vi.mock('../features/legend', () => ({ default: () => <div>LEGEND</div> }));
 vi.mock('../features/assistant', () => ({ default: () => <div>ASSISTANT</div> }));
+vi.mock('../features/flood-scenario', () => ({
+  default: () => <div>FLOOD_DOCK</div>,
+  FloodLegend: () => <div>FLOOD_LEGEND</div>,
+  FloodScenarioToolContent: () => <div>FLOOD_MENU</div>,
+}));
 vi.mock('../features/analysis', () => ({ useAnalysisTools: () => ({ buttons: <div>ANALYSIS_BUTTONS</div>, panel: <div>ANALYSIS_PANEL</div> }) }));
 vi.mock('../features/roi/ui/RoiChip', () => ({ default: () => <div>ROI_STATUS</div> }));
 vi.mock('../features/roi/ui/RoiDrawButtons', () => ({ default: () => <div>ROI_DRAW</div> }));
@@ -104,11 +109,11 @@ describe('MapScreen', () => {
 });
 
 describe('MapScreen tool group', () => {
-  it('offers the four reader tools, in order, with every menu closed', () => {
+  it('offers the five reader tools, in order, with every menu closed', () => {
     const { container } = renderScreen();
     const group = container.querySelector('.tool-group') as HTMLElement;
     expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'Đo', 'Vùng phân tích', 'Thêm dữ liệu', 'Nền bản đồ',
+      'Đo', 'Vùng phân tích', 'Thêm dữ liệu', 'Nền bản đồ', 'Kịch bản lũ',
     ]);
     expect(screen.queryAllByRole('region')).toHaveLength(0);
     expect(getShell().tool).toBeNull();

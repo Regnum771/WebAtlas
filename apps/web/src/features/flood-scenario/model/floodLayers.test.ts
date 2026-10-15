@@ -12,7 +12,8 @@ import { FLOOD_LAYER_IDS, clearFloodLayers, roadStatusAt, syncFloodLayers } from
 function makeMap(): Map {
   return new Map({ target: document.createElement('div'), view: new View({ center: fromLonLat([108.2, 15.85]), zoom: 10 }) });
 }
-const layer = (map: Map, id: string) => map.getLayers().getArray().find((l) => l.get('id') === id);
+const layer = (map: Map, id: string) => map.getLayers().getArray().find((l) => l.get('id') === id) as
+  (ReturnType<Map['getLayers']>['getArray'] extends () => (infer L)[] ? L : never) & { getSource(): unknown } | undefined;
 const roads = {
   type: 'FeatureCollection' as const,
   features: [

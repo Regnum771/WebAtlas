@@ -1,11 +1,13 @@
 import { useSyncExternalStore } from 'react';
-import type { FloodPlanRow, FloodScenarioDetail, FloodScenarioId } from '@webatlas/shared';
+import type { FloodPlanRow, FloodScenarioDetail, FloodScenarioId, FloodScenarioSummary } from '@webatlas/shared';
 import * as api from '../api/flood.api';
 
 export type FloodStatus = 'idle' | 'loading' | 'ready' | 'error';
 export type FloodSpeed = 1 | 2 | 4;
 
 export interface FloodState {
+  /** The scenarios on offer; null until loaded, empty when there are none or the API is down. */
+  scenarios: FloodScenarioSummary[] | null;
   scenarioId: FloodScenarioId | null;
   hour: number;
   playing: boolean;
@@ -21,11 +23,12 @@ export interface FloodState {
 }
 
 const INITIAL: FloodState = {
-  scenarioId: null, hour: 0, playing: false, speed: 1, planShown: false, status: 'idle', loaded: 0,
+  scenarios: null, scenarioId: null, hour: 0, playing: false, speed: 1, planShown: false, status: 'idle', loaded: 0,
   error: null, detail: null, roads: null, plan: null,
 };
 
 export interface FloodLoader {
+  fetchScenarios: typeof api.fetchScenarios;
   fetchScenario: typeof api.fetchScenario;
   fetchRoads: typeof api.fetchRoads;
   fetchPlan: typeof api.fetchPlan;
@@ -49,7 +52,7 @@ let seq = 0;
 /** Tests only. */
 export function setFloodLoader(l: FloodLoader): void { loader = l; }
 /** Tests only. */
-export function resetFloodStore(): void { stopTimer(); seq++; loader = api; publish(INITIAL); }
+export function resetFloodStore(): void { stopTimer(); seq++; listing = null; loader = api; publish(INITIAL); }
 
 function stopTimer() { if (timer !== null) { clearInterval(timer); timer = null; } }
 
@@ -66,7 +69,7 @@ export async function openScenario(id: FloodScenarioId, hour?: number, playNow =
   }
   stopTimer();
   const mine = ++seq;
-  update({ ...INITIAL, scenarioId: id, speed: state.speed, status: 'loading' });
+  update({ ...INITIAL, scenarios: state.scenarios, scenarioId: id, speed: state.speed, status: 'loading' });
   try {
     const [detail, roads] = await Promise.all([loader.fetchScenario(id), loader.fetchRoads(id)]);
     if (mine !== seq) return;
@@ -114,7 +117,18 @@ export async function showPlan(id: FloodScenarioId): Promise<void> {
   }
 }
 
-export function closeScenario(): void { stopTimer(); seq++; publish({ ...INITIAL, speed: state.speed }); }
+export function closeScenario(): void { stopTimer(); seq++; publish({ ...INITIAL, scenarios: state.scenarios, speed: state.speed }); }
+
+let listing: Promise<void> | null = null;
+/** Fetches the scenario list once per session. */
+export function loadScenarios(): Promise<void> {
+  if (state.scenarios !== null) return Promise.resolve();
+  listing ??= loader.fetchScenarios()
+    .then((scenarios) => update({ scenarios }))
+    .catch(() => update({ scenarios: [] }))
+    .finally(() => { listing = null; });
+  return listing;
+}
 
 export function retry(): Promise<void> {
   const id = state.scenarioId;
