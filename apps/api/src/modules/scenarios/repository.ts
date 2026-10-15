@@ -38,7 +38,8 @@ function summary(r: ScenarioRow): FloodScenarioSummary {
   };
 }
 
-const SCENARIO_COLUMNS = 'id, name, kind, rain_total_mm, start_time, hours, bulletin_hour, basis, frame_extent';
+// Integer columns are cast: the build writes them through pandas as bigint, which pg returns as strings.
+const SCENARIO_COLUMNS = 'id, name, kind, rain_total_mm::int AS rain_total_mm, start_time, hours::int AS hours, bulletin_hour::int AS bulletin_hour, basis, frame_extent';
 
 export async function listScenarios(pool: Pool): Promise<FloodScenarioSummary[]> {
   try {
@@ -68,11 +69,11 @@ export async function getScenario(pool: Pool, id: FloodScenarioId): Promise<Floo
   if (!row) return null;
   const [stations, series, hourly] = await Promise.all([
     pool.query(
-      `SELECT id, name, river, bd1, bd2, bd3, record_m, record_year, derived FROM scenario.flood_station
+      `SELECT id, name, river, bd1, bd2, bd3, record_m, record_year::int AS record_year, derived FROM scenario.flood_station
         ORDER BY array_position(ARRAY['ai-nghia','cau-lau','hoi-an','giao-thuy'], id)`
     ),
     pool.query<{ station_id: string; hour: number; level_m: number; forecast_m: number | null }>(
-      'SELECT station_id, hour, level_m, forecast_m FROM scenario.flood_series WHERE scenario_id = $1 ORDER BY station_id, hour',
+      'SELECT station_id, hour::int AS hour, level_m, forecast_m FROM scenario.flood_series WHERE scenario_id = $1 ORDER BY station_id, hour',
       [id]
     ),
     pool.query<{ flooded_km2: number }>(
@@ -109,12 +110,13 @@ export async function getImpacts(pool: Pool, id: FloodScenarioId, hour: number):
   const start = row.start_time.toISOString();
   const [roads, wards] = await Promise.all([
     pool.query(
-      `SELECT name, ref, fclass, cut_hour, max_depth FROM scenario.flood_road
+      `SELECT name, ref, fclass, cut_hour::int AS cut_hour, max_depth FROM scenario.flood_road
         WHERE scenario_id = $1 AND cut_hour <= $2 ORDER BY cut_hour, name NULLS LAST`,
       [id, h]
     ),
     pool.query(
-      `SELECT ward_code, ward_name, first_hour, buildings_flooded, people_est, max_depth FROM scenario.flood_ward
+      `SELECT ward_code, ward_name, first_hour::int AS first_hour, buildings_flooded::int AS buildings_flooded,
+              people_est::int AS people_est, max_depth FROM scenario.flood_ward
         WHERE scenario_id = $1 AND first_hour <= $2 ORDER BY first_hour, ward_name`,
       [id, h]
     ),
@@ -146,9 +148,10 @@ export async function getPlan(pool: Pool, id: FloodScenarioId): Promise<FloodPla
   if (!row) return null;
   const start = row.start_time.toISOString();
   const { rows } = await pool.query(
-    `SELECT p.priority, p.ward_code, w.ward_name, w.deadline_hour, w.first_hour, w.people_est,
+    `SELECT p.priority::int AS priority, p.ward_code, w.ward_name, w.deadline_hour::int AS deadline_hour,
+            w.first_hour::int AS first_hour, w.people_est::int AS people_est,
             s.id AS shelter_id, s.name AS shelter_name, s.kind AS shelter_kind,
-            ST_X(s.geom) AS lon, ST_Y(s.geom) AS lat, p.distance_m, p.open_roads,
+            ST_X(s.geom) AS lon, ST_Y(s.geom) AS lat, p.distance_m::float AS distance_m, p.open_roads,
             ST_AsGeoJSON(p.arrow, 6)::json AS arrow
        FROM scenario.flood_plan p
        JOIN scenario.flood_ward w ON w.scenario_id = p.scenario_id AND w.ward_code = p.ward_code
@@ -174,7 +177,7 @@ export async function getRoads(pool: Pool, id: FloodScenarioId): Promise<unknown
     `SELECT json_build_object('type', 'FeatureCollection', 'features', coalesce(json_agg(json_build_object(
               'type', 'Feature',
               'geometry', ST_AsGeoJSON(geom, 5)::json,
-              'properties', json_build_object('cutHour', cut_hour, 'name', name)
+              'properties', json_build_object('cutHour', cut_hour::int, 'name', name)
             ) ORDER BY cut_hour), '[]'::json)) AS fc
        FROM scenario.flood_road WHERE scenario_id = $1`,
     [id]
