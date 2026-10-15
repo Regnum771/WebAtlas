@@ -1,7 +1,5 @@
 import { FLOOD_COLORS } from '../model/floodLayers';
-
-/** Ticks at their depth on the linear 0-4 m ramp (depth.py's RAMP). */
-const TICKS: [string, number][] = [['0', 0], ['0,5', 0.5], ['1', 1], ['2', 2], ['≥ 4', 4]];
+import { DEPTH_BANDS } from '../model/depthColour';
 
 /** Depth ramp, road states, plan marks and credits for the open flood scenario. */
 export function FloodLegendView({ planShown }: { planShown: boolean }) {
@@ -9,10 +7,12 @@ export function FloodLegendView({ planShown }: { planShown: boolean }) {
     <section className="flood-legend" aria-label="Chú giải kịch bản lũ">
       <h3 className="flood-legend-title">Kịch bản lũ</h3>
       <p className="flood-legend-label">Độ sâu ngập (m)</p>
-      <div className="flood-legend-ramp" aria-hidden="true" />
-      <div className="flood-legend-ticks">
-        {TICKS.map(([label, m]) => <span key={label} style={{ left: `${(m / 4) * 100}%` }}>{label}</span>)}
-      </div>
+      <ul className="flood-legend-bands">
+        {DEPTH_BANDS.map((b) => (
+          <li key={b.label}><span className="flood-legend-band" style={{ background: b.css }} />{b.label}</li>
+        ))}
+      </ul>
+      <p className="flood-legend-hint">Trỏ chuột vào vùng ngập để xem độ sâu tại chỗ.</p>
       <ul className="flood-legend-rows">
         <li><span className="flood-legend-line" style={{ background: FLOOD_COLORS.cut }} />Đường chính đã ngập ≥ 0,3 m</li>
         <li><span className="flood-legend-line" style={{ background: FLOOD_COLORS.later, height: 2 }} />Đường chính sẽ ngập trong kịch bản</li>

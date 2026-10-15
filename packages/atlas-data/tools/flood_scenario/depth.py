@@ -7,9 +7,31 @@ connects to a river channel is kept, so closed hollows far from the river stay d
 import numpy as np
 from scipy import ndimage
 
-# Colour ramp stops (depth in metres -> RGB); dry cells are transparent.
-RAMP = [(0.0, (0xC6, 0xDB, 0xEF)), (1.5, (0x42, 0x92, 0xC6)), (4.0, (0x08, 0x30, 0x6B))]
-ALPHA = 190
+# Depth bands (upper bound in metres, RGB): five clearly different blues, so depth reads at a glance.
+# Within a band every 0.25 m step adds its index in the band to red: invisible to the eye, but it
+# lets the web app read the exact step back from a frame pixel (apps/web .../depthColour.ts mirrors
+# this table; keep them in step).
+BANDS = [(0.5, (0xBF, 0xE3, 0xF5)), (1.0, (0x74, 0xB9, 0xE6)), (2.0, (0x3A, 0x86, 0xC8)),
+         (3.0, (0x1C, 0x56, 0xA0)), (float("inf"), (0x0B, 0x2A, 0x6B))]
+STEP_M = 0.25
+MAX_STEP = 16  # 4 m; deeper water takes the 4 m colour
+ALPHA = 200
+# First 0.25 m step of each band: depths 0.25, 0.5, 1, 2, 3 m.
+FIRST_STEP = [1, 2, 4, 8, 12]
+
+
+def _band_of_step(k):
+    return next(i for i, (upper, _) in enumerate(BANDS) if k * STEP_M < upper)
+
+
+def _step_colour(k):
+    b = _band_of_step(k)
+    r, g, bl = BANDS[b][1]
+    return (r + k - FIRST_STEP[b], g, bl, ALPHA)
+
+
+# Row k is the colour of step k; row 0 is dry (transparent).
+_LUT = np.array([(0, 0, 0, 0)] + [_step_colour(k) for k in range(1, MAX_STEP + 1)], dtype=np.uint8)
 
 
 def profile_surface(levels, station_dist_km, coast_dist_km, sea_level=0.8):
@@ -38,13 +60,19 @@ def above_baseline(depth, baseline):
     return np.where(baseline > 0, 0.0, depth).astype("float32")
 
 
-def depth_rgba(depth, max_m=4.0):
-    """H x W x 4 uint8 image: continuous blue ramp by depth, transparent where dry."""
-    d = np.clip(depth, 0.0, max_m)
-    stops = np.array([s for s, _ in RAMP])
-    out = np.zeros(depth.shape + (4,), dtype=np.uint8)
-    for band in range(3):
-        values = np.array([rgb[band] for _, rgb in RAMP], dtype="float64")
-        out[..., band] = np.round(np.interp(d, stops, values)).astype(np.uint8)
-    out[..., 3] = np.where(depth > 0, ALPHA, 0).astype(np.uint8)
-    return out
+def depth_rgba(depth, max_m=None):
+    """H x W x 4 uint8 image: banded blues by depth in 0.25 m steps, transparent where dry."""
+    k = np.where(depth > 0, np.clip(np.round(depth / STEP_M), 1, MAX_STEP), 0).astype(np.intp)
+    return _LUT[k]
+
+
+def depth_of_rgba(rgba):
+    """The depth a frame pixel encodes (to 0.25 m), or None for dry or a colour no step uses."""
+    r, g, b, a = (int(v) for v in rgba)
+    if a == 0:
+        return None
+    for i, (_, (br, bg, bb)) in enumerate(BANDS):
+        off = r - br
+        if (g, b) == (bg, bb) and 0 <= off and _band_of_step(FIRST_STEP[i] + off) == i:
+            return (FIRST_STEP[i] + off) * STEP_M
+    return None

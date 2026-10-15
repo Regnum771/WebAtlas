@@ -99,9 +99,13 @@ async function main() {
     // Step 1: open the replay and play.
     await clickButton(page, '.tool-group', 'Kịch bản lũ');
     await page.waitForSelector('.flood-menu-item', { visible: true, timeout: 15000 });
+    const scaleBefore = await page.$eval('.scale-readout-value', (el) => el.textContent);
     await page.$$eval('.flood-menu-item', (items) => items.find((b) => b.textContent.includes('tái hiện'))?.click());
     await page.waitForFunction(() => document.querySelector('.flood-dock [aria-label="Phát"]:not([disabled])'), { timeout: 60000 });
     const time = await page.$eval('.flood-dock-time', (el) => el.textContent);
+    await sleep(1200);
+    const scaleAfter = await page.$eval('.scale-readout-value', (el) => el.textContent);
+    report(scaleAfter !== scaleBefore, 'choosing a scenario flies the map to its area', `${scaleBefore} → ${scaleAfter}`);
     report(time.startsWith('05:00 26/10/2025'), 'dock opens at the decision moment, before the rise', time);
     await clickButton(page, '.tool-group', 'Kịch bản lũ');
     await clickButton(page, '.flood-dock', 'Phát');
@@ -118,6 +122,24 @@ async function main() {
       report(r !== null && !overlaps(dock, r), `dock clear of ${sel}`, r ? '' : 'not on the page');
     }
     await shot('1-replay');
+
+    // Step 1c: at the peak hour, pointing at the flood shows its depth by the cursor.
+    await page.$eval('.flood-dock-slider input', (input) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '87');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await sleep(800);
+    const box = await page.$eval('.map-stage', (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+    let tip = null;
+    for (let gy = 0.25; gy <= 0.6 && !tip; gy += 0.05) {
+      for (let gx = 0.3; gx <= 0.8 && !tip; gx += 0.05) {
+        await page.mouse.move(box.x + box.w * gx, box.y + box.h * gy);
+        await sleep(120);
+        tip = await page.$eval('.flood-depth-tip', (el) => (el.hidden ? null : el.textContent)).catch(() => null);
+      }
+    }
+    report(tip !== null && /^Ngập (≥ )?[\d,]+ m · /.test(tip), 'pointing at the flood shows its depth', tip ?? 'no label');
+    await shot('1c-depth-hover');
 
     // Step 1a: drag the slider across every hour, then switch scenario: must not trip a rate limit.
     await page.$eval('.flood-dock-slider input', async (input) => {

@@ -29,8 +29,11 @@ export function fetchPlan(id: FloodScenarioId): Promise<FloodPlanRow[]> {
   return apiRequest<FloodPlanRow[]>(`/api/scenarios/${id}/plan`);
 }
 
+/** Bumped when frames are restyled, so browsers that cached the old colours fetch the new ones. */
+const FRAME_STYLE = 2;
+
 export function frameUrl(id: FloodScenarioId, hour: number): string {
-  return `${API_BASE_URL}/api/scenarios/${id}/frames/${hour}`;
+  return `${API_BASE_URL}/api/scenarios/${id}/frames/${hour}?v=${FRAME_STYLE}`;
 }
 
 const PRELOAD_CONCURRENCY = 6;

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMapContext } from '../../app/providers/MapProvider';
+import { formatScenarioTime } from '@webatlas/shared';
 import { useImpactsSummary } from './model/useImpactsSummary';
+import { useFitOnScenario } from './model/useFitOnScenario';
+import { attachDepthHover } from './model/depthHover';
+import { frameUrl } from './api/flood.api';
 import { clearFloodLayers, syncFloodLayers } from './model/floodLayers';
 import {
   closeScenario, hidePlan, loadScenarios, openScenario, pause, play, retry, setHour, setSpeed, showPlan, useFloodScenario,
@@ -14,7 +18,6 @@ export default function FloodScenario() {
   const s = useFloodScenario();
   const { map } = useMapContext();
   const [stationId, setStationId] = useState('cau-lau');
-  const fitted = useRef<string | null>(null);
   const impacts = useImpactsSummary(s.scenarioId, s.status === 'ready', s.hour);
 
   useEffect(() => { void loadScenarios(); }, []);
@@ -23,19 +26,30 @@ export default function FloodScenario() {
     if (!map) return;
     if (!s.scenarioId || s.status !== 'ready' || !s.detail) {
       clearFloodLayers(map);
-      if (!s.scenarioId) fitted.current = null;
       return;
     }
     syncFloodLayers(map, {
       scenarioId: s.scenarioId, frameExtent: s.detail.frameExtent, roads: s.roads,
       plan: s.planShown ? s.plan : null, hour: s.hour,
     });
-    // Frame the flood area once per session of the dock, not on every scenario switch.
-    if (fitted.current === null) {
-      fitted.current = s.scenarioId;
-      map.getView().fit(s.detail.frameExtent, { padding: [60, 140, 260, 60], duration: 600 });
-    }
   }, [map, s.scenarioId, s.status, s.detail, s.roads, s.plan, s.planShown, s.hour]);
+
+  // Fly to the area as soon as the scenario's details arrive, before its frames finish loading.
+  useFitOnScenario(map, s.detail?.id ?? null, s.detail?.frameExtent ?? null);
+
+  const hover = useRef<ReturnType<typeof attachDepthHover> | null>(null);
+  useEffect(() => {
+    if (!map) return;
+    hover.current = attachDepthHover(map);
+    return () => { hover.current?.remove(); hover.current = null; };
+  }, [map]);
+  useEffect(() => {
+    const ready = s.scenarioId !== null && s.status === 'ready' && s.detail !== null;
+    hover.current?.update(ready ? {
+      frameUrl: frameUrl(s.scenarioId!, s.hour), extent: s.detail!.frameExtent,
+      time: formatScenarioTime(s.detail!.startTime, s.hour),
+    } : null);
+  }, [s.scenarioId, s.status, s.detail, s.hour]);
 
   useEffect(() => () => { if (map) clearFloodLayers(map); }, [map]);
 

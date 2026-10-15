@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { FloodLegendView } from './FloodLegend.view';
 
 describe('FloodLegendView', () => {
-  it('places each depth tick where that depth sits on the linear 0-4 m ramp', () => {
+  it('shows one labelled swatch per depth band', () => {
     const { container } = render(<FloodLegendView planShown={false} />);
-    const ticks = [...container.querySelectorAll<HTMLElement>('.flood-legend-ticks span')];
-    expect(ticks.map((t) => [t.textContent, t.style.left])).toEqual([
-      ['0', '0%'], ['0,5', '12.5%'], ['1', '25%'], ['2', '50%'], ['≥ 4', '100%'],
-    ]);
+    for (const label of ['< 0,5 m', '0,5–1 m', '1–2 m', '2–3 m', '≥ 3 m']) expect(screen.getByText(label)).toBeInTheDocument();
+    expect(container.querySelectorAll('.flood-legend-band')).toHaveLength(5);
+  });
+
+  it('tells the reader to point at the map for the exact depth', () => {
+    render(<FloodLegendView planShown={false} />);
+    expect(screen.getByText(/Trỏ chuột vào vùng ngập/)).toBeInTheDocument();
   });
 });

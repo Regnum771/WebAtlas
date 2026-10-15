@@ -272,6 +272,31 @@
 .flood-legend-ticks span:first-child { transform: none; }
 .flood-legend-ticks span:last-child { transform: translateX(-100%); }
 
+.flood-legend-bands {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: var(--text-xs);
+}
+.flood-legend-bands li { display: flex; align-items: center; gap: 4px; }
+.flood-legend-band { display: inline-block; width: 18px; height: 12px; border-radius: 2px; opacity: 0.85; }
+.flood-legend-hint { margin: 0 0 6px; font-size: var(--text-xs); color: var(--ink-2); }
+
+/* The depth label by the cursor. */
+.flood-depth-tip {
+  padding: 3px 7px;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  font: 600 var(--text-xs) var(--font-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .flood-legend-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .flood-legend-rows li { display: flex; align-items: center; gap: 8px; }
 .flood-legend-line { display: inline-block; width: 22px; height: 3px; flex: none; }
