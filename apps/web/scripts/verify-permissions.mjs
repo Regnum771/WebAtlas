@@ -17,12 +17,15 @@
  * script exits non-zero on any FAIL. At 768 it also checks that nothing covers the scale
  * bar or the coordinate readout, that Quản lý does not scroll sideways, and that Biên tập
  * and Quản lý stay reachable. The two "Kiểm thử — ..." groups are deleted at the end of
- * each viewport, so a rerun starts clean. A lake edit is undone by saving the old name.
+ * each viewport, so a rerun starts clean. A lake edit is undone twice: the old name is saved back, and at the end
+ * the script deletes the edit versions it made (and their audit rows) and re-activates the lakes version
+ * that was active when it started, so the database is left as it was found.
  *
  * Credentials come only from the environment:
  *   VERIFY_ADMIN_EMAIL / VERIFY_ADMIN_PASSWORD   an admin
  *   VERIFY_P_EMAIL / VERIFY_P_PASSWORD           a viewer with no group (the script assigns one)
  *   VERIFY_X_EMAIL / VERIFY_X_PASSWORD           a viewer with no group (the script assigns one)
+ *   DATABASE_URL                               the dev database, to undo the lake edit when the run ends
  * Optional: BASE_URL (web, default http://localhost:5173), API_URL (default http://localhost:3001),
  * CHROME_PATH, X_WARD (the xã of X's group, default 20551 Điện Bàn), P_LAKE_WARD (the ward whose
  * lakes P edits, default 20209 Thanh Khê).
@@ -31,9 +34,14 @@
  * Needs: the Docker stack, the API and `npm run dev:web`.
  */
 import { mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
+
+// pg is resolved from the repo root, the way the workspace installs it.
+const require = createRequire(new URL('../../../package.json', import.meta.url));
+const { Pool } = require('pg');
 
 const CHROME = process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const BASE_URL = (process.env.BASE_URL ?? 'http://localhost:5173').replace(/\/$/, '');
@@ -50,6 +58,8 @@ const ACCOUNTS = {
 const missing = Object.entries(ACCOUNTS)
   .flatMap(([who, a]) => [!a.email && `VERIFY_${who.toUpperCase()}_EMAIL`, !a.password && `VERIFY_${who.toUpperCase()}_PASSWORD`])
   .filter(Boolean);
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) missing.push('DATABASE_URL');
 if (missing.length > 0) {
   console.error(`Set ${missing.join(', ')} (see the header of this script).`);
   process.exit(2);
@@ -528,34 +538,44 @@ async function managingUnitText(page) {
 async function stepEditLake(session, vp, lake, token) {
   const { page } = session;
   const problems = [];
-  problems.push(...(await reachable(page, '.tool-group button', 'Biên tập')));
   const original = lake.properties.name;
-  await openLakeForm(session, lake);
-  const shownName = await page.$eval('#attr-name', (el) => el.value);
-  if (shownName !== original) problems.push(`the form shows the name "${shownName}", expected "${original}"`);
-  const unit = await managingUnitText(page);
-  if (unit.includes('ngoài phạm vi')) problems.push(`P's own ward shows as out of scope: ${unit}`);
-  await shot(session, vp, 'p-bien-tap');
-
   const edited = `${original} (kiểm thử)`;
-  await page.click('#attr-name', { clickCount: 3 });
-  await page.type('#attr-name', edited);
-  await clickText(page, '.edit-attr-form button', 'Lưu');
   try {
-    await page.waitForFunction(() => !document.querySelector('.edit-attr-form'), { timeout: 15000 });
-  } catch {
-    const message = await page.$eval('.edit-attr-form', (el) => el.innerText.replace(/\s+/g, ' ')).catch(() => '');
-    problems.push(`the save did not finish: ${message.slice(-200)}`);
-  }
-  const after = await api('GET', `/api/layers/lakes/features?ward=${P_LAKE_WARD}`, token);
-  const saved = after.json?.features?.find((f) => f.properties.external_id === lake.properties.external_id || f.id === lake.id);
-  if (saved?.properties.name !== edited) problems.push(`the API shows the name "${saved?.properties.name}", expected "${edited}"`);
-  await shot(session, vp, 'p-saved');
+    problems.push(...(await reachable(page, '.tool-group button', 'Biên tập')));
+    await openLakeForm(session, lake);
+    const shownName = await page.$eval('#attr-name', (el) => el.value);
+    if (shownName !== original) problems.push(`the form shows the name "${shownName}", expected "${original}"`);
+    const unit = await managingUnitText(page);
+    if (unit.includes('ngoài phạm vi')) problems.push(`P's own ward shows as out of scope: ${unit}`);
+    await shot(session, vp, 'p-bien-tap');
 
-  // Put the old name back, so the lake is as it was found.
-  const restore = await api('PUT', `/api/layers/lakes/features/${saved?.id ?? lake.id}`, token, { properties: { name: original } });
-  if (restore.status !== 200) problems.push(`restoring the name answered ${restore.status}`);
+    await page.click('#attr-name', { clickCount: 3 });
+    await page.type('#attr-name', edited);
+    await clickText(page, '.edit-attr-form button', 'Lưu');
+    try {
+      await page.waitForFunction(() => !document.querySelector('.edit-attr-form'), { timeout: 15000 });
+    } catch {
+      const message = await page.$eval('.edit-attr-form', (el) => el.innerText.replace(/\s+/g, ' ')).catch(() => '');
+      problems.push(`the save did not finish: ${message.slice(-200)}`);
+    }
+    const saved = await currentLake(token, lake);
+    if (saved?.properties.name !== edited) problems.push(`the API shows the name "${saved?.properties.name}", expected "${edited}"`);
+    await shot(session, vp, 'p-saved');
+  } finally {
+    // Put the old name back whatever happened above, so the lake is as it was found.
+    const now = await currentLake(token, lake).catch(() => null);
+    if (now && now.properties.name !== original) {
+      const restore = await api('PUT', `/api/layers/lakes/features/${now.id}`, token, { properties: { name: original } });
+      if (restore.status !== 200) problems.push(`restoring the name answered ${restore.status}`);
+    }
+  }
   return problems;
+}
+
+/** The lake as the API serves it now: its id changes with every edit, its external_id does not. */
+async function currentLake(token, lake) {
+  const res = await api('GET', `/api/layers/lakes/features?ward=${P_LAKE_WARD}`, token);
+  return res.json?.features?.find((f) => f.properties.external_id === lake.properties.external_id) ?? null;
 }
 
 /** Step 3, run as X. */
@@ -603,6 +623,8 @@ async function deleteGroupsAsAdmin(session) {
 async function runViewport(browser, viewport, ctx) {
   const vp = viewport.width;
   const admin = await openSession(browser, viewport);
+  const others = [];
+  try {
   await signIn(admin.page, ACCOUNTS.admin);
 
   // Step 1 and 5 first: the groups must exist for 2 and 3.
@@ -645,6 +667,7 @@ async function runViewport(browser, viewport, ctx) {
   }
 
   const p = await openSession(browser, viewport);
+  others.push(p);
   await signIn(p.page, ACCOUNTS.p);
   await check(vp, '2', 'P sees Biên tập and edits the name of a lake managed by a Đà Nẵng xã', async () => {
     if (!grouped) return ['skipped: step 1 failed, so P has no group'];
@@ -654,26 +677,116 @@ async function runViewport(browser, viewport, ctx) {
     const links = await p.page.$$eval('.top-nav a', (as) => as.map((a) => a.textContent.trim()));
     return links.includes('Quản lý') ? ['Quản lý is offered to P'] : [];
   });
-  await p.context.close();
 
   const x = await openSession(browser, viewport);
+  others.push(x);
   await signIn(x.page, ACCOUNTS.x);
   await check(vp, '3', 'X opens a lake managed by Đà Nẵng: read-only field, 403 on a forced save', async () => {
     if (!grouped) return ['skipped: step 1 failed, so X has no group'];
     return stepOutOfScope(x, vp, ctx.xLake, ctx.xToken, ctx.provinceName, ctx.wardName);
   });
-  await x.context.close();
 
   const visitor = await openSession(browser, viewport);
+  others.push(visitor);
   await check(vp, '4', 'a visitor with no group sees no Biên tập and no Quản lý', () => stepVisitor(visitor, vp));
-  await visitor.context.close();
 
-  await check(vp, '6', 'admin deletes both test groups', async () => {
-    await deleteGroupsAsAdmin(admin);
-    const names = await groupNames(admin.page);
-    return names.filter((n) => n.startsWith(GROUP_PREFIX)).map((n) => `group "${n}" is still listed`);
-  });
-  await admin.context.close();
+  } finally {
+    // Whatever failed above, the test groups go and the browser contexts close.
+    await check(vp, '6', 'admin deletes both test groups', async () => {
+      await deleteGroupsAsAdmin(admin);
+      const names = await groupNames(admin.page);
+      return names.filter((n) => n.startsWith(GROUP_PREFIX)).map((n) => `group "${n}" is still listed`);
+    });
+    for (const other of others) await other.context.close().catch(() => {});
+    await admin.context.close().catch(() => {});
+  }
+}
+
+// ---- Undoing the run's database writes ------------------------------------------------
+
+/** The same resolution packages/versioning uses: the rows a lakes version shows, by external_id along its chain. */
+const RESOLVED_LAKES = `
+  WITH RECURSIVE chain AS (
+    SELECT id, parent_version_id, 0 AS depth FROM app.dataset_versions WHERE id = $1
+    UNION ALL
+    SELECT p.id, p.parent_version_id, c.depth + 1
+      FROM app.dataset_versions p JOIN chain c ON p.id = c.parent_version_id
+  ),
+  resolved AS (
+    SELECT DISTINCT ON (t.external_id) t.*
+      FROM water.lakes t JOIN chain c ON t.dataset_version_id = c.id
+     ORDER BY t.external_id, c.depth
+  )
+  SELECT id FROM resolved WHERE NOT deleted`;
+
+async function dbSnapshot(pool) {
+  const one = async (sql, params = []) => (await pool.query(sql, params)).rows[0];
+  const active = await one(`SELECT id FROM app.dataset_versions WHERE layer_key = 'lakes' AND is_active`);
+  const ids = (await pool.query(`SELECT id FROM app.users WHERE email = ANY($1)`,
+    [[ACCOUNTS.admin.email, ACCOUNTS.p.email, ACCOUNTS.x.email]])).rows.map((r) => r.id);
+  return {
+    activeVersion: active?.id ?? null,
+    startedAt: (await one(`SELECT clock_timestamp() AS t`)).t,
+    accountIds: ids,
+    lakeRows: Number((await one(`SELECT count(*) AS n FROM water.lakes`)).n),
+    currentRows: Number((await one(`SELECT count(*) AS n FROM water.lakes WHERE is_current`)).n),
+    versions: Number((await one(`SELECT count(*) AS n FROM app.dataset_versions WHERE layer_key = 'lakes'`)).n),
+    audit: Number((await one(`SELECT count(*) AS n FROM app.audit_log`)).n),
+  };
+}
+
+/**
+ * Deletes what this run wrote: the lakes edit versions made by the P or X account since the start
+ * (and their rows), the audit rows of the three accounts since the start, then re-activates the
+ * recorded lakes version and moves is_current to the rows it resolves to.
+ */
+async function dbCleanup(pool, before) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const writerIds = (await client.query(`SELECT id FROM app.users WHERE email = ANY($1)`,
+      [[ACCOUNTS.p.email, ACCOUNTS.x.email]])).rows.map((r) => r.id);
+    const mine = `SELECT id FROM app.dataset_versions
+                   WHERE layer_key = 'lakes' AND kind = 'edit' AND ingested_at >= $1 AND ingested_by = ANY($2)`;
+    await client.query(`DELETE FROM water.lakes WHERE dataset_version_id IN (${mine})`, [before.startedAt, writerIds]);
+    await client.query(`DELETE FROM app.dataset_versions WHERE id IN (${mine})`, [before.startedAt, writerIds]);
+    await client.query(`DELETE FROM app.audit_log WHERE user_id = ANY($1) AND created_at >= $2`, [before.accountIds, before.startedAt]);
+    if (before.activeVersion) {
+      await client.query(
+        `UPDATE app.dataset_versions SET is_active = (id = $1) WHERE layer_key = 'lakes' AND is_active <> (id = $1)`,
+        [before.activeVersion]);
+      await client.query(
+        `UPDATE water.lakes t SET is_current = false
+          WHERE t.is_current AND NOT EXISTS (SELECT 1 FROM (${RESOLVED_LAKES}) r WHERE r.id = t.id)`,
+        [before.activeVersion]);
+      await client.query(
+        `UPDATE water.lakes SET is_current = true WHERE NOT is_current AND id IN (${RESOLVED_LAKES})`,
+        [before.activeVersion]);
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function cleanupCheck(pool, before) {
+  try {
+    await dbCleanup(pool, before);
+    const after = await dbSnapshot(pool);
+    const keys = ['lakeRows', 'currentRows', 'versions', 'audit'];
+    const summary = keys.map((k) => `${k} ${before[k]} -> ${after[k]}`).join(', ');
+    const problems = keys.filter((k) => after[k] !== before[k]).map((k) => `${k} was ${before[k]}, is ${after[k]}`);
+    if (after.activeVersion !== before.activeVersion) {
+      problems.push(`active lakes version was ${before.activeVersion}, is ${after.activeVersion}`);
+    }
+    if (problems.length === 0) line('PASS', 'all', 'cleanup', `database restored (${summary})`);
+    else line('FAIL', 'all', 'cleanup', `${problems.join('; ')} (${summary})`);
+  } catch (error) {
+    line('FAIL', 'all', 'cleanup', `error: ${error.message.split('\n')[0]}`);
+  }
 }
 
 const run = async () => {
@@ -683,6 +796,8 @@ const run = async () => {
   const xToken = await login(ACCOUNTS.x);
   // The units' names come from the same tree the app shows.
   const tree = (await api('GET', '/api/admin-units/tree', adminToken)).json;
+  const units = Array.isArray(tree?.units) ? tree.units : [];
+  const isWardOf = (code, province) => units.some((n) => n.code === code && n.level === 'ward' && n.parent === province);
   const nameOf = (code) => {
     const nodes = tree?.units ?? tree?.nodes ?? tree;
     const hit = Array.isArray(nodes) ? nodes.find((n) => n.code === code) : null;
@@ -694,13 +809,18 @@ const run = async () => {
     xToken,
     provinceName: nameOf(PROVINCE),
     wardName: nameOf(X_WARD),
-    pLake: await findLake(adminToken, `ward=${P_LAKE_WARD}`, () => true),
+    pLake: await findLake(adminToken, `ward=${P_LAKE_WARD}`, (props) => isWardOf(props.managing_unit, PROVINCE)),
     xLake: await findLake(adminToken, `province=${PROVINCE}`, (props) => props.managing_unit === PROVINCE),
   };
   GROUP_P = `${GROUP_PREFIX} ${ctx.provinceName}`;
   GROUP_X = `${GROUP_PREFIX} ${ctx.wardName}`;
+  if (!isWardOf(ctx.pLake.properties.managing_unit, PROVINCE)) {
+    throw new Error(`P's lake is managed by ${ctx.pLake.properties.managing_unit}, not a ward of province ${PROVINCE}`);
+  }
   console.log(`P edits "${ctx.pLake.properties.name}" (${ctx.pLake.id}); X opens "${ctx.xLake.properties.name}" (${ctx.xLake.id})`);
 
+  const pool = new Pool({ connectionString: DATABASE_URL });
+  const before = await dbSnapshot(pool);
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
@@ -710,7 +830,9 @@ const run = async () => {
     console.log(`verify-permissions against ${BASE_URL} and ${API_URL}`);
     for (const viewport of VIEWPORTS) await runViewport(browser, viewport, ctx);
   } finally {
-    await browser.close();
+    await browser.close().catch(() => {});
+    await cleanupCheck(pool, before);
+    await pool.end();
   }
   process.exit(failed ? 1 : 0);
 };

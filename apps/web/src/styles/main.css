@@ -630,7 +630,14 @@ body {
 }
 .user-table td { padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: middle; }
 .user-table td:nth-child(5) { font-variant-numeric: tabular-nums; }
-.user-actions { display: flex; gap: 6px; }
+.user-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.user-table .col-email { overflow-wrap: anywhere; }
+.user-table .col-scope { overflow-wrap: anywhere; }
+/* Below 1100px the table must fit the Quản lý area: drop Ngày tạo, keep Thao tác in view. */
+@media (max-width: 1099px) {
+  .user-table .col-created { display: none; }
+  .user-table th, .user-table td { padding: 8px 6px; }
+}
 .user-form { display: grid; gap: 12px; min-width: 320px; }
 .user-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 /* Status badge: ink; filled when on, outline when off. */

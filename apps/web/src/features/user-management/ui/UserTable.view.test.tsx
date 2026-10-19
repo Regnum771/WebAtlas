@@ -88,4 +88,11 @@ describe('UserTableView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
     expect(onRetryGroups).toHaveBeenCalled();
   });
+
+  it('marks the Ngày tạo column so the narrow-width CSS can hide it', () => {
+    const { container } = render(<UserTableView users={users} canModify={() => true} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={vi.fn()} loading={false} listError={null} {...extra} />);
+    const header = [...container.querySelectorAll('th')].find((th) => th.textContent === 'Ngày tạo');
+    expect(header).toHaveClass('col-created');
+    expect(container.querySelectorAll('td.col-created')).toHaveLength(users.length);
+  });
 });

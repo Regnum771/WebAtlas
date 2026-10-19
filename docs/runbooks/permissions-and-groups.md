@@ -91,11 +91,12 @@ data gave no coordinates for. Only someone who may update at `VN` can open the p
 `apps/web/scripts/verify-permissions.mjs` runs the whole story in Chrome at 1440 and 768 px: it
 creates two test groups from the templates, assigns two users, edits a lake as the province user,
 shows the read-only field and the 403 for the ward user, checks that a visitor sees neither Biên
-tập nor Quản lý, and opens Đơn vị chưa gán. It deletes its groups at the end and puts a lake's name
-back after editing it. It prints PASS or FAIL per step and exits non-zero on any FAIL.
+tập nor Quản lý, and opens Đơn vị chưa gán. It deletes its groups at the end, saves a lake's old name
+back, and finally deletes the lake edit versions (and audit rows) it made and re-activates the lakes
+version that was active when it started; a `cleanup` line reports the before and after counts. It prints PASS or FAIL per step and exits non-zero on any FAIL.
 
 Needs the Docker stack, the API (`npm run dev -w @webatlas/api`), the web dev server
-(`npm run dev:web`) and Chrome. It reads credentials only from the environment. Create three
+(`npm run dev:web`) and Chrome. It reads credentials and the database URL only from the environment. Create three
 accounts first: one admin and two viewers with no group (the script assigns the groups).
 
 | Variable | Account |
@@ -103,11 +104,11 @@ accounts first: one admin and two viewers with no group (the script assigns the 
 | `VERIFY_ADMIN_EMAIL`, `VERIFY_ADMIN_PASSWORD` | an admin |
 | `VERIFY_P_EMAIL`, `VERIFY_P_PASSWORD` | a viewer; becomes the province user (Đà Nẵng) |
 | `VERIFY_X_EMAIL`, `VERIFY_X_PASSWORD` | a viewer; becomes the ward user |
+| `DATABASE_URL` | the development database, so the script can undo its lake edit (exit 2 if missing) |
 
 ```bash
 npm run verify:permissions -w @webatlas/web -- --out <screenshot-dir>
 ```
 
 Optional: `BASE_URL`, `API_URL`, `CHROME_PATH`, `X_WARD` (the ward of the second group, default
-`20551`), `P_LAKE_WARD` (default `20209`). Run it against a development database only: each lake edit
-leaves an edit version behind (the script saves the old name back, but the versions stay).
+`20551`), `P_LAKE_WARD` (default `20209`). Run it against a development database only; the cleanup removes only edit versions of the lakes layer made by the P or X account during the run.

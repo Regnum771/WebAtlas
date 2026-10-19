@@ -36,7 +36,7 @@ export function UserTableView({ users, canModify, adminActions, summaryFor, onEd
       ) : users.length > 0 ? (
         <table className="user-table">
           <thead>
-            <tr><th>Email</th><th>Họ tên</th><th>Vai trò</th><th>Nhóm</th><th>Phạm vi thực tế</th><th>Trạng thái</th><th>Ngày tạo</th><th>Thao tác</th></tr>
+            <tr><th>Email</th><th>Họ tên</th><th>Vai trò</th><th>Nhóm</th><th>Phạm vi thực tế</th><th>Trạng thái</th><th className="col-created">Ngày tạo</th><th>Thao tác</th></tr>
           </thead>
           <tbody>
             {users.map((u) => {
@@ -44,11 +44,11 @@ export function UserTableView({ users, canModify, adminActions, summaryFor, onEd
               const title = locked ? 'Không tự đổi quyền của chính mình được' : undefined;
               return (
                 <tr key={u.id}>
-                  <td>{u.email}</td>
+                  <td className="col-email">{u.email}</td>
                   <td>{u.full_name ?? '—'}</td>
                   <td>{ROLE_LABELS[u.role]}</td>
                   <td>{u.groups.length > 0 ? u.groups.map((g) => g.name).join(', ') : '—'}</td>
-                  <td>
+                  <td className="col-scope">
                     {summaryFor(u).map((line) => <div key={line}>{line}</div>)}
                   </td>
                   <td>
@@ -56,7 +56,7 @@ export function UserTableView({ users, canModify, adminActions, summaryFor, onEd
                       {u.is_active ? 'Đang hoạt động' : 'Đã khoá'}
                     </span>
                   </td>
-                  <td>{u.created_at ? new Date(u.created_at).toLocaleDateString('vi-VN') : '—'}</td>
+                  <td className="col-created">{u.created_at ? new Date(u.created_at).toLocaleDateString('vi-VN') : '—'}</td>
                   <td>
                     <div className="user-actions">
                       <Button size="sm" onClick={() => onGroups(u)}>Nhóm</Button>
