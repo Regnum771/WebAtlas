@@ -149,12 +149,12 @@
     - Each side is the content jsonb.
     - `base` is resolved at the draft's parent and `current` at the active version. Either is null when absent or a tombstone.
     - `draft` carries `deleted: true` when the draft removes the feature.
-  - `listConflicts(client: PoolClient, layerKey: string, draftId: string): Promise<Conflict[]>` — computes touched ∩ changed(parent, active) minus the rows in `app.draft_resolutions` whose `against_version_id` equals the active id. Ordered by `externalId`. When the parent is the active version it returns `[]`.
-  - `resolveConflict(client: PoolClient, layerKey: string, draftId: string, externalId: string, choice: 'mine' | 'theirs'): Promise<void>`
+  - `listConflicts(client: PoolClient, layerKey: string, draftId: string): Promise<{ activeId: string; conflicts: Conflict[] }>` — reads the parent and the active version once, then computes touched ∩ changed(parent, active) minus the rows in `app.draft_resolutions` whose `against_version_id` equals the active id. Ordered by `externalId`. When the parent is the active version it returns `[]`.
+  - `resolveConflict(client: PoolClient, layerKey: string, draftId: string, externalId: string, choice: 'mine' | 'theirs', againstVersionId: string): Promise<void>` — throws `ConflictError` (`STALE_RESOLUTION_MESSAGE`: `Dữ liệu đã xuất bản lại thay đổi; hãy xem lại xung đột.`) when `againstVersionId` is not the current active version; bumps the revision for both choices
     - `theirs` deletes the draft's row for that external_id.
     - `mine` upserts `(draft_id, external_id, against_version_id = active, 'mine')`.
     - Throws `ConflictError` if the feature is not in the current conflict list.
-  - `rebaseDraft(client: PoolClient, layerKey: string, draftId: string): Promise<{ rebased: boolean; conflicts: Conflict[] }>`
+  - `rebaseDraft(client: PoolClient, layerKey: string, draftId: string): Promise<{ rebased: boolean; activeId: string; conflicts: Conflict[] }>`
     - Parent equals active → `{ rebased: false, conflicts: [] }`.
     - Conflicts present → no change, and they are returned.
     - Otherwise: `UPDATE parent_version_id = active`, delete the draft's resolutions, `bumpRevision`, and return `{ rebased: true, conflicts: [] }`.
@@ -268,7 +268,7 @@
   - `featuresService(pg).create(key, input, access)`, `update(key, id, input, access)` and `remove(key, id, access)` keep P1's signatures and responses. One transaction: `openDraft(actor)` → the `draftOps` call → `publishDraft(…, guard = (c) => assertDraftPublishable(c, def, draftId, access))` → COMMIT. Any error → ROLLBACK, so no draft is left behind.
 
 - [ ] **Step 1: Write the failing tests** in `publishAccess.test.ts`:
-  - `publish checks the managing unit current at publish time`: open a durable draft as user P (rights on `48`) and edit dam D (unit `20194`). Admin then moves D to `51` and publishes. P's publish → rebase conflict, because D changed. After P resolves `mine`, publish → 403 `OUT_OF_JURISDICTION` for `51`.
+  - `publish checks the managing unit current at publish time`: open a durable draft as user P (rights on `48`) and edit dam D (unit `20194`). Admin then moves D to `51` and publishes. P's publish → rebase conflict, because D changed. After P resolves `mine` (against the active id returned by the conflict listing), publish → 403 `OUT_OF_JURISDICTION` for `51`.
   - `a multi-feature draft is refused whole when one feature is out of reach`: P's draft edits a `48` dam and a `51` dam → 403, and neither change is active.
   - `create, update and delete map to their permissions`: user E holds only `feature.update` + `submission.review` on `48`. A draft that creates a dam in `48` → 403 `NO_PERMISSION` for `feature.create`.
   - `changing the unit needs both units`.
