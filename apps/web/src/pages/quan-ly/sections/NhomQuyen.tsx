@@ -1,11 +1,6 @@
-import { Message } from '../../../shared/ui/Message';
+import { AccessGroupsPanel } from '../../../features/access-groups';
 
-// Placeholder until the access-group screen lands.
+// UX gate lives in the Quản lý layout; the API enforces admin on every write.
 export default function NhomQuyen() {
-  return (
-    <section className="quan-ly-section">
-      <h2>Nhóm quyền</h2>
-      <Message title="Đang xây dựng">Màn hình quản lý nhóm quyền sẽ có ở đây.</Message>
-    </section>
-  );
+  return <AccessGroupsPanel />;
 }

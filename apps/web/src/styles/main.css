@@ -966,3 +966,12 @@ body {
 .roi-candidates ul { list-style: none; margin: 0; padding: 0; }
 .roi-candidate { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 2px 0; }
 .roi-candidate button { background: none; border: none; color: var(--ink); cursor: pointer; font: inherit; }
+
+/* Access groups: unit picker and form fieldsets */
+.group-form { max-height: 70vh; overflow-y: auto; }
+.group-form-set { display: grid; gap: 4px; border: 1px solid var(--rule); padding: 8px 12px; }
+.unit-picker { display: grid; gap: 6px; }
+.unit-picker-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; border: 1px solid var(--rule); }
+.unit-picker-row { display: flex; align-items: center; gap: 6px; padding: 2px 6px; }
+.unit-picker-expand { width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--ink); display: inline-flex; align-items: center; justify-content: center; }
+.unit-picker-code { font-variant-numeric: tabular-nums; font-size: var(--text-xs); }
