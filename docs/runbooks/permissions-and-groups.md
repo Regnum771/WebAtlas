@@ -34,6 +34,13 @@ curl "$GEOSERVER_URL/webatlas/ows?service=WFS&version=2.0.0&request=DescribeFeat
 
 Until the reset, WFS responses (what the map's edit form reads) do not carry `managing_unit`.
 
+**Rolling migration 25 back and forward again loses manual assignments.** Its `down` drops the
+`managing_unit` column, and its `up` recomputes every feature's managing unit from geometry with
+the rule below. Units set by hand since (through the edit form or **Gán đơn vị**) are gone after a
+down→up; so are the `VN` features already assigned on Đơn vị chưa gán, which return to the list.
+The `down` also drops every group and membership. Do not run the down migration on an environment
+whose units or groups have been curated.
+
 ## Create the first groups from templates
 
 No group exists after the migration, so only admins can sign in to Quản lý at first.
@@ -50,16 +57,30 @@ No group exists after the migration, so only admins can sign in to Quản lý at
 
 3. Pick the units. A selected province already covers its wards, so the picker greys them out.
 4. **Tick "duyệt và xuất bản" (`submission.review`).** No template includes it, and until P4 a
-   write is refused without it, so a group without it can open Biên tập but cannot save.
+   write is refused without it. A member without it on any unit their update right covers does
+   not see Biên tập at all, and the API refuses their writes.
 5. Name the group and save. Then open **Quản lý → Người dùng**, press **Nhóm** on a user and tick
    the group. A user may belong to several groups; the rights add up.
+6. **Tell the user to reload the page** (or sign out and in) after their memberships or a group's
+   units or permissions change. The web reads a user's rights at sign-in and on reload only, so an
+   open session keeps showing the old menus. The API applies the change on the next request.
 
 `users.manage` lets a holder add users to groups. It never escalates: a holder can only add a
 user to a group whose units all lie inside the holder's own `users.manage` jurisdiction and whose
 permissions are a subset of the holder's.
 
-What a user sees follows from the groups: Biên tập appears for anyone who can update and review
-somewhere; Quản lý appears for admins, `users.manage` holders, and anyone who can update at `VN`.
+What a user sees follows from the groups:
+
+- **Biên tập** appears for an admin, or for anyone holding `feature.update` and
+  `submission.review` on at least one common unit (one right's unit may lie inside the other's).
+  Update on one province and review on another is not enough. The assistant offers its "đề xuất
+  cập nhật" form under the same rule.
+- In the edit form, a feature whose managing unit lies outside the user's update **and** review
+  rights shows "{unit} — ngoài phạm vi của anh/chị" and **Lưu** is disabled. **Xoá đối tượng**
+  appears only with `feature.delete` and `submission.review` on the feature's unit.
+- **Quản lý** appears for admins, `users.manage` holders, and anyone holding `feature.update`
+  and `submission.review` at `VN` (who gets Đơn vị chưa gán).
+
 These are conveniences only; the API refuses anything outside the groups' units on every call.
 
 ## Refusals
@@ -69,6 +90,10 @@ A write outside the user's units answers 403 with the unit named:
 > Đối tượng thuộc {unit}; nhóm của anh/chị chỉ có quyền trong {units}.
 
 A user with no right of that kind anywhere gets: `Anh/chị chưa có quyền {permission} ở đơn vị nào.`
+
+When the operation's own right passed but `submission.review` did not cover the unit, the message
+is the same; the web adds a second line, `Thiếu quyền duyệt và xuất bản.`, so the user knows
+which right to ask for.
 
 ## What "Đơn vị chưa gán" means
 
@@ -82,16 +107,19 @@ smallest unit containing the feature, using `admin.wards` and `admin.provinces`:
 
 A feature **without geometry** touches nothing, so it is assigned to `VN`. **Quản lý → Đơn vị chưa
 gán** lists exactly those features (managing unit `VN` and no geometry): today the dams the source
-data gave no coordinates for. Only someone who may update at `VN` can open the page and use
-**Gán đơn vị** to give a feature its real unit. A feature that has a geometry but sits at `VN`
+data gave no coordinates for. Only an admin, or someone holding `feature.update` **and**
+`submission.review` at `VN`, can open the page and use **Gán đơn vị** to give a feature its real
+unit: assigning publishes at once until P4, which will relax this to `feature.update` alone. A
+Bộ group made from the template alone (no review right) does not see the page. A feature that has a geometry but sits at `VN`
 (for example one crossing two provinces) is not listed; it is a legitimate `VN` feature.
 
 ## Verify it in a browser
 
 `apps/web/scripts/verify-permissions.mjs` runs the whole story in Chrome at 1440 and 768 px: it
-creates two test groups from the templates, assigns two users, edits a lake as the province user,
-shows the read-only field and the 403 for the ward user, checks that a visitor sees neither Biên
-tập nor Quản lý, and opens Đơn vị chưa gán. It deletes its groups at the end, saves a lake's old name
+creates two test groups from the templates, assigns two users, edits a lake as the province user
+(Lưu enabled, Xoá offered), shows the read-only field, the disabled Lưu, the missing Xoá and the 403
+for the ward user, checks that a visitor sees neither Biên tập nor Quản lý and that a lake's card
+names its managing unit, and opens Đơn vị chưa gán as the admin. It deletes its groups at the end, saves a lake's old name
 back, and finally deletes the lake edit versions (and audit rows) it made and re-activates the lakes
 version that was active when it started; a `cleanup` line reports the before and after counts. It prints PASS or FAIL per step and exits non-zero on any FAIL.
 

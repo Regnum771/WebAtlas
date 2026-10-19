@@ -105,14 +105,20 @@ A user may belong to several groups. Their effective grants are the union of `(p
 
 - Each of the 8 editable layers gains a column `managing_unit text NOT NULL`, which references `admin.unit_tree`. The column is versioned like any attribute. Changing it is therefore an edit: it is reviewed, audited and can be rolled back.
 - **The initial assignment follows U6 and uses the existing stamp arrays.** One entry in `ward_codes` → that xã. Otherwise one entry in `province_codes` → that tỉnh. Otherwise `VN`.
-- **Measured on the development database, 2026-10-19:**
+- **Measured on the development database, 2026-10-19** (current rows only):
 
   | Layer | → xã | → tỉnh | → VN | Total |
   |---|---|---|---|---|
-  | rivers | 17,675 | 5,054 | 548 | 23,277 |
-  | lakes | 3,698 | 166 | 6 | 3,870 |
+  | rivers | 17,517 | 5,054 | 548 | 23,119 |
+  | lakes | 3,696 | 166 | 6 | 3,868 |
   | dams | 131 | 1 | 19 | 151 |
   | stations | 2 | 0 | 0 | 2 |
+  | flood_zones | 0 | 2 | 0 | 2 |
+  | flood_generation | 0 | 1 | 1 | 2 |
+  | drought_points | 2 | 0 | 0 | 2 |
+  | saltwater_intrusion | 2 | 0 | 0 | 2 |
+
+  The counts follow the plan's province-first clarification of this rule (`admin.managing_unit_for`): a province count other than one gives `VN` before any ward is considered, so a feature touching several provinces but only one ward of the working region (158 rivers and 2 lakes here) goes to `VN`; an earlier version of this table counted those under both xã and `VN`.
 
   All 19 dams that go to `VN` have no geometry; none lies outside the country. Features without geometry go to `VN` and appear in an "unassigned" list in Quản lý for manual assignment.
 - **Boundary simplification.** Boundaries are simplified to about 11 m. A feature lying against a xã boundary can count as crossing it and go up to the tỉnh. That is safe: the tỉnh can still edit it and can hand it down to the xã.
