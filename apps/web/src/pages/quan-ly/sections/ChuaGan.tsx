@@ -1,11 +1,6 @@
-import { Message } from '../../../shared/ui/Message';
+import { UnassignedPanel } from '../../../features/unassigned';
 
-// Placeholder until the unassigned-objects screen lands.
+// UX gate lives in the Quản lý layout; the API enforces jurisdiction on every write.
 export default function ChuaGan() {
-  return (
-    <section className="quan-ly-section">
-      <h2>Đơn vị chưa gán</h2>
-      <Message title="Đang xây dựng">Danh sách đối tượng chưa gán đơn vị chủ quản sẽ có ở đây.</Message>
-    </section>
-  );
+  return <UnassignedPanel />;
 }

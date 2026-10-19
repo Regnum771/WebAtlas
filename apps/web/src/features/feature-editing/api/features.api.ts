@@ -6,12 +6,32 @@ export interface CreateFeaturePayload {
   properties: Record<string, unknown>;
 }
 
-export async function createFeature(key: string, payload: CreateFeaturePayload): Promise<{ id: string }> {
-  const body = await apiRequest<{ feature: { id: string } }>(`/api/layers/${key}/features`, {
+/** A non-blocking note from the API about a save that went through. */
+export interface SaveWarning {
+  code: string;
+  message: string;
+}
+
+export interface SaveResult {
+  id: string;
+  warnings: SaveWarning[];
+}
+
+export async function createFeature(key: string, payload: CreateFeaturePayload): Promise<SaveResult> {
+  const body = await apiRequest<{ feature: { id: string }; warnings?: SaveWarning[] }>(`/api/layers/${key}/features`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  return { id: body.feature.id };
+  return { id: body.feature.id, warnings: body.warnings ?? [] };
+}
+
+/** The managing unit the initial-assignment rule gives a geometry. */
+export async function suggestManagingUnit(geometry: GeoJSONGeometry): Promise<string> {
+  const { unit } = await apiRequest<{ unit: string }>('/api/admin-units/suggest', {
+    method: 'POST',
+    body: JSON.stringify({ geometry }),
+  });
+  return unit;
 }
 
 export interface UpdateFeaturePayload {
@@ -21,12 +41,12 @@ export interface UpdateFeaturePayload {
   source?: { document: string; provider: string };
 }
 
-export async function updateFeature(key: string, id: string, payload: UpdateFeaturePayload): Promise<{ id: string }> {
-  const body = await apiRequest<{ feature: { id: string } }>(`/api/layers/${key}/features/${id}`, {
+export async function updateFeature(key: string, id: string, payload: UpdateFeaturePayload): Promise<SaveResult> {
+  const body = await apiRequest<{ feature: { id: string }; warnings?: SaveWarning[] }>(`/api/layers/${key}/features/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
-  return { id: body.feature.id };
+  return { id: body.feature.id, warnings: body.warnings ?? [] };
 }
 
 export async function deleteFeature(key: string, id: string): Promise<void> {

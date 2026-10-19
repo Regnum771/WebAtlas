@@ -75,6 +75,7 @@ function EditToolbar({ active, onBusy }: PartProps) {
           error={form.error}
           canSave={form.canSave}
           saving={form.saving}
+          managingUnit={form.managingUnit}
           onField={form.setField}
           onSubmit={form.submit}
           onCancel={toolbar.cancel}
@@ -99,7 +100,7 @@ function EditForm({ sel, geometryToSave, onSaved, onCancel, onDelete }: {
       <AttributeFormView
         attributes={sel.attributes} labels={form.labels} values={form.values}
         fieldErrors={form.fieldErrors} error={form.error} canSave={form.canSave}
-        saving={form.saving} onField={form.setField} onSubmit={form.submit} onCancel={onCancel}
+        saving={form.saving} managingUnit={form.managingUnit} onField={form.setField} onSubmit={form.submit} onCancel={onCancel}
       />
       <Button variant="danger" onClick={onDelete}>Xoá đối tượng</Button>
     </>

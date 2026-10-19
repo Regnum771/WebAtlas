@@ -1,4 +1,6 @@
 import { AttributeFieldView } from './AttributeField.view';
+import { ManagingUnitFieldView } from './ManagingUnitField.view';
+import type { ManagingUnitFieldState } from '../model/useManagingUnitField';
 import { Button } from '../../../shared/ui/Button';
 import { Message } from '../../../shared/ui/Message';
 
@@ -10,6 +12,8 @@ export interface AttributeFormViewProps {
   error: string | null;
   canSave: boolean;
   saving: boolean;
+  /** The managing_unit attribute renders as this field instead of a text input. */
+  managingUnit?: ManagingUnitFieldState;
   onField: (column: string, v: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
@@ -17,18 +21,22 @@ export interface AttributeFormViewProps {
 
 // Passive: maps a layer's attributes to a list of AttributeFieldView.
 export function AttributeFormView(props: AttributeFormViewProps) {
-  const { attributes, labels, values, fieldErrors, error, canSave, saving, onField, onSubmit, onCancel } = props;
+  const { attributes, labels, values, fieldErrors, error, canSave, saving, managingUnit, onField, onSubmit, onCancel } = props;
   return (
     <form className="edit-attr-form" onSubmit={(e) => { e.preventDefault(); onSubmit(); }}>
       {attributes.map((col) => (
-        <AttributeFieldView
-          key={col}
-          column={col}
-          label={labels[col] ?? col}
-          value={values[col] ?? ''}
-          error={fieldErrors[col]}
-          onChange={(v) => onField(col, v)}
-        />
+        col === 'managing_unit' && managingUnit ? (
+          <ManagingUnitFieldView key={col} field={managingUnit} error={fieldErrors[col]} />
+        ) : (
+          <AttributeFieldView
+            key={col}
+            column={col}
+            label={labels[col] ?? col}
+            value={values[col] ?? ''}
+            error={fieldErrors[col]}
+            onChange={(v) => onField(col, v)}
+          />
+        )
       ))}
       {error && <Message tone="error" title={error} />}
       <div className="edit-form-actions">
