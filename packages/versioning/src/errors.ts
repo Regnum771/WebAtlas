@@ -19,3 +19,9 @@ export class ConflictError extends Error {
 
 /** An edit draft was opened on a version that is no longer active, so committing it is refused. */
 export class StaleDraftError extends ConflictError {}
+
+/** The draft is not in a state that accepts edits (only `personal` drafts are editable). */
+export class DraftNotEditableError extends ConflictError {}
+
+/** The draft's revision moved since the caller read it: someone else changed it. */
+export class DraftRevisionError extends ConflictError {}

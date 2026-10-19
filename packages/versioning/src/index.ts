@@ -3,7 +3,12 @@
  * administrative codes), and loading features into a version. Depends on `pg` and
  * `@webatlas/shared` only, so both the API and the dataset pipeline can use it (spec §7, D4).
  */
-export { ConflictError, NotFoundError, StaleDraftError } from './errors';
+export {
+  ConflictError, NotFoundError, StaleDraftError, DraftNotEditableError, DraftRevisionError,
+} from './errors';
+export {
+  openDraft, lockDraft, bumpRevision, discardDraft, type DraftStatus, type DraftRow,
+} from './drafts';
 export { versionsService, type IngestVersionArgs, type VersionsService } from './service';
 export { versionsRepository, type DatasetVersion, type VersionsRepository } from './repository';
 export { stampAdminCodes } from './adminStamp';
