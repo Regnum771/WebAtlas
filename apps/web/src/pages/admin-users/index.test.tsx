@@ -34,8 +34,8 @@ describe('AdminUsersRoute', () => {
     expect(screen.getByText('USER_MGMT_PANEL')).toBeInTheDocument();
   });
 
-  it('redirects an editor to /', () => {
-    mockRole = 'editor';
+  it('redirects a viewer to /', () => {
+    mockRole = 'viewer';
     renderAt('/admin/users');
     expect(screen.getByText('MAP_HOME')).toBeInTheDocument();
     expect(screen.queryByText('USER_MGMT_PANEL')).not.toBeInTheDocument();

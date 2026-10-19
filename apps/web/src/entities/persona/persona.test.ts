@@ -5,8 +5,6 @@ describe('rolePersonas', () => {
   it('admin gets steward + admin (superset)', () => {
     expect(rolePersonas('admin')).toEqual(['steward', 'admin']);
   });
-  it('editor is read-only: governance + research, like viewer', () => {
-  });
   it('viewer gets governance + research', () => {
     expect(rolePersonas('viewer')).toEqual(['governance', 'research']);
   });

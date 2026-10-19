@@ -48,8 +48,9 @@ export default function MapScreen() {
     if (status !== 'authenticated') closeAssistant();
   }, [status]);
 
-  // Biên tập is listed for those who may update and review features somewhere. A session that ends, or changes role, while
-  // its menu is open would otherwise leave the store pointing at a tool nobody can see.
+  // The edit tool is visible only to an admin or to a user holding update and review rights.
+  // A session that ends, or loses those rights, while its menu is open would otherwise
+  // leave the store pointing at a tool nobody can see.
   useEffect(() => {
     if (!canEdit && getShell().tool === 'edit') closeTool();
   }, [canEdit, tool]);
