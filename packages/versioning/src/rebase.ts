@@ -27,6 +27,9 @@ export interface Conflict {
 
 export type ConflictChoice = 'mine' | 'theirs';
 
+/** Copy for a resolution made against an active version that has since been replaced. */
+export const STALE_RESOLUTION_MESSAGE = 'Dữ liệu đã xuất bản lại thay đổi; hãy xem lại xung đột.';
+
 const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 const EXCLUDED_SQL = `ARRAY[${CONTENT_EXCLUDED_KEYS.map((k) => `'${k}'`).join(', ')}]::text[]`;
 
@@ -56,6 +59,26 @@ export async function changedFeatures(
   return new Set(rows.map((r) => r.ext));
 }
 
+/**
+ * changedFeatures restricted to `ids`. The filter sits on each resolved side, where the planner
+ * pushes it below DISTINCT ON, so only those features are resolved and turned into jsonb: a
+ * full side of rivers costs seconds, and this runs inside the publish transaction.
+ */
+async function changedAmong(
+  client: PoolClient, layerKey: string, fromVersionId: string, toVersionId: string, ids: string[]
+): Promise<Set<string>> {
+  const side = (param: string) =>
+    `SELECT * FROM (${resolvedSql(layerKey, CONTENT_SELECT, param)}) s WHERE ext = ANY($3::text[])`;
+  const { rows } = await client.query<{ ext: string }>(
+    `SELECT coalesce(a.ext, b.ext) AS ext
+       FROM (${side('$1')}) a
+       FULL OUTER JOIN (${side('$2')}) b ON a.ext = b.ext
+      WHERE a.ext IS NULL OR b.ext IS NULL OR a.content IS DISTINCT FROM b.content`,
+    [fromVersionId, toVersionId, ids]
+  );
+  return new Set(rows.map((r) => r.ext));
+}
+
 /** The external_ids the draft stores a row for (edits, creations and tombstones). */
 export async function touchedFeatures(client: PoolClient, layerKey: string, draftId: string): Promise<Set<string>> {
   checkLayer(layerKey);
@@ -67,7 +90,11 @@ export async function touchedFeatures(client: PoolClient, layerKey: string, draf
   return new Set(rows.map((r) => r.ext));
 }
 
-/** The draft's parent and the layer's active version. */
+/**
+ * The draft's parent and the layer's active version. Read once per public call: the conflict
+ * check and the write after it must see the same pair, or a rebase could re-parent onto a
+ * version its check never compared against.
+ */
 async function versionsOf(
   client: PoolClient, layerKey: string, draftId: string
 ): Promise<{ parentId: string; activeId: string }> {
@@ -88,23 +115,23 @@ async function versionsOf(
 const byExternalId = new Intl.Collator('en', { numeric: true }).compare;
 
 /**
- * The draft's open conflicts (spec §3): the features it touched whose content changed between
- * its parent and the active version, minus those already resolved against this active version.
- * A resolution made against an earlier active version no longer counts. Ordered by externalId.
+ * The draft's open conflicts between the given parent and active version (spec §3): the
+ * features it touched whose content changed between the two, minus those already resolved
+ * against this active version. Ordered by externalId.
  */
-export async function listConflicts(client: PoolClient, layerKey: string, draftId: string): Promise<Conflict[]> {
-  checkLayer(layerKey);
-  const { parentId, activeId } = await versionsOf(client, layerKey, draftId);
+async function conflictsAt(
+  client: PoolClient, layerKey: string, draftId: string, parentId: string, activeId: string
+): Promise<Conflict[]> {
   if (parentId === activeId) return [];
-  const touched = await touchedFeatures(client, layerKey, draftId);
-  if (touched.size === 0) return [];
-  const changed = await changedFeatures(client, layerKey, parentId, activeId);
+  const touched = [...(await touchedFeatures(client, layerKey, draftId))];
+  if (touched.length === 0) return [];
+  const changed = await changedAmong(client, layerKey, parentId, activeId, touched);
   const done = await client.query<{ external_id: string }>(
     `SELECT external_id FROM app.draft_resolutions WHERE draft_id = $1 AND against_version_id = $2`,
     [draftId, activeId]
   );
   const resolved = new Set(done.rows.map((r) => r.external_id));
-  const ids = [...touched].filter((e) => changed.has(e) && !resolved.has(e)).sort(byExternalId);
+  const ids = touched.filter((e) => changed.has(e) && !resolved.has(e)).sort(byExternalId);
   if (ids.length === 0) return [];
 
   type Side = { ext: string; content: Record<string, unknown> };
@@ -133,18 +160,36 @@ export async function listConflicts(client: PoolClient, layerKey: string, draftI
 }
 
 /**
- * Resolve one open conflict. `theirs` drops the draft's row for the feature, so the draft takes
- * the upstream state; `mine` keeps the row and records the choice against the current active
- * version (it lapses if the active version moves again before the rebase). Refuses a feature
- * that is not in the current conflict list.
+ * The draft's open conflicts against the layer's active version, and which version that is. A
+ * caller resolving them passes `activeId` back to resolveConflict, so a choice is never recorded
+ * against a version the user did not see.
+ */
+export async function listConflicts(
+  client: PoolClient, layerKey: string, draftId: string
+): Promise<{ activeId: string; conflicts: Conflict[] }> {
+  checkLayer(layerKey);
+  const { parentId, activeId } = await versionsOf(client, layerKey, draftId);
+  return { activeId, conflicts: await conflictsAt(client, layerKey, draftId, parentId, activeId) };
+}
+
+/**
+ * Resolve one open conflict as seen against `againstVersionId` (the activeId listConflicts
+ * returned). Refused when that is no longer the active version, or when the feature is not in
+ * the current conflict list. `theirs` drops the draft's row for the feature, so the draft takes
+ * the upstream state; `mine` keeps the row and records the choice against `againstVersionId`
+ * (it lapses if the active version moves again before the rebase). Either way the draft
+ * changed, so its revision is bumped.
  *
  * The caller holds the draft lock (lockDraft) in this transaction.
  */
 export async function resolveConflict(
-  client: PoolClient, layerKey: string, draftId: string, externalId: string, choice: ConflictChoice
+  client: PoolClient, layerKey: string, draftId: string, externalId: string, choice: ConflictChoice,
+  againstVersionId: string
 ): Promise<void> {
   checkLayer(layerKey);
-  const open = await listConflicts(client, layerKey, draftId);
+  const { parentId, activeId } = await versionsOf(client, layerKey, draftId);
+  if (againstVersionId !== activeId) throw new ConflictError(STALE_RESOLUTION_MESSAGE);
+  const open = await conflictsAt(client, layerKey, draftId, parentId, activeId);
   if (!open.some((c) => c.externalId === externalId)) {
     throw new ConflictError(`Feature ${externalId} is not in conflict in draft ${draftId}`);
   }
@@ -158,37 +203,38 @@ export async function resolveConflict(
       `DELETE FROM app.draft_resolutions WHERE draft_id = $1 AND external_id = $2`,
       [draftId, externalId]
     );
-    return;
+  } else {
+    await client.query(
+      `INSERT INTO app.draft_resolutions (draft_id, external_id, against_version_id, choice)
+       VALUES ($1, $2, $3, 'mine')
+       ON CONFLICT (draft_id, external_id) DO UPDATE
+         SET against_version_id = EXCLUDED.against_version_id, choice = EXCLUDED.choice, resolved_at = now()`,
+      [draftId, externalId, againstVersionId]
+    );
   }
-  const { activeId } = await versionsOf(client, layerKey, draftId);
-  await client.query(
-    `INSERT INTO app.draft_resolutions (draft_id, external_id, against_version_id, choice)
-     VALUES ($1, $2, $3, 'mine')
-     ON CONFLICT (draft_id, external_id) DO UPDATE
-       SET against_version_id = EXCLUDED.against_version_id, choice = EXCLUDED.choice, resolved_at = now()`,
-    [draftId, externalId, activeId]
-  );
+  await bumpRevision(client, draftId);
 }
 
 /**
  * Move the draft onto the layer's active version, feature by feature (spec §3). Nothing to do
  * when its parent is already active. With open conflicts nothing changes and they are returned.
- * Otherwise the draft is re-parented: its stored rows now sit on the active state, its
- * resolutions (made against the old parent) are dropped and its revision is bumped.
+ * Otherwise the draft is re-parented onto the very active version its conflict check compared
+ * against: its stored rows now sit on that state, its resolutions are dropped and its revision
+ * is bumped. `activeId` is that version in every case.
  *
  * The caller holds the draft lock (lockDraft) in this transaction. The active row is not locked
  * here: a concurrent activation can still move it, which publishDraft guards against.
  */
 export async function rebaseDraft(
   client: PoolClient, layerKey: string, draftId: string
-): Promise<{ rebased: boolean; conflicts: Conflict[] }> {
+): Promise<{ rebased: boolean; activeId: string; conflicts: Conflict[] }> {
   checkLayer(layerKey);
   const { parentId, activeId } = await versionsOf(client, layerKey, draftId);
-  if (parentId === activeId) return { rebased: false, conflicts: [] };
-  const conflicts = await listConflicts(client, layerKey, draftId);
-  if (conflicts.length > 0) return { rebased: false, conflicts };
+  if (parentId === activeId) return { rebased: false, activeId, conflicts: [] };
+  const conflicts = await conflictsAt(client, layerKey, draftId, parentId, activeId);
+  if (conflicts.length > 0) return { rebased: false, activeId, conflicts };
   await client.query(`UPDATE app.dataset_versions SET parent_version_id = $1 WHERE id = $2`, [activeId, draftId]);
   await client.query(`DELETE FROM app.draft_resolutions WHERE draft_id = $1`, [draftId]);
   await bumpRevision(client, draftId);
-  return { rebased: true, conflicts: [] };
+  return { rebased: true, activeId, conflicts: [] };
 }

@@ -7,7 +7,8 @@ import { resolvedSql } from './resolve';
 import { openDraft, lockDraft } from './drafts';
 import { ConflictError } from './errors';
 import {
-  CONTENT_EXCLUDED_KEYS, changedFeatures, touchedFeatures, listConflicts, resolveConflict, rebaseDraft,
+  CONTENT_EXCLUDED_KEYS, STALE_RESOLUTION_MESSAGE, changedFeatures, touchedFeatures, listConflicts,
+  resolveConflict, rebaseDraft,
 } from './rebase';
 
 const LAYER = 'dams';
@@ -16,7 +17,7 @@ const PIN = 'rebase.test';
 const EMAIL = 'p2-rebase-owner@webatlas.test';
 
 // Synthetic dams, one or two per test so the tests do not see each other's changes.
-const DAMS = Array.from({ length: 10 }, (_, i) => 900501 + i);
+const DAMS = Array.from({ length: 11 }, (_, i) => 900501 + i);
 
 const created: string[] = [];
 let priorActive: string | null = null;
@@ -97,15 +98,21 @@ function rebase(draftId: string) {
   });
 }
 
-function resolve(draftId: string, ext: number, choice: 'mine' | 'theirs') {
+/** Resolve as a client would: against the active version the conflict list was read under. */
+async function resolve(draftId: string, ext: number, choice: 'mine' | 'theirs', against?: string) {
+  const seen = against ?? (await listed(draftId)).activeId;
   return tx(async (c) => {
     await lockDraft(c, draftId);
-    await resolveConflict(c, LAYER, draftId, String(ext), choice);
+    await resolveConflict(c, LAYER, draftId, String(ext), choice, seen);
   });
 }
 
-function conflicts(draftId: string) {
+function listed(draftId: string) {
   return tx((c) => listConflicts(c, LAYER, draftId));
+}
+
+async function conflicts(draftId: string) {
+  return (await listed(draftId)).conflicts;
 }
 
 async function draftState(draftId: string): Promise<{ parent: string; revision: number }> {
@@ -156,28 +163,38 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const pool = getPool();
-  // Deactivate the test versions before restoring the prior one (one active per layer).
-  for (const id of created) {
-    await pool.query(`UPDATE app.dataset_versions SET is_active = false WHERE id = $1`, [id]);
-  }
-  if (priorActive) {
-    await pool.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
-    const c = await pool.connect();
+  try {
     try {
-      await refreshCurrentRows(c, LAYER, priorActive);
+      // Deactivate the test versions before restoring the prior one (one active per layer).
+      for (const id of created) {
+        await pool.query(`UPDATE app.dataset_versions SET is_active = false WHERE id = $1`, [id]);
+      }
+      if (priorActive) {
+        await pool.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
+        const c = await pool.connect();
+        try {
+          await refreshCurrentRows(c, LAYER, priorActive);
+        } finally {
+          c.release();
+        }
+      }
     } finally {
-      c.release();
+      // Always drop the pin: its FK is ON DELETE RESTRICT, so a leftover would block deleting
+      // the real version later.
+      if (priorActive) {
+        await pool.query(`DELETE FROM app.version_pins WHERE version_id = $1 AND holder = $2`, [priorActive, PIN]);
+      }
     }
-    await pool.query(`DELETE FROM app.version_pins WHERE version_id = $1 AND holder = $2`, [priorActive, PIN]);
+    await pool.query(`DELETE FROM app.draft_resolutions WHERE draft_id = ANY($1::uuid[])`, [created]);
+    // Rows first (no cascade from the version), then versions, children before parents.
+    await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = ANY($1::uuid[])`, [created]);
+    for (const id of [...created].reverse()) {
+      await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [id]);
+    }
+    await pool.query(`DELETE FROM app.users WHERE email = $1`, [EMAIL]);
+  } finally {
+    await closePool();
   }
-  await pool.query(`DELETE FROM app.draft_resolutions WHERE draft_id = ANY($1::uuid[])`, [created]);
-  // Rows first (no cascade from the version), then versions, children before parents.
-  await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = ANY($1::uuid[])`, [created]);
-  for (const id of [...created].reverse()) {
-    await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [id]);
-  }
-  await pool.query(`DELETE FROM app.users WHERE email = $1`, [EMAIL]);
-  await closePool();
 });
 
 describe('content equality', () => {
@@ -196,7 +213,7 @@ describe('rebaseDraft', () => {
     const before = await draftState(d);
     expect(await tx((c) => touchedFeatures(c, LAYER, d))).toEqual(new Set([String(a)]));
     expect(await conflicts(d)).toEqual([]);
-    expect(await rebase(d)).toEqual({ rebased: false, conflicts: [] });
+    expect(await rebase(d)).toEqual({ rebased: false, activeId: await activeId(), conflicts: [] });
     expect(await draftState(d)).toEqual(before);
     await expect(tx((c) => changedFeatures(c, 'x; DROP TABLE y', d, d))).rejects.toThrow();
   });
@@ -209,7 +226,7 @@ describe('rebaseDraft', () => {
     expect(await tx((c) => changedFeatures(c, LAYER, oldParent, up))).toEqual(new Set([String(b)]));
     expect(await tx((c) => changedFeatures(c, LAYER, up, up))).toEqual(new Set());
 
-    expect(await rebase(d)).toEqual({ rebased: true, conflicts: [] });
+    expect(await rebase(d)).toEqual({ rebased: true, activeId: await activeId(), conflicts: [] });
     expect(await draftState(d)).toEqual({ parent: await activeId(), revision: 1 });
     // The draft now shows its own change on top of the upstream one.
     expect(await resolvedName(d, a)).toBe('mine-2');
@@ -224,6 +241,7 @@ describe('rebaseDraft', () => {
 
     const res = await rebase(d);
     expect(res.rebased).toBe(false);
+    expect(res.activeId).toBe(await activeId());
     expect(res.conflicts).toHaveLength(1);
     const [cf] = res.conflicts;
     expect(cf.externalId).toBe(String(a));
@@ -246,10 +264,12 @@ describe('rebaseDraft', () => {
     expect((await conflicts(d)).map((x) => x.externalId)).toEqual([String(a)]);
 
     await resolve(d, a, 'theirs');
+    // Dropping the row changed the draft.
+    expect((await draftState(d)).revision).toBe(1);
     expect(await tx((c) => touchedFeatures(c, LAYER, d))).toEqual(new Set());
     expect(await conflicts(d)).toEqual([]);
-    expect(await rebase(d)).toEqual({ rebased: true, conflicts: [] });
-    expect((await draftState(d)).parent).toBe(await activeId());
+    expect(await rebase(d)).toEqual({ rebased: true, activeId: await activeId(), conflicts: [] });
+    expect(await draftState(d)).toEqual({ parent: await activeId(), revision: 2 });
     expect(await resolvedName(d, a)).toBe('theirs-4');
   });
 
@@ -258,6 +278,7 @@ describe('rebaseDraft', () => {
     const d = await draft([{ ext: a, name: 'mine-5' }]);
     const first = await upstream([{ ext: a, name: 'theirs-5a' }]);
     await resolve(d, a, 'mine');
+    expect((await draftState(d)).revision).toBe(1);
     expect(await conflicts(d)).toEqual([]);
     const { rows } = await getPool().query(
       `SELECT external_id, against_version_id, choice FROM app.draft_resolutions WHERE draft_id = $1`, [d]
@@ -269,14 +290,40 @@ describe('rebaseDraft', () => {
     const again = await rebase(d);
     expect(again.rebased).toBe(false);
     expect(again.conflicts.map((x) => [x.externalId, x.current?.name])).toEqual([[String(a), 'theirs-5b']]);
+    // The refused rebase did not bump the revision.
+    expect((await draftState(d)).revision).toBe(1);
 
-    await resolve(d, a, 'mine');
-    expect(await rebase(d)).toEqual({ rebased: true, conflicts: [] });
-    expect((await draftState(d)).parent).toBe(await activeId());
+    await resolve(d, a, 'mine', again.activeId);
+    expect((await draftState(d)).revision).toBe(2);
+    expect(await rebase(d)).toEqual({ rebased: true, activeId: await activeId(), conflicts: [] });
+    expect(await draftState(d)).toEqual({ parent: await activeId(), revision: 3 });
     expect(await resolvedName(d, a)).toBe('mine-5');
     // Resolutions belong to the old parent and are dropped by the rebase.
     const left = await getPool().query(`SELECT 1 FROM app.draft_resolutions WHERE draft_id = $1`, [d]);
     expect(left.rowCount).toBe(0);
+  });
+
+  it('a choice made against a replaced active version is refused', async () => {
+    const a = DAMS[10];
+    const d = await draft([{ ext: a, name: 'mine-11' }]);
+    const a1 = await upstream([{ ext: a, name: 'theirs-11a' }]);
+    const seen = await listed(d);
+    expect(seen.activeId).toBe(a1);
+    expect(seen.conflicts.map((x) => x.externalId)).toEqual([String(a)]);
+    // Upstream publishes again before the user's choice arrives.
+    await upstream([{ ext: a, name: 'theirs-11b' }]);
+
+    for (const choice of ['mine', 'theirs'] as const) {
+      const err = await resolve(d, a, choice, a1).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ConflictError);
+      expect((err as Error).message).toBe(STALE_RESOLUTION_MESSAGE);
+    }
+    // Nothing was recorded or dropped, and the draft did not change.
+    const res = await getPool().query(`SELECT 1 FROM app.draft_resolutions WHERE draft_id = $1`, [d]);
+    expect(res.rowCount).toBe(0);
+    expect(await tx((c) => touchedFeatures(c, LAYER, d))).toEqual(new Set([String(a)]));
+    expect((await draftState(d)).revision).toBe(0);
+    expect((await conflicts(d)).map((x) => x.current?.name)).toEqual(['theirs-11b']);
   });
 
   it('a feature deleted upstream conflicts; theirs drops it, mine restores it', async () => {
@@ -300,11 +347,11 @@ describe('rebaseDraft', () => {
     expect(c8.draft.deleted).toBe(true);
 
     await resolve(dTheirs, dropped, 'theirs');
-    expect(await rebase(dTheirs)).toEqual({ rebased: true, conflicts: [] });
+    expect(await rebase(dTheirs)).toEqual({ rebased: true, activeId: await activeId(), conflicts: [] });
     expect(await resolvedName(dTheirs, dropped)).toBeNull();
 
     await resolve(dMine, kept, 'mine');
-    expect(await rebase(dMine)).toEqual({ rebased: true, conflicts: [] });
+    expect(await rebase(dMine)).toEqual({ rebased: true, activeId: await activeId(), conflicts: [] });
     expect(await resolvedName(dMine, kept)).toBe('mine-7');
     // Publish it (R1: a draft's status is cleared before it is activated).
     await tx(async (c) => {
@@ -347,7 +394,7 @@ describe('rebaseDraft', () => {
     });
     expect(await tx((c) => changedFeatures(c, LAYER, oldActive, root))).toEqual(new Set([String(b)]));
 
-    expect(await rebase(dA)).toEqual({ rebased: true, conflicts: [] });
+    expect(await rebase(dA)).toEqual({ rebased: true, activeId: await activeId(), conflicts: [] });
     expect((await draftState(dA)).parent).toBe(root);
     const res = await rebase(dB);
     expect(res.rebased).toBe(false);
@@ -359,7 +406,7 @@ describe('rebaseDraft', () => {
     const d = await draft([{ ext: 900520, name: 'mine-new' }]);
     await upstream([{ ext: 900521, name: 'theirs-new' }]);
     expect(await conflicts(d)).toEqual([]);
-    expect(await rebase(d)).toEqual({ rebased: true, conflicts: [] });
+    expect(await rebase(d)).toEqual({ rebased: true, activeId: await activeId(), conflicts: [] });
     expect(await resolvedName(d, 900520)).toBe('mine-new');
     expect(await resolvedName(d, 900521)).toBe('theirs-new');
   });
