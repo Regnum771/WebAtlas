@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { buildUnitTree, type Grant } from '@webatlas/shared';
 
 let mock: { status: string; currentUser: Record<string, unknown> | null };
 let mockTree: ReturnType<typeof buildUnitTree> | null;
 vi.mock('../../entities/session/model/session.store', () => ({ useSession: () => mock }));
-vi.mock('../../entities/session/model/useUnitTree', () => ({ useUnitTree: () => mockTree }));
+let mockStatus: 'idle' | 'loading' | 'error' | 'ready';
+const retry = vi.fn();
+vi.mock('../../entities/session/model/useUnitTree', () => ({
+  useUnitTree: () => mockTree,
+  useUnitTreeStatus: () => ({ status: mockStatus, retry }),
+}));
 
 import QuanLyRoute from './index';
 
@@ -19,7 +25,7 @@ const signedIn = (isAdmin: boolean, ...grants: Grant[]) => ({
   currentUser: { id: '1', email: 'a@b.test', role: isAdmin ? 'admin' : 'viewer', isAdmin, grants },
 });
 
-beforeEach(() => { mock = { status: 'anonymous', currentUser: null }; mockTree = TREE; });
+beforeEach(() => { mock = { status: 'anonymous', currentUser: null }; mockTree = TREE; mockStatus = 'ready'; retry.mockClear(); });
 
 const renderAt = (path: string) =>
   render(
@@ -38,6 +44,33 @@ const renderAt = (path: string) =>
 const links = () => screen.getAllByRole('link').map((a) => a.textContent);
 
 describe('QuanLyRoute', () => {
+  it('shows Người dùng at once to a users.manage + province feature.update user while the tree loads', () => {
+    mock = signedIn(false, { permission: 'users.manage', unit: '48' }, { permission: 'feature.update', unit: '48' });
+    mockTree = null; mockStatus = 'loading';
+    renderAt('/quan-ly');
+    expect(links()).toEqual(['Người dùng']);
+    expect(screen.getByText('SEC_NGUOI')).toBeInTheDocument();
+  });
+
+  it('a tree failure shows a message with Thử lại, not an endless spinner or a redirect', async () => {
+    mock = signedIn(false, { permission: 'feature.update', unit: 'VN' });
+    mockTree = null; mockStatus = 'error';
+    renderAt('/quan-ly');
+    expect(screen.queryByText('MAP_HOME')).toBeNull();
+    expect(screen.queryByRole('status', { name: 'Đang tải…' })).toBeNull();
+    expect(screen.getByText('Không tải được danh sách đơn vị hành chính.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the visible items beside the failure message', () => {
+    mock = signedIn(false, { permission: 'users.manage', unit: '48' }, { permission: 'feature.update', unit: '48' });
+    mockTree = null; mockStatus = 'error';
+    renderAt('/quan-ly');
+    expect(screen.getByText('SEC_NGUOI')).toBeInTheDocument();
+    expect(screen.getByText('Không tải được danh sách đơn vị hành chính.')).toBeInTheDocument();
+  });
+
   it('shows all three sub-nav items to admin and lands on Nhóm quyền', () => {
     mock = signedIn(true);
     renderAt('/quan-ly');
@@ -61,7 +94,7 @@ describe('QuanLyRoute', () => {
 
   it('does not bounce a VN officer away while the unit tree is still loading', () => {
     mock = signedIn(false, { permission: 'feature.update', unit: 'VN' });
-    mockTree = null;
+    mockTree = null; mockStatus = 'loading';
     renderAt('/quan-ly/chua-gan');
     expect(screen.queryByText('MAP_HOME')).toBeNull();
     expect(screen.getByRole('status', { name: 'Đang tải…' })).toBeInTheDocument();

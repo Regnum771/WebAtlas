@@ -37,9 +37,9 @@ function App() {
             <Route path="/print" element={<PrintRoute />} />
             <Route path="/admin/users" element={<Navigate to="/quan-ly/nguoi-dung" replace />} />
             <Route path="/quan-ly" element={<Suspense fallback={loading}><QuanLyRoute /></Suspense>}>
-              <Route path="nhom-quyen" element={<Suspense fallback={null}><NhomQuyen /></Suspense>} />
-              <Route path="nguoi-dung" element={<Suspense fallback={null}><NguoiDung /></Suspense>} />
-              <Route path="chua-gan" element={<Suspense fallback={null}><ChuaGan /></Suspense>} />
+              <Route path="nhom-quyen" element={<Suspense fallback={loading}><NhomQuyen /></Suspense>} />
+              <Route path="nguoi-dung" element={<Suspense fallback={loading}><NguoiDung /></Suspense>} />
+              <Route path="chua-gan" element={<Suspense fallback={loading}><ChuaGan /></Suspense>} />
             </Route>
           </Routes>
         </div>
