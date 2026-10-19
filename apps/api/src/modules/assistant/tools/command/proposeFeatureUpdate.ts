@@ -96,7 +96,7 @@ export const proposeFeatureUpdateTool: ToolFactory = (ctx) =>
       const label = feature.name ?? 'đối tượng';
       return (
         `Đã mở biểu mẫu đề xuất cập nhật cho "${label}" (${Object.keys(proposed).length} trường). ` +
-        'Chưa có gì được ghi: quản trị viên cần kiểm tra và bấm Lưu.' +
+        'Chưa có gì được ghi: người dùng cần kiểm tra và bấm Lưu.' +
         (missing.length > 0 ? ` Còn thiếu: ${missing.join(' và ')} — hãy hỏi người dùng.` : '')
       );
     },

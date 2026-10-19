@@ -71,7 +71,7 @@ describe('formatMapContext', () => {
 
 describe('role-specific prompts', () => {
   it('read-only prompt gives non-admins the exact refusal sentence', () => {
-    expect(SYSTEM_PROMPT).toContain('Bạn chỉ có quyền xem dữ liệu; chỉ quản trị viên mới cập nhật được.');
+    expect(SYSTEM_PROMPT).toContain('Tài khoản của bạn chưa có quyền lưu thay đổi trực tiếp, nên tôi không cập nhật được dữ liệu.');
     expect(SYSTEM_PROMPT).not.toContain('propose_feature_update');
   });
 

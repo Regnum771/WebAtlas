@@ -36,9 +36,9 @@ QUY TẮC BẮT BUỘC
 
 7. Khi câu trả lời nhắc tới các đối tượng cụ thể trên bản đồ, hãy dùng công cụ đánh dấu để người dùng nhìn thấy chúng.`;
 
-const READ_ONLY_RULE = `8. Bạn chỉ đọc dữ liệu. Nếu người dùng yêu cầu thêm, sửa hay xoá dữ liệu, hãy trả lời đúng câu: "Bạn chỉ có quyền xem dữ liệu; chỉ quản trị viên mới cập nhật được." và không gọi công cụ nào cho yêu cầu đó.`;
+const READ_ONLY_RULE = `8. Bạn chỉ đọc dữ liệu. Nếu người dùng yêu cầu thêm, sửa hay xoá dữ liệu, hãy trả lời đúng câu: "Tài khoản của bạn chưa có quyền lưu thay đổi trực tiếp, nên tôi không cập nhật được dữ liệu." và không gọi công cụ nào cho yêu cầu đó.`;
 
-const ADMIN_UPDATE_RULE = `8. Bạn không tự ghi dữ liệu. Khi quản trị viên yêu cầu cập nhật thuộc tính của một đối tượng: trước hết tìm đúng đối tượng bằng công cụ dữ liệu (ví dụ filter_by_attribute theo tên) để lấy featureId, rồi gọi propose_feature_update. Công cụ này chỉ mở biểu mẫu để quản trị viên kiểm tra và bấm Lưu. Nếu người dùng chưa nêu tài liệu nguồn hoặc người cung cấp, hãy hỏi lại hai thông tin đó. Không đề xuất thêm mới hay xoá đối tượng — hãy chỉ họ tới bảng Biên tập.`;
+const ADMIN_UPDATE_RULE = `8. Bạn không tự ghi dữ liệu. Khi người dùng (có quyền sửa và duyệt) yêu cầu cập nhật thuộc tính của một đối tượng: trước hết tìm đúng đối tượng bằng công cụ dữ liệu (ví dụ filter_by_attribute theo tên) để lấy featureId, rồi gọi propose_feature_update. Công cụ này chỉ mở biểu mẫu để người dùng kiểm tra và bấm Lưu. Nếu người dùng chưa nêu tài liệu nguồn hoặc người cung cấp, hãy hỏi lại hai thông tin đó. Không đề xuất thêm mới hay xoá đối tượng — hãy chỉ họ tới bảng Biên tập.`;
 
 const FLOOD_RULE = `9. Câu hỏi về lũ, ngập, kịch bản mưa hay sơ tán ở Vu Gia – Thu Bồn: dùng các công cụ kịch bản lũ (list_flood_scenarios, run_flood_scenario, flood_impacts, evacuation_plan). Khi đề xuất phương án sơ tán: gọi evacuation_plan; sắp xếp theo thời hạn, xã nào hết hạn trước đi trước; xã đã ngập từ đầu cần cứu hộ chứ không còn là sơ tán; phải sơ tán xong trước thời hạn; chỉ dùng những tuyến đường còn đi được tại thời hạn đó; ưu tiên người già, trẻ em, nhà một tầng sát sông; theo phương châm "4 tại chỗ". Luôn nói rõ phần nào là mực nước thực đo và phần nào là mô phỏng hay ước tính.`;
 

@@ -162,7 +162,7 @@ maybe('intent routing (live model)', () => {
   it('viewer update request is refused with the fixed sentence and no proposal', async () => {
     const { commands, segments } = await ask('Sửa công suất đập Sông Hinh thành 72 MW', 'viewer');
     expect(commands.some((c: MapCommand) => c.kind === 'proposeFeatureEdit')).toBe(false);
-    expect(segments.map((s) => s.text).join(' ')).toContain('chỉ quản trị viên mới cập nhật được');
+    expect(segments.map((s) => s.text).join(' ')).toContain('chưa có quyền lưu thay đổi trực tiếp');
   }, 60_000);
 
   it('routes a buffer-and-count question to select_within', async () => {

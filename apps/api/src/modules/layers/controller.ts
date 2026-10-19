@@ -3,11 +3,10 @@ import { z } from 'zod';
 import { validate } from '../../lib/validate';
 import { featuresService } from './service';
 import { listLayerMetadata } from '../../layers/registry';
-import type { FeatureRow } from './repository';
+import { featuresRepository, type FeatureRow } from './repository';
 import { getUnitTree } from '../../authz/unitTree';
 import { assertCan } from '../../authz/assert';
 import { COUNTRY_UNIT } from '@webatlas/shared';
-import { featuresRepository } from './repository';
 import { AuthError } from '../../errors';
 import type { CurrentUser } from '../../types/fastify';
 
