@@ -4,7 +4,13 @@ import { queryClient } from '../../../shared/api/queryClient';
 import { useSession } from '../../../entities/session/model/session.store';
 import { ApiError } from '../../../shared/api/apiClient';
 import type { Role } from '../../../entities/session/model/session.types';
-import { listUsers, createUser, updateUser, type AdminUser } from '../api/users.api';
+import type { Grant } from '@webatlas/shared';
+import { useUnitTree } from '../../../entities/session/model/useUnitTree';
+import { showToast } from '../../../shared/ui/toast.store';
+import { listGroups, type AccessGroup } from '../../access-groups/api/accessGroups.api';
+import { listUsers, createUser, updateUser, setUserGroups, type AdminUser } from '../api/users.api';
+import { jurisdictionSummary } from './jurisdictionSummary';
+import { canHandOver } from './canHandOver';
 
 type ModalState = { mode: 'closed' | 'create' | 'edit'; user: AdminUser | null };
 interface FormValues { email: string; password: string; full_name: string; role: Role; }
@@ -36,6 +42,16 @@ function mapError(e: unknown, setFieldErrors: (f: Record<string, string>) => voi
 export function useUsersPresenter() {
   const { currentUser } = useSession();
   const query = useQuery({ queryKey: ['users'], queryFn: listUsers });
+  // Same key as the access-groups feature, so the cache is shared.
+  const groupsQuery = useQuery({ queryKey: ['access-groups'], queryFn: listGroups });
+  const tree = useUnitTree();
+  const adminActions = currentUser?.isAdmin === true;
+  const groups: AccessGroup[] = groupsQuery.data ?? [];
+  const groupsLoading = groupsQuery.isLoading;
+  const groupsError = groupsQuery.isError;
+  const [groupsDialog, setGroupsDialog] = useState<{ user: AdminUser | null; selected: string[]; error: string | null }>(
+    { user: null, selected: [], error: null },
+  );
 
   const [modal, setModal] = useState<ModalState>({ mode: 'closed', user: null });
   const [values, setValues] = useState<FormValues>(EMPTY);
@@ -53,6 +69,49 @@ export function useUsersPresenter() {
   };
   const closeModal = () => setModal({ mode: 'closed', user: null });
   const setField = (k: keyof FormValues, v: string) => setValues((prev) => ({ ...prev, [k]: v }));
+
+  // A user's grants come from expanding their groups against the group list already loaded.
+  const summaryFor = (user: AdminUser): string[] => {
+    if (user.role === 'admin') return ['Quản trị viên — toàn quyền'];
+    if (groupsLoading) return ['Đang tải…'];
+    if (groupsError) return ['Không tải được nhóm'];
+    const grants: Grant[] = [];
+    for (const m of user.groups) {
+      const g = groups.find((x) => x.id === m.id);
+      if (g) for (const unit of g.units) for (const permission of g.permissions) grants.push({ permission, unit });
+    }
+    return jurisdictionSummary(grants, tree);
+  };
+
+  const canHandOverGroup = (g: AccessGroup) =>
+    canHandOver({ isAdmin: adminActions, grants: currentUser?.grants ?? [] }, g, tree);
+
+  const openGroups = (user: AdminUser) => setGroupsDialog({ user, selected: user.groups.map((g) => g.id), error: null });
+  const closeGroups = () => setGroupsDialog({ user: null, selected: [], error: null });
+  const toggleGroup = (id: string) => setGroupsDialog((d) => ({
+    ...d, selected: d.selected.includes(id) ? d.selected.filter((x) => x !== id) : [...d.selected, id],
+  }));
+  const groupsMut = useMutation({
+    mutationFn: (v: { id: string; groupIds: string[] }) => setUserGroups(v.id, v.groupIds),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['access-groups'] });
+      return invalidate();
+    },
+  });
+  const submitGroups = async () => {
+    const { user, selected } = groupsDialog;
+    if (!user) return;
+    setGroupsDialog((d) => ({ ...d, error: null }));
+    try {
+      await groupsMut.mutateAsync({ id: user.id, groupIds: selected });
+      showToast({ tone: 'success', title: `Đã lưu nhóm của ${user.email}.` });
+      closeGroups();
+    } catch (e) {
+      const message = e instanceof ApiError && e.status === 403 && e.code === 'ESCALATION'
+        ? e.message : 'Chưa lưu được nhóm. Thử lại.';
+      setGroupsDialog((d) => ({ ...d, error: message }));
+    }
+  };
 
   const canModify = (user: AdminUser) => user.id !== currentUser?.id;
 
@@ -91,6 +150,10 @@ export function useUsersPresenter() {
     listError: query.error ? 'Không tải được danh sách người dùng.' : null,
     modal, values, fieldErrors, formError,
     saving: createMut.isPending || updateMut.isPending,
+    retry: () => { void query.refetch(); },
+    groupsLoading, groupsError, retryGroups: () => { void groupsQuery.refetch(); },
+    adminActions, groups, tree, groupsDialog, groupsSaving: groupsMut.isPending,
+    summaryFor, canHandOverGroup, openGroups, closeGroups, toggleGroup, submitGroups,
     canSave, canModify,
     openCreate, openEdit, closeModal, setField, submitForm, toggleActive,
   };

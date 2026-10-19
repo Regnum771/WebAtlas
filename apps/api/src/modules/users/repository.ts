@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 
-export type Role = 'admin' | 'editor' | 'viewer';
+// The editor role is retired (P1); the database refuses it (users_role_not_editor).
+export type Role = 'admin' | 'viewer';
 export interface UserRow {
   id: string; email: string; full_name: string | null; role: Role;
   is_active: boolean; created_at: string; updated_at: string;
@@ -17,8 +18,16 @@ export function usersRepository(pg: Pool) {
       const { rows } = await pg.query(`SELECT ${COLS} FROM app.users WHERE id = $1`, [id]);
       return rows[0] ?? null;
     },
-    async list(): Promise<UserRow[]> {
-      const { rows } = await pg.query(`SELECT ${COLS} FROM app.users ORDER BY created_at DESC`);
+    /** Every user with the groups it belongs to. */
+    async listWithGroups(): Promise<Array<UserRow & { groups: Array<{ id: string; name: string }> }>> {
+      const { rows } = await pg.query(
+        `SELECT ${COLS.split(', ').map((c) => `u.${c}`).join(', ')},
+                COALESCE((SELECT json_agg(json_build_object('id', g.id, 'name', g.name) ORDER BY g.name)
+                            FROM app.user_groups ug JOIN app.access_groups g ON g.id = ug.group_id
+                           WHERE ug.user_id = u.id), '[]'::json) AS groups
+           FROM app.users u
+          ORDER BY u.created_at DESC`
+      );
       return rows;
     },
     async insert(u: { email: string; password_hash: string; full_name: string | null; role: Role }): Promise<UserRow> {

@@ -17,9 +17,8 @@ export const PERSONAS: Record<PersonaId, Persona> = {
 };
 
 // Which personas a role may inhabit. admin is a superset (steward + admin).
-// editor is read-only since 2026-09-17 (only admin writes), so it reads like viewer.
 export function rolePersonas(role: Role | null | undefined): PersonaId[] {
   if (role === 'admin') return ['steward', 'admin'];
-  if (role === 'editor' || role === 'viewer') return ['governance', 'research'];
+  if (role === 'viewer') return ['governance', 'research'];
   return ['public'];
 }

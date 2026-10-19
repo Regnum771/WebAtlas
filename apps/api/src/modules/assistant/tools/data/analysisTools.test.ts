@@ -24,7 +24,7 @@ function makeCtx() {
   const commands: MapCommand[] = [];
   const records: Provenance[] = [];
   const ctx = {
-    pool, role: 'viewer', mapContext: MAP_CONTEXT,
+    pool, canProposeEdits: false, mapContext: MAP_CONTEXT,
     collect: vi.fn((c: MapCommand) => commands.push(c)),
     provenance: vi.fn((p: Provenance) => records.push(p)),
   } satisfies ToolContext;

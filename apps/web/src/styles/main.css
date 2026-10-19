@@ -601,12 +601,23 @@ body {
 .edit-mode-toggle { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 
 /* Shell layout restructure: left = doing, right = seeing */
-/* Admin route: full-screen over a live map */
-.admin-users-route {
+/* Quản lý area: full-screen over a live map */
+.quan-ly-route {
   position: absolute; top: var(--topbar-height); left: 0; right: 0; bottom: 0;
   z-index: 90; overflow: auto; padding: 24px;
   background: var(--paper);
 }
+.quan-ly-nav {
+  max-width: 960px; margin: 0 auto 16px; display: flex; gap: 18px;
+  border-bottom: 1px solid var(--rule);
+}
+.quan-ly-nav-link {
+  padding: 6px 0; color: var(--ink); text-decoration: none;
+  border-bottom: 3px solid transparent; margin-bottom: -1px;
+}
+.quan-ly-nav-link[aria-current="page"] { font-weight: 650; border-bottom-color: var(--ink); }
+.quan-ly-section { max-width: 960px; margin: 0 auto; display: grid; gap: 12px; }
+.quan-ly-section h2 { margin: 0; font-size: var(--text-xl); }
 .user-mgmt-panel { max-width: 960px; margin: 0 auto; display: grid; gap: 16px; }
 .user-mgmt { display: grid; gap: 12px; }
 .user-mgmt-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -619,7 +630,14 @@ body {
 }
 .user-table td { padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: middle; }
 .user-table td:nth-child(5) { font-variant-numeric: tabular-nums; }
-.user-actions { display: flex; gap: 6px; }
+.user-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.user-table .col-email { overflow-wrap: anywhere; }
+.user-table .col-scope { overflow-wrap: anywhere; }
+/* Below 1100px the table must fit the Quản lý area: drop Ngày tạo, keep Thao tác in view. */
+@media (max-width: 1099px) {
+  .user-table .col-created { display: none; }
+  .user-table th, .user-table td { padding: 8px 6px; }
+}
 .user-form { display: grid; gap: 12px; min-width: 320px; }
 .user-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 /* Status badge: ink; filled when on, outline when off. */
@@ -955,3 +973,15 @@ body {
 .roi-candidates ul { list-style: none; margin: 0; padding: 0; }
 .roi-candidate { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 2px 0; }
 .roi-candidate button { background: none; border: none; color: var(--ink); cursor: pointer; font: inherit; }
+
+/* Access groups: unit picker and form fieldsets */
+.group-form { max-height: 70vh; overflow-y: auto; }
+.group-form-set { display: grid; gap: 4px; border: 1px solid var(--rule); padding: 8px 12px; }
+.unit-picker { display: grid; gap: 6px; }
+.unit-picker-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; border: 1px solid var(--rule); }
+.unit-picker-row { display: flex; align-items: center; gap: 6px; padding: 2px 6px; }
+.unit-picker-expand { width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--ink); display: inline-flex; align-items: center; justify-content: center; }
+.unit-picker-code { font-variant-numeric: tabular-nums; font-size: var(--text-xs); }
+.unit-picker-selected { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.unit-picker-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 6px; border: 1px solid var(--ink); border-radius: var(--radius); }
+.unit-picker-chip button { border: 0; background: none; color: var(--ink); padding: 0 2px; cursor: pointer; }

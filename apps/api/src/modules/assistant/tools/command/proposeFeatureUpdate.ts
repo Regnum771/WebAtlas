@@ -15,14 +15,15 @@ import { LAYER_LABELS, activeVersionLabel, isFeatureId, resolveFeature } from '.
 /**
  * Turns "cập nhật công suất Sông Hinh thành 72 MW" into a PROPOSAL, never a write.
  * The browser opens the admin wizard prefilled with it; the admin confirms and the
- * save goes through PUT /api/layers/:key/features/:id, which enforces admin-only.
- * Registered only for admins (registry.ts).
+ * save goes through PUT /api/layers/:key/features/:id, which enforces jurisdiction and
+ * review rights per feature.
+ * Registered only for users who can save directly (registry.ts).
  */
 export const proposeFeatureUpdateTool: ToolFactory = (ctx) =>
   betaZodTool({
     name: 'propose_feature_update',
     description:
-      'Open an update form, prefilled with proposed attribute values, for the administrator to review and save. Does NOT write anything. featureId must come from a data tool. changes maps DB column names (e.g. wattage_mw, status, name) to new values as text. Pass sourceDocument (decision/report name or number) and sourceProvider (who supplied the figures) when the user mentions them.',
+      'Open an update form, prefilled with proposed attribute values, for the administrator to review and save. Does NOT write anything. featureId must come from a data tool. changes maps DB column names (e.g. wattage_mw, status, name) to new values as text; managing_unit cannot be proposed (the managing unit is changed in the edit form). Pass sourceDocument (decision/report name or number) and sourceProvider (who supplied the figures) when the user mentions them.',
     inputSchema: z.object({
       layerKey: z.enum(EDITABLE_LAYER_KEYS),
       featureId: z.string(),
@@ -95,7 +96,7 @@ export const proposeFeatureUpdateTool: ToolFactory = (ctx) =>
       const label = feature.name ?? 'đối tượng';
       return (
         `Đã mở biểu mẫu đề xuất cập nhật cho "${label}" (${Object.keys(proposed).length} trường). ` +
-        'Chưa có gì được ghi: quản trị viên cần kiểm tra và bấm Lưu.' +
+        'Chưa có gì được ghi: người dùng cần kiểm tra và bấm Lưu.' +
         (missing.length > 0 ? ` Còn thiếu: ${missing.join(' và ')} — hãy hỏi người dùng.` : '')
       );
     },

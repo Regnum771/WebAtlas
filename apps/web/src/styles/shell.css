@@ -485,7 +485,7 @@
     right: 0;
     bottom: 0;
     width: min(var(--assistant-width), calc(100vw - var(--panel-width)));
-    /* Above routed pages (90), so Trợ lý also works on /print and /admin/users. */
+    /* Above routed pages (90), so Trợ lý also works on /print and /quan-ly. */
     z-index: 95;
   }
 }
@@ -494,7 +494,7 @@
   /* While the assistant is docked, a routed page stops at the dock's left edge, so
      Trợ lý works on every screen. Routed pages are later siblings of .app-shell. */
   .app-shell.with-assistant ~ .print-route,
-  .app-shell.with-assistant ~ .admin-users-route {
+  .app-shell.with-assistant ~ .quan-ly-route {
     right: var(--assistant-width);
   }
 }

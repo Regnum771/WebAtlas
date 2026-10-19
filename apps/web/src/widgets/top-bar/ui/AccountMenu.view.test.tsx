@@ -5,8 +5,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { AccountMenuView } from './AccountMenu.view';
 import type { Role } from '../../../entities/session/model/session.types';
 
-const renderMenu = (role: Role, onLogout = vi.fn(), email = 'a@b.test') =>
-  render(<MemoryRouter><AccountMenuView email={email} role={role} onLogout={onLogout} /></MemoryRouter>);
+const renderMenu = (role: Role, onLogout = vi.fn(), email = 'a@b.test', canManageUsers = role === 'admin') =>
+  render(
+    <MemoryRouter>
+      <AccountMenuView email={email} role={role} canManageUsers={canManageUsers} onLogout={onLogout} />
+    </MemoryRouter>,
+  );
 
 describe('AccountMenuView', () => {
   it('shows the role on the button, not the email', () => {
@@ -30,14 +34,18 @@ describe('AccountMenuView', () => {
     expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
   });
 
-  it('offers Người dùng to an admin only', async () => {
+  it('offers Người dùng, pointing into Quản lý, only when canManageUsers', async () => {
     const user = userEvent.setup();
     const { unmount } = renderMenu('admin');
     await user.click(screen.getByRole('button', { name: 'Quản trị viên' }));
-    expect(screen.getByRole('link', { name: 'Người dùng' })).toHaveAttribute('href', '/admin/users');
+    expect(screen.getByRole('link', { name: 'Người dùng' })).toHaveAttribute('href', '/quan-ly/nguoi-dung');
     unmount();
-    renderMenu('editor');
-    await user.click(screen.getByRole('button', { name: 'Biên tập viên' }));
+    const second = renderMenu('viewer', vi.fn(), 'a@b.test', true);
+    await user.click(screen.getByRole('button', { name: 'Người xem' }));
+    expect(screen.getByRole('link', { name: 'Người dùng' })).toHaveAttribute('href', '/quan-ly/nguoi-dung');
+    second.unmount();
+    renderMenu('viewer');
+    await user.click(screen.getByRole('button', { name: 'Người xem' }));
     expect(screen.queryByRole('link', { name: 'Người dùng' })).toBeNull();
   });
 

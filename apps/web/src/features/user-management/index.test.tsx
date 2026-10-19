@@ -7,11 +7,15 @@ vi.mock('./model/useUsersPresenter', () => ({
     users: [], canModify: () => true, openEdit: vi.fn(), toggleActive: vi.fn(),
     openCreate: vi.fn(), loading: false, listError: null,
     modal: { mode: 'closed' }, values: {}, fieldErrors: {}, formError: null,
+    adminActions: true, summaryFor: () => [], groups: [], tree: null, retry: vi.fn(), groupsLoading: false, groupsError: false, retryGroups: vi.fn(), openGroups: vi.fn(), closeGroups: vi.fn(),
+    toggleGroup: vi.fn(), submitGroups: vi.fn(), canHandOverGroup: () => true, groupsSaving: false,
+    groupsDialog: { user: null, selected: [], error: null },
     canSave: true, saving: false, setField: vi.fn(), submitForm: vi.fn(), closeModal: vi.fn(),
   }),
 }));
 vi.mock('./ui/UserTable.view', () => ({ UserTableView: () => <div>USER_TABLE</div> }));
 vi.mock('./ui/UserFormModal.view', () => ({ UserFormModalView: () => null }));
+vi.mock('./ui/UserGroupsDialog.view', () => ({ UserGroupsDialogView: () => null }));
 
 import { UserManagementPanel } from './index';
 

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { LAYER_ATTRIBUTE_MAP, denormalizeFeatureProperties, type EditableLayerKey } from '@webatlas/shared';
 import { useMapEditing, type EditSelection, type GeoJSONGeometry } from '../../map/model/mapEditing';
 import { ApiError } from '../../../shared/api/apiClient';
+import { refusalOf } from '../../../shared/api/refusal';
 import { deleteFeature } from '../api/features.api';
 
 interface SelectionVM {
@@ -28,6 +29,8 @@ export function useEditExistingPresenter() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** A second line under `error`: the missing review right of a refusal (refusalOf). */
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
   const reset = useCallback(() => {
     cancelModify();
@@ -37,6 +40,7 @@ export function useEditExistingPresenter() {
     setGeometryChanged(false);
     setConfirmOpen(false);
     setError(null);
+    setErrorDetail(null);
   }, [cancelModify, clearSelection]);
 
   const onSelected = useCallback((sel: EditSelection) => {
@@ -78,21 +82,29 @@ export function useEditExistingPresenter() {
     if (!selection) return;
     setDeleting(true);
     setError(null);
+    setErrorDetail(null);
     try {
       await deleteFeature(selection.layerKey, selection.featureId);
       refreshLayer(LAYER_ATTRIBUTE_MAP[selection.layerKey].layerStateId);
       reset();
     } catch (e) {
-      setError(e instanceof ApiError && e.code === 'STALE_EDIT'
-        ? 'Lớp này vừa được người khác thay đổi. Thử lưu lại.'
-        : 'Chưa xoá được. Thử lại.');
+      // A refusal is final: show the server's reason, not "try again".
+      const refusal = refusalOf(e);
+      if (refusal) {
+        setError(refusal.message);
+        setErrorDetail(refusal.detail);
+      } else {
+        setError(e instanceof ApiError && e.code === 'STALE_EDIT'
+          ? 'Lớp này vừa được người khác thay đổi. Thử lưu lại.'
+          : 'Chưa xoá được. Thử lại.');
+      }
     } finally {
       setDeleting(false);
     }
   }, [selection, refreshLayer, reset]);
 
   return {
-    editMode, selection, workingGeometry, confirmOpen, deleting, error,
+    editMode, selection, workingGeometry, confirmOpen, deleting, error, errorDetail,
     geometryToSave: geometryChanged ? workingGeometry : null,
     enter, exit, onSaved, requestDelete, cancelDelete, confirmDelete,
   };

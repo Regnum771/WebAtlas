@@ -38,6 +38,13 @@ describe('ProposedEditWizardView', () => {
     expect(save).toHaveTextContent(/^Đang lưu$/);
   });
 
+  it('shows a second line under the error when there is one', () => {
+    render(<ProposedEditWizardView {...props({ error: 'Đối tượng thuộc Đà Nẵng.', errorDetail: 'Thiếu quyền duyệt và xuất bản.' })} />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Đối tượng thuộc Đà Nẵng.');
+    expect(alert).toHaveTextContent('Thiếu quyền duyệt và xuất bản.');
+  });
+
   it('cancels without saving', () => {
     const p = props();
     render(<ProposedEditWizardView {...p} />);

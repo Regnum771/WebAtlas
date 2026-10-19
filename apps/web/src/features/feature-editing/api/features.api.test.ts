@@ -13,7 +13,7 @@ describe('createFeature', () => {
     (apiRequest as ReturnType<typeof vi.fn>).mockResolvedValue({ feature: { id: 'new-uuid' } });
     const payload = { geometry: { type: 'Point', coordinates: [108, 13] }, properties: { name: 'X' } };
     const out = await createFeature('dams', payload);
-    expect(out).toEqual({ id: 'new-uuid' });
+    expect(out).toEqual({ id: 'new-uuid', warnings: [] });
     const [path, init] = (apiRequest as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(path).toBe('/api/layers/dams/features');
     expect(init.method).toBe('POST');
@@ -26,7 +26,7 @@ describe('updateFeature', () => {
     (apiRequest as ReturnType<typeof vi.fn>).mockResolvedValue({ feature: { id: 'u1' } });
     const payload = { geometry: { type: 'Point', coordinates: [108, 13] }, properties: { name: 'X' } };
     const out = await updateFeature('dams', 'u1', payload);
-    expect(out).toEqual({ id: 'u1' });
+    expect(out).toEqual({ id: 'u1', warnings: [] });
     const [path, init] = (apiRequest as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(path).toBe('/api/layers/dams/features/u1');
     expect(init.method).toBe('PUT');
