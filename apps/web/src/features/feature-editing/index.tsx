@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { LAYER_ATTRIBUTE_MAP, type EditableLayerKey } from '@webatlas/shared';
-import { RequireRole } from '../auth/ui/RequireRole';
+import { RequirePermission } from '../auth/ui/RequirePermission';
 import { useMapEditing, type GeoJSONGeometry } from '../map/model/mapEditing';
 import { useEditToolbarPresenter } from './model/useEditToolbarPresenter';
 import { useAttributeFormPresenter } from './model/useAttributeFormPresenter';
@@ -167,9 +167,8 @@ export interface FeatureEditingProps {
   onBusyChange?: (busy: boolean) => void;
 }
 
-// UX gate ONLY. Real authorization is enforced by the backend (401/403 on every
-// write route); a non-admin who forces this open still gets 403 on the API call.
-// Only admins edit features (CAN_WRITE_FEATURES, supervisor feedback 2026-09-17).
+// UX gate ONLY. Real authorization is enforced by the backend: on every write the API
+// checks jurisdiction and review rights for the feature's managing unit (403 otherwise).
 export default function FeatureEditing({ active, onBusyChange }: FeatureEditingProps) {
   const [drawing, setDrawing] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -180,9 +179,9 @@ export default function FeatureEditing({ active, onBusyChange }: FeatureEditingP
   }, [busy, onBusyChange]);
 
   return (
-    <RequireRole role="admin">
+    <RequirePermission permission={['feature.update', 'submission.review']} mode="all">
       <EditToolbar active={active} onBusy={setDrawing} />
       <EditExisting active={active} onBusy={setEditing} />
-    </RequireRole>
+    </RequirePermission>
   );
 }

@@ -1,5 +1,5 @@
 import { LAYER_ATTRIBUTE_MAP, type FeatureEditProposal } from '@webatlas/shared';
-import { RequireRole } from '../auth/ui/RequireRole';
+import { RequirePermission } from '../auth/ui/RequirePermission';
 import { useMapEditing } from '../map/model/mapEditing';
 import { closeProposal, notifyProposalSaved, useProposal } from '../../entities/proposal/proposal.store';
 import { useProposedEditPresenter } from './model/useProposedEditPresenter';
@@ -28,14 +28,14 @@ function ProposedEditDialog({ proposal }: { proposal: FeatureEditProposal }) {
   );
 }
 
-// UX gate ONLY: PUT enforces admin. A proposal opened for a non-admin renders nothing.
+// UX gate ONLY: PUT checks jurisdiction and review rights. A proposal opened without those rights renders nothing.
 export default function ProposedEdit() {
   const proposal = useProposal();
   if (!proposal) return null;
   return (
-    <RequireRole role="admin">
+    <RequirePermission permission={['feature.update', 'submission.review']} mode="all">
       {/* key remounts per proposal so the presenter re-seeds its initial values */}
       <ProposedEditDialog key={`${proposal.featureId}:${JSON.stringify(proposal.proposed)}`} proposal={proposal} />
-    </RequireRole>
+    </RequirePermission>
   );
 }

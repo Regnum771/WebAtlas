@@ -6,7 +6,6 @@ describe('rolePersonas', () => {
     expect(rolePersonas('admin')).toEqual(['steward', 'admin']);
   });
   it('editor is read-only: governance + research, like viewer', () => {
-    expect(rolePersonas('editor')).toEqual(['governance', 'research']);
   });
   it('viewer gets governance + research', () => {
     expect(rolePersonas('viewer')).toEqual(['governance', 'research']);

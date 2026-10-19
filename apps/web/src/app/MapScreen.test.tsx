@@ -31,19 +31,29 @@ vi.mock('../features/roi/ui/RoiDrawButtons', () => ({ default: () => <div>ROI_DR
 vi.mock('../widgets/top-bar', () => ({ default: () => <div>TOP_BAR</div> }));
 vi.mock('../entities/admin-unit/adminUnits.store', () => ({ primeAdminUnits: vi.fn(() => Promise.resolve()) }));
 
-type MockRole = 'admin' | 'editor' | 'viewer';
+type MockRole = 'admin' | 'viewer' | 'officer' | 'reader';
 let mockStatus: 'authenticated' | 'anonymous' = 'anonymous';
-let mockUser: { role: MockRole } | null = null;
+let mockUser: { role: 'admin' | 'viewer'; isAdmin: boolean; grants: { permission: string; unit: string }[] } | null = null;
 vi.mock('../entities/session/model/session.store', () => ({
   useSession: () => ({ status: mockStatus, currentUser: mockUser }),
 }));
+// Biên tập asks "anywhere" only, so the unit tree is not needed.
+vi.mock('../entities/session/model/useUnitTree', () => ({ useUnitTree: () => null }));
 
 import MapScreen from './MapScreen';
 import { resetShell, toggleAssistant, getShell, openTool, closeTool } from '../features/shell/model/shell.store';
 import { getRoiState, resetRoiStore, setRoi, setRoiHint, setRoiResolver, startDrawing } from '../features/roi/model/roi.store';
 
 const renderScreen = () => render(<MemoryRouter><MapScreen /></MemoryRouter>);
-const signIn = (role: MockRole) => { mockStatus = 'authenticated'; mockUser = { role }; };
+const grantsOf = (...permissions: string[]) => permissions.map((permission) => ({ permission, unit: '48' }));
+// 'officer' holds update + review in a province, 'reader' only update, 'viewer' nothing.
+const signIn = (role: MockRole) => {
+  mockStatus = 'authenticated';
+  mockUser = {
+    role: role === 'admin' ? 'admin' : 'viewer', isAdmin: role === 'admin',
+    grants: role === 'officer' ? grantsOf('feature.update', 'submission.review') : role === 'reader' ? grantsOf('feature.update') : [],
+  };
+};
 const signOut = () => { mockStatus = 'anonymous'; mockUser = null; };
 
 const PROVINCE = { source: 'admin', level: 'province', code: '66' } as const;
@@ -146,14 +156,19 @@ describe('MapScreen tool group', () => {
     expect(screen.getByText('MEASURE:false')).toBeInTheDocument();
   });
 
-  it('shows Biên tập to an admin only', () => {
+  it('shows Biên tập to an admin or to a user who may update and review', () => {
     signIn('admin');
     const { unmount } = renderScreen();
     expect(screen.getByRole('button', { name: 'Biên tập' })).toBeInTheDocument();
     expect(within(menuOf('Biên tập')).getByText(/^FEATURE_EDITING/)).toBeInTheDocument();
     unmount();
 
-    for (const role of ['viewer', 'editor'] as const) {
+    signIn('officer');
+    const officerView = renderScreen();
+    expect(screen.getByRole('button', { name: 'Biên tập' })).toBeInTheDocument();
+    officerView.unmount();
+
+    for (const role of ['viewer', 'reader'] as const) {
       signIn(role);
       const view = renderScreen();
       expect(screen.queryByRole('button', { name: 'Biên tập' })).toBeNull();
@@ -201,8 +216,8 @@ describe('MapScreen tool group', () => {
     expect(button).not.toHaveClass('is-on');
   });
 
-  it('does not let a non-admin open Biên tập', () => {
-    signIn('editor');
+  it('does not let a user without review rights open Biên tập', () => {
+    signIn('reader');
     renderScreen();
     act(() => { openTool('edit'); });
     expect(getShell().tool).toBeNull();

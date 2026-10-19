@@ -35,8 +35,8 @@ describe('RequireRole', () => {
   });
 
   it('renders children when the role is in the allowed array', () => {
-    mock = { status: 'authenticated', currentUser: { role: 'editor' } };
-    render(<RequireRole role={['admin', 'editor']}><div>SECRET</div></RequireRole>);
+    mock = { status: 'authenticated', currentUser: { role: 'viewer' } };
+    render(<RequireRole role={['admin', 'viewer']}><div>SECRET</div></RequireRole>);
     expect(screen.getByText('SECRET')).toBeInTheDocument();
   });
 

@@ -19,7 +19,7 @@ describe('listUsers', () => {
 describe('createUser', () => {
   it('POSTs the input and unwraps user', async () => {
     mockApi.mockResolvedValue({ user: { id: 'new' } });
-    const input = { email: 'e@b.test', password: 'password1', full_name: 'E', role: 'editor' as const };
+    const input = { email: 'e@b.test', password: 'password1', full_name: 'E', role: 'viewer' as const };
     const out = await createUser(input);
     expect(out).toEqual({ id: 'new' });
     const [path, init] = mockApi.mock.calls[0];

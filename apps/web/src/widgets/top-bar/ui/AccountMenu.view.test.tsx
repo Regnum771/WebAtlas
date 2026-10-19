@@ -36,8 +36,8 @@ describe('AccountMenuView', () => {
     await user.click(screen.getByRole('button', { name: 'Quản trị viên' }));
     expect(screen.getByRole('link', { name: 'Người dùng' })).toHaveAttribute('href', '/admin/users');
     unmount();
-    renderMenu('editor');
-    await user.click(screen.getByRole('button', { name: 'Biên tập viên' }));
+    renderMenu('viewer');
+    await user.click(screen.getByRole('button', { name: 'Người xem' }));
     expect(screen.queryByRole('link', { name: 'Người dùng' })).toBeNull();
   });
 

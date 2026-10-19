@@ -6,7 +6,7 @@ import type { AdminUser } from '../api/users.api';
 
 const users: AdminUser[] = [
   { id: 'me', email: 'me@b.test', full_name: 'Me', role: 'admin', is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '' },
-  { id: 'u2', email: 'ed@b.test', full_name: null, role: 'editor', is_active: false, created_at: '2026-01-02T00:00:00Z', updated_at: '' },
+  { id: 'u2', email: 'ed@b.test', full_name: null, role: 'viewer', is_active: false, created_at: '2026-01-02T00:00:00Z', updated_at: '' },
 ];
 
 describe('UserTableView', () => {
@@ -36,7 +36,7 @@ describe('UserTableView', () => {
   it('shows roles and dates in Vietnamese', () => {
     render(<UserTableView users={users} canModify={() => true} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={vi.fn()} loading={false} listError={null} />);
     expect(screen.getByText('Quản trị viên')).toBeInTheDocument();
-    expect(screen.getByText('Biên tập viên')).toBeInTheDocument();
+    expect(screen.getByText('Người xem')).toBeInTheDocument();
     expect(screen.getByText(new Date('2026-01-01T00:00:00Z').toLocaleDateString('vi-VN'))).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mở khoá' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Khoá' })).toBeInTheDocument();

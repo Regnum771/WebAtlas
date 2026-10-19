@@ -25,18 +25,20 @@ import {
   closeAssistant, closeTool, getShell, openTool, toggleTool, useShell, type ToolId,
 } from '../features/shell/model/shell.store';
 import { useSession } from '../entities/session/model/session.store';
+import { useCan } from '../entities/session/model/useCan';
 import { primeAdminUnits } from '../entities/admin-unit/adminUnits.store';
 import { ConnectionStrip } from '../shared/ui/ConnectionStrip';
 import { ToastHost } from '../shared/ui/ToastHost';
 
 /** The map page: one grid holding the top bar, the docked panel, the map stage and the assistant. */
 export default function MapScreen() {
-  const { status, currentUser } = useSession();
+  const { status } = useSession();
   const { assistantOpen, tool } = useShell();
   const roi = useRoi();
   const analysis = useAnalysisTools();
   const flood = useFloodScenario();
-  const isAdmin = currentUser?.role === 'admin';
+  const can = useCan();
+  const canEdit = can('feature.update') && can('submission.review');
   // A feature drawing or edit-existing mode is active in Biên tập.
   const [editBusy, setEditBusy] = useState(false);
 
@@ -46,11 +48,11 @@ export default function MapScreen() {
     if (status !== 'authenticated') closeAssistant();
   }, [status]);
 
-  // Biên tập is listed for admins only. A session that ends, or changes role, while
+  // Biên tập is listed for those who may update and review features somewhere. A session that ends, or changes role, while
   // its menu is open would otherwise leave the store pointing at a tool nobody can see.
   useEffect(() => {
-    if (!isAdmin && getShell().tool === 'edit') closeTool();
-  }, [isAdmin, tool]);
+    if (!canEdit && getShell().tool === 'edit') closeTool();
+  }, [canEdit, tool]);
 
   // Closing Vùng phân tích cancels a drawing in progress; a finished region and any
   // result stay. stopDrawing does nothing unless a drawing is under way.
@@ -99,10 +101,10 @@ export default function MapScreen() {
     { id: 'basemap', label: 'Nền bản đồ', content: <BasemapTool /> },
     { id: 'flood', label: 'Kịch bản lũ', on: flood.scenarioId !== null, content: <FloodScenarioToolContent /> },
   ];
-  // UX only: FeatureEditing keeps its own RequireRole gate and the backend enforces every write.
+  // UX only: FeatureEditing keeps its own RequirePermission gate and the backend enforces every write.
   // Closing Biên tập (or the session ending, which unmounts it) cancels a feature
   // drawing and leaves edit-existing mode: FeatureEditing does it when `active` drops.
-  if (isAdmin) {
+  if (canEdit) {
     tools.push({
       id: 'edit',
       label: 'Biên tập',

@@ -7,10 +7,11 @@ const bridge = vi.hoisted(() => ({
   signedIn: true,
 }));
 
-// admin session so RequireRole passes; `bridge.signedIn = false` ends it
+vi.mock('../../entities/session/model/useUnitTree', () => ({ useUnitTree: () => null }));
+// admin session so RequirePermission passes; `bridge.signedIn = false` ends it
 vi.mock('../../entities/session/model/session.store', () => ({
   useSession: () => (bridge.signedIn
-    ? { currentUser: { id: '1', email: 'a@webatlas.test', full_name: 'A', role: 'admin' }, status: 'authenticated', login: vi.fn(), logout: vi.fn() }
+    ? { currentUser: { id: '1', email: 'a@webatlas.test', full_name: 'A', role: 'admin', isAdmin: true, grants: [] }, status: 'authenticated', login: vi.fn(), logout: vi.fn() }
     : { currentUser: null, status: 'anonymous', login: vi.fn(), logout: vi.fn() }),
 }));
 // map editing bridge stub

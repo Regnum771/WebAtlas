@@ -46,7 +46,6 @@ export function UserFormModalView({ open, mode, values, fieldErrors, formError, 
           <label htmlFor="uf-role">Vai trò</label>
           <select id="uf-role" className="input" value={values.role} onChange={(e) => onField('role', e.target.value)}>
             <option value="admin">{ROLE_LABELS.admin}</option>
-            <option value="editor">{ROLE_LABELS.editor} (chỉ xem)</option>
             <option value="viewer">{ROLE_LABELS.viewer}</option>
           </select>
         </div>

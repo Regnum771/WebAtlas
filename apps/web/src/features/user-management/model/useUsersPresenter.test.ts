@@ -21,7 +21,7 @@ vi.mock('../../../entities/session/model/session.store', () => ({
 import type { AdminUser } from '../api/users.api';
 const rows: AdminUser[] = [
   { id: 'me', email: 'me@b.test', full_name: 'Me', role: 'admin', is_active: true, created_at: '', updated_at: '' },
-  { id: 'u2', email: 'ed@b.test', full_name: 'Ed', role: 'editor', is_active: true, created_at: '', updated_at: '' },
+  { id: 'u2', email: 'ed@b.test', full_name: 'Ed', role: 'viewer', is_active: true, created_at: '', updated_at: '' },
 ];
 vi.mock('@tanstack/react-query', () => ({
   useQuery: () => ({ data: rows, isLoading: false, error: null }),
