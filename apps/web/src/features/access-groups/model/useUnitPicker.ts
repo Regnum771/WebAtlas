@@ -1,9 +1,9 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ancestorsOf, type UnitNode, type UnitTree } from '@webatlas/shared';
 
 /** Lower-case, strip combining marks, map đ to d: "Điện Hồng" -> "dien hong". */
 export function normalizeText(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
 }
 
 export interface PickerRow extends UnitNode {
@@ -24,12 +24,30 @@ export interface UnitPickerOptions {
   allowed?: (code: string) => boolean;
 }
 
+/** Provinces that must be open for every selected ward to show. */
+function provincesOf(tree: UnitTree | null, selected: string[]): ReadonlySet<string> {
+  const out = new Set<string>();
+  if (!tree) return out;
+  for (const code of selected) {
+    for (const a of ancestorsOf(tree, code).slice(1)) if (tree.get(a)?.level === 'province') out.add(a);
+  }
+  return out;
+}
+
 const DEPTH = { country: 0, province: 1, ward: 2 } as const;
 
 export function useUnitPicker(tree: UnitTree | null, selected: string[], options: UnitPickerOptions) {
   const { onChange, mode = 'multi', allowed } = options;
   const [query, setQuery] = useState('');
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => provincesOf(tree, selected));
+
+  // Reveal selections: expand the provinces of the selected units on mount and when `selected` changes.
+  const selectedKey = selected.join(',');
+  useEffect(() => {
+    const need = provincesOf(tree, selected);
+    setOpen((prev) => (need.size === 0 || [...need].every((c) => prev.has(c)) ? prev : new Set([...prev, ...need])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tree, selectedKey]);
 
   // Children per parent, in code order; built once per tree.
   const { children, searchKeys } = useMemo(() => {
@@ -104,5 +122,10 @@ export function useUnitPicker(tree: UnitTree | null, selected: string[], options
     onChange([...kept, code].sort());
   }, [tree, selected, mode, allowed, onChange]);
 
-  return { query, setQuery, rows, toggle, toggleExpand };
+  const selectedItems = useMemo(
+    () => selected.map((code) => ({ code, name: tree?.get(code)?.name ?? code })),
+    [tree, selected],
+  );
+
+  return { query, setQuery, rows, toggle, toggleExpand, selectedItems };
 }

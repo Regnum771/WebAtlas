@@ -45,4 +45,17 @@ describe('UnitPicker', () => {
     render(<UnitPicker tree={TREE} selected={[]} onChange={vi.fn()} error="Đơn vị 99 không tồn tại." />);
     expect(screen.getByRole('alert')).toHaveTextContent('Đơn vị 99 không tồn tại.');
   });
+
+  it('shows the selected names and a remove button that emits the new selection', async () => {
+    const onChange = vi.fn();
+    render(<UnitPicker tree={TREE} selected={['48', '20001']} onChange={onChange} />);
+    expect(screen.getByText(/Đã chọn:/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Bỏ Điện Hồng' }));
+    expect(onChange).toHaveBeenCalledWith(['48']);
+  });
+
+  it('editing a group whose units are wards shows them without expanding', () => {
+    render(<UnitPicker tree={TREE} selected={['20001']} onChange={vi.fn()} />);
+    expect(screen.getByRole('checkbox', { name: /Điện Hồng/ })).toBeChecked();
+  });
 });

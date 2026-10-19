@@ -78,4 +78,17 @@ describe('useUnitPicker', () => {
     act(() => result.current.toggle('01'));
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it('expands the provinces of selected wards without manual expanding', () => {
+    const { result } = renderHook(() => useUnitPicker(TREE, ['20001'], { onChange: vi.fn() }));
+    expect(result.current.rows.map((r) => r.code)).toContain('20001');
+    expect(result.current.rows.map((r) => r.code)).not.toContain('30001');
+  });
+
+  it('expands when selected changes from outside', () => {
+    const { result, rerender } = renderHook(({ sel }) => useUnitPicker(TREE, sel, { onChange: vi.fn() }), { initialProps: { sel: [] as string[] } });
+    expect(result.current.rows.map((r) => r.code)).not.toContain('30001');
+    rerender({ sel: ['30001'] });
+    expect(result.current.rows.map((r) => r.code)).toContain('30001');
+  });
 });

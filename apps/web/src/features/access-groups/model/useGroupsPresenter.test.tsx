@@ -60,13 +60,23 @@ describe('useGroupsPresenter', () => {
   });
 
   it('an unknown-unit 400 lands on the units field', async () => {
-    createGroup.mockRejectedValue(new ApiError(400, 'VALIDATION_ERROR', 'Đơn vị 99999 không tồn tại.'));
+    createGroup.mockRejectedValue(new ApiError(400, 'VALIDATION_ERROR', 'Đơn vị 99999 không tồn tại.', { units: ['99999'] }));
     const { result } = setup();
     act(() => result.current.openCreate());
     act(() => { result.current.setField('name', 'X'); result.current.setUnits(['99999']); result.current.togglePermission('map.import'); });
     await act(async () => { await result.current.submit(); });
     expect(result.current.fieldErrors.units).toBe('Đơn vị 99999 không tồn tại.');
     expect(result.current.modal.mode).toBe('create');
+  });
+
+  it('any other 400 without fieldErrors goes to the form error', async () => {
+    createGroup.mockRejectedValue(new ApiError(400, 'VALIDATION_ERROR', 'Dữ liệu không hợp lệ.'));
+    const { result } = setup();
+    act(() => result.current.openCreate());
+    act(() => { result.current.setField('name', 'X'); result.current.setUnits(['48']); result.current.togglePermission('map.import'); });
+    await act(async () => { await result.current.submit(); });
+    expect(result.current.formError).toBe('Dữ liệu không hợp lệ.');
+    expect(result.current.fieldErrors.units).toBeUndefined();
   });
 
   it('a duplicate-name 409 lands on the name field', async () => {

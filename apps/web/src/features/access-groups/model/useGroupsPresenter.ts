@@ -29,8 +29,10 @@ function mapError(e: unknown): { fields: Record<string, string>; form: string | 
         }
         if (Object.keys(fields).length > 0) return { fields, form: null };
       }
-      // An unknown unit comes back as a plain 400 whose message names the code.
-      return { fields: { units: e.message }, form: null };
+      // The server sends details.units for codes missing from the tree.
+      const d = e.details as { units?: unknown } | null | undefined;
+      if (d && typeof d === 'object' && 'units' in d) return { fields: { units: e.message }, form: null };
+      return { fields: {}, form: e.message };
     }
     if (e.status === 403) return { fields: {}, form: 'Bạn không có quyền làm việc này.' };
     return { fields: {}, form: e.message };
