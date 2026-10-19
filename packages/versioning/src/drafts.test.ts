@@ -6,13 +6,21 @@ import { DraftNotEditableError, DraftRevisionError, ConflictError, NotFoundError
 
 const LAYER = 'dams';
 const created: string[] = [];
+const userIds: string[] = [];
 let owner = '';
+let other = '';
 let activeId = '';
 
 beforeAll(async () => {
   const pool = getPool();
-  const users = await pool.query<{ id: string }>(`SELECT id FROM app.users ORDER BY id LIMIT 2`);
-  owner = users.rows[0].id;
+  // CI's DB has no users: create our own throwaway ones (deleted in afterAll).
+  for (const email of ['p2-drafts-owner@webatlas.test', 'p2-drafts-other@webatlas.test']) {
+    const u = await pool.query<{ id: string }>(
+      `INSERT INTO app.users (email, password_hash, role) VALUES ($1, 'x', 'viewer') RETURNING id`, [email]
+    );
+    userIds.push(u.rows[0].id);
+  }
+  [owner, other] = userIds;
   const act = await pool.query<{ id: string }>(
     `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND is_active`, [LAYER]
   );
@@ -25,19 +33,26 @@ afterAll(async () => {
     await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = $1`, [id]);
     await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [id]);
   }
+  await pool.query(`DELETE FROM app.users WHERE email LIKE 'p2-drafts-%@webatlas.test'`);
   await closePool();
 });
+
+async function rollbackRelease(c: pg.PoolClient): Promise<void> {
+  // A client released mid-transaction would keep its row locks and hang afterAll's DELETEs.
+  await c.query('ROLLBACK').catch(() => {});
+  c.release();
+}
 
 async function committedDraft(): Promise<string> {
   const c = await getPool().connect();
   try {
     await c.query('BEGIN');
     const d = await openDraft(c, LAYER, owner);
-    await c.query('COMMIT');
     created.push(d.id);
+    await c.query('COMMIT');
     return d.id;
   } finally {
-    c.release();
+    await rollbackRelease(c);
   }
 }
 
@@ -57,9 +72,8 @@ describe('draft lifecycle', () => {
       expect(rows[0]).toMatchObject({ kind: 'edit', source: 'draft', is_active: false });
       expect(rows[0].label).toMatch(/^\d{4}-\d{2}-\d{2} nháp$/);
       await c.query('ROLLBACK');
-      created.pop();
     } finally {
-      c.release();
+      await rollbackRelease(c);
     }
   });
 
@@ -70,7 +84,7 @@ describe('draft lifecycle', () => {
       const d = await lockDraft(b, id, { ownerId: owner });
       expect(d.id).toBe(id);
     } finally {
-      b.release();
+      await rollbackRelease(b);
     }
   });
 
@@ -78,13 +92,16 @@ describe('draft lifecycle', () => {
     const id = await committedDraft();
     const b = await getPool().connect();
     try {
-      await expect(lockDraft(b, id, { ownerId: '11111111-1111-1111-1111-111111111111' }))
+      await expect(lockDraft(b, id, { ownerId: other }))
         .rejects.toBeInstanceOf(NotFoundError);
       await expect(lockDraft(b, '22222222-2222-2222-2222-222222222222'))
         .rejects.toBeInstanceOf(NotFoundError);
       await expect(lockDraft(b, activeId)).rejects.toBeInstanceOf(NotFoundError);
+      // A published edit (NULL status) is not a draft either.
+      await getPool().query(`UPDATE app.dataset_versions SET draft_status = NULL WHERE id = $1`, [id]);
+      await expect(lockDraft(b, id)).rejects.toBeInstanceOf(NotFoundError);
     } finally {
-      b.release();
+      await rollbackRelease(b);
     }
   });
 
@@ -98,7 +115,7 @@ describe('draft lifecycle', () => {
       expect((await lockDraft(c, id, { expectedRevision: 1 })).revision).toBe(1);
       await c.query('ROLLBACK');
     } finally {
-      c.release();
+      await rollbackRelease(c);
     }
   });
 
@@ -110,7 +127,7 @@ describe('draft lifecycle', () => {
       await expect(lockDraft(c, id, { requireStatus: 'personal' }))
         .rejects.toBeInstanceOf(DraftNotEditableError);
     } finally {
-      c.release();
+      await rollbackRelease(c);
     }
   });
 
@@ -125,7 +142,7 @@ describe('draft lifecycle', () => {
     try {
       await discardDraft(c, id);
     } finally {
-      c.release();
+      await rollbackRelease(c);
     }
     expect((await pool.query(`SELECT 1 FROM water.dams WHERE dataset_version_id = $1`, [id])).rowCount).toBe(0);
     expect((await pool.query(`SELECT 1 FROM app.dataset_versions WHERE id = $1`, [id])).rowCount).toBe(0);
@@ -137,7 +154,7 @@ describe('draft lifecycle', () => {
     try {
       await expect(discardDraft(c2, pub)).rejects.toBeInstanceOf(ConflictError);
     } finally {
-      c2.release();
+      await rollbackRelease(c2);
     }
     expect((await pool.query(`SELECT 1 FROM app.dataset_versions WHERE id = $1`, [pub])).rowCount).toBe(1);
   });
@@ -160,8 +177,8 @@ describe('draft lifecycle', () => {
       await a.query('COMMIT');
       expect((await bLock).id).toBe(id);
     } finally {
-      a.release();
-      b.release();
+      await rollbackRelease(a);
+      await rollbackRelease(b);
     }
   });
 });

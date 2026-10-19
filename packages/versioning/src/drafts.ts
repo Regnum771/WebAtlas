@@ -32,6 +32,7 @@ function toDraft(r: RawDraft): DraftRow {
   };
 }
 
+const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 const COLUMNS = `id, layer_key, parent_version_id, draft_status, revision, ingested_by`;
 
 /** Open a personal draft branching off the layer's active version. Runs on the caller's client. */
@@ -86,7 +87,7 @@ export async function lockDraft(
 export async function bumpRevision(client: PoolClient, draftId: string): Promise<number> {
   const { rows } = await client.query<{ revision: number }>(
     `UPDATE app.dataset_versions SET revision = revision + 1, updated_at = now()
-     WHERE id = $1 RETURNING revision`,
+     WHERE id = $1 AND draft_status IS NOT NULL RETURNING revision`,
     [draftId]
   );
   if (!rows[0]) throw new NotFoundError(`Draft ${draftId} not found`);
@@ -100,6 +101,7 @@ export async function discardDraft(client: PoolClient, draftId: string): Promise
     [draftId]
   );
   if (!rows[0]) throw new NotFoundError(`Draft ${draftId} not found`);
+  if (!IDENTIFIER.test(rows[0].layer_key)) throw new Error(`invalid layer key ${rows[0].layer_key}`);
   if (rows[0].draft_status === null) {
     throw new ConflictError(`Version ${draftId} is not a draft and cannot be discarded`);
   }
