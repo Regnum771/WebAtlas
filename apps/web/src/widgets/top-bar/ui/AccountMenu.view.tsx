@@ -7,12 +7,14 @@ import { ROLE_LABELS } from '../../../entities/session/model/roleLabels';
 export interface AccountMenuViewProps {
   email: string;
   role: Role;
+  /** Shows the Người dùng link into the Quản lý area. */
+  canManageUsers: boolean;
   onLogout: () => void;
 }
 
-// The admin entry is a UX reveal: the API enforces admin on every /api/users
-// route regardless of whether this link is rendered.
-export function AccountMenuView({ email, role, onLogout }: AccountMenuViewProps) {
+// The Người dùng entry is a UX reveal: the API enforces admin or users.manage on
+// every /api/users route regardless of whether this link is rendered.
+export function AccountMenuView({ email, role, canManageUsers, onLogout }: AccountMenuViewProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -59,8 +61,8 @@ export function AccountMenuView({ email, role, onLogout }: AccountMenuViewProps)
       {open && (
         <div id={panelId} className="account-menu float">
           <span className="account-email" title={email}>{email}</span>
-          {role === 'admin' && (
-            <Link to="/admin/users" className="account-item" onClick={() => setOpen(false)}>
+          {canManageUsers && (
+            <Link to="/quan-ly/nguoi-dung" className="account-item" onClick={() => setOpen(false)}>
               Người dùng
             </Link>
           )}

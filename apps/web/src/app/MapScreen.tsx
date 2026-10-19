@@ -129,7 +129,7 @@ export default function MapScreen() {
       stage={(
         <>
           {/* MapView lives here, never inside a <Route>: navigating to
-              /admin/users overlays a live map instead of unmounting it. */}
+              /quan-ly overlays a live map instead of unmounting it. */}
           <MapView />
           <MapLoadingBar />
           <ToolGroupView
