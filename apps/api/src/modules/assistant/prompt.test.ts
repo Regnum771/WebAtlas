@@ -82,7 +82,6 @@ describe('role-specific prompts', () => {
 
   it('picks the admin prompt only for admin', () => {
     expect(systemPromptFor('admin')).toBe(ADMIN_SYSTEM_PROMPT);
-    expect(systemPromptFor('editor')).toBe(SYSTEM_PROMPT);
     expect(systemPromptFor('viewer')).toBe(SYSTEM_PROMPT);
   });
 

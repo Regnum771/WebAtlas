@@ -7,7 +7,8 @@ import { refreshCurrentRows } from '@webatlas/versioning';
 
 const app = buildApp();
 const ADMIN = 'layers-admin@webatlas.test';
-const EDITOR = 'layers-editor@webatlas.test';
+// The former editor: a viewer with no groups. Writes stay admin-only until P1 Task 6.
+const NO_GROUPS = 'layers-nogroups@webatlas.test';
 const VIEWER = 'layers-viewer@webatlas.test';
 const PW = 'admin-pass-123';
 const NAME = 'layers-crud-dam@webatlas.test';
@@ -27,7 +28,7 @@ async function tokenFor(email: string) {
 beforeAll(async () => {
   await app.ready();
   const repo = usersRepository(getPool());
-  for (const [email, role] of [[ADMIN, 'admin'], [EDITOR, 'editor'], [VIEWER, 'viewer']] as const) {
+  for (const [email, role] of [[ADMIN, 'admin'], [NO_GROUPS, 'viewer'], [VIEWER, 'viewer']] as const) {
     if (!(await repo.findByEmailWithHash(email))) {
       await repo.insert({ email, password_hash: await hashPassword(PW), full_name: role, role });
     }
@@ -92,9 +93,9 @@ describe('feature CRUD (admin only)', () => {
     expect(anon.statusCode).toBe(401);
   });
 
-  it('editor can read features but cannot write (read-only since 2026-09-17)', async () => {
-    const editorToken = await tokenFor(EDITOR);
-    const eAuth = { authorization: `Bearer ${editorToken}` };
+  it('a viewer without groups can read features but cannot write', async () => {
+    const noGroupsToken = await tokenFor(NO_GROUPS);
+    const eAuth = { authorization: `Bearer ${noGroupsToken}` };
 
     const read = await app.inject({ method: 'GET', url: '/api/layers/dams/features', headers: eAuth });
     expect(read.statusCode).toBe(200);
@@ -104,6 +105,7 @@ describe('feature CRUD (admin only)', () => {
       payload: { geometry: { type: 'Point', coordinates: [105.81, 21.01] }, properties: { name: NAME } },
     });
     expect(create.statusCode).toBe(403);
+    expect(create.json().error.code).toBe('FORBIDDEN');
   });
 
   it('404 for an unknown layer key', async () => {

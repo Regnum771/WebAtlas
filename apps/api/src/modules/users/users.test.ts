@@ -6,7 +6,6 @@ import { hashPassword } from '../../lib/password';
 
 const app = buildApp();
 const ADMIN = 'users-admin@webatlas.test';
-const EDITOR = 'users-editor@webatlas.test';
 const VIEWER = 'users-viewer@webatlas.test';
 const PW = 'admin-pass-123';
 const created: string[] = [];
@@ -19,7 +18,7 @@ async function tokenFor(email: string) {
 beforeAll(async () => {
   await app.ready();
   const repo = usersRepository(getPool());
-  for (const [email, role] of [[ADMIN, 'admin'], [EDITOR, 'editor'], [VIEWER, 'viewer']] as const) {
+  for (const [email, role] of [[ADMIN, 'admin'], [VIEWER, 'viewer']] as const) {
     if (!(await repo.findByEmailWithHash(email))) {
       await repo.insert({ email, password_hash: await hashPassword(PW), full_name: role, role });
     }
@@ -30,12 +29,8 @@ afterAll(async () => {
   await app.close();
 });
 
-describe('users CRUD (admin only)', () => {
+describe('users CRUD (admin only; users.manage may list)', () => {
   it('rejects non-admin with 403 and anonymous with 401', async () => {
-    const editorToken = await tokenFor(EDITOR);
-    const forbidden = await app.inject({ method: 'GET', url: '/api/users', headers: { authorization: `Bearer ${editorToken}` } });
-    expect(forbidden.statusCode).toBe(403);
-
     const viewerToken = await tokenFor(VIEWER);
     const viewerForbidden = await app.inject({ method: 'GET', url: '/api/users', headers: { authorization: `Bearer ${viewerToken}` } });
     expect(viewerForbidden.statusCode).toBe(403);
@@ -49,7 +44,7 @@ describe('users CRUD (admin only)', () => {
     const auth = { authorization: `Bearer ${token}` };
     const newEmail = 'created-user@webatlas.test';
 
-    const create = await app.inject({ method: 'POST', url: '/api/users', headers: auth, payload: { email: newEmail, password: 'new-pass-123', role: 'editor' } });
+    const create = await app.inject({ method: 'POST', url: '/api/users', headers: auth, payload: { email: newEmail, password: 'new-pass-123', role: 'viewer' } });
     expect(create.statusCode).toBe(201);
     const id = create.json().user.id;
     created.push(id);
