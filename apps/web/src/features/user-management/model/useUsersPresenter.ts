@@ -47,6 +47,8 @@ export function useUsersPresenter() {
   const tree = useUnitTree();
   const adminActions = currentUser?.isAdmin === true;
   const groups: AccessGroup[] = groupsQuery.data ?? [];
+  const groupsLoading = groupsQuery.isLoading;
+  const groupsError = groupsQuery.isError;
   const [groupsDialog, setGroupsDialog] = useState<{ user: AdminUser | null; selected: string[]; error: string | null }>(
     { user: null, selected: [], error: null },
   );
@@ -71,6 +73,8 @@ export function useUsersPresenter() {
   // A user's grants come from expanding their groups against the group list already loaded.
   const summaryFor = (user: AdminUser): string[] => {
     if (user.role === 'admin') return ['Quản trị viên — toàn quyền'];
+    if (groupsLoading) return ['Đang tải…'];
+    if (groupsError) return ['Không tải được nhóm'];
     const grants: Grant[] = [];
     for (const m of user.groups) {
       const g = groups.find((x) => x.id === m.id);
@@ -89,7 +93,10 @@ export function useUsersPresenter() {
   }));
   const groupsMut = useMutation({
     mutationFn: (v: { id: string; groupIds: string[] }) => setUserGroups(v.id, v.groupIds),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['access-groups'] });
+      return invalidate();
+    },
   });
   const submitGroups = async () => {
     const { user, selected } = groupsDialog;
@@ -106,7 +113,7 @@ export function useUsersPresenter() {
     }
   };
 
-  const canModify =(user: AdminUser) => user.id !== currentUser?.id;
+  const canModify = (user: AdminUser) => user.id !== currentUser?.id;
 
   const canSave =
     modal.mode === 'edit' ||
@@ -144,6 +151,7 @@ export function useUsersPresenter() {
     modal, values, fieldErrors, formError,
     saving: createMut.isPending || updateMut.isPending,
     retry: () => { void query.refetch(); },
+    groupsLoading, groupsError, retryGroups: () => { void groupsQuery.refetch(); },
     adminActions, groups, tree, groupsDialog, groupsSaving: groupsMut.isPending,
     summaryFor, canHandOverGroup, openGroups, closeGroups, toggleGroup, submitGroups,
     canSave, canModify,

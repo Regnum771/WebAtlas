@@ -52,4 +52,18 @@ describe('UserGroupsDialogView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Huỷ' }));
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('while groups load it shows a spinner, not the empty state, and Lưu is disabled', () => {
+    render(<UserGroupsDialogView {...base} groups={[]} groupsLoading />);
+    expect(screen.getByRole('status', { name: 'Đang tải' })).toBeInTheDocument();
+    expect(screen.queryByText('Chưa có nhóm nào.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled();
+  });
+
+  it('when groups failed to load it says so, not the empty state, and Lưu is disabled', () => {
+    render(<UserGroupsDialogView {...base} groups={[]} groupsError />);
+    expect(screen.getByText('Không tải được danh sách nhóm quyền.')).toBeInTheDocument();
+    expect(screen.queryByText('Chưa có nhóm nào.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Lưu' })).toBeDisabled();
+  });
 });

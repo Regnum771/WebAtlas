@@ -60,7 +60,7 @@ describe('UserTableView', () => {
   });
 
   it('shows the effective summary, and the admin line for an admin row', () => {
-    render(<UserTableView users={users} canModify={() => true} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={vi.fn()} loading={false} listError={null} {...extra} summaryFor={() => ['Duyệt: Xã Điện Hồng']} />);
+    render(<UserTableView users={users} canModify={() => true} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={vi.fn()} loading={false} listError={null} {...extra} summaryFor={(u) => (u.role === 'admin' ? ['Quản trị viên — toàn quyền'] : ['Duyệt: Xã Điện Hồng'])} />);
     expect(screen.getByText('Quản trị viên — toàn quyền')).toBeInTheDocument();
     expect(screen.getByText('Duyệt: Xã Điện Hồng')).toBeInTheDocument();
   });
@@ -79,5 +79,13 @@ describe('UserTableView', () => {
     expect(onRetry).toHaveBeenCalled();
     rerender(<UserTableView users={[]} canModify={() => true} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={vi.fn()} loading={false} listError={null} {...extra} />);
     expect(screen.getByText('Chưa có người dùng nào.')).toBeInTheDocument();
+  });
+
+  it('shows one group-load error with Thử lại, not one per row', async () => {
+    const onRetryGroups = vi.fn();
+    render(<UserTableView users={users} canModify={() => true} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={vi.fn()} loading={false} listError={null} {...extra} summaryFor={() => ['Không tải được nhóm']} groupsError onRetryGroups={onRetryGroups} />);
+    expect(screen.getAllByRole('button', { name: 'Thử lại' })).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
+    expect(onRetryGroups).toHaveBeenCalled();
   });
 });

@@ -13,7 +13,7 @@ export function canHandOver(
   if (holder.isAdmin) return true;
   if (!tree) return false;
   const scope = unitsFor(holder.grants, 'users.manage');
-  return group.units.every((unit) =>
+  return group.units.length > 0 && group.units.every((unit) =>
     isWithin(unit, scope, tree) && group.permissions.every((p) => can(holder.grants, p, unit, tree)),
   );
 }

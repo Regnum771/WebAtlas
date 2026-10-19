@@ -4,9 +4,7 @@ import { Button } from '../../../shared/ui/Button';
 import { Message } from '../../../shared/ui/Message';
 import { Spinner } from '../../../shared/ui/Spinner';
 
-export const ADMIN_SUMMARY = 'Quản trị viên — toàn quyền';
-
-export function UserTableView({ users, canModify, adminActions, summaryFor, onEdit, onToggleActive, onGroups, onNew, onRetry, loading, listError }: {
+export function UserTableView({ users, canModify, adminActions, summaryFor, onEdit, onToggleActive, onGroups, onNew, onRetry, loading, listError, groupsError = false, onRetryGroups }: {
   users: AdminUser[];
   canModify: (u: AdminUser) => boolean;
   /** Create, edit-account and lock controls: admin only. Others get just the Nhóm action. */
@@ -19,6 +17,9 @@ export function UserTableView({ users, canModify, adminActions, summaryFor, onEd
   onRetry: () => void;
   loading: boolean;
   listError: string | null;
+  /** The group list failed to load: one message with retry above the table. */
+  groupsError?: boolean;
+  onRetryGroups?: () => void;
 }) {
   return (
     <div className="user-mgmt">
@@ -27,6 +28,7 @@ export function UserTableView({ users, canModify, adminActions, summaryFor, onEd
         {adminActions && <Button variant="solid" onClick={onNew}>Thêm người dùng</Button>}
       </div>
       {listError && <Message tone="error" title={listError} actions={<Button onClick={onRetry}>Thử lại</Button>} />}
+      {groupsError && <Message tone="error" title="Không tải được danh sách nhóm quyền." actions={<Button onClick={onRetryGroups}>Thử lại</Button>} />}
       {loading ? (
         <Spinner label="Đang tải" />
       ) : !listError && users.length === 0 ? (
@@ -47,9 +49,7 @@ export function UserTableView({ users, canModify, adminActions, summaryFor, onEd
                   <td>{ROLE_LABELS[u.role]}</td>
                   <td>{u.groups.length > 0 ? u.groups.map((g) => g.name).join(', ') : '—'}</td>
                   <td>
-                    {u.role === 'admin'
-                      ? ADMIN_SUMMARY
-                      : summaryFor(u).map((line) => <div key={line}>{line}</div>)}
+                    {summaryFor(u).map((line) => <div key={line}>{line}</div>)}
                   </td>
                   <td>
                     <span className={u.is_active ? 'badge on' : 'badge'}>

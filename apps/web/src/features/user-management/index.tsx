@@ -15,6 +15,7 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
         users={p.users} canModify={p.canModify} adminActions={p.adminActions} summaryFor={p.summaryFor}
         onEdit={p.openEdit} onToggleActive={p.toggleActive} onGroups={p.openGroups} onNew={p.openCreate}
         onRetry={p.retry} loading={p.loading} listError={p.listError}
+        groupsError={p.groupsError} onRetryGroups={p.retryGroups}
       />
       {p.adminActions && (
         <UserFormModalView
@@ -31,6 +32,7 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
         groups={p.groups} tree={p.tree} selected={p.groupsDialog.selected}
         saving={p.groupsSaving} error={p.groupsDialog.error}
         canHandOver={p.canHandOverGroup}
+        groupsLoading={p.groupsLoading} groupsError={p.groupsError}
         onToggle={p.toggleGroup} onSubmit={p.submitGroups} onClose={p.closeGroups}
       />
       <div className="user-mgmt-footer">

@@ -16,6 +16,7 @@ vi.mock('../../access-groups/api/accessGroups.api', () => ({ listGroups: vi.fn()
 const showToast = vi.fn();
 vi.mock('../../../shared/ui/toast.store', () => ({ showToast: (t: unknown) => showToast(t) }));
 let mockTree: unknown = null;
+const groupsState = { isLoading: false, isError: false };
 vi.mock('../../../entities/session/model/useUnitTree', () => ({ useUnitTree: () => mockTree }));
 
 const invalidate = vi.fn();
@@ -39,7 +40,9 @@ const rows: AdminUser[] = [
 vi.mock('@tanstack/react-query', () => ({
   useQuery: (o: { queryKey: string[] }) => ({
     data: o.queryKey[0] === 'access-groups' ? groupRows : rows,
-    isLoading: false, isError: false, error: null, refetch: vi.fn(),
+    isLoading: o.queryKey[0] === 'access-groups' ? groupsState.isLoading : false,
+    isError: o.queryKey[0] === 'access-groups' ? groupsState.isError : false,
+    error: null, refetch: vi.fn(),
   }),
   useMutation: (opts: { mutationFn: (v: unknown) => Promise<unknown>; onSuccess?: () => void }) => ({
     mutateAsync: async (v: unknown) => { const r = await opts.mutationFn(v); opts.onSuccess?.(); return r; },
@@ -49,7 +52,7 @@ vi.mock('@tanstack/react-query', () => ({
 
 import { useUsersPresenter } from './useUsersPresenter';
 
-beforeEach(() => { holder.isAdmin = true; holder.grants = []; mockTree = null; setUserGroups.mockReset(); showToast.mockReset(); listUsers.mockReset(); createUser.mockReset(); updateUser.mockReset(); invalidate.mockReset(); });
+beforeEach(() => { groupsState.isLoading = false; groupsState.isError = false; holder.isAdmin = true; holder.grants = []; mockTree = null; setUserGroups.mockReset(); showToast.mockReset(); listUsers.mockReset(); createUser.mockReset(); updateUser.mockReset(); invalidate.mockReset(); });
 
 describe('useUsersPresenter', () => {
   it('exposes the user list', () => {
@@ -188,6 +191,38 @@ describe('useUsersPresenter', () => {
       expect(result.current.canHandOverGroup(groupRows[1] as never)).toBe(false);
       mockTree = null; rerender();
       expect(result.current.canHandOverGroup(groupRows[0] as never)).toBe(false);
+    });
+
+    it('invalidates access-groups after a membership change so memberCount stays fresh', async () => {
+      setUserGroups.mockResolvedValue({});
+      const { result } = renderHook(() => useUsersPresenter());
+      act(() => result.current.openGroups(rows[1]));
+      await act(async () => { await result.current.submitGroups(); });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['access-groups'] });
+    });
+
+    it('summaryFor shows a placeholder while groups load and an error line when they fail', () => {
+      mockTree = TREE;
+      groupsState.isLoading = true;
+      const { result, rerender } = renderHook(() => useUsersPresenter());
+      expect(result.current.summaryFor(rows[1])).toEqual(['Đang tải…']);
+      expect(result.current.summaryFor(rows[0])).toEqual(['Quản trị viên — toàn quyền']);
+      groupsState.isLoading = false; groupsState.isError = true; rerender();
+      expect(result.current.summaryFor(rows[1])).toEqual(['Không tải được nhóm']);
+      expect(result.current.groupsError).toBe(true);
+    });
+
+    it('a non-admin submit keeps the out-of-scope groups the user already belongs to', async () => {
+      holder.isAdmin = false;
+      holder.grants = [{ permission: 'users.manage', unit: '48' }, { permission: 'feature.update', unit: '48' }];
+      mockTree = TREE;
+      setUserGroups.mockResolvedValue({});
+      const user = { ...rows[1], groups: [{ id: 'g2', name: 'Bộ' }] }; // g2 is out of scope for this holder
+      const { result } = renderHook(() => useUsersPresenter());
+      act(() => result.current.openGroups(user));
+      act(() => result.current.toggleGroup('g1'));
+      await act(async () => { await result.current.submitGroups(); });
+      expect(setUserGroups).toHaveBeenCalledWith('u2', ['g2', 'g1']);
     });
   });
 });

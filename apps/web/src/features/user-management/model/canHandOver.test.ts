@@ -29,6 +29,9 @@ describe('canHandOver', () => {
   it('refuses a permission the holder lacks on that unit', () => {
     expect(canHandOver(holder(...mine), g(['feature.update', 'map.import'], ['48']), tree)).toBe(false);
   });
+  it('refuses a group with no units, as the API does', () => {
+    expect(canHandOver(holder(...mine), g(['feature.update'], []), tree)).toBe(false);
+  });
   it('refuses when the tree is not loaded', () => {
     expect(canHandOver(holder(...mine), g(['feature.update'], ['48']), null)).toBe(false);
   });
