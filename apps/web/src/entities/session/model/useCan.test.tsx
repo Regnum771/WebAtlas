@@ -52,6 +52,16 @@ describe('useCan', () => {
     expect(result.current('feature.update')).toBe(true);
   });
 
+  it('stays false per unit for a signed-out visitor once the (public) tree has loaded', async () => {
+    mockUser = null;
+    const { result } = renderHook(() => useCan(), { wrapper });
+    await waitFor(() => expect(tree.resolve).toBeDefined());
+    tree.resolve!();
+    await waitFor(() => expect(tree.resolve).toBeDefined());
+    expect(result.current('feature.update', '48')).toBe(false);
+    expect(result.current('feature.update')).toBe(false);
+  });
+
   it('always passes for an admin and never for a signed-out visitor', () => {
     mockUser = { isAdmin: true, grants: [] };
     const admin = renderHook(() => useCan(), { wrapper });

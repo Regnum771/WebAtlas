@@ -10,6 +10,8 @@ export interface AttributeFormViewProps {
   values: Record<string, string>;
   fieldErrors: Record<string, string>;
   error: string | null;
+  /** A second line under the error, e.g. the missing review right of a refusal. */
+  errorDetail?: string | null;
   canSave: boolean;
   saving: boolean;
   /** The managing_unit attribute renders as this field instead of a text input. */
@@ -21,7 +23,7 @@ export interface AttributeFormViewProps {
 
 // Passive: maps a layer's attributes to a list of AttributeFieldView.
 export function AttributeFormView(props: AttributeFormViewProps) {
-  const { attributes, labels, values, fieldErrors, error, canSave, saving, managingUnit, onField, onSubmit, onCancel } = props;
+  const { attributes, labels, values, fieldErrors, error, errorDetail, canSave, saving, managingUnit, onField, onSubmit, onCancel } = props;
   return (
     <form className="edit-attr-form" onSubmit={(e) => { e.preventDefault(); onSubmit(); }}>
       {attributes.map((col) => (
@@ -38,7 +40,7 @@ export function AttributeFormView(props: AttributeFormViewProps) {
           />
         )
       ))}
-      {error && <Message tone="error" title={error} />}
+      {error && <Message tone="error" title={error}>{errorDetail}</Message>}
       <div className="edit-form-actions">
         {/* A saving button stays enabled so it keeps focus; Button swallows the second press. */}
         <Button type="submit" variant="solid" busy={saving} busyLabel="Đang lưu" disabled={!canSave && !saving}>Lưu</Button>

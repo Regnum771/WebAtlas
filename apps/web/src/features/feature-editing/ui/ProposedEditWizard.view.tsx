@@ -15,6 +15,8 @@ export interface ProposedEditWizardViewProps {
   canSave: boolean;
   saving: boolean;
   error: string | null;
+  /** A second line under the error, e.g. the missing review right of a refusal. */
+  errorDetail?: string | null;
   onField: (column: string, value: string) => void;
   onSourceDocument: (value: string) => void;
   onSourceProvider: (value: string) => void;
@@ -57,7 +59,7 @@ export function ProposedEditWizardView(p: ProposedEditWizardViewProps) {
           />
         </fieldset>
 
-        {p.error && <Message tone="error" title={p.error} />}
+        {p.error && <Message tone="error" title={p.error}>{p.errorDetail}</Message>}
         <div className="edit-form-actions">
           <Button type="submit" variant="solid" busy={p.saving} busyLabel="Đang lưu" disabled={!p.canSave && !p.saving}>Lưu</Button>
           <Button onClick={p.onCancel}>Huỷ</Button>

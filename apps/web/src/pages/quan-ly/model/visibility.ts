@@ -1,7 +1,8 @@
+import { COUNTRY_UNIT } from '@webatlas/shared';
 import type { CurrentUser } from '../../../entities/session/model/session.types';
 
 /** The `can` function that `useCan()` returns. */
-export type CanFn = (permission: 'users.manage' | 'feature.update', unit?: string) => boolean;
+export type CanFn = (permission: 'users.manage' | 'feature.update' | 'submission.review', unit?: string) => boolean;
 
 type User = CurrentUser | null;
 
@@ -14,9 +15,13 @@ export const canSeeGroups = (user: User, _can: CanFn): boolean => user?.isAdmin 
 export const canSeeUsers = (user: User, can: CanFn): boolean =>
   user !== null && (user.isAdmin || can('users.manage'));
 
-/** Đơn vị chưa gán: admin, or feature.update on the country unit. False until the unit tree has loaded. */
+/**
+ * Đơn vị chưa gán: admin, or feature.update AND submission.review on the country unit, since
+ * assigning publishes at once until P4 (the API checks the same). P4 relaxes this.
+ * False until the unit tree has loaded.
+ */
 export const canSeeUnassigned = (user: User, can: CanFn): boolean =>
-  user !== null && (user.isAdmin || can('feature.update', 'VN'));
+  user !== null && (user.isAdmin || (can('feature.update', COUNTRY_UNIT) && can('submission.review', COUNTRY_UNIT)));
 
 export const canSeeQuanLy = (user: User, can: CanFn): boolean =>
   canSeeGroups(user, can) || canSeeUsers(user, can) || canSeeUnassigned(user, can);

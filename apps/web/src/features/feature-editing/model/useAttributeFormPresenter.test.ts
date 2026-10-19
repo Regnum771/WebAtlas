@@ -7,12 +7,18 @@ vi.mock('../api/features.api', () => ({
   createFeature: (...a: unknown[]) => createFeature(...a),
   updateFeature: (...a: unknown[]) => updateFeature(...a),
 }));
-const unit = vi.hoisted(() => ({ state: { value: '', submittable: null as string | null, error: null as string | null } }));
+const unit = vi.hoisted(() => ({
+  state: { value: '', submittable: null as string | null, error: null as string | null, locked: false },
+  args: null as null | { mode: string },
+}));
 vi.mock('./useManagingUnitField', () => ({
-  useManagingUnitField: () => ({
-    ...unit.state, setValue: vi.fn(), options: [], suggestion: null, hint: null, readOnlyText: null, tree: null,
-    allowed: () => true,
-  }),
+  useManagingUnitField: (args: { mode: string }) => {
+    unit.args = args;
+    return {
+      ...unit.state, setValue: vi.fn(), options: [], suggestion: null, hint: null, readOnlyText: null, tree: null,
+      allowed: () => true,
+    };
+  },
 }));
 import { ApiError } from '../../../shared/api/apiClient';
 import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
@@ -147,7 +153,7 @@ describe('useAttributeFormPresenter (edit mode)', () => {
   });
 
   describe('managing unit', () => {
-    beforeEach(() => { createFeature.mockReset(); resetToasts(); unit.state = { value: '', submittable: null, error: null }; });
+    beforeEach(() => { createFeature.mockReset(); resetToasts(); unit.state = { value: '', submittable: null, error: null, locked: false }; updateFeature.mockReset(); });
 
     it('a 403 OUT_OF_JURISDICTION shows the server message as the form error', async () => {
       updateFeature.mockRejectedValue(new ApiError(403, 'OUT_OF_JURISDICTION', 'Đối tượng thuộc Đà Nẵng; nhóm của anh/chị chỉ có quyền trong Quảng Ngãi.'));
@@ -156,6 +162,34 @@ describe('useAttributeFormPresenter (edit mode)', () => {
       }));
       await act(async () => { await result.current.submit(); });
       expect(result.current.error).toBe('Đối tượng thuộc Đà Nẵng; nhóm của anh/chị chỉ có quyền trong Quảng Ngãi.');
+    });
+
+    it('a 403 refused for submission.review adds a line naming the missing right', async () => {
+      updateFeature.mockRejectedValue(new ApiError(403, 'OUT_OF_JURISDICTION', 'Đối tượng thuộc Đà Nẵng; nhóm của anh/chị chỉ có quyền trong Quảng Ngãi.',
+        { unit: '48', permission: 'submission.review', allowed: ['51'] }));
+      const { result } = renderHook(() => useAttributeFormPresenter({
+        ...baseArgs, mode: 'edit', featureId: 'f1', geometry: null,
+      }));
+      await act(async () => { await result.current.submit(); });
+      expect(result.current.error).toBe('Đối tượng thuộc Đà Nẵng; nhóm của anh/chị chỉ có quyền trong Quảng Ngãi.');
+      expect(result.current.errorDetail).toBe('Thiếu quyền duyệt và xuất bản.');
+    });
+
+    it('edit: a feature whose unit the user may not save locks Lưu', async () => {
+      unit.state = { value: '51', submittable: null, error: null, locked: true };
+      const { result } = renderHook(() => useAttributeFormPresenter({
+        ...baseArgs, attributes: ['name', 'managing_unit'], mode: 'edit', featureId: 'f1', geometry: null,
+      }));
+      expect(result.current.canSave).toBe(false);
+      await act(async () => { await result.current.submit(); });
+      expect(updateFeature).not.toHaveBeenCalled();
+    });
+
+    it('asks the field for the operation it serves', () => {
+      renderHook(() => useAttributeFormPresenter(baseArgs));
+      expect(unit.args?.mode).toBe('create');
+      renderHook(() => useAttributeFormPresenter({ ...baseArgs, mode: 'edit', featureId: 'f1' }));
+      expect(unit.args?.mode).toBe('edit');
     });
 
     it('a 403 NO_PERMISSION shows the server message', async () => {
@@ -173,7 +207,7 @@ describe('useAttributeFormPresenter (edit mode)', () => {
     });
 
     it('sends the chosen unit on create', async () => {
-      unit.state = { value: '48', submittable: '48', error: null };
+      unit.state = { value: '48', submittable: '48', error: null, locked: false };
       createFeature.mockResolvedValue({ id: 'x', warnings: [] });
       const { result } = renderHook(() => useAttributeFormPresenter({ ...baseArgs, attributes: ['name', 'managing_unit'] }));
       await act(async () => { await result.current.submit(); });
@@ -181,7 +215,7 @@ describe('useAttributeFormPresenter (edit mode)', () => {
     });
 
     it('does not submit a unit the user cannot write', async () => {
-      unit.state = { value: '51', submittable: null, error: 'Quảng Ngãi nằm ngoài phạm vi của anh/chị — hãy chọn đơn vị khác.' };
+      unit.state = { value: '51', submittable: null, error: 'Quảng Ngãi nằm ngoài phạm vi của anh/chị — hãy chọn đơn vị khác.', locked: false };
       const { result } = renderHook(() => useAttributeFormPresenter({ ...baseArgs, attributes: ['name', 'managing_unit'] }));
       expect(result.current.canSave).toBe(false);
       await act(async () => { await result.current.submit(); });

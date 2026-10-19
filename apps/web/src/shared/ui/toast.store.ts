@@ -19,13 +19,16 @@ const timers = new Map<number, ReturnType<typeof setTimeout>>();
 const listeners = new Set<() => void>();
 function publish(next: Toast[]) { toasts = next; for (const l of listeners) l(); }
 
+/** Errors and warnings stay until the user closes them; info and success close by themselves. */
+export function isSticky(tone: ToastTone): boolean { return tone === 'error' || tone === 'warning'; }
+
 function clearTimer(id: number) {
   const t = timers.get(id);
   if (t !== undefined) { clearTimeout(t); timers.delete(id); }
 }
 function startTimer(toast: Toast) {
   clearTimer(toast.id);
-  if (toast.tone === 'error') return;
+  if (isSticky(toast.tone)) return;
   timers.set(toast.id, setTimeout(() => dismissToast(toast.id), TOAST_AUTO_CLOSE_MS));
 }
 
@@ -45,10 +48,10 @@ export function showToast(toast: Omit<Toast, 'id'>): number {
   }
   const created: Toast = { ...toast, id: nextId++ };
   // The new toast is always shown: only toasts that were already live make room for it,
-  // the oldest that is not an error first, else the oldest of all.
+  // the oldest that closes by itself first, then the oldest warning, else the oldest of all.
   let kept = toasts;
   while (kept.length >= MAX_TOASTS) {
-    const drop = kept.find((t) => t.tone !== 'error') ?? kept[0];
+    const drop = kept.find((t) => !isSticky(t.tone)) ?? kept.find((t) => t.tone !== 'error') ?? kept[0];
     clearTimer(drop.id);
     kept = kept.filter((t) => t !== drop);
   }

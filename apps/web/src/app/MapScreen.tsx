@@ -25,7 +25,7 @@ import {
   closeAssistant, closeTool, getShell, openTool, toggleTool, useShell, type ToolId,
 } from '../features/shell/model/shell.store';
 import { useSession } from '../entities/session/model/session.store';
-import { useCan } from '../entities/session/model/useCan';
+import { useCanSaveDirectly } from '../entities/session/model/useCanSaveDirectly';
 import { primeAdminUnits } from '../entities/admin-unit/adminUnits.store';
 import { ConnectionStrip } from '../shared/ui/ConnectionStrip';
 import { ToastHost } from '../shared/ui/ToastHost';
@@ -37,8 +37,8 @@ export default function MapScreen() {
   const roi = useRoi();
   const analysis = useAnalysisTools();
   const flood = useFloodScenario();
-  const can = useCan();
-  const canEdit = can('feature.update') && can('submission.review');
+  // Update and review on a common unit (shared canSaveDirectly), or admin.
+  const canEdit = useCanSaveDirectly();
   // A feature drawing or edit-existing mode is active in Biên tập.
   const [editBusy, setEditBusy] = useState(false);
 
@@ -102,7 +102,7 @@ export default function MapScreen() {
     { id: 'basemap', label: 'Nền bản đồ', content: <BasemapTool /> },
     { id: 'flood', label: 'Kịch bản lũ', on: flood.scenarioId !== null, content: <FloodScenarioToolContent /> },
   ];
-  // UX only: FeatureEditing keeps its own RequirePermission gate and the backend enforces every write.
+  // UX only: FeatureEditing keeps its own RequireSaveDirectly gate and the backend enforces every write.
   // Closing Biên tập (or the session ending, which unmounts it) cancels a feature
   // drawing and leaves edit-existing mode: FeatureEditing does it when `active` drops.
   if (canEdit) {

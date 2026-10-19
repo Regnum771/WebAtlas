@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { LAYER_ATTRIBUTE_MAP, type EditableLayerKey } from '@webatlas/shared';
-import { RequirePermission } from '../auth/ui/RequirePermission';
+import { COUNTRY_UNIT, LAYER_ATTRIBUTE_MAP, type EditableLayerKey } from '@webatlas/shared';
+import { RequireSaveDirectly } from '../auth/ui/RequireSaveDirectly';
+import { useCan } from '../../entities/session/model/useCan';
 import { useMapEditing, type GeoJSONGeometry } from '../map/model/mapEditing';
 import { useEditToolbarPresenter } from './model/useEditToolbarPresenter';
 import { useAttributeFormPresenter } from './model/useAttributeFormPresenter';
@@ -73,6 +74,7 @@ function EditToolbar({ active, onBusy }: PartProps) {
           values={form.values}
           fieldErrors={form.fieldErrors}
           error={form.error}
+          errorDetail={form.errorDetail}
           canSave={form.canSave}
           saving={form.saving}
           managingUnit={form.managingUnit}
@@ -95,14 +97,19 @@ function EditForm({ sel, geometryToSave, onSaved, onCancel, onDelete }: {
     layerKey: sel.layerKey, attributes: sel.attributes, geometry: geometryToSave,
     mode: 'edit', featureId: sel.featureId, initialValues: sel.initialValues, onSaved,
   });
+  // UX gate only (the API checks on DELETE): a delete publishes at once until P4, so Xoá needs
+  // feature.delete AND submission.review on the feature's unit; a missing unit counts as VN.
+  const can = useCan();
+  const unit = sel.initialValues.managing_unit || COUNTRY_UNIT;
+  const canDelete = can('feature.delete', unit) && can('submission.review', unit);
   return (
     <>
       <AttributeFormView
         attributes={sel.attributes} labels={form.labels} values={form.values}
-        fieldErrors={form.fieldErrors} error={form.error} canSave={form.canSave}
+        fieldErrors={form.fieldErrors} error={form.error} errorDetail={form.errorDetail} canSave={form.canSave}
         saving={form.saving} managingUnit={form.managingUnit} onField={form.setField} onSubmit={form.submit} onCancel={onCancel}
       />
-      <Button variant="danger" onClick={onDelete}>Xoá đối tượng</Button>
+      {canDelete && <Button variant="danger" onClick={onDelete}>Xoá đối tượng</Button>}
     </>
   );
 }
@@ -146,7 +153,7 @@ function EditExisting({ active, onBusy }: PartProps) {
           onDelete={edit.requestDelete}
         />
       )}
-      {sel && edit.error && <Message tone="error" title={edit.error} />}
+      {sel && edit.error && <Message tone="error" title={edit.error}>{edit.errorDetail}</Message>}
       <ConfirmDialog
         open={edit.confirmOpen}
         title="Xoá đối tượng này?"
@@ -180,9 +187,9 @@ export default function FeatureEditing({ active, onBusyChange }: FeatureEditingP
   }, [busy, onBusyChange]);
 
   return (
-    <RequirePermission permission={['feature.update', 'submission.review']} mode="all">
+    <RequireSaveDirectly>
       <EditToolbar active={active} onBusy={setDrawing} />
       <EditExisting active={active} onBusy={setEditing} />
-    </RequirePermission>
+    </RequireSaveDirectly>
   );
 }

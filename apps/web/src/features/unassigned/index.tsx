@@ -10,7 +10,7 @@ export function UnassignedPanel() {
       rows={p.rows} loading={p.loading} failed={p.failed} onRetry={p.retry} onAssign={p.open}
       dialog={p.target && (
         <AssignDialog key={`${p.target.layerKey}:${p.target.id}`} target={p.target} saving={p.saving}
-          error={p.saveError} onSave={(unit) => { void p.assign(unit); }} onClose={p.close} />
+          error={p.saveError} errorDetail={p.saveErrorDetail} onSave={(unit) => { void p.assign(unit); }} onClose={p.close} />
       )}
     />
   );

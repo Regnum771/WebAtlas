@@ -27,10 +27,15 @@ describe('navFor', () => {
     expect(labels(u)).toEqual(['Bản đồ', 'Quản lý']);
   });
 
-  it('shows Quản lý to a holder of feature.update on VN', () => {
-    const u = user({ grants: [grant('feature.update', 'VN')] });
+  it('shows Quản lý to a holder of feature.update and submission.review on VN', () => {
+    const u = user({ grants: [grant('feature.update', 'VN'), grant('submission.review', 'VN')] });
     expect(labels(u, canFor(u, ['VN']))).toEqual(['Bản đồ', 'Quản lý']);
     expect(labels(u, canFor(u, []))).toEqual(['Bản đồ']);
+  });
+
+  it('hides Quản lý from a holder of feature.update on VN without the review right', () => {
+    const u = user({ grants: [grant('feature.update', 'VN')] });
+    expect(labels(u, canFor(u, ['VN']))).toEqual(['Bản đồ']);
   });
 
   it('passes the user and can to a custom visibleWhen', () => {

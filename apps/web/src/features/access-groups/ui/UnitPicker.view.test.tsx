@@ -1,7 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { buildUnitTree } from '@webatlas/shared';
+
+const treeStatus = vi.hoisted(() => ({ status: 'ready' as 'loading' | 'error' | 'ready', retry: vi.fn() }));
+vi.mock('../../../entities/session/model/useUnitTree', () => ({ useUnitTreeStatus: () => treeStatus }));
+
 import { UnitPicker } from './UnitPicker';
 
 const TREE = buildUnitTree([
@@ -12,6 +16,17 @@ const TREE = buildUnitTree([
 ]);
 
 describe('UnitPicker', () => {
+  beforeEach(() => { treeStatus.status = 'ready'; treeStatus.retry.mockReset(); });
+
+  it('says the unit tree failed to load, with Thử lại, instead of an empty list', async () => {
+    treeStatus.status = 'error';
+    render(<UnitPicker tree={null} selected={[]} onChange={vi.fn()} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Không tải được danh sách đơn vị hành chính.');
+    expect(screen.queryByLabelText('Tìm đơn vị')).toBeNull();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Thử lại' }));
+    expect(treeStatus.retry).toHaveBeenCalledTimes(1);
+  });
+
   it('search finds a xã by name without diacritics', async () => {
     render(<UnitPicker tree={TREE} selected={[]} onChange={vi.fn()} />);
     expect(screen.queryByText('Điện Hồng')).toBeNull();

@@ -30,8 +30,10 @@ const wrapper = ({ children }: { children: ReactNode }) => {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 };
 const geom = (n: number) => ({ type: 'Point', coordinates: [n, n] });
+// Stable identity, as in the app: the geometry is state, and a new object is a new shape.
+const G1 = geom(1);
 const both = (unit: string): Grant[] => [
-  { permission: 'feature.update', unit }, { permission: 'submission.review', unit },
+  { permission: 'feature.create', unit }, { permission: 'feature.update', unit }, { permission: 'submission.review', unit },
 ];
 
 beforeEach(() => {
@@ -46,7 +48,7 @@ const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(350); })
 describe('useManagingUnitField', () => {
   it('create prefills the suggested ward', async () => {
     suggest.mockResolvedValue('20194');
-    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', geometry: geom(1), initial: '' }), { wrapper });
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: G1, initial: '' }), { wrapper });
     await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
     await flush();
     expect(suggest).toHaveBeenCalledTimes(1);
@@ -58,7 +60,7 @@ describe('useManagingUnitField', () => {
   it('a user-chosen unit is not overwritten by a later suggestion', async () => {
     suggest.mockResolvedValue('20194');
     const { result, rerender } = renderHook(
-      ({ g }) => useManagingUnitField({ layerKey: 'dams', geometry: g, initial: '' }),
+      ({ g }) => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: g, initial: '' }),
       { wrapper, initialProps: { g: geom(1) } },
     );
     await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
@@ -69,21 +71,58 @@ describe('useManagingUnitField', () => {
   });
 
   it('options are limited to the jurisdiction', async () => {
-    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', geometry: null, initial: '' }), { wrapper });
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: null, initial: '' }), { wrapper });
     await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
     expect(result.current.options.map((n) => n.code).sort()).toEqual(['20194', '48']);
   });
 
-  it('options need submission.review as well as feature.update (R7)', async () => {
-    mockUser = { isAdmin: false, grants: [{ permission: 'feature.update', unit: '48' }] };
-    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', geometry: null, initial: '' }), { wrapper });
+  it('options need submission.review as well as the operation right (R7)', async () => {
+    mockUser = { isAdmin: false, grants: [{ permission: 'feature.create', unit: '48' }, { permission: 'feature.update', unit: '48' }] };
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: null, initial: '' }), { wrapper });
     await act(async () => { await vi.advanceTimersByTimeAsync(50); });
     expect(result.current.options).toEqual([]);
   });
 
+  it('create offers the units where feature.create and submission.review hold (the API checks feature.create)', async () => {
+    mockUser = { isAdmin: false, grants: [
+      { permission: 'feature.create', unit: '48' }, { permission: 'submission.review', unit: '48' },
+      { permission: 'feature.update', unit: '51' }, { permission: 'submission.review', unit: '51' },
+    ] };
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: null, initial: '' }), { wrapper });
+    await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
+    expect(result.current.options.map((n) => n.code).sort()).toEqual(['20194', '48']);
+  });
+
+  it('edit offers the units where feature.update and submission.review hold', async () => {
+    mockUser = { isAdmin: false, grants: [
+      { permission: 'feature.create', unit: '48' }, { permission: 'submission.review', unit: '48' },
+      { permission: 'feature.update', unit: '51' }, { permission: 'submission.review', unit: '51' },
+    ] };
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'edit', geometry: null, initial: '51' }), { wrapper });
+    await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
+    expect(result.current.options.map((n) => n.code)).toEqual(['51']);
+  });
+
+  it('drops the old suggestion as soon as the geometry changes, so a quick save cannot send it', async () => {
+    suggest.mockResolvedValueOnce('20194').mockResolvedValueOnce('48');
+    const { result, rerender } = renderHook(
+      ({ g }) => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: g, initial: '' }),
+      { wrapper, initialProps: { g: geom(1) } },
+    );
+    await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
+    await flush();
+    expect(result.current.submittable).toBe('20194');
+    rerender({ g: geom(2) });
+    // Inside the debounce window: nothing to send yet (the API then suggests from the new shape).
+    expect(result.current.suggestion).toBeNull();
+    expect(result.current.submittable).toBeNull();
+    await flush();
+    expect(result.current.submittable).toBe('48');
+  });
+
   it('an admin gets the whole tree', async () => {
     mockUser = { isAdmin: true, grants: [] };
-    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', geometry: null, initial: '' }), { wrapper });
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: null, initial: '' }), { wrapper });
     await waitFor(() => expect(result.current.options).toHaveLength(4));
   });
 
@@ -91,7 +130,7 @@ describe('useManagingUnitField', () => {
     let first!: (u: string) => void;
     suggest.mockImplementationOnce(() => new Promise<string>((r) => { first = r; })).mockResolvedValueOnce('48');
     const { result, rerender } = renderHook(
-      ({ g }) => useManagingUnitField({ layerKey: 'dams', geometry: g, initial: '' }),
+      ({ g }) => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: g, initial: '' }),
       { wrapper, initialProps: { g: geom(1) } },
     );
     await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
@@ -105,7 +144,7 @@ describe('useManagingUnitField', () => {
   it('debounces suggestions while the geometry keeps changing', async () => {
     suggest.mockResolvedValue('48');
     const { rerender } = renderHook(
-      ({ g }) => useManagingUnitField({ layerKey: 'dams', geometry: g, initial: '' }),
+      ({ g }) => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: g, initial: '' }),
       { wrapper, initialProps: { g: geom(1) } },
     );
     rerender({ g: geom(2) });
@@ -116,7 +155,7 @@ describe('useManagingUnitField', () => {
 
   it('a failed suggestion sets no value and hints to choose', async () => {
     suggest.mockRejectedValue(new Error('down'));
-    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', geometry: geom(1), initial: '' }), { wrapper });
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: G1, initial: '' }), { wrapper });
     await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
     await flush();
     expect(result.current.value).toBe('');
@@ -125,7 +164,7 @@ describe('useManagingUnitField', () => {
 
   it('shows a suggestion outside the options with an error and does not allow submitting it', async () => {
     suggest.mockResolvedValue('51');
-    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', geometry: geom(1), initial: '' }), { wrapper });
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: G1, initial: '' }), { wrapper });
     await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
     await flush();
     expect(result.current.value).toBe('51');
@@ -133,17 +172,43 @@ describe('useManagingUnitField', () => {
     expect(result.current.submittable).toBeNull();
   });
 
-  it('edit: a current unit outside the options is read-only', async () => {
-    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', geometry: null, initial: '51' }), { wrapper });
+  it('edit: a current unit outside the options is read-only and locks the save', async () => {
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'edit', geometry: null, initial: '51' }), { wrapper });
     await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
     expect(result.current.readOnlyText).toBe('Quảng Ngãi — ngoài phạm vi của anh/chị');
+    expect(result.current.locked).toBe(true);
     expect(suggest).not.toHaveBeenCalled();
   });
 
+  it('edit: a feature without a unit counts as national, as the API reads it', async () => {
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'edit', geometry: null, initial: '' }), { wrapper });
+    await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
+    expect(result.current.readOnlyText).toBe('Việt Nam — ngoài phạm vi của anh/chị');
+    expect(result.current.locked).toBe(true);
+  });
+
+  it('edit: locked while the tree loads for a non-admin, never for an admin', async () => {
+    const officer = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'edit', geometry: null, initial: '48' }), { wrapper });
+    expect(officer.result.current.locked).toBe(true);
+    expect(officer.result.current.readOnlyText).toBeNull();
+    await waitFor(() => expect(officer.result.current.locked).toBe(false));
+    mockUser = { isAdmin: true, grants: [] };
+    const admin = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'edit', geometry: null, initial: '99999' }), { wrapper });
+    expect(admin.result.current.locked).toBe(false);
+  });
+
+  it('create is never locked', async () => {
+    mockUser = { isAdmin: false, grants: [] };
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: null, initial: '' }), { wrapper });
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(result.current.locked).toBe(false);
+  });
+
   it('edit: a unit inside the options is editable and keeps its value', async () => {
-    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', geometry: null, initial: '48' }), { wrapper });
+    const { result } = renderHook(() => useManagingUnitField({ layerKey: 'dams', mode: 'edit', geometry: null, initial: '48' }), { wrapper });
     await waitFor(() => expect(result.current.options.length).toBeGreaterThan(0));
     expect(result.current.readOnlyText).toBeNull();
+    expect(result.current.locked).toBe(false);
     expect(result.current.value).toBe('48');
   });
 });

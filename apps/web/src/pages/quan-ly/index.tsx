@@ -27,9 +27,10 @@ export default function QuanLyRoute() {
 
   const user = status === 'authenticated' ? currentUser : null;
   const visible = ITEMS.filter((item) => item.visible(user, can));
-  // Only Đơn vị chưa gán needs the tree: a non-admin who could pass its VN check is undecided
-  // until the tree arrives (or fails). Nhóm quyền and Người dùng never wait.
-  const undecided = !!user && !user.isAdmin && can('feature.update')
+  // Only Đơn vị chưa gán needs the tree: a non-admin who could pass its VN check (update and
+  // review held somewhere) is undecided until the tree arrives (or fails). Nhóm quyền and
+  // Người dùng never wait.
+  const undecided = !!user && !user.isAdmin && can('feature.update') && can('submission.review')
     && !visible.some((item) => item.to === UNASSIGNED) && (tree.status === 'loading' || tree.status === 'error');
   const failed = undecided && tree.status === 'error';
 

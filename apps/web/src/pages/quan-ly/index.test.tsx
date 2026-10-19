@@ -7,7 +7,7 @@ import { buildUnitTree, type Grant } from '@webatlas/shared';
 let mock: { status: string; currentUser: Record<string, unknown> | null };
 let mockTree: ReturnType<typeof buildUnitTree> | null;
 vi.mock('../../entities/session/model/session.store', () => ({ useSession: () => mock }));
-let mockStatus: 'idle' | 'loading' | 'error' | 'ready';
+let mockStatus: 'loading' | 'error' | 'ready';
 const retry = vi.fn();
 vi.mock('../../entities/session/model/useUnitTree', () => ({
   useUnitTree: () => mockTree,
@@ -53,7 +53,7 @@ describe('QuanLyRoute', () => {
   });
 
   it('a tree failure shows a message with Thử lại, not an endless spinner or a redirect', async () => {
-    mock = signedIn(false, { permission: 'feature.update', unit: 'VN' });
+    mock = signedIn(false, { permission: 'feature.update', unit: 'VN' }, { permission: 'submission.review', unit: 'VN' });
     mockTree = null; mockStatus = 'error';
     renderAt('/quan-ly');
     expect(screen.queryByText('MAP_HOME')).toBeNull();
@@ -64,7 +64,8 @@ describe('QuanLyRoute', () => {
   });
 
   it('keeps the visible items beside the failure message', () => {
-    mock = signedIn(false, { permission: 'users.manage', unit: '48' }, { permission: 'feature.update', unit: '48' });
+    mock = signedIn(false, { permission: 'users.manage', unit: '48' }, { permission: 'feature.update', unit: '48' },
+      { permission: 'submission.review', unit: '48' });
     mockTree = null; mockStatus = 'error';
     renderAt('/quan-ly');
     expect(screen.getByText('SEC_NGUOI')).toBeInTheDocument();
@@ -85,15 +86,36 @@ describe('QuanLyRoute', () => {
     expect(screen.getByText('SEC_NGUOI')).toBeInTheDocument();
   });
 
-  it('a feature.update holder on VN sees Đơn vị chưa gán', () => {
-    mock = signedIn(false, { permission: 'feature.update', unit: 'VN' });
+  it('a holder of feature.update and submission.review on VN sees Đơn vị chưa gán', () => {
+    mock = signedIn(false, { permission: 'feature.update', unit: 'VN' }, { permission: 'submission.review', unit: 'VN' });
     renderAt('/quan-ly');
     expect(links()).toEqual(['Đơn vị chưa gán']);
     expect(screen.getByText('SEC_CHUA')).toBeInTheDocument();
   });
 
-  it('does not bounce a VN officer away while the unit tree is still loading', () => {
+  // Assigning publishes at once until P4, so the page needs the review right on VN too.
+  it('a Bộ officer with feature.update on VN but no review right does not see Đơn vị chưa gán', () => {
     mock = signedIn(false, { permission: 'feature.update', unit: 'VN' });
+    renderAt('/quan-ly/chua-gan');
+    expect(screen.queryByText('SEC_CHUA')).toBeNull();
+    expect(screen.getByText('MAP_HOME')).toBeInTheDocument();
+  });
+
+  it('review on a province only does not open Đơn vị chưa gán', () => {
+    mock = signedIn(false, { permission: 'feature.update', unit: 'VN' }, { permission: 'submission.review', unit: '48' });
+    renderAt('/quan-ly/chua-gan');
+    expect(screen.getByText('MAP_HOME')).toBeInTheDocument();
+  });
+
+  it('a Bộ officer without review rights is not left waiting while the tree loads', () => {
+    mock = signedIn(false, { permission: 'feature.update', unit: 'VN' });
+    mockTree = null; mockStatus = 'loading';
+    renderAt('/quan-ly/chua-gan');
+    expect(screen.getByText('MAP_HOME')).toBeInTheDocument();
+  });
+
+  it('does not bounce a VN officer away while the unit tree is still loading', () => {
+    mock = signedIn(false, { permission: 'feature.update', unit: 'VN' }, { permission: 'submission.review', unit: 'VN' });
     mockTree = null; mockStatus = 'loading';
     renderAt('/quan-ly/chua-gan');
     expect(screen.queryByText('MAP_HOME')).toBeNull();

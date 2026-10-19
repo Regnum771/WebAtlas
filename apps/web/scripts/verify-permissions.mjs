@@ -6,11 +6,14 @@
  *      group on one Đà Nẵng ward), each with "duyệt và xuất bản", and assigns user P
  *      to the first and user X to the second.
  *   2. P signs in, sees Biên tập, and edits the name of a lake managed by a Đà Nẵng
- *      ward through the map form. The save goes through; the name is put back after.
+ *      ward through the map form (Lưu enabled, Xoá offered). The save goes through; the
+ *      name is put back after. P, with no right at VN, gets neither Quản lý nor the
+ *      unassigned list (403).
  *   3. X signs in and opens a lake managed by Đà Nẵng. "Đơn vị chủ quản" is read-only
- *      and says "ngoài phạm vi"; a forced save through the API answers 403 with the
- *      exact refusal message.
- *   4. A visitor who is not signed in sees neither Biên tập nor Quản lý.
+ *      and says "ngoài phạm vi", Lưu is disabled and Xoá is not offered; a forced save
+ *      through the API answers 403 with the exact refusal message.
+ *   4. A visitor who is not signed in sees neither Biên tập nor Quản lý, and a lake's
+ *      card names its managing unit (not its code).
  *   5. The admin opens Đơn vị chưa gán and sees the features without geometry.
  *
  * Every step runs at 1440x900 and at 768x900 and prints one PASS / FAIL line, then the
@@ -505,6 +508,14 @@ async function openLakeForm(session, lake) {
   const { page } = session;
   await openBienTap(page);
   await clickText(page, '.tool-menu button', 'Sửa đối tượng có sẵn');
+  await clickLake(session, lake);
+  await page.waitForSelector('.edit-attr-form', { visible: true, timeout: 15000 });
+  await sleep(1200);
+}
+
+/** Zooms the map onto the lake and clicks a point inside it. */
+async function clickLake(session, lake) {
+  const { page } = session;
   const { box, point } = pointInside(lake.geometry);
   const [x0, y0] = toMercator([box[0], box[1]]);
   const [x1, y1] = toMercator([box[2], box[3]]);
@@ -526,12 +537,22 @@ async function openLakeForm(session, lake) {
     return { x: r.left + x, y: r.top + y };
   }, [px, py]);
   await page.mouse.click(pixel.x, pixel.y);
-  await page.waitForSelector('.edit-attr-form', { visible: true, timeout: 15000 });
-  await sleep(1200);
 }
 
 async function managingUnitText(page) {
   return page.$eval('.managing-unit-field', (el) => el.innerText.replace(/\s+/g, ' ').trim());
+}
+
+/** The edit form's Lưu: { present, disabled }, and whether Xoá đối tượng is offered. */
+async function editControls(page) {
+  return page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('.edit-existing button')];
+    const save = [...document.querySelectorAll('.edit-attr-form button')].find((b) => b.textContent.trim() === 'Lưu');
+    return {
+      save: save ? { disabled: save.disabled } : null,
+      deleteOffered: buttons.some((b) => b.textContent.trim() === 'Xoá đối tượng'),
+    };
+  });
 }
 
 /** Step 2, run as P. */
@@ -547,6 +568,9 @@ async function stepEditLake(session, vp, lake, token) {
     if (shownName !== original) problems.push(`the form shows the name "${shownName}", expected "${original}"`);
     const unit = await managingUnitText(page);
     if (unit.includes('ngoài phạm vi')) problems.push(`P's own ward shows as out of scope: ${unit}`);
+    const controls = await editControls(page);
+    if (!controls.save || controls.save.disabled) problems.push('Lưu is missing or disabled for a lake inside P\'s province');
+    if (!controls.deleteOffered) problems.push('Xoá đối tượng is not offered although P holds delete and review on the province');
     await shot(session, vp, 'p-bien-tap');
 
     await page.click('#attr-name', { clickCount: 3 });
@@ -588,6 +612,10 @@ async function stepOutOfScope(session, vp, lake, token, provinceName, wardName) 
   if (!unit.includes(provinceName)) problems.push(`the field does not name ${provinceName}: ${unit}`);
   const editable = await page.$eval('.managing-unit-field', (el) => el.querySelectorAll('input, select').length);
   if (editable > 0) problems.push(`the Đơn vị chủ quản field has ${editable} editable controls, expected none`);
+  const controls = await editControls(page);
+  if (!controls.save) problems.push('Lưu is missing');
+  else if (!controls.save.disabled) problems.push('Lưu is enabled for a lake outside X\'s ward');
+  if (controls.deleteOffered) problems.push('Xoá đối tượng is offered for a lake outside X\'s ward');
   await shot(session, vp, 'x-ngoai-pham-vi');
 
   const res = await api('PUT', `/api/layers/lakes/features/${lake.id}`, token, { properties: { name: `${lake.properties.name} (không được lưu)` } });
@@ -597,14 +625,29 @@ async function stepOutOfScope(session, vp, lake, token, provinceName, wardName) 
   return problems;
 }
 
-/** Step 4: a visitor sees no Biên tập and no Quản lý, and /quan-ly sends them to the map. */
-async function stepVisitor(session, vp) {
+/**
+ * Step 4: a visitor sees no Biên tập and no Quản lý, a lake's card names its managing unit,
+ * and /quan-ly sends them to the map.
+ */
+async function stepVisitor(session, vp, lake, provinceName) {
   const { page } = session;
   const problems = [];
   const tools = await page.$$eval('.tool-group button', (bs) => bs.map((b) => b.textContent.trim()));
   if (tools.includes('Biên tập')) problems.push('Biên tập is offered to a visitor');
   const links = await page.$$eval('.top-nav a', (as) => as.map((a) => a.textContent.trim()));
   if (links.includes('Quản lý')) problems.push('Quản lý is offered to a visitor');
+  await clickLake(session, lake);
+  try {
+    const row = await page.waitForFunction(() => {
+      const hit = [...document.querySelectorAll('.info-row')].find((el) => el.textContent.includes('Đơn vị chủ quản:'));
+      return hit ? hit.textContent.replace(/\s+/g, ' ').trim() : false;
+    }, { timeout: 15000 });
+    const text = await row.jsonValue();
+    if (!text.includes(provinceName)) problems.push(`the lake's card says "${text}", expected it to name ${provinceName}`);
+    await shot(session, vp, 'khach-the-doi-tuong');
+  } catch {
+    problems.push('the lake\'s card shows no Đơn vị chủ quản row');
+  }
   await page.goto(`${BASE_URL}/quan-ly`, { waitUntil: 'domcontentloaded' });
   await sleep(2500);
   const path = new URL(page.url()).pathname;
@@ -673,9 +716,12 @@ async function runViewport(browser, viewport, ctx) {
     if (!grouped) return ['skipped: step 1 failed, so P has no group'];
     return stepEditLake(p, vp, ctx.pLake, ctx.pToken);
   });
-  await check(vp, '2b', 'P, with no users.manage and no right at VN, does not see Quản lý', async () => {
+  await check(vp, '2b', 'P, with no users.manage and no right at VN, does not see Quản lý nor the unassigned list', async () => {
     const links = await p.page.$$eval('.top-nav a', (as) => as.map((a) => a.textContent.trim()));
-    return links.includes('Quản lý') ? ['Quản lý is offered to P'] : [];
+    const problems = links.includes('Quản lý') ? ['Quản lý is offered to P'] : [];
+    const res = await api('GET', '/api/layers/unassigned', ctx.pToken);
+    if (res.status !== 403) problems.push(`GET /api/layers/unassigned answered ${res.status} for P, expected 403`);
+    return problems;
   });
 
   const x = await openSession(browser, viewport);
@@ -688,7 +734,8 @@ async function runViewport(browser, viewport, ctx) {
 
   const visitor = await openSession(browser, viewport);
   others.push(visitor);
-  await check(vp, '4', 'a visitor with no group sees no Biên tập and no Quản lý', () => stepVisitor(visitor, vp));
+  await check(vp, '4', 'a visitor sees no Biên tập and no Quản lý, and a lake card names its managing unit', () =>
+    stepVisitor(visitor, vp, ctx.xLake, ctx.provinceName));
 
   } finally {
     // Whatever failed above, the test groups go and the browser contexts close.
