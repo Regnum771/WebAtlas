@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 
 export interface AdminUnit {
   code: string;
@@ -40,4 +40,22 @@ export async function listWards(pool: Pool, provinceCode: string): Promise<Admin
     [provinceCode]
   );
   return rows.map(toUnit('ward'));
+}
+
+/**
+ * The initial-assignment rule (admin.managing_unit_for) applied to a GeoJSON geometry: the
+ * provinces and wards it intersects, as stampAdminCodes would stamp them, folded into one unit.
+ * Takes a pool or a session client, so a create inside an edit session can suggest on its own
+ * connection.
+ */
+export async function suggestManagingUnit(q: Pool | PoolClient, geometryJson: string): Promise<string> {
+  const { rows } = await q.query<{ unit: string }>(
+    `WITH g AS (SELECT ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS geom)
+     SELECT admin.managing_unit_for(
+              ARRAY(SELECT p.code FROM admin.provinces p, g WHERE ST_Intersects(g.geom, p.geom) ORDER BY p.code),
+              ARRAY(SELECT w.code FROM admin.wards w, g WHERE ST_Intersects(g.geom, w.geom) ORDER BY w.code)
+            ) AS unit`,
+    [geometryJson]
+  );
+  return rows[0].unit;
 }

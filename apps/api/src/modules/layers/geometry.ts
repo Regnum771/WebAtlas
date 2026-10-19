@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { GeometryError } from '../../errors';
 import type { LayerDef } from '../../layers/registry';
 
@@ -8,6 +8,25 @@ const ALLOWED: Record<LayerDef['geomType'], string[]> = {
   MultiLineString: ['MultiLineString', 'LineString'],
   MultiPolygon: ['MultiPolygon', 'Polygon'],
 };
+
+/** The GeoJSON geometry types PostGIS reads; GeometryCollection is not accepted anywhere. */
+const GEOJSON_TYPES = ['Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'];
+
+/**
+ * Validate that a value is a GeoJSON geometry object of any supported type, and return the
+ * JSON string to bind as a SQL parameter. For input that belongs to no layer (e.g. the
+ * managing-unit suggestion). Throws GeometryError otherwise.
+ */
+export function assertGeoJsonGeometry(geometry: unknown): string {
+  if (typeof geometry !== 'object' || geometry === null || !('type' in geometry)) {
+    throw new GeometryError('Geometry must be a GeoJSON geometry object');
+  }
+  const type = (geometry as { type: unknown }).type;
+  if (typeof type !== 'string' || !GEOJSON_TYPES.includes(type)) {
+    throw new GeometryError('Geometry type is not supported');
+  }
+  return JSON.stringify(geometry);
+}
 
 /**
  * Validate a parsed GeoJSON geometry against the layer's expected type and return
@@ -45,7 +64,12 @@ export function geomInsertSql(def: LayerDef, n: number): string {
  * Ask PostGIS whether the GeoJSON string parses to a valid geometry. Runs before
  * insert/update so invalid input becomes GeometryError(422), not a DB 500.
  */
-export async function assertValidInPg(pg: Pool, def: LayerDef, geometryJson: string): Promise<void> {
+export async function assertValidInPg(pg: Pool, _def: LayerDef, geometryJson: string): Promise<void> {
+  return assertValidGeoJsonInPg(pg, geometryJson);
+}
+
+/** assertValidInPg without a layer: the check itself never depended on one. */
+export async function assertValidGeoJsonInPg(pg: Pool | PoolClient, geometryJson: string): Promise<void> {
   const sql = `SELECT ST_IsValid(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)) AS valid`;
   let valid: boolean;
   try {

@@ -138,6 +138,22 @@ export function featuresRepository(pg: Pool) {
       return rows[0] ?? null;
     },
 
+    // True when the row has a geometry that touches none of the unit's own area (the unit's
+    // polygon in admin.provinces or admin.wards). Read on the session client: the row is
+    // usually one this session just wrote. A unit with no polygon counts as outside.
+    async isOutsideUnit(client: PoolClient, def: LayerDef, id: string, unit: string): Promise<boolean> {
+      const { rows } = await client.query<{ outside: boolean }>(
+        `SELECT t.${def.geomColumn} IS NOT NULL AND NOT EXISTS (
+                  SELECT 1 FROM (SELECT geom FROM admin.provinces WHERE code = $2
+                                 UNION ALL
+                                 SELECT geom FROM admin.wards WHERE code = $2) u
+                   WHERE ST_Intersects(u.geom, t.${def.geomColumn})) AS outside
+           FROM ${def.table} t WHERE t.id = $1`,
+        [id, unit]
+      );
+      return rows[0]?.outside === true;
+    },
+
     // Insert a brand-new feature row into a specific version.
     async insertIntoVersion(
       client: PoolClient,

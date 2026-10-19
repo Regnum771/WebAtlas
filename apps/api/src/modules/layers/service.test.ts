@@ -1,11 +1,17 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import type { UnitTree } from '@webatlas/shared';
 import { getPool, closePool } from '../../db/pool';
 import { featuresService } from './service';
+import { getUnitTree } from '../../authz/unitTree';
+import type { CurrentUser } from '../../types/fastify';
 import { ConflictError as VersioningConflictError, StaleDraftError, refreshCurrentRows, versionsService } from '@webatlas/versioning';
 import { ConflictError, GeometryError, NotFoundError } from '../../errors';
 
 const TEST_NAME = 'svc-test-dam@webatlas.test';
 const TEST_STATION = 'svc-test-station@webatlas.test';
+// The single-change helpers take the acting user; an admin passes every jurisdiction check,
+// which jurisdiction.test.ts covers. A real row: created_by and audit_log.user_id reference it.
+const ADMIN_EMAIL = 'svc-test-admin@webatlas.test';
 
 async function activeVersionId(layer: string): Promise<string> {
   const { rows } = await getPool().query(
@@ -28,6 +34,18 @@ async function editVersionCount(layer: string): Promise<number> {
 
 describe('featuresService edit sessions (§7)', () => {
   const svc = () => featuresService(getPool());
+  let admin: CurrentUser;
+  let tree: UnitTree;
+
+  beforeAll(async () => {
+    await getPool().query(`DELETE FROM app.users WHERE email = $1`, [ADMIN_EMAIL]);
+    const { rows } = await getPool().query(
+      `INSERT INTO app.users (email, password_hash, full_name, role) VALUES ($1, 'x', 'svc-test', 'admin') RETURNING id`,
+      [ADMIN_EMAIL]
+    );
+    admin = { id: rows[0].id, email: ADMIN_EMAIL, role: 'admin', isAdmin: true, grants: [] };
+    tree = await getUnitTree(getPool());
+  });
 
   afterAll(async () => {
     // Drop the edit-versions these tests published, restoring the seeded ingest
@@ -62,6 +80,7 @@ describe('featuresService edit sessions (§7)', () => {
     }
     await getPool().query(`DELETE FROM water.dams WHERE name = $1`, [TEST_NAME]);
     await getPool().query(`DELETE FROM water.stations WHERE name = $1`, [TEST_STATION]);
+    await getPool().query(`DELETE FROM app.users WHERE email = $1`, [ADMIN_EMAIL]);
     await closePool();
   });
 
@@ -388,7 +407,7 @@ describe('featuresService edit sessions (§7)', () => {
       expect(await activeRow(f.id)).toMatchObject({ status: 'built', wattage_mw: 10 });
 
       // A client still holding the ORIGINAL row id sends only field B.
-      await svc().update('dams', f.id, { properties: { wattage_mw: 20 } });
+      await svc().update('dams', f.id, { properties: { wattage_mw: 20 } }, admin, tree);
       expect(await activeRow(f.id)).toMatchObject({ name, status: 'built', wattage_mw: 20 });
 
       const audit = await getPool().query(
@@ -409,7 +428,7 @@ describe('featuresService edit sessions (§7)', () => {
       const x = await svc().editSession('dams');
       await x.update(f.id, { properties: { status: 'built' } });
       await x.commit();
-      await svc().remove('dams', f.id);
+      await svc().remove('dams', f.id, admin, tree);
       expect(await activeRow(f.id)).toBeUndefined();
       const del = await getPool().query(
         `SELECT before FROM app.audit_log WHERE feature_id = $1 AND action = 'delete'`, [f.id]
@@ -424,8 +443,8 @@ describe('featuresService edit sessions (§7)', () => {
   it('an update naming the original row of a feature deleted meanwhile is a NotFoundError', async () => {
     const f = await createCommitted('svc-test-deleted-meanwhile@webatlas.test', {});
     try {
-      await svc().remove('dams', f.id);
-      await expect(svc().update('dams', f.id, { properties: { status: 'x' } })).rejects.toBeInstanceOf(NotFoundError);
+      await svc().remove('dams', f.id, admin, tree);
+      await expect(svc().update('dams', f.id, { properties: { status: 'x' } }, admin, tree)).rejects.toBeInstanceOf(NotFoundError);
     } finally {
       await getPool().query(`DELETE FROM app.audit_log WHERE feature_id = $1`, [f.id]);
     }
@@ -434,8 +453,8 @@ describe('featuresService edit sessions (§7)', () => {
   it('a remove naming the original row of a feature deleted meanwhile is a NotFoundError', async () => {
     const f = await createCommitted('svc-test-remove-deleted@webatlas.test', {});
     try {
-      await svc().remove('dams', f.id);
-      await expect(svc().remove('dams', f.id)).rejects.toBeInstanceOf(NotFoundError);
+      await svc().remove('dams', f.id, admin, tree);
+      await expect(svc().remove('dams', f.id, admin, tree)).rejects.toBeInstanceOf(NotFoundError);
     } finally {
       await getPool().query(`DELETE FROM app.audit_log WHERE feature_id = $1`, [f.id]);
     }

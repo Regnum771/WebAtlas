@@ -7,7 +7,8 @@ import { refreshCurrentRows } from '@webatlas/versioning';
 
 const app = buildApp();
 const ADMIN = 'layers-admin@webatlas.test';
-// The former editor: a viewer with no groups. Writes stay admin-only until P1 Task 6.
+// The former editor: a viewer with no groups, so it holds no write permission anywhere.
+// Jurisdiction cases (groups, managing units) live in jurisdiction.test.ts.
 const NO_GROUPS = 'layers-nogroups@webatlas.test';
 const VIEWER = 'layers-viewer@webatlas.test';
 const PW = 'admin-pass-123';
@@ -75,7 +76,7 @@ describe('layers metadata', () => {
   });
 });
 
-describe('feature CRUD (admin only)', () => {
+describe('feature CRUD', () => {
   it('viewer can read features but cannot write; anonymous is 401', async () => {
     const viewerToken = await tokenFor(VIEWER);
     const vAuth = { authorization: `Bearer ${viewerToken}` };
@@ -88,6 +89,7 @@ describe('feature CRUD (admin only)', () => {
       payload: { geometry: { type: 'Point', coordinates: [105.8, 21.0] }, properties: { name: NAME } },
     });
     expect(write.statusCode).toBe(403);
+    expect(write.json().error.code).toBe('NO_PERMISSION');
 
     const anon = await app.inject({ method: 'GET', url: '/api/layers/dams/features' });
     expect(anon.statusCode).toBe(401);
@@ -105,7 +107,21 @@ describe('feature CRUD (admin only)', () => {
       payload: { geometry: { type: 'Point', coordinates: [105.81, 21.01] }, properties: { name: NAME } },
     });
     expect(create.statusCode).toBe(403);
-    expect(create.json().error.code).toBe('FORBIDDEN');
+    expect(create.json().error).toEqual({
+      code: 'NO_PERMISSION',
+      message: 'Anh/chị chưa có quyền thêm đối tượng ở đơn vị nào.',
+    });
+
+    const someDam = (await getPool().query(`SELECT id FROM water.dams_active LIMIT 1`)).rows[0].id as string;
+    const update = await app.inject({
+      method: 'PUT', url: `/api/layers/dams/features/${someDam}`, headers: eAuth,
+      payload: { properties: { name: NAME } },
+    });
+    expect(update.statusCode).toBe(403);
+    expect(update.json().error.code).toBe('NO_PERMISSION');
+    const del = await app.inject({ method: 'DELETE', url: `/api/layers/dams/features/${someDam}`, headers: eAuth });
+    expect(del.statusCode).toBe(403);
+    expect(del.json().error.code).toBe('NO_PERMISSION');
   });
 
   it('404 for an unknown layer key', async () => {

@@ -1,7 +1,9 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { validate } from '../../lib/validate';
-import { listProvinces, listWards } from './repository';
+import { listProvinces, listWards, suggestManagingUnit } from './repository';
+import { getUnitTree } from '../../authz/unitTree';
+import { assertGeoJsonGeometry, assertValidGeoJsonInPg } from '../layers/geometry';
 
 const Query = z
   .object({
@@ -19,4 +21,22 @@ export async function adminUnits(req: FastifyRequest, reply: FastifyReply) {
     ? await listProvinces(req.server.pg)
     : await listWards(req.server.pg, q.province!);
   reply.send({ units });
+}
+
+const SuggestBody = z.object({
+  geometry: z.unknown().refine((g) => g !== undefined && g !== null, { message: 'Thiếu hình học' }),
+});
+
+/** POST /api/admin-units/suggest: the managing unit the initial-assignment rule gives a geometry. */
+export async function suggestUnit(req: FastifyRequest, reply: FastifyReply) {
+  const { geometry } = validate(SuggestBody, req.body);
+  const geometryJson = assertGeoJsonGeometry(geometry);
+  await assertValidGeoJsonInPg(req.server.pg, geometryJson);
+  reply.send({ unit: await suggestManagingUnit(req.server.pg, geometryJson) });
+}
+
+/** GET /api/admin-units/tree: every unit (VN, provinces, wards) with its parent. */
+export async function unitTree(req: FastifyRequest, reply: FastifyReply) {
+  const tree = await getUnitTree(req.server.pg);
+  reply.send({ units: [...tree.values()] });
 }
