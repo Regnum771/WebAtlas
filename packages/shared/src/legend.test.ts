@@ -62,6 +62,13 @@ describe('legendFor', () => {
     expect(legendFor('layer_bm_railways')[0].entries[0].swatch).toBe(LAYER_PALETTE.layer_bm_railways.color);
   });
 
+  it('uses the standard OpenStreetMap Carto basemap palette', () => {
+    expect(LAYER_PALETTE.layer_bm_roads).toMatchObject({ color: '#f7f1d0', stroke: '#9e9e9e' });
+    expect(LAYER_PALETTE.layer_bm_railways).toMatchObject({ color: '#b3b2a9' });
+    expect(LAYER_PALETTE.layer_bm_water).toMatchObject({ color: '#b5d0d0', stroke: '#7aa9b5' });
+    expect(LAYER_PALETTE.layer_bm_landuse).toMatchObject({ color: '#c8d7ab', secondary: '#e7e7e7' });
+  });
+
   it('returns a swatch for every hazard layer', () => {
     for (const id of [
       'layer_flood',

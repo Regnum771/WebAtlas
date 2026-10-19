@@ -16,8 +16,10 @@ export const LAYER_PALETTE = {
     // second hand-typed list is what caused the terrain/dem and legend-colour
     // drift this palette exists to prevent, and a Python/TypeScript split would
     // put that copy where no TS test could ever catch it.
-    layer_bm_roads: { color: '#ffffff', stroke: '#e2e2e2' },
-    layer_bm_railways: { color: '#d0d0d0' },
-    layer_bm_water: { color: '#d3e3f0', stroke: '#b9d3e6' },
-    layer_bm_landuse: { color: '#e8ebe4', secondary: '#ebebeb' },
+    // Standard OpenStreetMap Carto palette: pale paper land, cream roads, cyan water,
+    // green landuse, and muted grey/railway tones.
+    layer_bm_roads: { color: '#f7f1d0', stroke: '#9e9e9e' },
+    layer_bm_railways: { color: '#b3b2a9' },
+    layer_bm_water: { color: '#b5d0d0', stroke: '#7aa9b5' },
+    layer_bm_landuse: { color: '#c8d7ab', secondary: '#e7e7e7' },
 };

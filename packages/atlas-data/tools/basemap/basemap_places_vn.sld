@@ -13,7 +13,7 @@
         <AnchorPointX>0.5</AnchorPointX><AnchorPointY>0.5</AnchorPointY></AnchorPoint>
       </PointPlacement></LabelPlacement>
       <Halo><Radius>1.6</Radius><Fill><CssParameter name="fill">#ffffff</CssParameter></Fill></Halo>
-      <Fill><CssParameter name="fill">#7a7a7a</CssParameter></Fill>
+      <Fill><CssParameter name="fill">#333333</CssParameter></Fill>
       <Priority><ogc:PropertyName>population</ogc:PropertyName></Priority>
       <VendorOption name="autoWrap">70</VendorOption>
       <VendorOption name="spaceAround">6</VendorOption>
@@ -27,7 +27,7 @@
         <AnchorPointX>0.5</AnchorPointX><AnchorPointY>0.5</AnchorPointY></AnchorPoint>
       </PointPlacement></LabelPlacement>
       <Halo><Radius>1.6</Radius><Fill><CssParameter name="fill">#ffffff</CssParameter></Fill></Halo>
-      <Fill><CssParameter name="fill">#7a7a7a</CssParameter></Fill>
+      <Fill><CssParameter name="fill">#333333</CssParameter></Fill>
       <Priority><ogc:PropertyName>population</ogc:PropertyName></Priority>
       <VendorOption name="autoWrap">70</VendorOption>
       <VendorOption name="spaceAround">6</VendorOption>

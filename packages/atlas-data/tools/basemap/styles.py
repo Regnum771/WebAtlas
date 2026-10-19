@@ -67,17 +67,17 @@ LANDUSE_GREY = _P["layer_bm_landuse"]["secondary"]
 ROAD_FILL = _P["layer_bm_roads"]["color"]
 ROAD_CASING = _P["layer_bm_roads"]["stroke"]
 RAIL = _P["layer_bm_railways"]["color"]
-# Nhan duong: xam dam hon net duong de doc duoc tren nen sang.
+# OSM-like labels remain dark enough for the colored style and use the low-contrast
+# paper palette while preserving legibility against roads and buildings.
 ROAD_LABEL = "#5b5145"
 
-# Local shade variants, not identity colours — the same reason styles.ts builds
-# its own opacity variants from the shared hex instead of storing them shared.
-ROAD_MAJOR = "#fdfdfd"
-ROAD_MAJOR_CASING = "#d8d8d8"
+# OSM Carto base colors and readable local contrasts.
+ROAD_MAJOR = "#fdf6d8"
+ROAD_MAJOR_CASING = "#a5a5a5"
 # Land is the base everything else is drawn on, not a legend entry, so it has no palette key.
-LAND = "#f7f7f5"
-LAND_LINE = "#e0ded9"
-LABEL = "#7a7a7a"
+LAND = "#f3efe2"
+LAND_LINE = "#d8d0b6"
+LABEL = "#333333"
 LABEL_HALO = "#ffffff"
 
 HEAD = """<?xml version="1.0" encoding="UTF-8"?>
