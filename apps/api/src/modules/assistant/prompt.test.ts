@@ -80,9 +80,9 @@ describe('role-specific prompts', () => {
     expect(ADMIN_SYSTEM_PROMPT).toContain('tài liệu nguồn');
   });
 
-  it('picks the admin prompt only for admin', () => {
-    expect(systemPromptFor('admin')).toBe(ADMIN_SYSTEM_PROMPT);
-    expect(systemPromptFor('viewer')).toBe(SYSTEM_PROMPT);
+  it('picks the update prompt exactly when the tool is offered', () => {
+    expect(systemPromptFor(true)).toBe(ADMIN_SYSTEM_PROMPT);
+    expect(systemPromptFor(false)).toBe(SYSTEM_PROMPT);
   });
 
   it('shares every rule before rule 8, so the variants cannot drift', () => {

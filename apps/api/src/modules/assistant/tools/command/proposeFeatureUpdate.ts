@@ -15,8 +15,9 @@ import { LAYER_LABELS, activeVersionLabel, isFeatureId, resolveFeature } from '.
 /**
  * Turns "cập nhật công suất Sông Hinh thành 72 MW" into a PROPOSAL, never a write.
  * The browser opens the admin wizard prefilled with it; the admin confirms and the
- * save goes through PUT /api/layers/:key/features/:id, which enforces admin-only.
- * Registered only for admins (registry.ts).
+ * save goes through PUT /api/layers/:key/features/:id, which enforces jurisdiction and
+ * review rights per feature.
+ * Registered only for users who can save directly (registry.ts).
  */
 export const proposeFeatureUpdateTool: ToolFactory = (ctx) =>
   betaZodTool({

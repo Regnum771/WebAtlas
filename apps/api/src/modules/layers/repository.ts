@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
-import type { LayerDef } from '../../layers/registry';
+import { LAYER_REGISTRY, type LayerDef } from '../../layers/registry';
 import { geomInsertSql } from './geometry';
 import { ConflictError, NotFoundError } from '../../errors';
 
@@ -100,8 +100,31 @@ function selectSql(def: LayerDef, relation: string): string {
           FROM ${relation} t`;
 }
 
+export interface UnassignedFeature {
+  layerKey: string;
+  id: string;
+  externalId: string;
+  name: string | null;
+}
+
 export function featuresRepository(pg: Pool) {
   return {
+    /**
+     * Current rows of every layer that still sit at the country level with no geometry: the
+     * initial-assignment rule left them at 'VN' because there was nothing to locate them by.
+     * The relation list comes from the registry, so a ninth layer is picked up automatically.
+     */
+    async listUnassigned(): Promise<UnassignedFeature[]> {
+      const parts = Object.values(LAYER_REGISTRY).map(
+        (def) => `SELECT '${def.key}' AS "layerKey", id::text AS id, external_id::text AS "externalId", name
+                  FROM ${activeRelation(def)}
+                  WHERE managing_unit = 'VN' AND ${def.geomColumn} IS NULL`
+      );
+      const { rows } = await pg.query<UnassignedFeature>(
+        `${parts.join(' UNION ALL ')} ORDER BY "layerKey", name, id`
+      );
+      return rows;
+    },
     async list(def: LayerDef, filter: FeatureFilter = {}): Promise<FeatureRow[]> {
       const where: string[] = [];
       const params: string[] = [];

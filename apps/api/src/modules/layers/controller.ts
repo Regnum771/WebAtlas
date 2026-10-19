@@ -5,6 +5,9 @@ import { featuresService } from './service';
 import { listLayerMetadata } from '../../layers/registry';
 import type { FeatureRow } from './repository';
 import { getUnitTree } from '../../authz/unitTree';
+import { assertCan } from '../../authz/assert';
+import { COUNTRY_UNIT } from '@webatlas/shared';
+import { featuresRepository } from './repository';
 import { AuthError } from '../../errors';
 import type { CurrentUser } from '../../types/fastify';
 
@@ -46,6 +49,15 @@ export async function listFeatures(req: FastifyRequest, reply: FastifyReply) {
   const filter = validate(FeatureQuery, req.query);
   const rows = await featuresService(req.server.pg).list(key, filter);
   reply.send({ type: 'FeatureCollection', features: rows.map(toFeature) });
+}
+
+// Features nobody could place (no geometry) wait at the country level. Only someone who may
+// update features at 'VN' can assign them, so only they get the list.
+export async function listUnassigned(req: FastifyRequest, reply: FastifyReply) {
+  const tree = await getUnitTree(req.server.pg);
+  assertCan(actorOf(req), 'feature.update', COUNTRY_UNIT, tree);
+  const features = await featuresRepository(req.server.pg).listUnassigned();
+  reply.send({ features });
 }
 
 export async function createFeature(req: FastifyRequest, reply: FastifyReply) {

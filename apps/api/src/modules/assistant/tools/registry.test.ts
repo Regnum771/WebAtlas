@@ -3,6 +3,9 @@ import type { MapContext } from '@webatlas/shared';
 import { buildTools, guardToolErrors } from './registry';
 import { config } from '../../../config/env';
 import type { ToolContext } from './types';
+import { buildUnitTree, type Grant } from '@webatlas/shared';
+import { canSaveDirectly } from '../../../authz/assert';
+import type { CurrentUser } from '../../../types/fastify';
 
 const ctx: ToolContext = {
   pool: {} as ToolContext['pool'],
@@ -14,7 +17,7 @@ const ctx: ToolContext = {
   } satisfies MapContext,
   collect: vi.fn(),
   provenance: vi.fn(),
-  role: 'viewer',
+  canProposeEdits: false,
 };
 
 describe('buildTools', () => {
@@ -78,15 +81,52 @@ describe('buildTools', () => {
   });
 });
 
-describe('propose_feature_update is admin-only', () => {
-  it('is offered to admin, last', () => {
-    const names = buildTools({ ...ctx, role: 'admin' }).map((t) => (t as { name: string }).name);
+describe('propose_feature_update is offered by edit rights', () => {
+  const namesFor = (canProposeEdits: boolean) =>
+    buildTools({ ...ctx, canProposeEdits }).map((t) => (t as { name: string }).name);
+
+  it('is offered when the user can propose edits, last', () => {
+    const names = namesFor(true);
     expect(names[names.length - 1]).toBe('propose_feature_update');
   });
 
-  it('is never offered to viewer', () => {
-    const names = buildTools({ ...ctx, role: 'viewer' }).map((t) => (t as { name: string }).name);
-    expect(names).not.toContain('propose_feature_update');
+  it('is not offered otherwise', () => {
+    expect(namesFor(false)).not.toContain('propose_feature_update');
+  });
+});
+
+describe('canSaveDirectly', () => {
+  const tree = buildUnitTree([
+    { code: 'VN', level: 'country', parent: null, name: 'Việt Nam' },
+    { code: '48', level: 'province', parent: 'VN', name: 'Đà Nẵng' },
+    { code: '51', level: 'province', parent: 'VN', name: 'Quảng Ngãi' },
+  ]);
+  const user = (grants: Grant[], isAdmin = false): CurrentUser => ({
+    id: 'u', email: 'u@x', role: isAdmin ? 'admin' : 'viewer', isAdmin, grants,
+  });
+
+  it('is true for admin', () => {
+    expect(canSaveDirectly(user([], true), tree)).toBe(true);
+  });
+
+  it('is true for a viewer with feature.update and submission.review on a province', () => {
+    const grants: Grant[] = [
+      { permission: 'feature.update', unit: '48' },
+      { permission: 'submission.review', unit: '48' },
+    ];
+    expect(canSaveDirectly(user(grants), tree)).toBe(true);
+  });
+
+  it('is false for a viewer holding only feature.update', () => {
+    expect(canSaveDirectly(user([{ permission: 'feature.update', unit: '48' }]), tree)).toBe(false);
+  });
+
+  it('is false when the two rights are on disjoint units', () => {
+    const grants: Grant[] = [
+      { permission: 'feature.update', unit: '48' },
+      { permission: 'submission.review', unit: '51' },
+    ];
+    expect(canSaveDirectly(user(grants), tree)).toBe(false);
   });
 });
 

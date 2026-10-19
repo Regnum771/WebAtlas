@@ -24,7 +24,7 @@ function makeCtx() {
     mapContext: MAP_CONTEXT,
     collect: vi.fn((c: MapCommand) => commands.push(c)),
     provenance: vi.fn((p: Provenance) => records.push(p)),
-    role: 'viewer',
+    canProposeEdits: false,
   } satisfies ToolContext;
   return { ctx, commands, records };
 }

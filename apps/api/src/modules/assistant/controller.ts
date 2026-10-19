@@ -5,6 +5,8 @@ import { validate } from '../../lib/validate';
 import { AppError, AuthError } from '../../errors';
 import { config } from '../../config/env';
 import { runAssistant, budget } from './service';
+import { canSaveDirectly } from '../../authz/assert';
+import { getUnitTree } from '../../authz/unitTree';
 
 const MapContextSchema = z.object({
   bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
@@ -67,7 +69,7 @@ export async function postMessage(req: FastifyRequest, reply: FastifyReply) {
     message,
     mapContext,
     logger: req.log,
-    role: req.currentUser.role,
+    canProposeEdits: canSaveDirectly(req.currentUser, await getUnitTree(req.server.pg)),
   });
   reply.send(result);
 }

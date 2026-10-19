@@ -6,7 +6,6 @@ import {
   REGION_PROVINCE_NAMES,
   type MapContext,
 } from '@webatlas/shared';
-import type { Role } from '../users/repository';
 
 /**
  * The stable half of the prompt. Everything here must be byte-identical on every
@@ -51,8 +50,8 @@ const FLOOD_RULE = `9. Câu hỏi về lũ, ngập, kịch bản mưa hay sơ t�
 export const SYSTEM_PROMPT = `${BASE_RULES}\n\n${READ_ONLY_RULE}\n\n${FLOOD_RULE}`;
 export const ADMIN_SYSTEM_PROMPT = `${BASE_RULES}\n\n${ADMIN_UPDATE_RULE}\n\n${FLOOD_RULE}`;
 
-export function systemPromptFor(role: Role): string {
-  return role === 'admin' ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT;
+export function systemPromptFor(canProposeEdits: boolean): string {
+  return canProposeEdits ? ADMIN_SYSTEM_PROMPT : SYSTEM_PROMPT;
 }
 
 /**

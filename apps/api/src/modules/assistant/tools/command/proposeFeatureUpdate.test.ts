@@ -24,7 +24,7 @@ function makeCtx() {
   const records: Provenance[] = [];
   const ctx = {
     pool,
-    role: 'admin',
+    canProposeEdits: true,
     mapContext: { bbox: [106.5, 10.5, 110, 16.5], zoom: 8, visibleLayerStateIds: [], basemap: 'street' },
     collect: vi.fn((c: MapCommand) => commands.push(c)),
     provenance: vi.fn((p: Provenance) => records.push(p)),

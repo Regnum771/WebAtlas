@@ -23,6 +23,19 @@ export function requirePermission(...perms: Permission[]) {
   };
 }
 
+/**
+ * "Can save directly": admin, or the user holds both feature.update and submission.review on
+ * at least one unit (a grant on a unit covers its descendants). Until submissions exist, this is
+ * what lets a write publish at all; the web applies the same rule.
+ */
+export function canSaveDirectly(user: CurrentUser, tree: UnitTree): boolean {
+  if (user.isAdmin) return true;
+  for (const code of tree.keys()) {
+    if (can(user.grants, 'feature.update', code, tree) && can(user.grants, 'submission.review', code, tree)) return true;
+  }
+  return false;
+}
+
 export function requireAdmin() {
   return async (request: FastifyRequest) => {
     const user = request.currentUser;

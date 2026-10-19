@@ -36,7 +36,7 @@ beforeAll(() => { pool = getPool(); });
 afterAll(async () => { await closePool(); });
 
 function ask(message: string, role: 'admin' | 'viewer' = 'viewer', sessionId = `live-${Math.random()}`) {
-  return runAssistant({ pool, userId: 'live-test-user', sessionId, message, mapContext: MAP_CONTEXT, logger: testLogger, role });
+  return runAssistant({ pool, userId: 'live-test-user', sessionId, message, mapContext: MAP_CONTEXT, logger: testLogger, canProposeEdits: role === 'admin' });
 }
 
 maybe('intent routing (live model)', () => {

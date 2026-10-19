@@ -32,7 +32,7 @@ function makeCtx() {
     mapContext: { bbox: [107.9, 15.6, 108.5, 16.0], zoom: 10, visibleLayerStateIds: [], basemap: 'street' },
     collect: vi.fn((c: MapCommand) => commands.push(c)),
     provenance: vi.fn((p: Provenance) => records.push(p)),
-    role: 'viewer',
+    canProposeEdits: false,
   } satisfies ToolContext;
   return { ctx, commands, records };
 }
