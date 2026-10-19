@@ -4,27 +4,43 @@ import { renderHook, act } from '@testing-library/react';
 const listUsers = vi.fn();
 const createUser = vi.fn();
 const updateUser = vi.fn();
+const setUserGroups = vi.fn();
 vi.mock('../api/users.api', () => ({
   listUsers: () => listUsers(),
   createUser: (i: unknown) => createUser(i),
   updateUser: (id: string, p: unknown) => updateUser(id, p),
+  setUserGroups: (id: string, ids: unknown) => setUserGroups(id, ids),
 }));
+
+vi.mock('../../access-groups/api/accessGroups.api', () => ({ listGroups: vi.fn() }));
+const showToast = vi.fn();
+vi.mock('../../../shared/ui/toast.store', () => ({ showToast: (t: unknown) => showToast(t) }));
+let mockTree: unknown = null;
+vi.mock('../../../entities/session/model/useUnitTree', () => ({ useUnitTree: () => mockTree }));
 
 const invalidate = vi.fn();
 vi.mock('../../../shared/api/queryClient', () => ({ queryClient: { invalidateQueries: (a: unknown) => invalidate(a) } }));
 
+const holder: { isAdmin: boolean; grants: Array<{ permission: string; unit: string }> } = { isAdmin: true, grants: [] };
 vi.mock('../../../entities/session/model/session.store', () => ({
-  useSession: () => ({ currentUser: { id: 'me', email: 'me@b.test', full_name: 'Me', role: 'admin' } }),
+  useSession: () => ({ currentUser: { id: 'me', email: 'me@b.test', full_name: 'Me', role: 'admin', isAdmin: holder.isAdmin, grants: holder.grants } }),
 }));
 
 // Mock TanStack: useQuery returns our list; useMutation returns a mutateAsync that calls the fn + onSuccess.
 import type { AdminUser } from '../api/users.api';
+const groupRows = [
+  { id: 'g1', name: 'Tỉnh', description: null, units: ['48'], permissions: ['feature.update'], memberCount: 1 },
+  { id: 'g2', name: 'Bộ', description: null, units: ['VN'], permissions: ['users.manage'], memberCount: 0 },
+];
 const rows: AdminUser[] = [
-  { id: 'me', email: 'me@b.test', full_name: 'Me', role: 'admin', is_active: true, created_at: '', updated_at: '' },
-  { id: 'u2', email: 'ed@b.test', full_name: 'Ed', role: 'viewer', is_active: true, created_at: '', updated_at: '' },
+  { id: 'me', email: 'me@b.test', full_name: 'Me', role: 'admin', is_active: true, created_at: '', updated_at: '', groups: [] },
+  { id: 'u2', email: 'ed@b.test', full_name: 'Ed', role: 'viewer', is_active: true, created_at: '', updated_at: '', groups: [{ id: 'g1', name: 'Tỉnh' }] },
 ];
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: () => ({ data: rows, isLoading: false, error: null }),
+  useQuery: (o: { queryKey: string[] }) => ({
+    data: o.queryKey[0] === 'access-groups' ? groupRows : rows,
+    isLoading: false, isError: false, error: null, refetch: vi.fn(),
+  }),
   useMutation: (opts: { mutationFn: (v: unknown) => Promise<unknown>; onSuccess?: () => void }) => ({
     mutateAsync: async (v: unknown) => { const r = await opts.mutationFn(v); opts.onSuccess?.(); return r; },
     isPending: false,
@@ -33,7 +49,7 @@ vi.mock('@tanstack/react-query', () => ({
 
 import { useUsersPresenter } from './useUsersPresenter';
 
-beforeEach(() => { listUsers.mockReset(); createUser.mockReset(); updateUser.mockReset(); invalidate.mockReset(); });
+beforeEach(() => { holder.isAdmin = true; holder.grants = []; mockTree = null; setUserGroups.mockReset(); showToast.mockReset(); listUsers.mockReset(); createUser.mockReset(); updateUser.mockReset(); invalidate.mockReset(); });
 
 describe('useUsersPresenter', () => {
   it('exposes the user list', () => {
@@ -115,5 +131,63 @@ describe('useUsersPresenter', () => {
     act(() => { result.current.setField('email', 'n@b.test'); result.current.setField('password', 'longenough'); });
     await act(async () => { await result.current.submitForm(); });
     expect(result.current.formError).toBe('Chưa lưu được. Thử lại.');
+  });
+
+  describe('groups dialog', () => {
+    const TREE = new Map([
+      ['VN', { code: 'VN', level: 'country', parent: null, name: 'Việt Nam' }],
+      ['48', { code: '48', level: 'province', parent: 'VN', name: 'Đà Nẵng' }],
+    ]);
+
+    it('opens with the current memberships and saves the replaced set, then toasts and closes', async () => {
+      setUserGroups.mockResolvedValue({});
+      const { result } = renderHook(() => useUsersPresenter());
+      act(() => result.current.openGroups(rows[1]));
+      expect(result.current.groupsDialog.selected).toEqual(['g1']);
+      act(() => result.current.toggleGroup('g2'));
+      await act(async () => { await result.current.submitGroups(); });
+      expect(setUserGroups).toHaveBeenCalledWith('u2', ['g1', 'g2']);
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['users'] });
+      expect(showToast).toHaveBeenCalledWith(expect.objectContaining({ tone: 'success' }));
+      expect(result.current.groupsDialog.user).toBeNull();
+    });
+
+    it('shows the server message for a 403 ESCALATION and stays open', async () => {
+      const { ApiError } = await import('../../../shared/api/apiClient');
+      setUserGroups.mockRejectedValue(new ApiError(403, 'ESCALATION', 'Nhóm vượt quá quyền của anh/chị.'));
+      const { result } = renderHook(() => useUsersPresenter());
+      act(() => result.current.openGroups(rows[1]));
+      await act(async () => { await result.current.submitGroups(); });
+      expect(result.current.groupsDialog.error).toBe('Nhóm vượt quá quyền của anh/chị.');
+      expect(result.current.groupsDialog.user).not.toBeNull();
+    });
+
+    it('shows a generic message for any other failure', async () => {
+      const { ApiError } = await import('../../../shared/api/apiClient');
+      setUserGroups.mockRejectedValue(new ApiError(500, 'INTERNAL', 'boom'));
+      const { result } = renderHook(() => useUsersPresenter());
+      act(() => result.current.openGroups(rows[1]));
+      await act(async () => { await result.current.submitGroups(); });
+      expect(result.current.groupsDialog.error).toBe('Chưa lưu được nhóm. Thử lại.');
+    });
+
+    it('summaryFor expands the user groups from the loaded list', () => {
+      mockTree = TREE;
+      const { result } = renderHook(() => useUsersPresenter());
+      expect(result.current.summaryFor(rows[1])).toEqual(['Sửa: Đà Nẵng']);
+      expect(result.current.summaryFor(rows[0])).toEqual(['Quản trị viên — toàn quyền']);
+    });
+
+    it('a non-admin holder: no account admin; out-of-scope groups are not hand-over-able; no tree disables all', () => {
+      holder.isAdmin = false;
+      holder.grants = [{ permission: 'users.manage', unit: '48' }, { permission: 'feature.update', unit: '48' }];
+      mockTree = TREE;
+      const { result, rerender } = renderHook(() => useUsersPresenter());
+      expect(result.current.adminActions).toBe(false);
+      expect(result.current.canHandOverGroup(groupRows[0] as never)).toBe(true);
+      expect(result.current.canHandOverGroup(groupRows[1] as never)).toBe(false);
+      mockTree = null; rerender();
+      expect(result.current.canHandOverGroup(groupRows[0] as never)).toBe(false);
+    });
   });
 });

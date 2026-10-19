@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('../../../shared/api/apiClient', () => ({ apiRequest: vi.fn() }));
 import { apiRequest } from '../../../shared/api/apiClient';
-import { listUsers, createUser, updateUser } from './users.api';
+import { listUsers, createUser, updateUser, setUserGroups } from './users.api';
 
 const mockApi = apiRequest as ReturnType<typeof vi.fn>;
 afterEach(() => vi.clearAllMocks());
@@ -38,5 +38,16 @@ describe('updateUser', () => {
     expect(path).toBe('/api/users/u1');
     expect(init.method).toBe('PUT');
     expect(JSON.parse(init.body)).toEqual({ is_active: false });
+  });
+});
+
+describe('setUserGroups', () => {
+  it('PUTs groupIds to /api/users/:id/groups', async () => {
+    mockApi.mockResolvedValue({ user: { id: 'u1', groups: [] } });
+    await setUserGroups('u1', ['g1', 'g2']);
+    const [path, init] = mockApi.mock.calls[0];
+    expect(path).toBe('/api/users/u1/groups');
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body)).toEqual({ groupIds: ['g1', 'g2'] });
   });
 });

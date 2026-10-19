@@ -9,6 +9,7 @@ export interface AdminUser {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  groups: Array<{ id: string; name: string }>;
 }
 
 export interface CreateUserInput { email: string; password: string; full_name?: string; role: Role; }
@@ -29,5 +30,12 @@ export function updateUser(id: string, patch: UpdateUserPatch): Promise<AdminUse
   return apiRequest<{ user: AdminUser }>(`/api/users/${id}`, {
     method: 'PUT',
     body: JSON.stringify(patch),
+  }).then((r) => r.user);
+}
+
+export function setUserGroups(id: string, groupIds: string[]): Promise<AdminUser> {
+  return apiRequest<{ user: AdminUser }>(`/api/users/${id}/groups`, {
+    method: 'PUT',
+    body: JSON.stringify({ groupIds }),
   }).then((r) => r.user);
 }
