@@ -6,7 +6,8 @@ import { hashPassword } from '../../lib/password';
 
 const app = buildApp();
 const PW = 'unassigned-pass-123';
-const MINISTRY = 'unassigned-ministry@webatlas.test'; // feature.update on VN
+const MINISTRY = 'unassigned-ministry@webatlas.test'; // feature.update + submission.review on VN
+const MINISTRY_NO_REVIEW = 'unassigned-ministry-noreview@webatlas.test'; // feature.update on VN only
 const PROVINCE = 'unassigned-province@webatlas.test'; // feature.update on 48
 const ADMIN = 'unassigned-admin@webatlas.test';
 const GROUP_PREFIX = 'unassigned-test-';
@@ -44,11 +45,12 @@ beforeAll(async () => {
   await app.ready();
   await cleanup();
   const repo = usersRepository(getPool());
-  for (const [email, role] of [[MINISTRY, 'viewer'], [PROVINCE, 'viewer'], [ADMIN, 'admin']] as const) {
+  for (const [email, role] of [[MINISTRY, 'viewer'], [MINISTRY_NO_REVIEW, 'viewer'], [PROVINCE, 'viewer'], [ADMIN, 'admin']] as const) {
     const row = await repo.insert({ email, password_hash: await hashPassword(PW), full_name: email, role });
     ids.set(email, row.id);
   }
   await createGroup('ministry', 'VN', ['feature.update', 'submission.review'], MINISTRY);
+  await createGroup('ministry-noreview', 'VN', ['feature.update'], MINISTRY_NO_REVIEW);
   await createGroup('province', '48', ['feature.update', 'submission.review'], PROVINCE);
 });
 
@@ -78,8 +80,15 @@ describe('GET /api/layers/unassigned', () => {
     expect(keys).toEqual([...keys].sort());
   });
 
-  it('is open to a ministry officer holding feature.update on VN', async () => {
+  it('is open to a ministry officer holding feature.update and submission.review on VN', async () => {
     expect((await get(MINISTRY)).statusCode).toBe(200);
+  });
+
+  // Assigning publishes at once until P4, so the page needs the review right too.
+  it('refuses a ministry officer holding feature.update on VN without submission.review', async () => {
+    const res = await get(MINISTRY_NO_REVIEW);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe('NO_PERMISSION');
   });
 
   it('refuses a province officer', async () => {

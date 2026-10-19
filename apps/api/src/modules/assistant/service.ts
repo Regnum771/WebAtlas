@@ -47,7 +47,7 @@ export interface AssistantDeps {
   /** The route's per-request logger, threaded through so the original
    *  Anthropic error can be logged before toAppError() discards its detail. */
   logger: FastifyBaseLogger;
-  /** Admin, or feature.update plus submission.review on some unit (authz canSaveDirectly). */
+  /** Admin, or feature.update plus submission.review on a common unit (shared canSaveDirectly). */
   canProposeEdits: boolean;
 }
 

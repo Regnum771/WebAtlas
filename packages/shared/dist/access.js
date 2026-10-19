@@ -44,6 +44,19 @@ export function can(grants, permission, unit, tree) {
         return false;
     return grants.some((g) => g.permission === permission && chain.has(g.unit));
 }
+/**
+ * "Can save directly": feature.update and submission.review both cover at least one common
+ * unit of the tree (a grant on a unit covers its descendants). Until submissions exist (P4)
+ * this is what lets a write publish at all. Admin is the caller's concern: admin always may.
+ * The API (assistant tool offer) and the web (Biên tập, proposal dialog) share this rule.
+ */
+export function canSaveDirectly(grants, tree) {
+    for (const code of tree.keys()) {
+        if (can(grants, 'feature.update', code, tree) && can(grants, 'submission.review', code, tree))
+            return true;
+    }
+    return false;
+}
 /** Distinct, sorted units on which the permission is granted directly. */
 export function unitsFor(grants, permission) {
     return [...new Set(grants.filter((g) => g.permission === permission).map((g) => g.unit))].sort();

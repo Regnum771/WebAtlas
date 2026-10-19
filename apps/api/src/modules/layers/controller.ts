@@ -51,10 +51,13 @@ export async function listFeatures(req: FastifyRequest, reply: FastifyReply) {
 }
 
 // Features nobody could place (no geometry) wait at the country level. Only someone who may
-// update features at 'VN' can assign them, so only they get the list.
+// update features at 'VN' AND publish there (submission.review: direct publish until P4) can
+// assign them, so only they get the list. P4 relaxes this to feature.update alone.
 export async function listUnassigned(req: FastifyRequest, reply: FastifyReply) {
   const tree = await getUnitTree(req.server.pg);
-  assertCan(actorOf(req), 'feature.update', COUNTRY_UNIT, tree);
+  const user = actorOf(req);
+  assertCan(user, 'feature.update', COUNTRY_UNIT, tree);
+  assertCan(user, 'submission.review', COUNTRY_UNIT, tree);
   const features = await featuresRepository(req.server.pg).listUnassigned();
   reply.send({ features });
 }

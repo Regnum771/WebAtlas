@@ -264,6 +264,7 @@ describe('proposeFeatureEdit', () => {
   it('rejects unknown or non-editable columns, empty proposals and over-long sources', () => {
     expect(isMapCommand({ ...base, proposed: { secret: '1' } })).toBe(false);
     expect(isMapCommand({ ...base, proposed: { external_id: '9' } })).toBe(false);
+    expect(isMapCommand({ ...base, proposed: { managing_unit: '48' } })).toBe(false);
     expect(isMapCommand({ ...base, proposed: {} })).toBe(false);
     expect(isMapCommand({ ...base, sourceDocument: 'x'.repeat(501) })).toBe(false);
     expect(isMapCommand({ ...base, sourceProvider: 'x'.repeat(201) })).toBe(false);
@@ -273,5 +274,9 @@ describe('proposeFeatureEdit', () => {
   it('editableColumns drops external_id', () => {
     expect(editableColumns('dams')).toContain('wattage_mw');
     expect(editableColumns('dams')).not.toContain('external_id');
+  });
+
+  it('editableColumns drops managing_unit: a proposal never moves a feature to another unit (P1)', () => {
+    expect(editableColumns('dams')).not.toContain('managing_unit');
   });
 });

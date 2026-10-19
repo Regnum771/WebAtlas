@@ -23,7 +23,7 @@ export const proposeFeatureUpdateTool: ToolFactory = (ctx) =>
   betaZodTool({
     name: 'propose_feature_update',
     description:
-      'Open an update form, prefilled with proposed attribute values, for the administrator to review and save. Does NOT write anything. featureId must come from a data tool. changes maps DB column names (e.g. wattage_mw, status, name) to new values as text. Pass sourceDocument (decision/report name or number) and sourceProvider (who supplied the figures) when the user mentions them.',
+      'Open an update form, prefilled with proposed attribute values, for the administrator to review and save. Does NOT write anything. featureId must come from a data tool. changes maps DB column names (e.g. wattage_mw, status, name) to new values as text; managing_unit cannot be proposed (the managing unit is changed in the edit form). Pass sourceDocument (decision/report name or number) and sourceProvider (who supplied the figures) when the user mentions them.',
     inputSchema: z.object({
       layerKey: z.enum(EDITABLE_LAYER_KEYS),
       featureId: z.string(),

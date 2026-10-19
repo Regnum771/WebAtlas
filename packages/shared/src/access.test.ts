@@ -4,6 +4,7 @@ import {
   ancestorsOf,
   buildUnitTree,
   can,
+  canSaveDirectly,
   isWithin,
   unitsFor,
   type UnitNode,
@@ -82,5 +83,28 @@ describe('GROUP_TEMPLATES', () => {
     for (const t of GROUP_TEMPLATES) {
       expect(t.permissions).toEqual(['feature.create', 'feature.update', 'feature.delete', 'map.import']);
     }
+  });
+});
+
+describe('canSaveDirectly', () => {
+  const rev = (unit: string) => ({ permission: 'submission.review' as const, unit });
+
+  it('is true with feature.update and submission.review on the same province', () => {
+    expect(canSaveDirectly([upd('48'), rev('48')], tree)).toBe(true);
+  });
+  it('is true when one grant covers the other: update on the province, review on one of its wards', () => {
+    expect(canSaveDirectly([upd('48'), rev('20194')], tree)).toBe(true);
+  });
+  it('is false with feature.update only', () => {
+    expect(canSaveDirectly([upd('48')], tree)).toBe(false);
+  });
+  it('is false when the two rights are on disjoint units', () => {
+    expect(canSaveDirectly([upd('48'), rev('51')], tree)).toBe(false);
+  });
+  it('is false for a grant on a unit missing from the tree', () => {
+    expect(canSaveDirectly([upd('99'), rev('99')], tree)).toBe(false);
+  });
+  it('is false for no grants at all', () => {
+    expect(canSaveDirectly([], tree)).toBe(false);
   });
 });

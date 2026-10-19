@@ -72,6 +72,19 @@ describe('propose_feature_update', () => {
     expect(text).toContain('wattage_mw');
   });
 
+  it('refuses to propose a managing unit change (P1) and leaves it out of the proposal', async () => {
+    const { ctx, commands } = makeCtx();
+    const text = await run(proposeFeatureUpdateTool(ctx), { layerKey: 'dams', featureId: damId, changes: { managing_unit: '48' } });
+    expect(commands).toEqual([]);
+    expect(text).toContain('Không cập nhật được cột managing_unit');
+    expect(text.split('Các cột hợp lệ:')[1]).not.toContain('managing_unit');
+
+    const ok = makeCtx();
+    await run(proposeFeatureUpdateTool(ok.ctx), { layerKey: 'dams', featureId: damId, changes: { wattage_mw: '9999' } });
+    const proposal = ok.commands[1] as Extract<MapCommand, { kind: 'proposeFeatureEdit' }>;
+    expect(proposal.current).not.toHaveProperty('managing_unit');
+  });
+
   it('reports no data for an unknown feature and still emits provenance', async () => {
     const { ctx, commands, records } = makeCtx();
     const text = await run(proposeFeatureUpdateTool(ctx), {
