@@ -275,8 +275,8 @@ export function featuresRepository(pg: Pool) {
         return;
       }
       await client.query(
-        `INSERT INTO ${def.table} (external_id, dataset_version_id, deleted, ${def.geomColumn})
-         SELECT external_id, $1, true, ${def.geomColumn} FROM ${def.table} WHERE id = $2`,
+        `INSERT INTO ${def.table} (external_id, dataset_version_id, deleted, ${def.geomColumn}, managing_unit)
+         SELECT external_id, $1, true, ${def.geomColumn}, managing_unit FROM ${def.table} WHERE id = $2`,
         [versionId, source.rowId]
       );
     },

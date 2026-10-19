@@ -7,6 +7,7 @@ export { ConflictError, NotFoundError, StaleDraftError } from './errors';
 export { versionsService, type IngestVersionArgs, type VersionsService } from './service';
 export { versionsRepository, type DatasetVersion, type VersionsRepository } from './repository';
 export { stampAdminCodes } from './adminStamp';
+export { stampManagingUnits } from './managingUnit';
 export {
   buildRiverHierarchy,
   materialiseResolved,
