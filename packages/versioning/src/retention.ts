@@ -26,7 +26,10 @@ export function assertPrunable(
 /**
  * Remove the layer's versions that retention does not keep (S1 spec §3), with their rows. Kept:
  * the active chain; the EARLIER_LOADS_KEPT most recent ingest versions outside it, with every
- * version built on them; every version in app.version_pins, with its chain to the root.
+ * version built on them; every version in app.version_pins, with its chain to the root; every
+ * open draft (draft_status IS NOT NULL), with its chain to the root. A draft outlives the
+ * request that opened it and usually branches from a version that has since stopped being
+ * active, so neither the active chain nor the earlier-loads window covers it.
  *
  * Runs on the caller's client and transaction: from activate() right after the current flag
  * moved, and from the loader's "content unchanged" path under the layer lock. A layer with no
@@ -67,8 +70,14 @@ export async function pruneVersions(
          UNION ALL
          SELECT p.id, p.parent_version_id FROM app.dataset_versions p JOIN pinned c ON p.id = c.parent_version_id
        ),
+       drafts AS (
+         SELECT id, parent_version_id FROM app.dataset_versions WHERE layer_key = $1 AND draft_status IS NOT NULL
+         UNION ALL
+         SELECT p.id, p.parent_version_id FROM app.dataset_versions p JOIN drafts c ON p.id = c.parent_version_id
+       ),
        kept AS (
          SELECT id FROM active_chain UNION SELECT id FROM earlier_trees UNION SELECT id FROM pinned
+         UNION SELECT id FROM drafts
        )
      SELECT v.id::text AS id, v.parent_version_id::text AS parent,
             v.id NOT IN (SELECT id FROM kept) AS doomed, v.is_active AS active

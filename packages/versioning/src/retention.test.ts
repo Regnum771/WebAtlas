@@ -110,6 +110,38 @@ describe('retention', () => {
     });
   });
 
+  it('keeps an open draft and its parent chain across activations', async () => {
+    await inRollback(async (c) => {
+      const a1 = await load(c, 'A1');
+      // Draft D opens on A1 and stays open (draft_status set, never activated).
+      const d = await svc().openEditDraft(c, 'stations');
+      await c.query(`UPDATE app.dataset_versions SET draft_status = 'personal' WHERE id = $1`, [d]);
+      // Another edit E is published on A1 and becomes active; its activation prunes.
+      const e = await edit(c);
+      expect(await stationVersions(c)).toContain(d);
+      // Newer ingests push A1 out of the active chain and then out of the EARLIER_LOADS_KEPT
+      // window of earlier loads.
+      const newer: string[] = [];
+      for (let i = 0; i <= EARLIER_LOADS_KEPT; i++) newer.push(await load(c, `N${i}`));
+      const kept = await stationVersions(c);
+      // E is neither a draft nor an ancestor of one, so it goes with A1's tree.
+      expect(kept).not.toContain(e);
+      expect(kept).toContain(d);
+      // D's whole ancestor chain is still there, with its rows.
+      const { rows: chain } = await c.query<{ id: string }>(
+        `WITH RECURSIVE chain AS (
+           SELECT id, parent_version_id FROM app.dataset_versions WHERE id = $1
+           UNION ALL
+           SELECT p.id, p.parent_version_id FROM app.dataset_versions p JOIN chain c ON p.id = c.parent_version_id
+         )
+         SELECT id::text AS id FROM chain`,
+        [d]
+      );
+      expect(chain.map((r) => r.id).sort()).toEqual([a1, d].sort());
+      expect(await rowsOf(c, a1)).toBe(1);
+    });
+  });
+
   it('a layer with no active version is left alone', async () => {
     await inRollback(async (c) => {
       for (const label of ['L1', 'L2', 'L3', 'L4']) await load(c, label);
