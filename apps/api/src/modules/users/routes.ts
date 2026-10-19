@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { authorize } from '../../hooks/authorization';
-import { CAN_MANAGE_USERS } from '../../hooks/capabilities';
+import { requireAdmin } from '../../authz/assert';
 import { listUsers, createUser, updateUser, deleteUser } from './controller';
 
 export default async function usersRoutes(app: FastifyInstance) {
-  const adminOnly = { preHandler: [app.authenticate, authorize(...CAN_MANAGE_USERS)] };
+  // Admin only for now; users.manage holders are let in by P1 Task 5.
+  const adminOnly = { preHandler: [app.authenticate, requireAdmin()] };
   app.get('/', adminOnly, listUsers);
   app.post('/', adminOnly, createUser);
   app.put('/:id', adminOnly, updateUser);

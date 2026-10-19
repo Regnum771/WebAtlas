@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import { authorize } from '../../hooks/authorization';
-import { CAN_READ_FEATURES, CAN_WRITE_FEATURES } from '../../hooks/capabilities';
+import { requireAdmin } from '../../authz/assert';
 import { getLayers, listFeatures, createFeature, updateFeature, deleteFeature } from './controller';
 
 export default async function layersRoutes(app: FastifyInstance) {
-  const canRead = { preHandler: [app.authenticate, authorize(...CAN_READ_FEATURES)] };
-  const canWrite = { preHandler: [app.authenticate, authorize(...CAN_WRITE_FEATURES)] };
+  // Any signed-in user may read features.
+  const canRead = { preHandler: [app.authenticate] };
+  // Admin only for now; per-operation requirePermission replaces this (P1 Task 6).
+  const canWrite = { preHandler: [app.authenticate, requireAdmin()] };
   app.get('/layers', getLayers); // public metadata (INV-2 catalog)
   app.get('/layers/:key/features', canRead, listFeatures);
   app.post('/layers/:key/features', canWrite, createFeature);

@@ -16,7 +16,8 @@ export class AuthError extends AppError {
   constructor(message = 'Authentication required') { super(401, 'AUTH_ERROR', message); }
 }
 export class ForbiddenError extends AppError {
-  constructor(message = 'Forbidden') { super(403, 'FORBIDDEN', message); }
+  // `code` lets a client tell refusals apart (e.g. NO_PERMISSION vs OUT_OF_JURISDICTION).
+  constructor(message = 'Forbidden', code = 'FORBIDDEN', details?: unknown) { super(403, code, message, details); }
 }
 export class NotFoundError extends AppError {
   constructor(message = 'Not found') { super(404, 'NOT_FOUND', message); }
