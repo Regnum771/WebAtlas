@@ -26,5 +26,9 @@ export {
 export { assertRiverGates, RIVER_BASELINE, type RiverBaseline } from './riverGates';
 export { loadFeatures, type FeatureLoadSpec } from './loadFeatures';
 export { resolvedSql } from './resolve';
+export {
+  CONTENT_EXCLUDED_KEYS, changedFeatures, touchedFeatures, listConflicts, resolveConflict, rebaseDraft,
+  type Conflict, type ConflictChoice,
+} from './rebase';
 export { refreshCurrentRows } from './currentRows';
 export { assertPrunable, EARLIER_LOADS_KEPT, pruneVersions } from './retention';

@@ -5,17 +5,20 @@ const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
  * version and its ancestors; per external_id the nearest version's row wins, and a tombstone
  * there removes the feature (the filter runs after DISTINCT ON, so a tombstone suppresses the
  * inherited row instead of letting it resurface). `select` names the columns to return from
- * the resolved rows.
+ * the resolved rows. `param` is the placeholder that carries the version id ($1 unless the caller
+ * needs two resolved states in one statement, as changedFeatures does).
  *
  * Used to set the current flag at activation, to resolve a version that is not active yet
- * (the river hierarchy and gates, during activation), and by resolveFeatureIds. The active
+ * (the river hierarchy and gates, during activation), by resolveFeatureIds, and to compare two
+ * versions' content when a draft is rebased (rebase.ts). The active
  * state itself is read from the water.<layer>_active views, never through this.
  */
-export function resolvedSql(layerKey: string, select = 'id'): string {
+export function resolvedSql(layerKey: string, select = 'id', param = '$1'): string {
   if (!IDENTIFIER.test(layerKey)) throw new Error(`resolvedSql: "${layerKey}" is not a layer key`);
+  if (!/^\$[1-9][0-9]*$/.test(param)) throw new Error(`resolvedSql: "${param}" is not a placeholder`);
   return `
     WITH RECURSIVE chain AS (
-      SELECT id, parent_version_id, 0 AS depth FROM app.dataset_versions WHERE id = $1
+      SELECT id, parent_version_id, 0 AS depth FROM app.dataset_versions WHERE id = ${param}
       UNION ALL
       SELECT p.id, p.parent_version_id, c.depth + 1
         FROM app.dataset_versions p JOIN chain c ON p.id = c.parent_version_id
