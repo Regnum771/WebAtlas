@@ -156,6 +156,10 @@ describe('inactive maps', () => {
     const recent = await makeMap('Gần đây', { activity: ago(179 * DAY) });
     const already = await makeMap('Đã báo', { activity: ago(200 * DAY), notice: ago(5 * DAY) });
 
+    // A scope that names only drafts touches no maps (not every map in the database).
+    expect(await markInactive(getPool(), NOW, { draftIds: ['00000000-0000-4000-8000-000000000000'] })).toBe(0);
+    expect((await mapState(old)).inactivity_notice_at).toBeNull();
+
     expect(await markInactive(getPool(), NOW, scope())).toBe(1);
     expect((await mapState(old)).inactivity_notice_at).toEqual(NOW);
     expect((await mapState(recent)).inactivity_notice_at).toBeNull();

@@ -11,11 +11,17 @@ export const ORPHAN_DRAFT_GRACE_HOURS = 24;
 
 /**
  * Narrows a cleanup to some owners and/or drafts. Without a scope a cleanup acts on the whole
- * database (what the CLI wants); tests always pass their own.
+ * database (what the CLI wants); tests always pass their own. The map sweeps (markInactive,
+ * archiveNoticed) read only ownerIds: a scope that names drafts alone touches no maps.
  */
 export interface CleanupScope {
   ownerIds?: string[];
   draftIds?: string[];
+}
+
+/** The owners a map sweep covers: null (every map) without a scope, else scope.ownerIds or none. */
+function mapOwners(scope?: CleanupScope): string[] | null {
+  return scope ? scope.ownerIds ?? [] : null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -32,7 +38,7 @@ export async function markInactive(pg: Pool, now: Date, scope?: CleanupScope): P
         SET inactivity_notice_at = $1
       WHERE archived_at IS NULL AND inactivity_notice_at IS NULL AND last_activity_at < $2
         AND ($3::uuid[] IS NULL OR owner_id = ANY($3::uuid[]))`,
-    [now, cutoff, scope?.ownerIds ?? null]
+    [now, cutoff, mapOwners(scope)]
   );
   return rowCount ?? 0;
 }
@@ -41,6 +47,11 @@ export async function markInactive(pg: Pool, now: Date, scope?: CleanupScope): P
  * Archive unarchived maps whose notice is older than ARCHIVE_AFTER_NOTICE_DAYS, one transaction
  * per map: its edit-copy drafts are discarded and archived_at is set. Free features are kept
  * (P3b decides what happens to files). Returns how many were archived.
+ *
+ * Do not schedule before P4 delivers inactivity notices. Until then nobody is told that a map
+ * is about to be archived, and only writes refresh last_activity_at, so a map that is only being
+ * read can reach this point and lose its drafts, which cannot be undone. The CLI
+ * (scripts/workspaceCleanup.ts) runs it only when given --archive.
  */
 export async function archiveNoticed(pg: Pool, now: Date, scope?: CleanupScope): Promise<number> {
   const cutoff = new Date(now.getTime() - ARCHIVE_AFTER_NOTICE_DAYS * DAY_MS);
@@ -49,7 +60,7 @@ export async function archiveNoticed(pg: Pool, now: Date, scope?: CleanupScope):
       WHERE archived_at IS NULL AND inactivity_notice_at < $1
         AND ($2::uuid[] IS NULL OR owner_id = ANY($2::uuid[]))
       ORDER BY id`,
-    [cutoff, scope?.ownerIds ?? null]
+    [cutoff, mapOwners(scope)]
   );
   let archived = 0;
   for (const { id } of rows) {
