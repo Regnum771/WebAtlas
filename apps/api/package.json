@@ -12,6 +12,7 @@
     "contours:generate": "tsx src/scripts/generateContours.ts",
     "dev": "tsx watch src/start.ts",
     "start": "tsx src/start.ts",
+    "workspace:cleanup": "tsx src/scripts/workspaceCleanup.ts",
     "create-admin": "tsx src/scripts/create-admin.ts",
     "test": "vitest run",
     "test:live": "vitest run --config vitest.live.config.ts"

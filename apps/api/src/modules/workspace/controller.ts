@@ -11,6 +11,7 @@ import {
   EditCopyFeatureParams, EditCopyFeaturesQuery, FeatureParams, FeaturesQuery, LayerParams, MapIdParams, RemoveBody,
   ShareParams, ShareTargetsQuery, UpdateFeatureBody, UpdateLayerBody, UpdateMapBody,
 } from './schemas';
+import { adminSummary as adminSummaryQuery } from './cleanup';
 import { sharingService } from './sharing';
 
 /*
@@ -193,4 +194,11 @@ export async function removeFeature(req: FastifyRequest, reply: FastifyReply) {
   const kind = await layerKindOf(req, mapId, layerId);
   const service = serviceFor(req, kind);
   reply.send(await service.removeFeature(userOf(req), mapId, layerId, featureIdOf(req, kind), body));
+}
+
+// --- Admin --------------------------------------------------------------------------------
+
+/** Counts and sizes per owner. Never titles or content; admin sees no one's map. */
+export async function adminSummary(req: FastifyRequest, reply: FastifyReply) {
+  reply.send({ owners: await adminSummaryQuery(req.server.pg) });
 }

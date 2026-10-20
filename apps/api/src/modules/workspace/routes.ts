@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
+import { requireAdmin } from '../../authz/assert';
 import {
-  addFeature, addLayer, addShare, copyMap, createMap, deleteMap, getMap, listFeatures, listMaps, listShares,
+  addFeature, adminSummary, addLayer, addShare, copyMap, createMap, deleteMap, getMap, listFeatures, listMaps, listShares,
   listShareTargets, removeFeature, removeLayer, removeShare, updateFeature, updateLayer, updateMap,
 } from './controller';
 
@@ -29,4 +30,7 @@ export default async function workspaceRoutes(app: FastifyInstance) {
   app.post('/maps/:mapId/layers/:layerId/features', signedIn, addFeature);
   app.put('/maps/:mapId/layers/:layerId/features/:featureId', signedIn, updateFeature);
   app.delete('/maps/:mapId/layers/:layerId/features/:featureId', signedIn, removeFeature);
+
+  // Admin sees counts and sizes per owner, never content.
+  app.get('/admin/summary', { preHandler: [app.authenticate, requireAdmin()] }, adminSummary);
 }
