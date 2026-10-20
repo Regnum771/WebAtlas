@@ -17,6 +17,13 @@ import { suggestManagingUnit } from '../admin-units/repository';
 
 export type FeatureInput = { geometry?: unknown; properties?: Record<string, unknown>; source?: EditSource };
 
+/**
+ * Where an update or delete copies a feature from when the draft holds no row for it yet:
+ * 'draft' (default) is the draft's own chain, 'active' the layer's current official state.
+ * See featuresRepository.resolveEditSource.
+ */
+export interface EditSourceOptions { untouchedFrom?: 'draft' | 'active' }
+
 export interface FeatureWarning { code: 'OUTSIDE_MANAGING_UNIT'; message: string }
 export interface FeatureResult { feature: FeatureRow; warnings: FeatureWarning[] }
 
@@ -95,10 +102,11 @@ export async function createInDraft(
  * draft's own row for it, copied from the draft's resolved state when the draft has none yet.
  */
 export async function updateInDraft(
-  client: PoolClient, def: LayerDef, draftId: string, id: string, input: FeatureInput, actorId: string, tree: UnitTree
+  client: PoolClient, def: LayerDef, draftId: string, id: string, input: FeatureInput, actorId: string, tree: UnitTree,
+  opts: EditSourceOptions = {}
 ): Promise<FeatureResult> {
   const repo = featuresRepository(client);
-  const source = await repo.resolveEditSource(client, def, draftId, id);
+  const source = await repo.resolveEditSource(client, def, draftId, id, opts);
   const before = await repo.findByIdOnClient(client, def, source.rowId);
   if (!before) throw new NotFoundError('Feature not found');
   const { attrs, geometryJson } = await prepare(client, def, input, false);
@@ -116,10 +124,10 @@ export async function updateInDraft(
 
 /** Delete a feature in the draft (a tombstone row). */
 export async function removeInDraft(
-  client: PoolClient, def: LayerDef, draftId: string, id: string, actorId: string
+  client: PoolClient, def: LayerDef, draftId: string, id: string, actorId: string, opts: EditSourceOptions = {}
 ): Promise<void> {
   const repo = featuresRepository(client);
-  const source = await repo.resolveEditSource(client, def, draftId, id);
+  const source = await repo.resolveEditSource(client, def, draftId, id, opts);
   const before = await repo.findByIdOnClient(client, def, source.rowId);
   if (!before) throw new NotFoundError('Feature not found');
   await repo.tombstoneInVersion(client, def, draftId, source);

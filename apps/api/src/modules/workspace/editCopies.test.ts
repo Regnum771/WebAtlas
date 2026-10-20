@@ -119,8 +119,8 @@ async function insertDam(c: pg.PoolClient, versionId: string, ext: number, name:
   );
 }
 
-/** Publish an upstream change: a new edit version on the active one, activated. */
-async function upstream(ext: number, name: string): Promise<void> {
+/** Publish upstream changes (dams changed or added): a new edit version on the active one, activated. */
+async function upstream(dams: Array<[number, string]>): Promise<void> {
   await tx(async (c) => {
     const { rows } = await c.query<{ id: string }>(
       `INSERT INTO app.dataset_versions (layer_key, kind, parent_version_id, source, label, is_active)
@@ -130,7 +130,7 @@ async function upstream(ext: number, name: string): Promise<void> {
       [LAYER, SOURCE]
     );
     created.push(rows[0].id);
-    await insertDam(c, rows[0].id, ext, name);
+    for (const [ext, name] of dams) await insertDam(c, rows[0].id, ext, name);
     await versionsService(getPool()).activate(c, LAYER, rows[0].id);
   });
 }
@@ -358,8 +358,10 @@ describe('edit-copy layers', () => {
     const res = await call(O, 'PUT', `${base}/features/${target.id}`, { properties: { name: 'sửa trong nháp' }, expectedRevision: 1 });
     expect(res.statusCode).toBe(200);
 
-    // Someone publishes a change to another dam: the draft's parent is no longer active.
-    await upstream(DAMS[8], 'đổi ở lớp chính thức');
+    // Someone publishes a change to another dam and adds a new one: the draft's parent is no
+    // longer active, and the new dam is not in the draft's chain at all.
+    const ADDED = 901011;
+    await upstream([[DAMS[8], 'đổi ở lớp chính thức'], [ADDED, 'thêm ở lớp chính thức']]);
     const parent = await getPool().query(
       `SELECT parent_version_id <> (SELECT id FROM app.dataset_versions WHERE layer_key = 'dams' AND is_active) AS moved
          FROM app.dataset_versions WHERE id = $1`,
@@ -373,6 +375,37 @@ describe('edit-copy layers', () => {
     expect(fc.changed).toEqual([String(DAMS[7])]);
     expect(byExt(fc, DAMS[7])!.properties.name).toBe('sửa trong nháp');
     expect(byExt(fc, DAMS[8])!.properties.name).toBe('đổi ở lớp chính thức');
+
+    // A geometry-only edit of the upstream-changed dam starts from what the read showed: the
+    // draft stores the upstream name, not the one it branched from.
+    const moved = { type: 'Point', coordinates: [108.09, 16.051] }; // dam 901009, moved north
+    const geo = await call(O, 'PUT', `${base}/features/${byExt(fc, DAMS[8])!.id}`, { geometry: moved, expectedRevision: 2 });
+    expect(geo.statusCode).toBe(200);
+    expect(geo.json().feature).toMatchObject({ geometry: moved, properties: { name: 'đổi ở lớp chính thức' } });
+    const stored = await getPool().query(
+      `SELECT name FROM water.dams WHERE dataset_version_id = $1 AND external_id = $2`, [layer.draftId, DAMS[8]]
+    );
+    expect(stored.rows).toEqual([{ name: 'đổi ở lớp chính thức' }]);
+
+    // The dam added upstream can be updated, then deleted, through the edit copy.
+    const wide = bboxAround(DAMS[0], ADDED);
+    const added = byExt(await read(base, wide), ADDED)!;
+    expect(added.properties.name).toBe('thêm ở lớp chính thức');
+    const renamed = await call(O, 'PUT', `${base}/features/${added.id}`, { properties: { name: 'thêm rồi sửa' }, expectedRevision: 3 });
+    expect(renamed.statusCode).toBe(200);
+    expect(byExt(await read(base, wide), ADDED)!.properties.name).toBe('thêm rồi sửa');
+    const renamedId = renamed.json().feature.id as string;
+    const removed = await call(O, 'DELETE', `${base}/features/${renamedId}`, { expectedRevision: 4 });
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json()).toEqual({ revision: 5 });
+
+    // The next read shows both results; the official layer is untouched.
+    const after = await read(base, wide);
+    expect(after.features).toHaveLength(10); // 10 root dams + 1 added upstream - 1 deleted here
+    expect(byExt(after, DAMS[8])).toMatchObject({ geometry: moved, properties: { name: 'đổi ở lớp chính thức' } });
+    expect(byExt(after, ADDED)).toBeUndefined();
+    expect(after.changed).toEqual([String(DAMS[7]), String(DAMS[8]), String(ADDED)]);
+    expect(await activeName(ADDED)).toBe('thêm ở lớp chính thức');
   });
 
   it('deleting the layer or the map discards the draft', async () => {

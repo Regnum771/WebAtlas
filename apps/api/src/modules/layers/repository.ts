@@ -253,11 +253,16 @@ export function featuresRepository(pg: Pick<Pool, 'query'>) {
     //      moved on, the draft edits what it branched from, and a rebase surfaces any upstream
     //      change to the same feature as a conflict instead of silently absorbing it;
     //   4. no such row (absent from that state, or a tombstone there) -> NotFoundError.
+    // `untouchedFrom: 'active'` changes step 3 only: the row comes from the layer's current
+    // official state (the _active view) instead of the draft's chain. A personal map's edit copy
+    // uses it, because it shows untouched features in their current official state and an edit
+    // must start from what was shown (workspace/editCopies.ts). P2's direct writes keep 'draft'.
     async resolveEditSource(
       client: PoolClient,
       def: LayerDef,
       draftId: string,
-      id: string
+      id: string,
+      opts: { untouchedFrom?: 'draft' | 'active' } = {}
     ): Promise<EditSource> {
       const named = await client.query(
         `SELECT external_id, dataset_version_id, deleted FROM ${def.table} WHERE id = $1`, [id]
@@ -275,6 +280,13 @@ export function featuresRepository(pg: Pick<Pool, 'query'>) {
       );
       if (inDraft.rows[0]?.deleted) throw new NotFoundError('Feature not found');
       if (inDraft.rows[0]) return { rowId: inDraft.rows[0].id, inDraft: true };
+      if (opts.untouchedFrom === 'active') {
+        const current = await client.query(
+          `SELECT id FROM ${def.table}_active WHERE external_id = $1`, [externalId]
+        );
+        if (!current.rows[0]) throw new NotFoundError('Feature not found');
+        return { rowId: current.rows[0].id, inDraft: false };
+      }
       // The external_id filter sits on the DISTINCT ON key, so the planner resolves only this
       // feature rather than the whole layer.
       const resolved = await client.query(

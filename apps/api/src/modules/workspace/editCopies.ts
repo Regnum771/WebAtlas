@@ -85,6 +85,8 @@ async function readRow(client: PoolClient, def: LayerDef, rowId: string): Promis
  * official state, not the state the draft branched from; a feature the draft touched shows the
  * draft's row (a rebase is what reconciles the two). Both halves are plain bbox filters that
  * reach the layer's geometry indexes: no version chain is ever resolved, which matters on rivers.
+ *
+ * Writes start from what this read showed (FROM_SHOWN_STATE).
  */
 async function readInBBox(
   client: PoolClient, def: LayerDef, draftId: string, bbox: BBox, limit: number
@@ -107,6 +109,18 @@ async function readInBBox(
   );
   return rows;
 }
+
+/**
+ * An update or delete of a feature the draft holds no row for yet copies the feature's CURRENT
+ * official row (the one the read showed), not the row in the draft's chain: after the layer has
+ * moved on, the chain's row is stale, and a feature added upstream is not in the chain at all.
+ * A feature the draft already holds a row for is edited in the draft, as in P2.
+ *
+ * Accepted consequence: at publish (rebase), a feature that changed or was added upstream and
+ * was then edited here differs between the draft's parent and the active version, so it counts
+ * as a conflict; the owner resolves it with "mine", which keeps this edit.
+ */
+const FROM_SHOWN_STATE = { untouchedFrom: 'active' } as const;
 
 export function editCopiesService(pg: Pool) {
   /**
@@ -239,7 +253,8 @@ export function editCopiesService(pg: Pool) {
       const tree = await getUnitTree(pg);
       const { out, revision } = await editDraft(user, mapId, layerId, input.expectedRevision, async (client, def, draftId) => {
         const r = await updateInDraft(
-          client, def, draftId, featureId, { geometry: input.geometry, properties: input.properties }, user.id, tree
+          client, def, draftId, featureId, { geometry: input.geometry, properties: input.properties }, user.id, tree,
+          FROM_SHOWN_STATE
         );
         return { feature: await readRow(client, def, r.feature.id), warnings: r.warnings };
       });
@@ -250,7 +265,7 @@ export function editCopiesService(pg: Pool) {
       user: CurrentUser, mapId: string, layerId: string, featureId: string, input: { expectedRevision: number }
     ): Promise<{ revision: number }> {
       const { revision } = await editDraft(user, mapId, layerId, input.expectedRevision,
-        (client, def, draftId) => removeInDraft(client, def, draftId, featureId, user.id));
+        (client, def, draftId) => removeInDraft(client, def, draftId, featureId, user.id, FROM_SHOWN_STATE));
       return { revision };
     },
   };
