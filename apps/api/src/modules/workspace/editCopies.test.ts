@@ -429,6 +429,41 @@ describe('edit-copy layers', () => {
     expect(await draftRowCount(two.layer.draftId)).toBe(0);
   });
 
+  it('a rivers edit copy shows only level-3 ways, as the map does', async () => {
+    const map = await createMap('Sửa sông');
+    const res = await call(O, 'POST', `/maps/${map.id}/layers`, { kind: 'edit_copy', layerKey: 'rivers', expectedRevision: 0 });
+    expect(res.statusCode).toBe(201);
+    const base = `/maps/${map.id}/layers/${res.json().layer.id}`;
+
+    // A 0.1° box around a level-3 way that also holds level-1 and level-2 rows of the official
+    // layer. Read-only on the real rivers data: nothing is activated, so nothing is pinned.
+    const { rows: found } = await getPool().query<{ x: number; y: number }>(
+      `SELECT ST_X(p.c) AS x, ST_Y(p.c) AS y
+         FROM (SELECT ST_Centroid(w.geom) AS c FROM water.rivers_detail w ORDER BY w.external_id) p
+        WHERE (SELECT count(DISTINCT r.feature_level) FROM water.rivers_active r
+                WHERE r.geom && ST_Expand(p.c, 0.05)) = 3
+        LIMIT 1`
+    );
+    expect(found).toHaveLength(1);
+    const { x, y } = found[0];
+    const box = [x - 0.05, y - 0.05, x + 0.05, y + 0.05];
+    const levels = await getPool().query<{ feature_level: number; n: number }>(
+      `SELECT feature_level, count(*)::int AS n FROM water.rivers_active
+        WHERE geom && ST_MakeEnvelope($1, $2, $3, $4, 4326) GROUP BY 1 ORDER BY 1`,
+      box
+    );
+    expect(levels.rows.map((r) => r.feature_level)).toEqual([1, 2, 3]);
+
+    const fc = await read(base, box.join(','));
+    expect(fc.truncated).toBe(false);
+    expect(fc.features).toHaveLength(levels.rows.find((r) => r.feature_level === 3)!.n);
+    const shown = await getPool().query<{ feature_level: number }>(
+      `SELECT DISTINCT feature_level FROM water.rivers WHERE id = ANY($1::uuid[])`,
+      [fc.features.map((f) => f.id)]
+    );
+    expect(shown.rows).toEqual([{ feature_level: 3 }]);
+  });
+
   it('a layer whose draft is gone answers 410', async () => {
     const { map, layer, base } = await mapWithEditCopy();
     // The draft is discarded elsewhere (P2's own discard); the layer row outlives it.

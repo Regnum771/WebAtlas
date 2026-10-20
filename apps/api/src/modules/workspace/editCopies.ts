@@ -8,6 +8,7 @@ import { getUnitTree } from '../../authz/unitTree';
 import { getLayer, type LayerDef } from '../../layers/registry';
 import type { CurrentUser } from '../../types/fastify';
 import { createInDraft, removeInDraft, updateInDraft, type FeatureWarning } from '../layers/draftOps';
+import { featuresRepository, type BBox, type EditCopyFeatureRow } from '../layers/repository';
 import { assertCanRead, bumpMap, lockMapForWrite, type Queryable } from './access';
 import {
   DEFAULT_LIMIT, LAYER_NOT_FOUND, MAX_LIMIT, NEXT_POSITION, checkStyle, deleteLayerRow, loadSummary, patchLayerRow,
@@ -27,7 +28,6 @@ import type { LayerSummary } from './maps';
 
 export const DRAFT_GONE = 'Bản nháp của lớp này không còn.';
 
-type BBox = [number, number, number, number];
 const byExternalId = new Intl.Collator('en', { numeric: true }).compare;
 
 interface EditCopyRow { id: string; layerKey: string; draftId: string | null }
@@ -53,62 +53,22 @@ function draftOf(layer: EditCopyRow): string {
   return layer.draftId;
 }
 
-/**
- * The read shape of a water.<layer> row, as a GeoJSON feature: `id` is the row id that the
- * feature routes take, and `properties` carry the stable `external_id` beside the attributes.
- * Interpolated, but built only from the registry's fixed column names.
- */
-function featureSelect(def: LayerDef): string {
-  const attrs = def.attributeColumns.map((c) => `'${c}', t.${c}`).join(', ');
-  return `t.id::text AS id,
-          CASE WHEN t.${def.geomColumn} IS NULL THEN NULL ELSE ST_AsGeoJSON(t.${def.geomColumn})::jsonb END AS geometry,
-          jsonb_build_object('external_id', t.external_id::text, ${attrs}) AS properties`;
-}
-
 type FeatureOut = { type: 'Feature'; id: string; geometry: unknown; properties: Record<string, unknown> };
-function toFeature(r: { id: string; geometry: unknown; properties: Record<string, unknown> }): FeatureOut {
+function toFeature(r: EditCopyFeatureRow): FeatureOut {
   return { type: 'Feature', id: r.id, geometry: r.geometry, properties: r.properties };
 }
 
 /** Re-read a row the operation just wrote, in the read shape. */
 async function readRow(client: PoolClient, def: LayerDef, rowId: string): Promise<FeatureOut> {
-  const { rows } = await client.query(`SELECT ${featureSelect(def)} FROM ${def.table} t WHERE t.id = $1`, [rowId]);
-  return toFeature(rows[0]);
+  const row = await featuresRepository(client).editCopyFeatureById(client, def, rowId);
+  return toFeature(row!);
 }
 
-/**
- * The edit copy's features inside `bbox`, `limit + 1` rows at most. One algorithm, whatever the
- * draft's parent: the layer's current official rows (the `_active` view) minus the features the
- * draft holds a row for, plus the draft's own live rows. An edit copy is drawn like the official
- * layer with the draft's changes on top (spec: "drawn like the official layer, with an overlay
- * marking what changed"), so once the layer has moved on, an untouched feature shows its current
- * official state, not the state the draft branched from; a feature the draft touched shows the
- * draft's row (a rebase is what reconciles the two). Both halves are plain bbox filters that
- * reach the layer's geometry indexes: no version chain is ever resolved, which matters on rivers.
- *
- * Writes start from what this read showed (FROM_SHOWN_STATE).
+/*
+ * Reads: the layer's current official rows plus the draft's changes on top, through
+ * featuresRepository.editCopyFeaturesInBBox (which documents the algorithm). That SQL names the
+ * layer's base table, so it lives in layers/repository.ts, where the activeReads guard allows it.
  */
-async function readInBBox(
-  client: PoolClient, def: LayerDef, draftId: string, bbox: BBox, limit: number
-): Promise<Array<{ id: string; geometry: unknown; properties: Record<string, unknown> }>> {
-  const envelope = `ST_MakeEnvelope($2, $3, $4, $5, 4326)`;
-  const geom = def.geomColumn;
-  const cols = ['id', 'external_id', geom, ...def.attributeColumns];
-  const pick = (alias: string) => cols.map((c) => `${alias}.${c}`).join(', ');
-  const { rows } = await client.query(
-    `SELECT ${featureSelect(def)} FROM (
-       SELECT ${pick('a')} FROM ${def.table}_active a
-        WHERE a.${geom} && ${envelope}
-          AND NOT EXISTS (SELECT 1 FROM ${def.table} d
-                           WHERE d.dataset_version_id = $1 AND d.external_id = a.external_id)
-       UNION ALL
-       SELECT ${pick('d')} FROM ${def.table} d
-        WHERE d.dataset_version_id = $1 AND NOT d.deleted AND d.${geom} && ${envelope}
-     ) t ORDER BY t.id LIMIT $6`,
-    [draftId, ...bbox, limit + 1]
-  );
-  return rows;
-}
 
 /**
  * An update or delete of a feature the draft holds no row for yet copies the feature's CURRENT
@@ -223,7 +183,7 @@ export function editCopiesService(pg: Pool) {
         const layer = await loadEditCopy(client, mapId, layerId);
         const draftId = draftOf(layer);
         const def = getLayer(layer.layerKey);
-        const rows = await readInBBox(client, def, draftId, opts.bbox, limit);
+        const rows = await featuresRepository(client).editCopyFeaturesInBBox(client, def, draftId, opts.bbox, limit);
         const changed = [...(await touchedFeatures(client, def.key, draftId))].sort(byExternalId);
         return {
           type: 'FeatureCollection' as const,

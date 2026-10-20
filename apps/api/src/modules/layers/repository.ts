@@ -82,7 +82,7 @@ export interface FeatureFilter {
  * at the time of writing). Writes still target the base table by draft version -- only the
  * read side changed.
  */
-function activeRelation(def: LayerDef): string {
+export function activeRelation(def: LayerDef): string {
   // Rivers list their level-3 OSM ways (water.rivers_detail, migration 20): the rows the
   // map's rivers layer draws and the only level a steward edits (assertHandEditable).
   // rivers_active would list 23,000 rows -- every river three times, as its entity, its
@@ -100,6 +100,27 @@ function selectSql(def: LayerDef, relation: string): string {
                  jsonb_build_object(${attrs}) AS properties
           FROM ${relation} t`;
 }
+
+/**
+ * The read shape of an edit-copy feature (workspace/editCopies.ts), as the columns of a GeoJSON
+ * feature: `id` is the row id that the feature routes take, and `properties` carry the stable
+ * `external_id` beside the attributes. Interpolated, but built only from the registry's fixed
+ * column names.
+ */
+function editCopySelect(def: LayerDef): string {
+  const attrs = def.attributeColumns.map((c) => `'${c}', t.${c}`).join(', ');
+  return `t.id::text AS id,
+          CASE WHEN t.${def.geomColumn} IS NULL THEN NULL ELSE ST_AsGeoJSON(t.${def.geomColumn})::jsonb END AS geometry,
+          jsonb_build_object('external_id', t.external_id::text, ${attrs}) AS properties`;
+}
+
+export interface EditCopyFeatureRow {
+  id: string;
+  geometry: unknown;
+  properties: Record<string, unknown>;
+}
+
+export type BBox = [number, number, number, number];
 
 export interface UnassignedFeature {
   layerKey: string;
@@ -162,6 +183,58 @@ export function featuresRepository(pg: Pick<Pool, 'query'>) {
     async findByIdOnClient(client: PoolClient, def: LayerDef, id: string): Promise<FeatureRow | null> {
       const { rows } = await client.query(`${selectSql(def, def.table)} WHERE t.id = $1`, [id]);
       return rows[0] ?? null;
+    },
+
+    // ---- Edit-copy reads (workspace/editCopies.ts) ----------------------------------
+    // They live here, not in the workspace module, because they name the base table: this file
+    // is on the activeReads allow-list, and keeping them here keeps that guard able to see every
+    // other module's reads.
+
+    /** Re-read a row an edit-copy operation just wrote, in the edit-copy read shape. */
+    async editCopyFeatureById(client: PoolClient, def: LayerDef, id: string): Promise<EditCopyFeatureRow | null> {
+      const { rows } = await client.query<EditCopyFeatureRow>(
+        `SELECT ${editCopySelect(def)} FROM ${def.table} t WHERE t.id = $1`, [id]
+      );
+      return rows[0] ?? null;
+    },
+
+    /**
+     * An edit copy's features inside `bbox`, `limit + 1` rows at most. One algorithm, whatever the
+     * draft's parent: the layer's current official rows (activeRelation: the `_active` view, or
+     * rivers_detail for rivers) minus the features the draft holds a row for, plus the draft's
+     * own live rows. An edit copy is drawn like the official layer with the draft's changes on top
+     * (spec: "drawn like the official layer, with an overlay marking what changed"), so once the
+     * layer has moved on, an untouched feature shows its current official state, not the state
+     * the draft branched from; a feature the draft touched shows the draft's row (a rebase is what
+     * reconciles the two). Both halves are plain bbox filters that reach the layer's geometry
+     * indexes: no version chain is ever resolved, which matters on rivers.
+     *
+     * Rivers: the official half is level 3 only, the ways the map draws and the only level a
+     * steward edits (assertHandEditable); the draft half needs no filter, since copy-on-write is
+     * refused for levels 1 and 2 and a created river defaults to level 3.
+     *
+     * Writes start from what this read showed (resolveEditSource with untouchedFrom 'active').
+     */
+    async editCopyFeaturesInBBox(
+      client: PoolClient, def: LayerDef, draftId: string, bbox: BBox, limit: number
+    ): Promise<EditCopyFeatureRow[]> {
+      const envelope = `ST_MakeEnvelope($2, $3, $4, $5, 4326)`;
+      const geom = def.geomColumn;
+      const cols = ['id', 'external_id', geom, ...def.attributeColumns];
+      const pick = (alias: string) => cols.map((c) => `${alias}.${c}`).join(', ');
+      const { rows } = await client.query<EditCopyFeatureRow>(
+        `SELECT ${editCopySelect(def)} FROM (
+           SELECT ${pick('a')} FROM ${activeRelation(def)} a
+            WHERE a.${geom} && ${envelope}
+              AND NOT EXISTS (SELECT 1 FROM ${def.table} d
+                               WHERE d.dataset_version_id = $1 AND d.external_id = a.external_id)
+           UNION ALL
+           SELECT ${pick('d')} FROM ${def.table} d
+            WHERE d.dataset_version_id = $1 AND NOT d.deleted AND d.${geom} && ${envelope}
+         ) t ORDER BY t.id LIMIT $6`,
+        [draftId, ...bbox, limit + 1]
+      );
+      return rows;
     },
 
     // True when the row has a geometry that touches none of the unit's own area (the unit's
@@ -254,9 +327,10 @@ export function featuresRepository(pg: Pick<Pool, 'query'>) {
     //      change to the same feature as a conflict instead of silently absorbing it;
     //   4. no such row (absent from that state, or a tombstone there) -> NotFoundError.
     // `untouchedFrom: 'active'` changes step 3 only: the row comes from the layer's current
-    // official state (the _active view) instead of the draft's chain. A personal map's edit copy
-    // uses it, because it shows untouched features in their current official state and an edit
-    // must start from what was shown (workspace/editCopies.ts). P2's direct writes keep 'draft'.
+    // official state (activeRelation: the _active view, or rivers_detail for rivers) instead of
+    // the draft's chain. A personal map's edit copy uses it, because it shows untouched features
+    // in their current official state and an edit must start from what was shown
+    // (editCopyFeaturesInBBox reads the same relation). P2's direct writes keep 'draft'.
     async resolveEditSource(
       client: PoolClient,
       def: LayerDef,
@@ -282,7 +356,7 @@ export function featuresRepository(pg: Pick<Pool, 'query'>) {
       if (inDraft.rows[0]) return { rowId: inDraft.rows[0].id, inDraft: true };
       if (opts.untouchedFrom === 'active') {
         const current = await client.query(
-          `SELECT id FROM ${def.table}_active WHERE external_id = $1`, [externalId]
+          `SELECT id FROM ${activeRelation(def)} WHERE external_id = $1`, [externalId]
         );
         if (!current.rows[0]) throw new NotFoundError('Feature not found');
         return { rowId: current.rows[0].id, inDraft: false };
