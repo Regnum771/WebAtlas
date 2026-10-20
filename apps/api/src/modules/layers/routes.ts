@@ -7,7 +7,8 @@ export default async function layersRoutes(app: FastifyInstance) {
   const canRead = { preHandler: [app.authenticate] };
   // Writes: the route only asks that the user holds the operation's permission somewhere.
   // Whether the feature's managing unit lies within that jurisdiction (and the review right
-  // a direct publish needs) is checked per object by featuresService, inside the edit session.
+  // a direct publish needs) is checked by featuresService when the write's draft is published,
+  // on every feature it touches (publishAccess.ts).
   const canDo = (permission: Parameters<typeof requirePermission>[0]) => ({
     preHandler: [app.authenticate, requirePermission(permission)],
   });

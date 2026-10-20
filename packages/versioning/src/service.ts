@@ -16,6 +16,10 @@ import { ConflictError, DraftConflictError, NotFoundError, StaleDraftError } fro
  * transaction's activation can end with the locked row no longer active, in which case the
  * statement returns nothing (READ COMMITTED re-checks the row); the next attempt sees and locks
  * the version that replaced it.
+ *
+ * When every attempt comes back empty, either the layer has no active version at all (a plain
+ * ConflictError) or the pointer kept moving under this publish; the latter is a StaleDraftError,
+ * so the API answers 409 STALE_EDIT like any other "someone else published first".
  */
 async function lockActiveRow(client: PoolClient, layerKey: string): Promise<string> {
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -24,6 +28,12 @@ async function lockActiveRow(client: PoolClient, layerKey: string): Promise<stri
       [layerKey]
     );
     if (rows[0]) return rows[0].id;
+  }
+  const { rows } = await client.query(
+    `SELECT 1 FROM app.dataset_versions WHERE layer_key = $1 AND is_active`, [layerKey]
+  );
+  if (rows.length > 0) {
+    throw new StaleDraftError(`layer ${layerKey}'s active version kept moving; try again`);
   }
   throw new ConflictError(`no active version for layer ${layerKey}`);
 }

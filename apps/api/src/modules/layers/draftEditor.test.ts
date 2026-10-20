@@ -405,6 +405,41 @@ describe('draftEditor', () => {
     });
   });
 
+  it('a submitted draft refuses discard with DRAFT_NOT_EDITABLE', async () => {
+    const { draftId } = await open();
+    await editor().create(
+      LAYER, draftId, { geometry: point48, properties: { name: 'de-submitted', managing_unit: '48' } }, owner, tree
+    );
+    // P4 adds the transition; set the status directly.
+    await getPool().query(`UPDATE app.dataset_versions SET draft_status = 'submitted' WHERE id = $1`, [draftId]);
+
+    const err = await httpError(() => editor().discard(LAYER, draftId, owner));
+    expect(err).toEqual({
+      status: 409,
+      error: { code: 'DRAFT_NOT_EDITABLE', message: 'Bản nháp đã được nộp, không sửa được nữa.' },
+    });
+    // Still there, rows and all.
+    expect(await revisionOf(draftId)).toBe(1);
+    expect(await draftRows(draftId)).toHaveLength(1);
+  });
+
+  it('discarding a draft keeps the audit rows of the edits committed to it', async () => {
+    const { draftId } = await open();
+    const made = await editor().create(
+      LAYER, draftId, { geometry: point48, properties: { name: 'de-audited', managing_unit: '48' } }, owner, tree
+    );
+    await editor().update(LAYER, draftId, made.feature.id, { properties: { name: 'de-audited-2' } }, owner, tree);
+    const auditRows = async () => (await getPool().query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM app.audit_log WHERE feature_id = $1`, [made.feature.id]
+    )).rows[0].n;
+    expect(await auditRows()).toBe(2);
+
+    await editor().discard(LAYER, draftId, owner);
+
+    expect(await revisionOf(draftId)).toBeNull();
+    expect(await auditRows()).toBe(2);
+  });
+
   it('discard removes the draft', async () => {
     const { draftId } = await open();
     await editor().create(

@@ -4,7 +4,7 @@ import { getPool, closePool } from './testPool';
 import { versionsService } from './service';
 import { refreshCurrentRows } from './currentRows';
 import { openDraft } from './drafts';
-import { DraftConflictError, StaleDraftError } from './errors';
+import { ConflictError, DraftConflictError, StaleDraftError } from './errors';
 
 const LAYER = 'dams';
 const SOURCE = 'publish.test';
@@ -225,7 +225,7 @@ describe('publishDraft', () => {
       .catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(DraftConflictError);
-    // The API maps StaleDraftError to 409 STALE_EDIT, and singleChange retries on it.
+    // The API maps StaleDraftError to 409 STALE_EDIT.
     expect(err).toBeInstanceOf(StaleDraftError);
     const conflict = err as DraftConflictError;
     expect(conflict.message).toBe('Bản nháp xung đột với dữ liệu đã xuất bản ở 1 đối tượng.');
@@ -273,6 +273,31 @@ describe('publishDraft', () => {
 
     expect(seen).toEqual({ parent: up, active: up, status: 'personal' });
     expect(await activeId()).toBe(d);
+  });
+
+  // The active-row lock re-reads the active row up to three times: waiting on another
+  // activation can end with the locked row no longer active. A fake client stands in for a
+  // pointer that moves on every attempt, which a real race cannot reproduce deterministically.
+  it('answers StaleDraftError when the active pointer keeps moving, ConflictError when there is none', async () => {
+    const lockQueries: string[] = [];
+    const fake = (activeExists: boolean) => ({
+      query: async (sql: string) => {
+        if (/FOR NO KEY UPDATE/.test(sql)) {
+          lockQueries.push(sql);
+          return { rows: [] };
+        }
+        return { rows: activeExists ? [{ '?column?': 1 }] : [] };
+      },
+    }) as unknown as pg.PoolClient;
+
+    const moving = await svc().publishDraft(fake(true), LAYER, 'd', noGuard).catch((e: unknown) => e);
+    expect(moving).toBeInstanceOf(StaleDraftError);
+    expect(lockQueries).toHaveLength(3);
+
+    const none = await svc().publishDraft(fake(false), LAYER, 'd', noGuard).catch((e: unknown) => e);
+    expect(none).toBeInstanceOf(ConflictError);
+    expect(none).not.toBeInstanceOf(StaleDraftError);
+    expect((none as Error).message).toBe(`no active version for layer ${LAYER}`);
   });
 
   it('requires a guard', () => {
