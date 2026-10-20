@@ -222,8 +222,10 @@ export async function resolveConflict(
  * against: its stored rows now sit on that state, its resolutions are dropped and its revision
  * is bumped. `activeId` is that version in every case.
  *
- * The caller holds the draft lock (lockDraft) in this transaction. The active row is not locked
- * here: a concurrent activation can still move it, which publishDraft guards against.
+ * The caller holds the draft lock (lockDraft) in this transaction, and must also hold the layer's
+ * active row lock (FOR NO KEY UPDATE) for the whole call, as publishDraft does. This function does
+ * not take it: without the lock a concurrent activation can move the active version mid-rebase,
+ * and retention's safety (it never prunes what an active chain or a rebase relies on) depends on it.
  */
 export async function rebaseDraft(
   client: PoolClient, layerKey: string, draftId: string

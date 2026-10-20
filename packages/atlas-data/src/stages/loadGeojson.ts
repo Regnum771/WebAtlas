@@ -89,6 +89,14 @@ async function loadVersioned(
     `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND draft_status IS NULL FOR UPDATE`,
     [load.layer]
   );
+  // Re-lock the active row in a fresh statement. The statement above filtered on draft_status from
+  // its own snapshot: a draft that was published while it waited for a lock was still a draft in
+  // that snapshot, so it was left out and is now the active version, unlocked. A new statement
+  // sees the committed state and holds that row too.
+  await client.query(
+    `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND is_active FOR UPDATE`,
+    [load.layer]
+  );
 
   // Is what the layer rests on already this load? Either under the current labels, or under an
   // older one that is re-labelled here (a machine that never ran atlas:adopt): then there is

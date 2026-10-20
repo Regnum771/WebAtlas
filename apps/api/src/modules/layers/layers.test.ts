@@ -3,7 +3,8 @@ import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
 import { usersRepository } from '../users/repository';
 import { hashPassword } from '../../lib/password';
-import { refreshCurrentRows } from '@webatlas/versioning';
+import { discardDraft, openDraft, versionsService } from '@webatlas/versioning';
+import { pinLayer, restoreActive, runStages, unpinLayer } from '@webatlas/versioning/testing';
 
 const app = buildApp();
 const ADMIN = 'layers-admin@webatlas.test';
@@ -35,35 +36,57 @@ beforeAll(async () => {
     }
   }
 });
-afterAll(async () => {
-  // Every POST/PUT/DELETE above publishes an edit-version on `dams`, so this suite must
-  // drop the edit-versions it created and restore the seeded ingest version as active.
-  // Without this the suite depends on another file's afterAll sweeping up after it and
-  // leaves a permanently-active orphan edit-version when run in isolation.
-  await getPool().query(
-    `DELETE FROM water.dams WHERE dataset_version_id IN
-       (SELECT id FROM app.dataset_versions WHERE layer_key = 'dams' AND kind = 'edit')`
-  );
-  await getPool().query(`DELETE FROM app.dataset_versions WHERE layer_key = 'dams' AND kind = 'edit'`);
-  const restored = await getPool().query(
-    `UPDATE app.dataset_versions SET is_active = true
-     WHERE id = (SELECT id FROM app.dataset_versions
-                 WHERE layer_key = 'dams' AND kind = 'ingest'
-                 ORDER BY ingested_at DESC LIMIT 1)
-     RETURNING id`
-  );
-  // Raw flip instead of activate(): move the current flag with it.
-  if (restored.rows[0]) {
-    const client = await getPool().connect();
-    try {
-      await refreshCurrentRows(client, 'dams', restored.rows[0].id);
-    } finally {
-      client.release();
+const PIN = 'layers.test';
+let since: Date;
+let priorActive: string | null = null;
+
+/**
+ * Drop the edit versions this suite's direct writes published, and nothing else. They are the
+ * dams versions of kind 'edit' that are not drafts, come from an edit session and were ingested
+ * since the suite started; test files run one at a time. Open drafts (and the drafts behind
+ * workspace edit-copy layers) belong to other people and are left alone.
+ * The caller must have restored the active version first: deleting the active one leaves the layer with none.
+ */
+async function dropOwnEdits(from: Date): Promise<void> {
+  const own = `SELECT id FROM app.dataset_versions
+                WHERE layer_key = 'dams' AND kind = 'edit' AND draft_status IS NULL
+                  AND source = 'edit session' AND ingested_at >= $1`;
+  await getPool().query(`DELETE FROM water.dams WHERE dataset_version_id IN (${own})`, [from]);
+  await getPool().query(`DELETE FROM app.dataset_versions WHERE id IN (${own})`, [from]);
+}
+
+beforeAll(async () => {
+  await app.ready();
+  const pool = getPool();
+  const repo = usersRepository(pool);
+  for (const [email, role] of [[ADMIN, 'admin'], [NO_GROUPS, 'viewer'], [VIEWER, 'viewer']] as const) {
+    if (!(await repo.findByEmailWithHash(email))) {
+      await repo.insert({ email, password_hash: await hashPassword(PW), full_name: role, role });
     }
   }
-  await getPool().query('DELETE FROM water.dams WHERE name = $1', [NAME]);
-  await getPool().query(`DELETE FROM app.users WHERE email LIKE 'layers-%@webatlas.test'`);
-  await app.close();
+  // Every direct write below activates a version of dams: pin the existing ones so retention
+  // cannot prune a real ingest while this file runs.
+  await pinLayer(pool, 'dams', PIN);
+  priorActive = await versionsService(pool).getActiveVersionId('dams');
+  since = (await pool.query<{ t: Date }>(`SELECT clock_timestamp() AS t`)).rows[0].t;
+});
+afterAll(async () => {
+  const pool = getPool();
+  // Until the prior version is active again, one of ours is the active version of dams:
+  // deleting our versions then would leave the layer with none.
+  let restored = priorActive === null;
+  await runStages([
+    async () => {
+      if (!priorActive) return;
+      await restoreActive(pool, 'dams', priorActive);
+      restored = true;
+    },
+    async () => { if (restored) await dropOwnEdits(since); },
+    () => unpinLayer(pool, PIN),
+    () => pool.query('DELETE FROM water.dams WHERE name = $1', [NAME]),
+    () => pool.query(`DELETE FROM app.users WHERE email LIKE 'layers-%@webatlas.test'`),
+    () => app.close(),
+  ]);
 });
 
 describe('layers metadata', () => {
@@ -312,5 +335,63 @@ describe('feature listing', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('test cleanup', () => {
+  it("cleanup leaves other people's drafts alone", async () => {
+    const pool = getPool();
+    const viewer = await usersRepository(pool).findByEmailWithHash(VIEWER);
+    const testStart = (await pool.query<{ t: Date }>(`SELECT clock_timestamp() AS t`)).rows[0].t;
+    const before = await versionsService(pool).getActiveVersionId('dams');
+    let draftId: string | null = null;
+    let restored = false;
+    await runStages([
+      async () => {
+        const c = await pool.connect();
+        try {
+          await c.query('BEGIN');
+          draftId = (await openDraft(c, 'dams', viewer!.id)).id;
+          await c.query('COMMIT');
+        } finally {
+          await c.query('ROLLBACK').catch(() => {});
+          c.release();
+        }
+      },
+      async () => {
+        const auth = { authorization: `Bearer ${await tokenFor(ADMIN)}` };
+        const res = await app.inject({
+          method: 'POST', url: '/api/layers/dams/features', headers: auth,
+          payload: { geometry: { type: 'Point', coordinates: [105.8, 21.0] }, properties: { name: NAME } },
+        });
+        expect(res.statusCode).toBe(201);
+      },
+      async () => {
+        await restoreActive(pool, 'dams', before!);
+        restored = true;
+        await dropOwnEdits(testStart);
+        const edits = await pool.query(
+          `SELECT 1 FROM app.dataset_versions
+            WHERE layer_key = 'dams' AND kind = 'edit' AND draft_status IS NULL
+              AND source = 'edit session' AND ingested_at >= $1`, [testStart]
+        );
+        expect(edits.rowCount).toBe(0);
+        const draft = await pool.query(`SELECT 1 FROM app.dataset_versions WHERE id = $1`, [draftId]);
+        expect(draft.rowCount).toBe(1);
+      },
+      async () => {
+        if (!draftId) return;
+        const c = await pool.connect();
+        try {
+          await c.query('BEGIN');
+          await discardDraft(c, draftId);
+          await c.query('COMMIT');
+        } finally {
+          await c.query('ROLLBACK').catch(() => {});
+          c.release();
+        }
+      },
+    ]);
+    expect(restored).toBe(true);
   });
 });

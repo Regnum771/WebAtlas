@@ -1,6 +1,7 @@
 import { describe, it, expect, afterAll } from 'vitest';
+import { pinLayer, restoreActive, unpinLayer } from '@webatlas/versioning/testing';
 import { getPool, closePool } from '../../db/pool';
-import { loadFeatures, refreshCurrentRows, versionsService, type FeatureLoadSpec } from '@webatlas/versioning';
+import { loadFeatures, versionsService, type FeatureLoadSpec } from '@webatlas/versioning';
 import { SEED_LAYER_COLUMNS } from '@webatlas/shared';
 import { resolveStageFile } from '@webatlas/atlas-data';
 
@@ -10,6 +11,8 @@ const stations: FeatureLoadSpec = {
   file: resolveStageFile({ file: 'seeds/stations.geojson' }),
   columns: SEED_LAYER_COLUMNS.stations,
 };
+
+const PIN = 'versions-integration.test';
 
 afterAll(async () => { await closePool(); });
 
@@ -51,36 +54,43 @@ describe('versioning integration (§6 rollback + addressability)', () => {
     const priorActive = await svc.getActiveVersionId('stations');
     const priorIds = await svc.resolveFeatureIds('stations', priorActive!);
 
-    // New successful ingest of the same layer.
-    const client = await pool.connect();
+    // The activation below prunes the layer: pin every existing version so retention cannot
+    // drop a real ingest to make room for this synthetic one.
+    await pinLayer(pool, 'stations', PIN);
+    let restored = false;
+    let supId: string | null = null;
     try {
-      await client.query('BEGIN');
-      const v = await svc.createIngestVersion(client, { layerKey: 'stations', source: 'test', label: 'superseder' });
-      await loadFeatures(client, stations, v);
-      await svc.activate(client, 'stations', v);
-      await client.query('COMMIT');
-    } finally { client.release(); }
+      // New successful ingest of the same layer.
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const v = await svc.createIngestVersion(client, { layerKey: 'stations', source: 'test', label: 'superseder' });
+        supId = v;
+        await loadFeatures(client, stations, v);
+        await svc.activate(client, 'stations', v);
+        await client.query('COMMIT');
+      } finally {
+        await client.query('ROLLBACK').catch(() => {});
+        client.release();
+      }
 
-    // Prior version still addressable with its original feature set.
-    const stillThere = await svc.resolveFeatureIds('stations', priorActive!);
-    expect(new Set(stillThere)).toEqual(new Set(priorIds));
-
-    // Cleanup: restore prior active, drop the superseder.
-    const superseder = await pool.query(
-      `SELECT id FROM app.dataset_versions WHERE label = 'superseder' AND layer_key = 'stations'`
-    );
-    const supId = superseder.rows[0].id;
-    await pool.query(`UPDATE app.dataset_versions SET is_active=false WHERE layer_key='stations' AND is_active`);
-    await pool.query(`UPDATE app.dataset_versions SET is_active=true WHERE id=$1`, [priorActive]);
-    // Raw flip instead of activate(): move the current flag with it.
-    const restore = await pool.connect();
-    try {
-      await refreshCurrentRows(restore, 'stations', priorActive!);
+      // Prior version still addressable with its original feature set.
+      const stillThere = await svc.resolveFeatureIds('stations', priorActive!);
+      expect(new Set(stillThere)).toEqual(new Set(priorIds));
     } finally {
-      restore.release();
+      // Cleanup: restore the prior active version atomically, then drop the superseder. Until it
+      // is restored the superseder is the active version and must not be deleted.
+      try {
+        await restoreActive(pool, 'stations', priorActive!);
+        restored = true;
+      } finally {
+        if (restored && supId) {
+          await pool.query(`DELETE FROM water.stations WHERE dataset_version_id=$1`, [supId]);
+          await pool.query(`DELETE FROM app.dataset_versions WHERE id=$1`, [supId]);
+        }
+        await unpinLayer(pool, PIN);
+      }
     }
-    await pool.query(`DELETE FROM water.stations WHERE dataset_version_id=$1`, [supId]);
-    await pool.query(`DELETE FROM app.dataset_versions WHERE id=$1`, [supId]);
   });
 
   it('rivers is one active ingest version holding all three levels', async () => {
