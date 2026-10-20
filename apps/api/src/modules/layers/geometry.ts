@@ -64,7 +64,7 @@ export function geomInsertSql(def: LayerDef, n: number): string {
  * Ask PostGIS whether the GeoJSON string parses to a valid geometry. Runs before
  * insert/update so invalid input becomes GeometryError(422), not a DB 500.
  */
-export async function assertValidInPg(pg: Pool, _def: LayerDef, geometryJson: string): Promise<void> {
+export async function assertValidInPg(pg: Pool | PoolClient, _def: LayerDef, geometryJson: string): Promise<void> {
   return assertValidGeoJsonInPg(pg, geometryJson);
 }
 

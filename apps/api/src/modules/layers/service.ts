@@ -1,32 +1,22 @@
 import type { Pool, PoolClient } from 'pg';
-import { getLayer, type LayerDef } from '../../layers/registry';
+import { getLayer } from '../../layers/registry';
 import { featuresRepository, type FeatureFilter, type FeatureRow } from './repository';
-import { assertGeometry, assertValidInPg } from './geometry';
-import { auditService, type EditSource } from '../audit/service';
+import { auditService } from '../audit/service';
 import { versionsService, openDraft, StaleDraftError } from '@webatlas/versioning';
-import { validate } from '../../lib/validate';
-import { ConflictError, NotFoundError, ValidationError } from '../../errors';
-import { COUNTRY_UNIT, type Permission, type UnitTree } from '@webatlas/shared';
+import { ConflictError, NotFoundError } from '../../errors';
+import type { Permission, UnitTree } from '@webatlas/shared';
 import { assertCan } from '../../authz/assert';
 import { suggestManagingUnit } from '../admin-units/repository';
 import type { CurrentUser } from '../../types/fastify';
+import {
+  assertKnownUnit, fieldError, placementWarnings, prepare, unitOf,
+  type FeatureInput, type FeatureResult, type FeatureWarning,
+} from './draftOps';
 
-type FeatureInput = { geometry?: unknown; properties?: Record<string, unknown>; source?: EditSource };
+export type { FeatureInput, FeatureResult, FeatureWarning } from './draftOps';
 
 /** Who is writing, and the unit tree their grants are resolved against. */
 export interface Access { user: CurrentUser; tree: UnitTree }
-
-export interface FeatureWarning { code: 'OUTSIDE_MANAGING_UNIT'; message: string }
-export interface FeatureResult { feature: FeatureRow; warnings: FeatureWarning[] }
-
-// Same shape as a zod flatten(), so a client shows it next to the field like any other.
-function fieldError(field: string, message: string): ValidationError {
-  return new ValidationError('Validation failed', { formErrors: [], fieldErrors: { [field]: [message] } });
-}
-
-function assertKnownUnit(tree: UnitTree, unit: string): void {
-  if (!tree.has(unit)) throw fieldError('managing_unit', 'Mã đơn vị không hợp lệ');
-}
 
 /**
  * Direct publish until P4 (global constraints): every write publishes at once, so it needs the
@@ -35,27 +25,6 @@ function assertKnownUnit(tree: UnitTree, unit: string): void {
 function authorize(access: Access, permission: Permission, unit: string): void {
   assertCan(access.user, permission, unit, access.tree);
   assertCan(access.user, 'submission.review', unit, access.tree);
-}
-
-// A row without a unit predates the column's backfill or activation; treat it as national, the
-// strictest reading, so a missing value never widens what a regional officer may touch.
-function unitOf(row: FeatureRow): string {
-  const unit = row.properties.managing_unit;
-  return typeof unit === 'string' ? unit : COUNTRY_UNIT;
-}
-
-async function prepare(pg: Pool, def: LayerDef, input: FeatureInput, geometryRequired: boolean) {
-  const attrs = validate(def.attributeSchema, input.properties ?? {}) as Record<string, unknown>;
-  // Only persist keys the layer actually owns.
-  const owned: Record<string, unknown> = {};
-  for (const c of def.attributeColumns) if (c in attrs) owned[c] = attrs[c];
-  const geometryJson = geometryRequired || input.geometry !== undefined
-    ? assertGeometry(def, input.geometry)
-    : undefined;
-  // assertValidInPg is `SELECT ST_IsValid(...$1)` — a pure function of its parameter
-  // that reads no table, so running it on the pool cannot miss session-written rows.
-  if (typeof geometryJson === 'string') await assertValidInPg(pg, def, geometryJson);
-  return { attrs: owned, geometryJson };
 }
 
 export type EditSession = Awaited<ReturnType<ReturnType<typeof featuresService>['editSession']>>;
@@ -227,20 +196,11 @@ export function featuresService(pg: Pool) {
         } catch (e) { return fail(e); }
       },
 
-      // A warning, never a refusal: the saved geometry lies wholly outside its managing unit.
-      // The unit is left as it is (it is never recomputed from geometry once set); VN, which
-      // covers everything, never warns.
+      // See draftOps.placementWarnings: a warning, never a refusal.
       async placementWarnings(row: FeatureRow, tree: UnitTree): Promise<FeatureWarning[]> {
         assertOpen();
         try {
-          const unit = unitOf(row);
-          if (unit === COUNTRY_UNIT || row.geometry === null) return [];
-          if (!(await repo.isOutsideUnit(client, def, row.id, unit))) return [];
-          const name = tree.get(unit)?.name ?? unit;
-          return [{
-            code: 'OUTSIDE_MANAGING_UNIT',
-            message: `Đối tượng không còn nằm trong ${name}. Kiểm tra lại đơn vị chủ quản.`,
-          }];
+          return await placementWarnings(client, def, row, tree);
         } catch (e) { return fail(e); }
       },
 

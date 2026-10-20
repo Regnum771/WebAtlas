@@ -4,7 +4,10 @@ import errorHandler from './errorHandler';
 import { validate } from '../lib/validate';
 import { z } from 'zod';
 import { ForbiddenError, ConflictError } from '../errors';
-import { ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError } from '@webatlas/versioning';
+import {
+  ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError, DraftConflictError,
+  DraftNotEditableError, DraftRevisionError, type Conflict,
+} from '@webatlas/versioning';
 
 const app = Fastify({ logger: false });
 beforeAll(async () => {
@@ -13,6 +16,12 @@ beforeAll(async () => {
   app.get('/conflict', async () => { throw new ConflictError('dup'); });
   app.get('/versioning-not-found', async () => { throw new VersioningNotFoundError('Version v not found for layer dams'); });
   app.get('/versioning-conflict', async () => { throw new VersioningConflictError('no active version for layer dams'); });
+  app.get('/draft-changed', async () => { throw new DraftRevisionError('Draft d is at revision 2, expected 1'); });
+  app.get('/draft-not-editable', async () => { throw new DraftNotEditableError('Draft d is submitted, expected personal'); });
+  app.get('/draft-conflict', async () => {
+    const conflict = (externalId: string): Conflict => ({ externalId, base: null, current: null, draft: {} });
+    throw new DraftConflictError([conflict('900701'), conflict('edit:abc')]);
+  });
   app.post('/validated', async (req) => validate(z.object({ n: z.number() }), req.body));
   app.get('/boom', async () => { throw new Error('unexpected'); });
   await app.ready();
@@ -37,6 +46,25 @@ describe('error handler', () => {
     const c = await app.inject({ method: 'GET', url: '/versioning-conflict' });
     expect(c.statusCode).toBe(409);
     expect(c.json()).toEqual({ error: { code: 'CONFLICT', message: 'no active version for layer dams' } });
+  });
+  it('maps the draft errors to their codes and copy', async () => {
+    const changed = await app.inject({ method: 'GET', url: '/draft-changed' });
+    expect(changed.statusCode).toBe(409);
+    expect(changed.json()).toEqual({ error: { code: 'DRAFT_CHANGED', message: 'Bản đồ đã thay đổi ở nơi khác.' } });
+    const locked = await app.inject({ method: 'GET', url: '/draft-not-editable' });
+    expect(locked.statusCode).toBe(409);
+    expect(locked.json()).toEqual({
+      error: { code: 'DRAFT_NOT_EDITABLE', message: 'Bản nháp đã được nộp, không sửa được nữa.' },
+    });
+    const conflict = await app.inject({ method: 'GET', url: '/draft-conflict' });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toEqual({
+      error: {
+        code: 'STALE_EDIT',
+        message: 'Bản nháp xung đột với dữ liệu đã xuất bản ở 2 đối tượng.',
+        details: { conflicts: ['900701', 'edit:abc'] },
+      },
+    });
   });
   it('maps zod validation failure to 400 with details', async () => {
     const res = await app.inject({ method: 'POST', url: '/validated', payload: { n: 'x' } });

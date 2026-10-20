@@ -4,7 +4,7 @@ type Queryable = Pick<Pool, 'query'>;
 
 export interface EditSource { document: string; provider: string }
 
-export function auditService(pg: Pool) {
+export function auditService(pg: Queryable) {
   return {
     async record(entry: {
       userId?: string; action: 'create' | 'update' | 'delete';

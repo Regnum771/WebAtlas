@@ -1,6 +1,9 @@
 import fp from 'fastify-plugin';
 import { AppError, ConflictError, InternalError, NotFoundError } from '../errors';
-import { ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError, StaleDraftError } from '@webatlas/versioning';
+import {
+  ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError, StaleDraftError,
+  DraftConflictError, DraftNotEditableError, DraftRevisionError,
+} from '@webatlas/versioning';
 
 export default fp(async (app) => {
   app.setNotFoundHandler((_req, reply) => {
@@ -16,6 +19,16 @@ export default fp(async (app) => {
       // The versioning package throws its own, HTTP-free classes; they keep the responses the
       // versions service gave when it lived here and threw the API's.
       appErr = new NotFoundError(err.message);
+    } else if (err instanceof DraftRevisionError) {
+      // The draft moved since the caller read it (another tab, or a resolution elsewhere).
+      appErr = new AppError(409, 'DRAFT_CHANGED', 'Bản đồ đã thay đổi ở nơi khác.');
+    } else if (err instanceof DraftNotEditableError) {
+      appErr = new AppError(409, 'DRAFT_NOT_EDITABLE', 'Bản nháp đã được nộp, không sửa được nữa.');
+    } else if (err instanceof DraftConflictError) {
+      // Before StaleDraftError, which it extends: same code, plus the conflicting features.
+      appErr = new AppError(409, 'STALE_EDIT', err.message, {
+        conflicts: err.conflicts.map((c) => c.externalId),
+      });
     } else if (err instanceof StaleDraftError) {
       // Distinct code so a client can tell "someone else saved first" from other 409s.
       appErr = new AppError(409, 'STALE_EDIT', err.message);

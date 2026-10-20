@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 import { LAYER_REGISTRY, type LayerDef } from '../../layers/registry';
 import { geomInsertSql } from './geometry';
 import { ConflictError, NotFoundError } from '../../errors';
+import { resolvedSql } from '@webatlas/versioning';
 
 /**
  * Only level-3 rivers (OSM ways) are edited by hand (user decision 2026-09-29). Level 1 is
@@ -107,7 +108,9 @@ export interface UnassignedFeature {
   name: string | null;
 }
 
-export function featuresRepository(pg: Pool) {
+// The pool, or a client: the version-targeted writes below take their client explicitly and
+// never use this one, so draft operations that hold only a client can still build a repository.
+export function featuresRepository(pg: Pick<Pool, 'query'>) {
   return {
     /**
      * Current rows of every layer that still sit at the country level with no geometry: the
@@ -245,9 +248,11 @@ export function featuresRepository(pg: Pool) {
     // another user's committed change has since superseded:
     //   1. the named row already belongs to this draft -> edit it in place;
     //   2. else the draft already holds a row for the same external_id -> that row;
-    //   3. else the feature's current row (external_id match with is_current), which is
-    //      then copied into the draft;
-    //   4. no current row (the feature was deleted meanwhile) -> NotFoundError.
+    //   3. else the feature's row in the draft's own resolved state (its parent chain), which
+    //      is then copied into the draft. Not the active version's row: once the layer has
+    //      moved on, the draft edits what it branched from, and a rebase surfaces any upstream
+    //      change to the same feature as a conflict instead of silently absorbing it;
+    //   4. no such row (absent from that state, or a tombstone there) -> NotFoundError.
     async resolveEditSource(
       client: PoolClient,
       def: LayerDef,
@@ -270,15 +275,18 @@ export function featuresRepository(pg: Pool) {
       );
       if (inDraft.rows[0]?.deleted) throw new NotFoundError('Feature not found');
       if (inDraft.rows[0]) return { rowId: inDraft.rows[0].id, inDraft: true };
-      const current = await client.query(
-        `SELECT id FROM ${def.table} WHERE external_id = $1 AND is_current`, [externalId]
+      // The external_id filter sits on the DISTINCT ON key, so the planner resolves only this
+      // feature rather than the whole layer.
+      const resolved = await client.query(
+        `SELECT id FROM (${resolvedSql(def.key, 'id, external_id')}) r WHERE r.external_id = $2`,
+        [draftId, externalId]
       );
-      if (!current.rows[0]) throw new NotFoundError('Feature not found');
-      return { rowId: current.rows[0].id, inDraft: false };
+      if (!resolved.rows[0]) throw new NotFoundError('Feature not found');
+      return { rowId: resolved.rows[0].id, inDraft: false };
     },
 
-    // Copy-on-write: bring the feature's current row into the draft version and apply the
-    // change there, leaving the parent version's row untouched. `source` comes from
+    // Copy-on-write: bring the feature's row from the draft's resolved state into the draft
+    // version and apply the change there, leaving the parent version's row untouched. `source` comes from
     // resolveEditSource: a row already in the draft is updated in place, so re-editing
     // a feature never copies it twice.
     async upsertChangeInVersion(
