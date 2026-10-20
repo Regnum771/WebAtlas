@@ -369,6 +369,25 @@ describe('assertDraftPublishable', () => {
     expect(rows).toHaveLength(0);
   });
 
+  it('a draft row without an external_id fails closed: it needs rights on VN', async () => {
+    const p = user('p');
+    const { draftId } = await editor().open(LAYER, p);
+    // The schema allows a NULL external_id; copy-on-write would carry one over unchanged. Insert
+    // such a row straight into the draft, managed by 48, which P may otherwise edit.
+    await getPool().query(
+      `INSERT INTO water.dams (external_id, name, geom, dataset_version_id, managing_unit, deleted)
+       VALUES (NULL, 'pa-no-ext', ST_SetSRID(ST_MakePoint(108.05, 16.1), 4326), $1, '48', false)`,
+      [draftId]
+    );
+    const before = await activeVersionId();
+
+    const refused = await httpError(() => publish(draftId, p));
+
+    expect(refused).toEqual({ status: 403, error: outOf('VN', 'feature.update', ['48']) });
+    expect(await activeVersionId()).toBe(before);
+    expect(await draftStatus(draftId)).toBe('personal');
+  });
+
   it('admin publishes anything', async () => {
     const admin = user('admin');
     const { draftId } = await editor().open(LAYER, admin);
