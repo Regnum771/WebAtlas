@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { pinLayer, restoreActive, unpinLayer } from '@webatlas/versioning/testing';
+import { pinLayer, restoreActive, runStages, unpinLayer } from '@webatlas/versioning/testing';
 import { getPool, closePool } from '../../db/pool';
 import { loadFeatures, versionsService, type FeatureLoadSpec } from '@webatlas/versioning';
 import { SEED_LAYER_COLUMNS } from '@webatlas/shared';
@@ -79,17 +79,21 @@ describe('versioning integration (§6 rollback + addressability)', () => {
       expect(new Set(stillThere)).toEqual(new Set(priorIds));
     } finally {
       // Cleanup: restore the prior active version atomically, then drop the superseder. Until it
-      // is restored the superseder is the active version and must not be deleted.
-      try {
-        await restoreActive(pool, 'stations', priorActive!);
-        restored = true;
-      } finally {
-        if (restored && supId) {
-          await pool.query(`DELETE FROM water.stations WHERE dataset_version_id=$1`, [supId]);
-          await pool.query(`DELETE FROM app.dataset_versions WHERE id=$1`, [supId]);
-        }
-        await unpinLayer(pool, PIN);
-      }
+      // is restored the superseder is the active version and must not be deleted. runStages runs
+      // every stage even when one fails, so a failing DELETE never leaks the pins.
+      await runStages([
+        async () => {
+          await restoreActive(pool, 'stations', priorActive!);
+          restored = true;
+        },
+        async () => {
+          if (restored && supId) await pool.query(`DELETE FROM water.stations WHERE dataset_version_id=$1`, [supId]);
+        },
+        async () => {
+          if (restored && supId) await pool.query(`DELETE FROM app.dataset_versions WHERE id=$1`, [supId]);
+        },
+        () => unpinLayer(pool, PIN),
+      ]);
     }
   });
 
