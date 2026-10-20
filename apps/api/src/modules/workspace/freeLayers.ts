@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { NotFoundError, ValidationError } from '../../errors';
 import { inTransaction } from '../../lib/transaction';
 import type { CurrentUser } from '../../types/fastify';
-import { assertValidGeoJsonInPg } from '../layers/geometry';
+import { assertValidGeoJsonInPg, geoJsonToGeomSql } from '../layers/geometry';
 import { assertCanRead, bumpMap, lockMapForWrite, type Queryable } from './access';
 import type { LayerSummary } from './maps';
 
@@ -89,7 +89,10 @@ function checkProperties(layer: FreeLayerRow, properties: Record<string, unknown
   }
 }
 
-/** Type-check, then PostGIS-validate (422 on invalid), returning the JSON text to insert. */
+/**
+ * Type-check, then PostGIS-validate (422 on invalid or empty), returning the JSON text to insert.
+ * The writes insert it through geoJsonToGeomSql, which drops a third coordinate.
+ */
 async function checkGeometry(client: PoolClient, layer: FreeLayerRow, geometry: GeoJsonGeometry): Promise<string> {
   checkGeometryType(layer, geometry);
   const json = JSON.stringify(geometry);
@@ -181,7 +184,7 @@ export function freeLayersService(pg: Pool) {
         const geomJson = await checkGeometry(client, layer, input.geometry);
         const { rows } = await client.query(
           `INSERT INTO workspace.features AS f (layer_id, geom, properties)
-           VALUES ($1, ST_SetSRID(ST_GeomFromGeoJSON($2), 4326), $3::jsonb)
+           VALUES ($1, ${geoJsonToGeomSql(2)}, $3::jsonb)
            RETURNING ${FEATURE_SELECT}`,
           [layerId, geomJson, JSON.stringify(input.properties)]
         );
@@ -200,7 +203,7 @@ export function freeLayersService(pg: Pool) {
         const geomJson = input.geometry ? await checkGeometry(client, layer, input.geometry) : null;
         const { rows } = await client.query(
           `UPDATE workspace.features f
-              SET geom = COALESCE(ST_SetSRID(ST_GeomFromGeoJSON($3::text), 4326), f.geom),
+              SET geom = COALESCE(${geoJsonToGeomSql(3, '::text')}, f.geom),
                   properties = COALESCE($4::jsonb, f.properties)
             WHERE f.id = $1 AND f.layer_id = $2
             RETURNING ${FEATURE_SELECT}`,

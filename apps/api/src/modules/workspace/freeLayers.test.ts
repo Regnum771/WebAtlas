@@ -50,7 +50,10 @@ async function addLayer(mapId: string, over: Record<string, unknown> = {}) {
   const res = await call(O, 'POST', `/maps/${mapId}/layers`, {
     kind: 'free', title: 'Điểm đo', geometryType: 'point',
     fields: [{ name: 'ten', type: 'text' }, { name: 'luu_luong', type: 'number' }, { name: 'ngay', type: 'date' }],
-    expectedRevision: await revisionOf(mapId), ...over,
+    ...over,
+    // Only ask for the revision when the caller does not know it: the file stays under the
+    // global rate limit (100 requests a minute from one address).
+    expectedRevision: 'expectedRevision' in over ? over.expectedRevision : await revisionOf(mapId),
   });
   return res;
 }
@@ -77,7 +80,7 @@ afterAll(async () => {
 describe('free layers', () => {
   it('owner draws a layer, adds, edits and removes features; each write bumps the revision', async () => {
     const map = await createMap();
-    const created = await addLayer(map.id);
+    const created = await addLayer(map.id, { expectedRevision: 0 });
     expect(created.statusCode).toBe(201);
     const { layer, revision } = created.json();
     expect(revision).toBe(1);
@@ -119,7 +122,7 @@ describe('free layers', () => {
 
   it('a stale revision changes nothing', async () => {
     const map = await createMap();
-    const { layer, revision } = (await addLayer(map.id)).json();
+    const { layer, revision } = (await addLayer(map.id, { expectedRevision: 0 })).json();
     const url = `/maps/${map.id}/layers/${layer.id}/features`;
     const first = await call(O, 'POST', url, { geometry: pt(1, 1), properties: {}, expectedRevision: revision });
     expect(first.statusCode).toBe(201);
@@ -169,11 +172,11 @@ describe('free layers', () => {
 
   it('layer definitions are validated', async () => {
     const map = await createMap();
-    const dup = await addLayer(map.id, { fields: [{ name: 'A', type: 'text' }, { name: ' a ', type: 'number' }] });
+    const dup = await addLayer(map.id, { fields: [{ name: 'A', type: 'text' }, { name: ' a ', type: 'number' }], expectedRevision: 0 });
     expect(dup.statusCode).toBe(400);
-    expect((await addLayer(map.id, { fields: [{ name: 'id', type: 'text' }] })).statusCode).toBe(400);
-    expect((await addLayer(map.id, { fields: [{ name: 'x', type: 'boolean' }] })).statusCode).toBe(400);
-    const big = await addLayer(map.id, { style: { blob: 'x'.repeat(9000) } });
+    expect((await addLayer(map.id, { fields: [{ name: 'id', type: 'text' }], expectedRevision: 0 })).statusCode).toBe(400);
+    expect((await addLayer(map.id, { fields: [{ name: 'x', type: 'boolean' }], expectedRevision: 0 })).statusCode).toBe(400);
+    const big = await addLayer(map.id, { style: { blob: 'x'.repeat(9000) }, expectedRevision: 0 });
     expect(big.statusCode).toBe(400);
     expect(big.json().error).toMatchObject({ message: 'Kiểu hiển thị quá lớn.', details: { field: 'style' } });
     const other = await call(O, 'POST', `/maps/${map.id}/layers`, { kind: 'raster', title: 'x', expectedRevision: 0 });
@@ -183,7 +186,7 @@ describe('free layers', () => {
 
   it('invalid geometry is 422 and writes nothing', async () => {
     const map = await createMap();
-    const { layer, revision } = (await addLayer(map.id, { geometryType: 'polygon', fields: [] })).json();
+    const { layer, revision } = (await addLayer(map.id, { geometryType: 'polygon', fields: [], expectedRevision: 0 })).json();
     const bowtie = { type: 'Polygon', coordinates: [[[0, 0], [2, 2], [2, 0], [0, 2], [0, 0]]] };
     const res = await call(O, 'POST', `/maps/${map.id}/layers/${layer.id}/features`, { geometry: bowtie, properties: {}, expectedRevision: revision });
     expect(res.statusCode).toBe(422);
@@ -193,9 +196,36 @@ describe('free layers', () => {
     expect(rows[0].n).toBe(0);
   });
 
+  it('a 3D point is stored without its altitude; an empty geometry is 422 and writes nothing', async () => {
+    const map = await createMap();
+    const { layer, revision } = (await addLayer(map.id, { fields: [], expectedRevision: 0 })).json();
+    const url = `/maps/${map.id}/layers/${layer.id}/features`;
+
+    const added = await call(O, 'POST', url, { geometry: { type: 'Point', coordinates: [105, 20, 12.5] }, properties: {}, expectedRevision: revision });
+    expect(added.statusCode).toBe(201);
+    expect(added.json().feature.geometry).toEqual(pt(105, 20));
+    const moved = await call(O, 'PUT', `${url}/${added.json().feature.id}`, {
+      geometry: { type: 'Point', coordinates: [106, 21, 30] }, expectedRevision: added.json().revision,
+    });
+    expect(moved.statusCode).toBe(200);
+    const read = await call(O, 'GET', url);
+    expect(read.json().features.map((f: { geometry: unknown }) => f.geometry)).toEqual([pt(106, 21)]);
+
+    const rev = moved.json().revision;
+    const empty = await call(O, 'POST', url, { geometry: { type: 'MultiPoint', coordinates: [] }, properties: {}, expectedRevision: rev });
+    expect(empty.statusCode).toBe(422);
+    expect(empty.json().error).toMatchObject({ code: 'GEOMETRY_ERROR', message: 'Hình dạng của đối tượng đang trống.' });
+    const stored = await getPool().query(
+      `SELECT m.revision, (SELECT count(*)::int FROM workspace.features WHERE layer_id = $2) AS n
+         FROM workspace.maps m WHERE m.id = $1`,
+      [map.id, layer.id]
+    );
+    expect(stored.rows[0]).toEqual({ revision: rev, n: 1 });
+  });
+
   it('bbox filters and limit truncates', async () => {
     const map = await createMap();
-    const { layer } = (await addLayer(map.id, { fields: [] })).json();
+    const { layer } = (await addLayer(map.id, { fields: [], expectedRevision: 0 })).json();
     const url = `/maps/${map.id}/layers/${layer.id}/features`;
     for (const [x, y] of [[1, 1], [2, 2], [50, 50]]) {
       const res = await call(O, 'POST', url, { geometry: pt(x, y), properties: {}, expectedRevision: await revisionOf(map.id) });
@@ -212,7 +242,7 @@ describe('free layers', () => {
 
   it('a recipient reads features but cannot add; a stranger gets 404', async () => {
     const map = await createMap();
-    const { layer, revision } = (await addLayer(map.id)).json();
+    const { layer, revision } = (await addLayer(map.id, { expectedRevision: 0 })).json();
     await getPool().query(
       `INSERT INTO workspace.map_shares (map_id, user_id, created_by) VALUES ($1, $2, $3)`,
       [map.id, ids.get(R), ids.get(O)]

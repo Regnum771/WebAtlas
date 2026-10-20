@@ -50,15 +50,26 @@ export function assertGeometry(def: LayerDef, geometry: unknown): string | null 
 }
 
 /**
- * SQL fragment converting a GeoJSON text parameter ($n) to a 4326 geometry,
- * forcing the layer's multi-type where the source may arrive single.
+ * SQL fragment converting a GeoJSON text parameter ($n) to a 2D 4326 geometry: what every write
+ * of a geometry validated by assertValidGeoJsonInPg stores. ST_Force2D drops a third coordinate
+ * (GPS exports carry altitude), which the 2D geometry columns would otherwise refuse with a 500.
+ */
+export function geoJsonToGeomSql(n: number, cast = ''): string {
+  return `ST_Force2D(ST_SetSRID(ST_GeomFromGeoJSON($${n}${cast}), 4326))`;
+}
+
+/**
+ * geoJsonToGeomSql for a layer column, forcing the layer's multi-type where the source may
+ * arrive single.
  */
 export function geomInsertSql(def: LayerDef, n: number): string {
-  const base = `ST_SetSRID(ST_GeomFromGeoJSON($${n}), 4326)`;
+  const base = geoJsonToGeomSql(n);
   if (def.geomType === 'MultiLineString') return `ST_Multi(${base})`;
   if (def.geomType === 'MultiPolygon') return `ST_Multi(${base})`;
   return base;
 }
+
+export const EMPTY_GEOMETRY = 'Hình dạng của đối tượng đang trống.';
 
 /**
  * Ask PostGIS whether the GeoJSON string parses to a valid geometry. Runs before
@@ -68,15 +79,21 @@ export async function assertValidInPg(pg: Pool | PoolClient, _def: LayerDef, geo
   return assertValidGeoJsonInPg(pg, geometryJson);
 }
 
-/** assertValidInPg without a layer: the check itself never depended on one. */
+/**
+ * assertValidInPg without a layer: the check itself never depended on one. An empty geometry
+ * (e.g. MULTIPOINT EMPTY) is refused: it is valid to PostGIS, but stored it would be invisible
+ * yet counted. A 3D geometry passes (ST_IsValid works on it); the write sites drop Z.
+ */
 export async function assertValidGeoJsonInPg(pg: Pool | PoolClient, geometryJson: string): Promise<void> {
-  const sql = `SELECT ST_IsValid(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)) AS valid`;
-  let valid: boolean;
+  const sql = `SELECT ST_IsEmpty(g) AS empty, ST_IsValid(g) AS valid
+                 FROM (SELECT ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS g) s`;
+  let row: { empty: boolean; valid: boolean } | undefined;
   try {
     const { rows } = await pg.query(sql, [geometryJson]);
-    valid = rows[0]?.valid === true;
+    row = rows[0];
   } catch {
     throw new GeometryError('Geometry could not be parsed');
   }
-  if (!valid) throw new GeometryError('Geometry is not valid');
+  if (row?.empty === true) throw new GeometryError(EMPTY_GEOMETRY);
+  if (row?.valid !== true) throw new GeometryError('Geometry is not valid');
 }

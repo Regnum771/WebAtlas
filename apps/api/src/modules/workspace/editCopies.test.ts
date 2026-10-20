@@ -464,6 +464,20 @@ describe('edit-copy layers', () => {
     expect(shown.rows).toEqual([{ feature_level: 3 }]);
   });
 
+  it('a 3D point is stored without its altitude', async () => {
+    const { layer, base } = await mapWithEditCopy();
+    const res = await call(O, 'POST', `${base}/features`, {
+      geometry: { type: 'Point', coordinates: [108.103, 16.05, 12.5] },
+      properties: { name: 'Đập có độ cao', managing_unit: '48' }, expectedRevision: 1,
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().feature.geometry).toEqual({ type: 'Point', coordinates: [108.103, 16.05] });
+    const { rows } = await getPool().query<{ dims: number }>(
+      `SELECT ST_NDims(geom) AS dims FROM water.dams WHERE dataset_version_id = $1`, [layer.draftId]
+    );
+    expect(rows).toEqual([{ dims: 2 }]);
+  });
+
   it('a layer whose draft is gone answers 410', async () => {
     const { map, layer, base } = await mapWithEditCopy();
     // The draft is discarded elsewhere (P2's own discard); the layer row outlives it.
