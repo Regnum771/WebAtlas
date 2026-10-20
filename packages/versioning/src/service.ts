@@ -7,7 +7,26 @@ import { refreshCurrentRows } from './currentRows';
 import { pruneVersions } from './retention';
 import { buildRiverHierarchy } from './riverHierarchy';
 import { assertRiverGates, RIVER_BASELINE } from './riverGates';
-import { ConflictError, NotFoundError, StaleDraftError } from './errors';
+import { lockDraft } from './drafts';
+import { rebaseDraft } from './rebase';
+import { ConflictError, DraftConflictError, NotFoundError, StaleDraftError } from './errors';
+
+/**
+ * Lock the layer's active version row (FOR NO KEY UPDATE) and return its id. Waiting on another
+ * transaction's activation can end with the locked row no longer active, in which case the
+ * statement returns nothing (READ COMMITTED re-checks the row); the next attempt sees and locks
+ * the version that replaced it.
+ */
+async function lockActiveRow(client: PoolClient, layerKey: string): Promise<string> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { rows } = await client.query<{ id: string }>(
+      `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND is_active FOR NO KEY UPDATE`,
+      [layerKey]
+    );
+    if (rows[0]) return rows[0].id;
+  }
+  throw new ConflictError(`no active version for layer ${layerKey}`);
+}
 
 export interface IngestVersionArgs {
   layerKey: string;
@@ -122,60 +141,37 @@ export function versionsService(pg: Pool) {
       }
     },
 
-    // Open a draft edit-version branching off the layer's current active version.
-    // The draft is inactive: it holds a steward's in-progress edits and only becomes
-    // "the map" when commitEditDraft flips it. All queries run on the caller's client
-    // so the draft and the feature rows written into it share one transaction.
-    async openEditDraft(client: PoolClient, layerKey: string, actorId?: string | null): Promise<string> {
-      const active = await client.query(
-        `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND is_active`,
-        [layerKey]
-      );
-      const parent = active.rows[0]?.id;
-      // An edit version must branch from something (the kind↔parent check constraint
-      // enforces this too); a layer with no active version has no state to edit.
-      if (!parent) throw new ConflictError(`no active version for layer ${layerKey}`);
-      const label = `${new Date().toISOString().slice(0, 10)} edits`;
-      const { rows } = await client.query(
-        `INSERT INTO app.dataset_versions
-           (layer_key, kind, parent_version_id, source, label, ingested_by, is_active)
-         VALUES ($1, 'edit', $2, 'edit session', $3, $4, false)
-         RETURNING id`,
-        [layerKey, parent, label, actorId ?? null]
-      );
-      return rows[0].id as string;
-    },
-
-    // Publish the draft: record what it stores, then make it the layer's active version.
-    async commitEditDraft(client: PoolClient, layerKey: string, draftId: string): Promise<void> {
-      // Edit sessions on one layer can overlap and nothing serialises them. A draft opened on
-      // a version that is no longer active would, when activated, drop the intervening
-      // version from the map -- and retention would then delete that version for good. Lock
-      // the active row so no other commit can move the pointer meanwhile, and refuse a stale
-      // draft instead.
-      const active = await client.query<{ id: string }>(
-        `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND is_active FOR NO KEY UPDATE`,
-        [layerKey]
-      );
-      const activeId = active.rows[0]?.id;
-      const draft = await client.query<{ parent: string | null }>(
-        `SELECT parent_version_id AS parent FROM app.dataset_versions WHERE id = $1 AND layer_key = $2`,
-        [draftId, layerKey]
-      );
-      if (!draft.rows[0]) throw new NotFoundError(`Version ${draftId} not found for layer ${layerKey}`);
-      const parent = draft.rows[0].parent;
-      if (parent !== activeId) {
-        // The locked active row can be missing after waiting on another commit; don't print "undefined".
-        const now = activeId ? `the active version is now ${activeId}` : `the layer's active version has changed since`;
-        throw new StaleDraftError(
-          `layer ${layerKey} changed since this edit session started (its draft ${draftId} was opened on ${parent}; ${now}). Reopen the session and redo the edits.`
-        );
+    /**
+     * Publish a draft: bring it onto the layer's active version, let the caller's guard decide
+     * whether it may go live, then make it the active version. Everything runs on the caller's
+     * client and transaction, so a refusal anywhere (conflicts, the guard, activation's gates)
+     * rolls back to the draft as it was, still a draft and with nothing activated.
+     *
+     * `guard` is required, never optional: it is where the caller's publish authorisation runs.
+     * It sees the rebased draft (its parent is the active version) and is still a draft.
+     */
+    async publishDraft(
+      client: PoolClient, layerKey: string, draftId: string, guard: (client: PoolClient) => Promise<void>
+    ): Promise<void> {
+      // Hold the active row until commit, so no other publish or activation can move the pointer
+      // between the rebase below and our own activation.
+      const lockedActive = await lockActiveRow(client, layerKey);
+      await lockDraft(client, draftId);
+      const { activeId, conflicts } = await rebaseDraft(client, layerKey, draftId);
+      if (conflicts.length > 0) throw new DraftConflictError(conflicts);
+      if (activeId !== lockedActive) {
+        // Unreachable while the lock holds; refuse rather than publish onto an unchecked state.
+        throw new StaleDraftError(`layer ${layerKey}'s active version moved while draft ${draftId} was being published`);
       }
+      await guard(client);
+      // No longer a draft BEFORE activation: dataset_versions_draft_shape forbids an active row
+      // that still has a draft status, and a CHECK is evaluated per statement.
+      await client.query(`UPDATE app.dataset_versions SET draft_status = NULL WHERE id = $1`, [draftId]);
       await svc.activate(client, layerKey, draftId);
       // feature_count for an edit version is the number of rows it stores (the changed
       // features, tombstones included) — not the resolved total, which is inherited.
       // Counted AFTER activate(): for rivers, activate() writes the rows the hierarchy
-      // rebuild superseded into this same draft, and they are stored rows like any other.
+      // rebuild superseded into this same version, and they are stored rows like any other.
       const { rows } = await client.query(
         `SELECT count(*)::int AS n FROM water.${layerKey} WHERE dataset_version_id = $1`,
         [draftId]
@@ -184,15 +180,8 @@ export function versionsService(pg: Pool) {
         `UPDATE app.dataset_versions SET feature_count = $1 WHERE id = $2`,
         [rows[0].n, draftId]
       );
-    },
-
-    // The API's edit sessions discard by ROLLBACK of the whole session transaction; this
-    // method remains for callers that must keep their transaction.
-    // Throw the draft away: its pending rows first (they reference the version row), then
-    // the version itself. The active version never moved, so this leaves no trace.
-    async discardEditDraft(client: PoolClient, layerKey: string, draftId: string): Promise<void> {
-      await client.query(`DELETE FROM water.${layerKey} WHERE dataset_version_id = $1`, [draftId]);
-      await client.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [draftId]);
+      // Conflict choices only mean something while the version is a draft.
+      await client.query(`DELETE FROM app.draft_resolutions WHERE draft_id = $1`, [draftId]);
     },
 
     resolveFeatureIds(layerKey: string, versionId: string): Promise<string[]> {

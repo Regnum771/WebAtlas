@@ -1,8 +1,27 @@
 import { describe, it, expect, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import type pg from 'pg';
 import { getPool, closePool } from './testPool';
 import { versionsService } from './service';
+import { openDraft } from './drafts';
 
 afterAll(async () => { await closePool(); });
+
+/** A throwaway draft owner, created inside the test's rolled-back transaction (CI seeds no users). */
+async function draftOwner(c: pg.PoolClient): Promise<string> {
+  const { rows } = await c.query<{ id: string }>(
+    `INSERT INTO app.users (email, password_hash, role) VALUES ($1, 'x', 'viewer') RETURNING id`,
+    [`p2-river-hook-${randomUUID()}@webatlas.test`]
+  );
+  return rows[0].id;
+}
+
+/** A personal draft on the layer's active version, owned by a throwaway user. */
+async function openTestDraft(c: pg.PoolClient, layerKey: string): Promise<string> {
+  return (await openDraft(c, layerKey, await draftOwner(c))).id;
+}
+
+const noGuard = async () => {};
 
 /** The way carrying this name is long enough that moving it changes reach assignments. */
 const SUBJECT = 'Sông Thu Bồn';
@@ -22,7 +41,7 @@ describe('activate() maintains the river hierarchy', () => {
       expect(before.rows).toHaveLength(1);
       const riverId = before.rows[0].external_id;
 
-      const draftId = await svc.openEditDraft(client, 'rivers', null);
+      const draftId = await openTestDraft(client, 'rivers');
       // Supersede one member way with a visibly different geometry: same external_id,
       // new row in the draft. This is how every edit works -- never an in-place update.
       // Total order on the pick so the test is the same on every machine.
@@ -36,7 +55,7 @@ describe('activate() maintains the river hierarchy', () => {
           ORDER BY ST_Length(w.geom) DESC, w.external_id LIMIT 1`,
         [riverId, draftId]
       );
-      await svc.commitEditDraft(client, 'rivers', draftId);
+      await svc.publishDraft(client, 'rivers', draftId, noGuard);
 
       const after = await client.query<{ len: string; version: string; provinces: string }>(
         `SELECT ST_Length(geom::geography)::text AS len, dataset_version_id::text AS version,
@@ -65,8 +84,8 @@ describe('activate() maintains the river hierarchy', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const draftId = await svc.openEditDraft(client, 'rivers', null);
-      await svc.commitEditDraft(client, 'rivers', draftId);
+      const draftId = await openTestDraft(client, 'rivers');
+      await svc.publishDraft(client, 'rivers', draftId, noGuard);
       const { rows } = await client.query<{ n: string }>(
         `SELECT count(*)::text AS n FROM water.rivers WHERE dataset_version_id = $1`,
         [draftId]
@@ -99,7 +118,7 @@ describe('activate() maintains the river hierarchy', () => {
       );
       expect(pick).toHaveLength(1);
 
-      const draftId = await svc.openEditDraft(client, 'rivers', null);
+      const draftId = await openTestDraft(client, 'rivers');
       await client.query(
         `INSERT INTO water.rivers
            (external_id, feature_level, name, code, stream_order, geom, dataset_version_id, deleted)
@@ -110,7 +129,7 @@ describe('activate() maintains the river hierarchy', () => {
       // The edit drops named reaches below RIVER_BASELINE. That floor guards a re-ingest
       // against a silent algorithm or data regression (spec §2); a steward deleting a
       // way is neither, and must not be refused for it.
-      await expect(svc.commitEditDraft(client, 'rivers', draftId)).resolves.toBeUndefined();
+      await expect(svc.publishDraft(client, 'rivers', draftId, noGuard)).resolves.toBeUndefined();
 
       const { rows } = await client.query<{ n: string }>(
         `SELECT count(*)::text AS n FROM water.rivers_active WHERE external_id = $1`,
@@ -131,10 +150,10 @@ describe('activate() maintains the river hierarchy', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const draftId = await svc.openEditDraft(client, 'dams', null);
+      const draftId = await openTestDraft(client, 'dams');
       // Must not throw: the hook is scoped to rivers, and water.dams has no
       // feature_level column at all.
-      await expect(svc.commitEditDraft(client, 'dams', draftId)).resolves.toBeUndefined();
+      await expect(svc.publishDraft(client, 'dams', draftId, noGuard)).resolves.toBeUndefined();
     } finally {
       await client.query('ROLLBACK');
       client.release();

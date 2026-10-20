@@ -4,7 +4,8 @@
  * `@webatlas/shared` only, so both the API and the dataset pipeline can use it (spec §7, D4).
  */
 export {
-  ConflictError, NotFoundError, StaleDraftError, DraftNotEditableError, DraftRevisionError,
+  ConflictError, NotFoundError, StaleDraftError, DraftConflictError, DraftNotEditableError,
+  DraftRevisionError,
 } from './errors';
 export {
   openDraft, lockDraft, bumpRevision, discardDraft, type DraftStatus, type DraftRow,

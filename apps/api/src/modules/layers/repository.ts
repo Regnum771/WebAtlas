@@ -152,7 +152,7 @@ export function featuresRepository(pg: Pool) {
     // targets a draft edit-version, so nothing mutates the active version directly.
     // Every method below takes the edit session's client as its FIRST parameter and
     // runs all of its queries on it. Writing on the pool instead would put the rows
-    // outside the session transaction: commitEditDraft's count would not see them and
+    // outside the session transaction: publishDraft's count would not see them and
     // discard would leave orphans the rollback never removes.
 
     // findById restricted to the session's transaction — sees its uncommitted rows.

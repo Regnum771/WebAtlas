@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
-import { versionsService } from '@webatlas/versioning';
+import { openDraft, versionsService } from '@webatlas/versioning';
 import { RIVER_REACH_COLUMNS, RIVER_WAY_COLUMNS, ADMIN_PROVINCE_COLUMNS, ADMIN_WARD_COLUMNS } from '@webatlas/shared';
 import { loadFeatures } from '@webatlas/versioning';
 import { applyLoadGeojson, resolveLoad, type ResolvedLoad } from './loadGeojson';
@@ -44,6 +44,20 @@ function stations(tag: string): ResolvedLoad {
     layer: 'stations', versioned: true, source: `stations.geojson@sha256:${sha(sha(body))}`, mapping: 'mapping-1',
     files: [{ path, columns: (p) => ({ external_id: p.id, name: p.name }) }],
   };
+}
+
+/**
+ * A steward edit: a personal draft on the active version, published at once with no guard. Its
+ * owner is a throwaway user created inside the rolled-back transaction (CI seeds no users).
+ */
+async function publishEmptyEdit(c: pg.PoolClient): Promise<string> {
+  const { rows } = await c.query<{ id: string }>(
+    `INSERT INTO app.users (email, password_hash, role) VALUES ($1, 'x', 'viewer') RETURNING id`,
+    [`p2-load-geojson-${randomUUID()}@webatlas.test`]
+  );
+  const { id } = await openDraft(c, 'stations', rows[0].id);
+  await versionsService(pool).publishDraft(c, 'stations', id, async () => {});
+  return id;
 }
 
 async function inRollback<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
@@ -121,9 +135,7 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
   it('the edit guard: new content over steward edits fails, naming the flag', async () => {
     await inRollback(async (c) => {
       await applyLoadGeojson(pool, c, stations('a'), { supersedeEdits: false });
-      const svc = versionsService(pool);
-      const draft = await svc.openEditDraft(c, 'stations');
-      await svc.commitEditDraft(c, 'stations', draft);
+      const draft = await publishEmptyEdit(c);
       expect((await active(c, 'stations')).kind).toBe('edit');
       const before = await versionCount(c, 'stations');
       await expect(applyLoadGeojson(pool, c, stations('b'), { supersedeEdits: false })).rejects.toThrow(
@@ -138,9 +150,7 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
     await inRollback(async (c) => {
       const load = stations('a');
       const root = await applyLoadGeojson(pool, c, load, { supersedeEdits: false });
-      const svc = versionsService(pool);
-      const draft = await svc.openEditDraft(c, 'stations');
-      await svc.commitEditDraft(c, 'stations', draft);
+      const draft = await publishEmptyEdit(c);
       const out = await applyLoadGeojson(pool, c, load, { supersedeEdits: false });
       expect(out.action).toBe('restamped');
       expect(out.summary).toMatch(/2 versions/);
@@ -152,8 +162,7 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
   it('--supersede-edits loads the new content over the edits', async () => {
     await inRollback(async (c) => {
       await applyLoadGeojson(pool, c, stations('a'), { supersedeEdits: false });
-      const svc = versionsService(pool);
-      await svc.commitEditDraft(c, 'stations', await svc.openEditDraft(c, 'stations'));
+      await publishEmptyEdit(c);
       const next = stations('b');
       const out = await applyLoadGeojson(pool, c, next, { supersedeEdits: true });
       expect(out.action).toBe('loaded');
@@ -179,8 +188,7 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
   it('a new mapping revision over steward edits is refused like new content', async () => {
     await inRollback(async (c) => {
       await applyLoadGeojson(pool, c, stations('a'), { supersedeEdits: false });
-      const svc = versionsService(pool);
-      await svc.commitEditDraft(c, 'stations', await svc.openEditDraft(c, 'stations'));
+      await publishEmptyEdit(c);
       await expect(
         applyLoadGeojson(pool, c, { ...stations('a'), mapping: 'mapping-2' }, { supersedeEdits: false })
       ).rejects.toThrow(/stations has steward edits on top of its last load/);
@@ -196,8 +204,7 @@ describe.skipIf(!DB)('load-geojson against the database', () => {
       const legacy = await svc.createIngestVersion(c, { layerKey: 'stations', source: 'stations.geojson' });
       await loadFeatures(c, { table: 'stations', file: load.files[0].path, columns: load.files[0].columns }, legacy);
       await svc.activate(c, 'stations', legacy);
-      const draft = await svc.openEditDraft(c, 'stations');
-      await svc.commitEditDraft(c, 'stations', draft);
+      const draft = await publishEmptyEdit(c);
       const before = await versionCount(c, 'stations');
 
       const out = await applyLoadGeojson(pool, c, load, { supersedeEdits: false });

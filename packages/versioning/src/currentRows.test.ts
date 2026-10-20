@@ -1,11 +1,12 @@
 import { describe, it, expect, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type pg from 'pg';
 import { getPool, closePool } from './testPool';
 import { refreshCurrentRows } from './currentRows';
-import { loadFeatures, resolvedSql, versionsService } from './index';
+import { discardDraft, loadFeatures, openDraft, resolvedSql, versionsService } from './index';
 
 // Every case runs on the real stations layer inside a transaction that is rolled back.
 const dir = mkdtempSync(join(tmpdir(), 'current-rows-'));
@@ -45,6 +46,15 @@ async function ingest(c: pg.PoolClient): Promise<string> {
   return id;
 }
 
+/** A throwaway draft owner, created inside the test's rolled-back transaction (CI seeds no users). */
+async function draftOwner(c: pg.PoolClient): Promise<string> {
+  const { rows } = await c.query<{ id: string }>(
+    `INSERT INTO app.users (email, password_hash, role) VALUES ($1, 'x', 'viewer') RETURNING id`,
+    [`p2-current-rows-${randomUUID()}@webatlas.test`]
+  );
+  return rows[0].id;
+}
+
 const sorted = (ids: string[]) => [...ids].sort();
 const flagged = async (c: pg.PoolClient) =>
   sorted((await c.query<{ id: string }>(`SELECT id::text AS id FROM water.stations WHERE is_current`)).rows.map((r) => r.id));
@@ -68,7 +78,7 @@ describe('the current flag follows activation', () => {
     await inRollback(async (c) => {
       const base = await ingest(c);
       const svc = versionsService(getPool());
-      const draft = await svc.openEditDraft(c, 'stations');
+      const { id: draft } = await openDraft(c, 'stations', await draftOwner(c));
       await c.query(
         `INSERT INTO water.stations (external_id, name, geom, dataset_version_id)
          SELECT external_id, 'A edited', geom, $1 FROM water.stations WHERE dataset_version_id = $2 AND external_id = 'cr-1'`,
@@ -79,7 +89,7 @@ describe('the current flag follows activation', () => {
          SELECT external_id, name, geom, $1, true FROM water.stations WHERE dataset_version_id = $2 AND external_id = 'cr-2'`,
         [draft, base]
       );
-      await svc.commitEditDraft(c, 'stations', draft);
+      await svc.publishDraft(c, 'stations', draft, async () => {});
       const ids = await resolved(c, draft);
       expect(await flagged(c)).toEqual(ids);
       expect(await viewed(c)).toEqual(ids);
@@ -92,14 +102,13 @@ describe('the current flag follows activation', () => {
     await inRollback(async (c) => {
       await ingest(c);
       const before = await flagged(c);
-      const svc = versionsService(getPool());
-      const draft = await svc.openEditDraft(c, 'stations');
+      const { id: draft } = await openDraft(c, 'stations', await draftOwner(c));
       await c.query(
         `INSERT INTO water.stations (external_id, name, geom, dataset_version_id)
          VALUES ('cr-3', 'C', ST_SetSRID(ST_MakePoint(108.1, 12.7), 4326), $1)`,
         [draft]
       );
-      await svc.discardEditDraft(c, 'stations', draft);
+      await discardDraft(c, draft);
       expect(await flagged(c)).toEqual(before);
       const gone = await c.query(`SELECT count(*)::int AS n FROM app.dataset_versions WHERE id = $1`, [draft]);
       expect(gone.rows[0].n).toBe(0);

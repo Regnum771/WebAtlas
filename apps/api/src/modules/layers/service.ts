@@ -1,9 +1,9 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { getLayer, type LayerDef } from '../../layers/registry';
 import { featuresRepository, type FeatureFilter, type FeatureRow } from './repository';
 import { assertGeometry, assertValidInPg } from './geometry';
 import { auditService, type EditSource } from '../audit/service';
-import { versionsService, StaleDraftError } from '@webatlas/versioning';
+import { versionsService, openDraft, StaleDraftError } from '@webatlas/versioning';
 import { validate } from '../../lib/validate';
 import { ConflictError, NotFoundError, ValidationError } from '../../errors';
 import { COUNTRY_UNIT, type Permission, type UnitTree } from '@webatlas/shared';
@@ -65,13 +65,49 @@ export function featuresService(pg: Pool) {
   const audit = auditService(pg);
   const versions = versionsService(pg);
 
+  // ---- Transitional shim: Task 6 (P2) rewrites this service on durable drafts and deletes it ----
+  // The session still lives in one transaction and behaves exactly as in P1: it opens a draft
+  // and publishes it with a no-op guard. That adds no permission check at publish, and needs
+  // none yet: P1's op-time `authorize` checks above still run inside the session, before every
+  // write. Two P1 behaviours are kept on purpose until Task 6 replaces them:
+  // - the published version keeps P1's source and label ("YYYY-MM-DD edits");
+  // - a session whose layer moved on is refused as stale (singleChange retries it once)
+  //   instead of being rebased, which publishDraft would otherwise do.
+  async function openSessionDraft(client: PoolClient, layerKey: string, actorId?: string): Promise<string> {
+    // Internal callers and tests open sessions without an actor; the draft then has no owner,
+    // which nothing reads because it is published in the same transaction.
+    const draft = await openDraft(client, layerKey, actorId ?? (null as unknown as string));
+    await client.query(
+      `UPDATE app.dataset_versions SET source = 'edit session', label = $2 WHERE id = $1`,
+      [draft.id, `${new Date().toISOString().slice(0, 10)} edits`]
+    );
+    return draft.id;
+  }
+  async function publishSessionDraft(client: PoolClient, layerKey: string, draftId: string): Promise<void> {
+    // P1's stale check, under the same active-row lock publishDraft takes (re-taking it there
+    // is a no-op in this transaction).
+    const active = await client.query<{ id: string }>(
+      `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND is_active FOR NO KEY UPDATE`,
+      [layerKey]
+    );
+    const draft = await client.query<{ parent: string }>(
+      `SELECT parent_version_id AS parent FROM app.dataset_versions WHERE id = $1`, [draftId]
+    );
+    if (draft.rows[0]?.parent !== active.rows[0]?.id) {
+      throw new StaleDraftError(
+        `layer ${layerKey} changed since this edit session started (its draft ${draftId} was opened on ${draft.rows[0]?.parent}). Reopen the session and redo the edits.`
+      );
+    }
+    await versions.publishDraft(client, layerKey, draftId, async () => {});
+  }
+
   /**
    * A working edit session over one layer, backed by a draft edit-version.
    *
    * The session checks out a single PoolClient and holds one BEGIN open across every
    * call. Both the feature rows and the version lifecycle are written on that client,
    * so the draft version and its rows commit or vanish together: were the rows written
-   * on the pool instead, commitEditDraft could not count them and discard would leave
+   * on the pool instead, publishDraft could not count them and discard would leave
    * orphans behind.
    *
    * The session owns the client until it settles — via commit(), discard(), or a failed
@@ -84,7 +120,7 @@ export function featuresService(pg: Pool) {
     await client.query('BEGIN');
     let draftId: string;
     try {
-      draftId = await versions.openEditDraft(client, def.key, actorId);
+      draftId = await openSessionDraft(client, def.key, actorId);
     } catch (e) {
       await client.query('ROLLBACK');
       client.release();
@@ -216,9 +252,9 @@ export function featuresService(pg: Pool) {
         settled = true;
         try {
           // Derived values are rebuilt by the write path itself (architecture doc §9):
-          // commitEditDraft() calls versions.activate(), and stamping administrative codes
+          // publishDraft() calls versions.activate(), and stamping administrative codes
           // is activate()'s own obligation, so nothing is called explicitly here.
-          await versions.commitEditDraft(client, def.key, draftId);
+          await publishSessionDraft(client, def.key, draftId);
           await client.query('COMMIT');
         } catch (e) {
           // Safe even if COMMIT itself failed: the transaction is already ended, so

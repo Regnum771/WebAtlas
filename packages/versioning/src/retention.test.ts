@@ -1,11 +1,12 @@
 import { describe, it, expect, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type pg from 'pg';
 import { getPool, closePool } from './testPool';
-import { assertPrunable, EARLIER_LOADS_KEPT, loadFeatures, pruneVersions, versionsService } from './index';
-import { ConflictError } from './errors';
+import { assertPrunable, EARLIER_LOADS_KEPT, loadFeatures, openDraft, pruneVersions, versionsService } from './index';
+import { DraftConflictError } from './errors';
 
 // The real stations layer, inside transactions that are rolled back. Unlike the other suites,
 // existing versions are NOT pinned here: pruning them inside the transaction is the point.
@@ -40,9 +41,20 @@ async function load(c: pg.PoolClient, label: string): Promise<string> {
   return id;
 }
 
+/** A throwaway draft owner, created inside the test's rolled-back transaction (CI seeds no users). */
+async function draftOwner(c: pg.PoolClient): Promise<string> {
+  const { rows } = await c.query<{ id: string }>(
+    `INSERT INTO app.users (email, password_hash, role) VALUES ($1, 'x', 'viewer') RETURNING id`,
+    [`p2-retention-${randomUUID()}@webatlas.test`]
+  );
+  return rows[0].id;
+}
+
+const noGuard = async () => {};
+
 async function edit(c: pg.PoolClient): Promise<string> {
-  const draft = await svc().openEditDraft(c, 'stations');
-  await svc().commitEditDraft(c, 'stations', draft);
+  const { id: draft } = await openDraft(c, 'stations', await draftOwner(c));
+  await svc().publishDraft(c, 'stations', draft, noGuard);
   return draft;
 }
 
@@ -114,8 +126,7 @@ describe('retention', () => {
     await inRollback(async (c) => {
       const a1 = await load(c, 'A1');
       // Draft D opens on A1 and stays open (draft_status set, never activated).
-      const d = await svc().openEditDraft(c, 'stations');
-      await c.query(`UPDATE app.dataset_versions SET draft_status = 'personal' WHERE id = $1`, [d]);
+      const { id: d } = await openDraft(c, 'stations', await draftOwner(c));
       // Another edit E is published on A1 and becomes active; its activation prunes.
       const e = await edit(c);
       expect(await stationVersions(c)).toContain(d);
@@ -153,29 +164,37 @@ describe('retention', () => {
   });
 });
 
-describe('commitEditDraft on a stale draft', () => {
-  it('refuses the second of two drafts opened on the same version and keeps the first active', async () => {
+describe('publishDraft on a draft whose layer moved on', () => {
+  it('refuses the second of two drafts that change the same feature and keeps the first active', async () => {
     await inRollback(async (c) => {
-      await load(c, 'L1');
-      const a = await svc().openEditDraft(c, 'stations');
-      const b = await svc().openEditDraft(c, 'stations');
-      // Real sessions run in separate transactions, so a's prune cannot see b's uncommitted draft;
-      // here both share one, so pin b to keep it out of a's prune.
-      await c.query(`INSERT INTO app.version_pins (version_id, holder) VALUES ($1, 'stale-draft:test')`, [b]);
-      await svc().commitEditDraft(c, 'stations', a);
+      const l1 = await load(c, 'L1');
+      const owner = await draftOwner(c);
+      const { id: a } = await openDraft(c, 'stations', owner);
+      const { id: b } = await openDraft(c, 'stations', owner);
+      // Both drafts change rt-1, so once a is published b conflicts with it.
+      for (const [draft, name] of [[a, 'R by a'], [b, 'R by b']]) {
+        await c.query(
+          `INSERT INTO water.stations (external_id, name, geom, dataset_version_id)
+           SELECT external_id, $3, geom, $1 FROM water.stations WHERE dataset_version_id = $2 AND external_id = 'rt-1'`,
+          [draft, l1, name]
+        );
+      }
+      await svc().publishDraft(c, 'stations', a, noGuard);
       await c.query('SAVEPOINT stale');
-      await expect(svc().commitEditDraft(c, 'stations', b)).rejects.toThrow(ConflictError);
+      await expect(svc().publishDraft(c, 'stations', b, noGuard)).rejects.toThrow(DraftConflictError);
       await c.query('ROLLBACK TO SAVEPOINT stale');
       const active = await c.query<{ id: string }>(
         `SELECT id::text AS id FROM app.dataset_versions WHERE layer_key = 'stations' AND is_active`
       );
       expect(active.rows.map((r) => r.id)).toEqual([a]);
-      const cur = await c.query<{ n: number }>(
-        `SELECT count(*)::int AS n FROM water.stations_active WHERE external_id = 'rt-1'`
+      const cur = await c.query<{ name: string }>(
+        `SELECT name FROM water.stations_active WHERE external_id = 'rt-1'`
       );
-      expect(cur.rows[0].n).toBe(1);
-      // The first draft's version still exists: nothing was pruned away by the refused commit.
-      expect(await stationVersions(c)).toContain(a);
+      expect(cur.rows).toEqual([{ name: 'R by a' }]);
+      // a's activation pruned nothing it needs: a is there, and b is still an open draft.
+      const versions = await stationVersions(c);
+      expect(versions).toContain(a);
+      expect(versions).toContain(b);
     });
   });
 });

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
-import { loadFeatures, versionsService } from '@webatlas/versioning';
+import { loadFeatures, openDraft, versionsService } from '@webatlas/versioning';
 import { adoptLegacySource } from './adoptLegacy';
 import type { ResolvedLoad } from './stages/loadGeojson';
 
@@ -38,6 +39,20 @@ async function legacyVersion(c: pg.PoolClient, source: string, sourceVersion: st
   await loadFeatures(c, { table: 'stations', file: path, columns }, id);
   await c.query(`UPDATE app.dataset_versions SET feature_count = 2 WHERE id = $1`, [id]);
   await svc.activate(c, 'stations', id);
+  return id;
+}
+
+/**
+ * A steward edit: a personal draft on the active version, published at once with no guard. Its
+ * owner is a throwaway user created inside the rolled-back transaction (CI seeds no users).
+ */
+async function publishEmptyEdit(c: pg.PoolClient): Promise<string> {
+  const { rows } = await c.query<{ id: string }>(
+    `INSERT INTO app.users (email, password_hash, role) VALUES ($1, 'x', 'viewer') RETURNING id`,
+    [`p2-adopt-legacy-${randomUUID()}@webatlas.test`]
+  );
+  const { id } = await openDraft(c, 'stations', rows[0].id);
+  await versionsService(pool).publishDraft(c, 'stations', id, async () => {});
   return id;
 }
 
@@ -90,9 +105,7 @@ describe.skipIf(!DB)('adopting a version the old seed command loaded', () => {
   it('re-labels the root under steward edits, leaving the edits active', async () => {
     await inRollback(async (c) => {
       const root = await legacyVersion(c, 'stations.geojson');
-      const svc = versionsService(pool);
-      const draft = await svc.openEditDraft(c, 'stations');
-      await svc.commitEditDraft(c, 'stations', draft);
+      const draft = await publishEmptyEdit(c);
       expect(await adoptLegacySource(c, load)).toEqual({ result: 'relabelled', versionId: root });
       const { rows } = await c.query(`SELECT id FROM app.dataset_versions WHERE layer_key = 'stations' AND is_active`);
       expect(rows[0].id).toBe(draft);
