@@ -27,7 +27,9 @@ const byExternalId = new Intl.Collator('en', { numeric: true }).compare;
  * marks the state each change lands on. Per touched feature (spec section 3):
  * - no current row, and the draft's row is not a tombstone: a create, checked on the draft
  *   row's unit;
- * - the draft's row is a tombstone: a delete, checked on the current unit;
+ * - the draft's row is a tombstone and there is a current row: a delete, checked on the current
+ *   unit; a tombstone with no current row (created and deleted inside the draft) changes nothing
+ *   published and is skipped;
  * - otherwise an update, checked on the current unit, and also on the draft row's unit when the
  *   change moves the feature to another unit.
  * A unit that is missing counts as national (VN), the strictest reading. The first refusal throws
@@ -55,7 +57,9 @@ export async function assertDraftPublishable(
   for (const r of rows) {
     const current = r.current_unit ?? COUNTRY_UNIT;
     const next = r.draft_unit ?? COUNTRY_UNIT;
-    if (!r.has_current && !r.deleted) {
+    // Created and deleted again inside the draft: nothing published changes, so nothing to check.
+    if (!r.has_current && r.deleted) continue;
+    if (!r.has_current) {
       authorize(access, 'feature.create', next);
     } else if (r.deleted) {
       authorize(access, 'feature.delete', current);

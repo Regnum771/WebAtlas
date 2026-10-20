@@ -350,6 +350,25 @@ describe('assertDraftPublishable', () => {
     expect((await active(d))?.managing_unit).toBe('51');
   });
 
+  it('a feature created and deleted inside the draft is not checked: it changes nothing published', async () => {
+    const p = user('p');
+    const { draftId } = await editor().open(LAYER, p);
+    // Created at the national level, out of P's reach, then deleted again in the same draft.
+    const made = await editor().create(
+      LAYER, draftId, { properties: { name: 'pa-transient', managing_unit: 'VN' } }, p, tree
+    );
+    await editor().remove(LAYER, draftId, made.feature.id, p);
+    // And one real edit within reach.
+    await editor().update(LAYER, draftId, await activeRowId(DAMS[8]), { properties: { name: 'pa-kept' } }, p, tree);
+
+    await publish(draftId, p);
+
+    expect(await activeVersionId()).toBe(draftId);
+    expect((await active(DAMS[8]))?.name).toBe('pa-kept');
+    const { rows } = await getPool().query(`SELECT 1 FROM water.dams_active WHERE name = 'pa-transient'`);
+    expect(rows).toHaveLength(0);
+  });
+
   it('admin publishes anything', async () => {
     const admin = user('admin');
     const { draftId } = await editor().open(LAYER, admin);
