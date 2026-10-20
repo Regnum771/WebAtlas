@@ -108,3 +108,53 @@ export async function discardDraft(client: PoolClient, draftId: string): Promise
   await client.query(`DELETE FROM water.${rows[0].layer_key} WHERE dataset_version_id = $1`, [draftId]);
   await client.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [draftId]);
 }
+
+/**
+ * Copy a draft for `ownerId`: a new personal draft on the SAME parent as the source (not the
+ * layer's active version), holding a copy of every row the source stores itself, tombstones
+ * included. Each row keeps all its columns except its id and version, and is not current: only
+ * an activation makes rows current. The source's conflict resolutions belong to its own publish
+ * and are not copied. Anything that is not a draft is "not found", as in lockDraft.
+ *
+ * The source version row is held FOR SHARE until the caller's transaction ends, so a concurrent
+ * write to the source (which locks it FOR UPDATE) cannot land halfway through the copy.
+ */
+export async function copyDraft(client: PoolClient, sourceDraftId: string, ownerId: string): Promise<DraftRow> {
+  const { rows: src } = await client.query<RawDraft>(
+    `SELECT ${COLUMNS} FROM app.dataset_versions
+     WHERE id = $1 AND draft_status IS NOT NULL FOR SHARE`,
+    [sourceDraftId]
+  );
+  const source = src[0];
+  if (!source) throw new NotFoundError(`Draft ${sourceDraftId} not found`);
+  const layerKey = source.layer_key;
+  if (!IDENTIFIER.test(layerKey)) throw new Error(`invalid layer key ${layerKey}`);
+
+  const label = `${new Date().toISOString().slice(0, 10)} nháp`;
+  const { rows } = await client.query<RawDraft>(
+    `INSERT INTO app.dataset_versions
+       (layer_key, kind, parent_version_id, source, label, ingested_by, is_active, draft_status, revision)
+     VALUES ($1, 'edit', $2, 'draft', $3, $4, false, 'personal', 0)
+     RETURNING ${COLUMNS}`,
+    [layerKey, source.parent_version_id, label, ownerId]
+  );
+  const copy = toDraft(rows[0]);
+
+  // The layer table's own columns, read from the catalog so that a column added later is copied
+  // too. Generated columns cannot be inserted and are left to recompute.
+  const { rows: cols } = await client.query<{ name: string }>(
+    `SELECT quote_ident(attname) AS name FROM pg_attribute
+      WHERE attrelid = to_regclass($1) AND attnum > 0 AND NOT attisdropped AND attgenerated = ''
+        AND attname NOT IN ('id', 'dataset_version_id', 'is_current')
+      ORDER BY attnum`,
+    [`water.${layerKey}`]
+  );
+  if (cols.length === 0) throw new Error(`no table for layer ${layerKey}`);
+  const list = cols.map((c) => c.name).join(', ');
+  await client.query(
+    `INSERT INTO water.${layerKey} (dataset_version_id, is_current, ${list})
+     SELECT $2, false, ${list} FROM water.${layerKey} WHERE dataset_version_id = $1`,
+    [sourceDraftId, copy.id]
+  );
+  return copy;
+}

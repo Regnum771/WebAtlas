@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import type pg from 'pg';
 import { getPool, closePool } from './testPool';
-import { openDraft, lockDraft, bumpRevision, discardDraft } from './drafts';
+import { openDraft, lockDraft, bumpRevision, discardDraft, copyDraft } from './drafts';
 import { DraftNotEditableError, DraftRevisionError, ConflictError, NotFoundError } from './errors';
 import { runStages } from './testLayerGuard';
 
@@ -191,6 +191,76 @@ describe('draft lifecycle', () => {
     } finally {
       await rollbackRelease(a);
       await rollbackRelease(b);
+    }
+  });
+
+  it('copyDraft copies rows and tombstones onto the same parent', async () => {
+    const c = await getPool().connect();
+    try {
+      // Everything in one transaction, rolled back: nothing here is committed.
+      await c.query('BEGIN');
+      const src = await openDraft(c, LAYER, owner);
+      await bumpRevision(c, src.id);
+      await bumpRevision(c, src.id);
+      // A live row (marked current to prove the copy is not) and a tombstone.
+      await c.query(
+        `INSERT INTO water.dams
+           (external_id, name, geom, dataset_version_id, province_codes, ward_codes, managing_unit,
+            created_by, updated_by, deleted, is_current)
+         VALUES
+           (901019, 'copy-live', ST_SetSRID(ST_MakePoint(108.19, 16.05), 4326), $1, '{48}', '{20194}', '48',
+            $2, $2, false, true),
+           (901020, 'copy-gone', ST_SetSRID(ST_MakePoint(108.20, 16.05), 4326), $1, '{}', '{}', '48',
+            $2, $2, true, false)`,
+        [src.id, owner]
+      );
+      await c.query(
+        `INSERT INTO app.draft_resolutions (draft_id, external_id, against_version_id, choice)
+         VALUES ($1, '901019', $2, 'mine')`,
+        [src.id, activeId]
+      );
+
+      const copy = await copyDraft(c, src.id, other);
+      expect(copy.id).not.toBe(src.id);
+      expect(copy).toMatchObject({
+        layerKey: LAYER, parentId: src.parentId, status: 'personal', revision: 0, ownerId: other,
+      });
+      const v = await c.query(
+        `SELECT kind, source, is_active, draft_status FROM app.dataset_versions WHERE id = $1`, [copy.id]
+      );
+      expect(v.rows[0]).toEqual({ kind: 'edit', source: 'draft', is_active: false, draft_status: 'personal' });
+
+      // Same content, row for row, apart from the row id, the version and the current flag.
+      const content = async (versionId: string) => (await c.query(
+        `SELECT to_jsonb(d) - ARRAY['id', 'dataset_version_id', 'is_current'] AS row
+           FROM water.dams d WHERE dataset_version_id = $1 ORDER BY external_id`,
+        [versionId]
+      )).rows.map((r) => r.row);
+      const copied = await content(copy.id);
+      expect(copied).toHaveLength(2);
+      expect(copied).toEqual(await content(src.id));
+      expect(copied.map((r) => [r.external_id, r.deleted])).toEqual([[901019, false], [901020, true]]);
+      const flags = await c.query(
+        `SELECT bool_or(is_current) AS any_current, count(DISTINCT id) FILTER (
+                  WHERE id IN (SELECT id FROM water.dams WHERE dataset_version_id = $2)) AS shared_ids
+           FROM water.dams WHERE dataset_version_id = $1`,
+        [copy.id, src.id]
+      );
+      expect(flags.rows[0]).toEqual({ any_current: false, shared_ids: '0' });
+
+      // Resolutions belong to the source draft's own publish: not copied.
+      const res = await c.query(`SELECT 1 FROM app.draft_resolutions WHERE draft_id = $1`, [copy.id]);
+      expect(res.rowCount).toBe(0);
+      // The source is untouched.
+      expect((await lockDraft(c, src.id)).revision).toBe(2);
+
+      // Only a draft can be copied.
+      await expect(copyDraft(c, activeId, other)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(copyDraft(c, '22222222-2222-2222-2222-222222222222', other))
+        .rejects.toBeInstanceOf(NotFoundError);
+      await c.query('ROLLBACK');
+    } finally {
+      await rollbackRelease(c);
     }
   });
 });

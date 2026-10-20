@@ -116,3 +116,15 @@ export const EditCopyFeaturesQuery = z.object({
   bbox: BBox,
   limit: Limit.optional(),
 });
+
+// --- Sharing ------------------------------------------------------------------------------
+
+export const ShareParams = MapIdParams.extend({ shareId: z.string().uuid() });
+
+/** Exactly one target: a user or an access group. */
+export const AddShareBody = z.union([
+  z.object({ userId: z.string().uuid() }).strict(),
+  z.object({ groupId: z.string().uuid() }).strict(),
+]);
+
+export const ShareTargetsQuery = z.object({ q: z.string().trim().min(2).max(100) });

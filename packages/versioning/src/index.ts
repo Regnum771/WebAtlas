@@ -8,7 +8,7 @@ export {
   DraftRevisionError,
 } from './errors';
 export {
-  openDraft, lockDraft, bumpRevision, discardDraft, type DraftStatus, type DraftRow,
+  openDraft, lockDraft, bumpRevision, discardDraft, copyDraft, type DraftStatus, type DraftRow,
 } from './drafts';
 export { versionsService, type IngestVersionArgs, type VersionsService } from './service';
 export { versionsRepository, type DatasetVersion, type VersionsRepository } from './repository';

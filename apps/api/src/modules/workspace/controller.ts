@@ -7,10 +7,11 @@ import { editCopiesService } from './editCopies';
 import { freeLayersService, LAYER_NOT_FOUND } from './freeLayers';
 import { mapsService, type LayerKind } from './maps';
 import {
-  AddEditCopyLayerBody, AddFeatureBody, AddFreeLayerBody, CreateMapBody, DeleteMapBody, EditCopyFeatureParams,
-  EditCopyFeaturesQuery, FeatureParams, FeaturesQuery, LayerParams, MapIdParams, RemoveBody, UpdateFeatureBody,
-  UpdateLayerBody, UpdateMapBody,
+  AddEditCopyLayerBody, AddFeatureBody, AddFreeLayerBody, AddShareBody, CreateMapBody, DeleteMapBody,
+  EditCopyFeatureParams, EditCopyFeaturesQuery, FeatureParams, FeaturesQuery, LayerParams, MapIdParams, RemoveBody,
+  ShareParams, ShareTargetsQuery, UpdateFeatureBody, UpdateLayerBody, UpdateMapBody,
 } from './schemas';
+import { sharingService } from './sharing';
 
 /*
  * Handlers for /api/workspace. Every map-scoped handler validates its params, then hands the
@@ -58,6 +59,38 @@ export async function deleteMap(req: FastifyRequest, reply: FastifyReply) {
   const body = validate(DeleteMapBody, req.body);
   await mapsService(req.server.pg).remove(userOf(req), mapId, body);
   reply.code(204).send();
+}
+
+export async function copyMap(req: FastifyRequest, reply: FastifyReply) {
+  const { mapId } = validate(MapIdParams, req.params);
+  const map = await sharingService(req.server.pg).copy(userOf(req), mapId);
+  reply.code(201).send({ map });
+}
+
+// --- Sharing ------------------------------------------------------------------------------
+
+export async function listShares(req: FastifyRequest, reply: FastifyReply) {
+  const { mapId } = validate(MapIdParams, req.params);
+  reply.send({ shares: await sharingService(req.server.pg).list(userOf(req), mapId) });
+}
+
+/** 201 for a new share; 200 with the existing one when the target already had it. */
+export async function addShare(req: FastifyRequest, reply: FastifyReply) {
+  const { mapId } = validate(MapIdParams, req.params);
+  const body = validate(AddShareBody, req.body);
+  const { share, created } = await sharingService(req.server.pg).add(userOf(req), mapId, body);
+  reply.code(created ? 201 : 200).send({ share });
+}
+
+export async function removeShare(req: FastifyRequest, reply: FastifyReply) {
+  const { mapId, shareId } = validate(ShareParams, req.params);
+  await sharingService(req.server.pg).remove(userOf(req), mapId, shareId);
+  reply.code(204).send();
+}
+
+export async function listShareTargets(req: FastifyRequest, reply: FastifyReply) {
+  const { q } = validate(ShareTargetsQuery, req.query);
+  reply.send(await sharingService(req.server.pg).targets(userOf(req), q));
 }
 
 // --- Layers and features ------------------------------------------------------------------

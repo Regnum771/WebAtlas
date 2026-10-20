@@ -61,7 +61,7 @@ async function loadLayers(q: Queryable, mapId: string): Promise<LayerSummary[]> 
 }
 
 /** The map's detail as seen by a user whose role has already been established. */
-async function loadDetail(q: Queryable, mapId: string, role: MapRole): Promise<MapDetail> {
+export async function loadDetail(q: Queryable, mapId: string, role: MapRole): Promise<MapDetail> {
   const { rows } = await q.query<Omit<MapSummary, 'role'>>(
     `SELECT ${SUMMARY_COLUMNS}
        FROM workspace.maps m JOIN app.users u ON u.id = m.owner_id
