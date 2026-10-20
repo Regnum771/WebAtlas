@@ -4,6 +4,7 @@ import { NotFoundError } from '../errors';
 
 export interface LayerDef {
   key: EditableLayerKey;
+  title: string;               // the layer's Vietnamese display name
   table: string;               // always `water.<key>`
   geomType: OgcGeometryType;
   geomColumn: 'geom';
@@ -78,10 +79,23 @@ const EXTERNAL_ID_TYPE: Record<EditableLayerKey, 'integer' | 'text'> = {
   flood_generation: 'text',
 };
 
+// Display names, as the web app's layer pickers show them.
+const TITLES: Record<EditableLayerKey, string> = {
+  dams: 'Đập & hồ chứa',
+  rivers: 'Sông ngòi',
+  lakes: 'Hồ',
+  stations: 'Trạm quan trắc',
+  flood_zones: 'Vùng ngập lụt',
+  drought_points: 'Điểm hạn hán',
+  saltwater_intrusion: 'Xâm nhập mặn',
+  flood_generation: 'Vùng sinh lũ',
+};
+
 function build(key: EditableLayerKey): LayerDef {
   const schema = ATTRS[key];
   return {
     key,
+    title: TITLES[key],
     table: `water.${key}`,
     geomType: LAYER_GEOMETRY[key],
     geomColumn: 'geom',

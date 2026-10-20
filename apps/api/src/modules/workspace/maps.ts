@@ -147,7 +147,10 @@ export function mapsService(pg: Pool) {
 
 /**
  * Discard every draft behind the map's edit-copy layers. A version whose draft_status is NULL
- * has been published: it is shared data now, not this map's draft, and is left alone.
+ * has been published: it is shared data now, not this map's draft, and is left alone. The
+ * version rows are locked as they are read (after the map row, the lock order of every
+ * edit-copy write), so a draft published meanwhile drops out of the result instead of making
+ * discardDraft fail.
  */
 async function discardEditCopyDrafts(client: PoolClient, mapId: string): Promise<void> {
   const { rows } = await client.query<{ draft_id: string }>(
@@ -155,7 +158,8 @@ async function discardEditCopyDrafts(client: PoolClient, mapId: string): Promise
        FROM workspace.map_layers l
        JOIN app.dataset_versions v ON v.id = l.draft_id
       WHERE l.map_id = $1 AND l.kind = 'edit_copy' AND v.draft_status IS NOT NULL
-      ORDER BY l.draft_id`,
+      ORDER BY l.draft_id
+      FOR UPDATE OF v`,
     [mapId]
   );
   for (const { draft_id } of rows) await discardDraft(client, draft_id);

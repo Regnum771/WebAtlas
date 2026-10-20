@@ -10,8 +10,8 @@ export const LAYER_NOT_FOUND = 'Không tìm thấy lớp.';
 export const FEATURE_NOT_FOUND = 'Không tìm thấy đối tượng.';
 export const STYLE_TOO_LARGE = 'Kiểu hiển thị quá lớn.';
 const STYLE_MAX_BYTES = 8 * 1024;
-const DEFAULT_LIMIT = 5000;
-const MAX_LIMIT = 20000;
+export const DEFAULT_LIMIT = 5000;
+export const MAX_LIMIT = 20000;
 
 type GeometryType = 'point' | 'line' | 'polygon';
 type FieldType = 'text' | 'number' | 'date';
@@ -30,7 +30,9 @@ interface FreeLayerRow { id: string; geometryType: GeometryType | null; fields: 
 
 const LAYER_COLUMNS = `l.id, l.kind, l.title, l.position, l.style, l.geometry_type AS "geometryType", l.fields,
   l.layer_key AS "layerKey", l.draft_id AS "draftId",
-  (SELECT count(*)::int FROM workspace.features f WHERE f.layer_id = l.id) AS "featureCount"`;
+  CASE WHEN l.kind = 'free'
+       THEN (SELECT count(*)::int FROM workspace.features f WHERE f.layer_id = l.id)
+  END AS "featureCount"`;
 
 /** A free layer of this map; 404 when the id is not in this map or is not a free layer. */
 async function loadFreeLayer(q: Queryable, mapId: string, layerId: string): Promise<FreeLayerRow> {
@@ -43,14 +45,17 @@ async function loadFreeLayer(q: Queryable, mapId: string, layerId: string): Prom
   return rows[0];
 }
 
-async function loadSummary(q: Queryable, layerId: string): Promise<LayerSummary> {
+/** The position after the map's last layer, for an INSERT whose `$1` is the map id. */
+export const NEXT_POSITION = `(SELECT COALESCE(max(position), -1) + 1 FROM workspace.map_layers WHERE map_id = $1)`;
+
+export async function loadSummary(q: Queryable, layerId: string): Promise<LayerSummary> {
   const { rows } = await q.query<LayerSummary>(
     `SELECT ${LAYER_COLUMNS} FROM workspace.map_layers l WHERE l.id = $1`, [layerId]
   );
   return rows[0];
 }
 
-function checkStyle(style: Record<string, unknown>): void {
+export function checkStyle(style: Record<string, unknown>): void {
   if (Buffer.byteLength(JSON.stringify(style), 'utf8') > STYLE_MAX_BYTES) {
     throw new ValidationError(STYLE_TOO_LARGE, { field: 'style' });
   }
@@ -109,9 +114,7 @@ export function freeLayersService(pg: Pool) {
         checkStyle(style);
         const { rows } = await client.query<{ id: string }>(
           `INSERT INTO workspace.map_layers (map_id, kind, title, position, style, geometry_type, fields)
-           VALUES ($1, 'free', $2,
-                   (SELECT COALESCE(max(position), -1) + 1 FROM workspace.map_layers WHERE map_id = $1),
-                   $3::jsonb, $4, $5::jsonb)
+           VALUES ($1, 'free', $2, ${NEXT_POSITION}, $3::jsonb, $4, $5::jsonb)
            RETURNING id`,
           [mapId, input.title, JSON.stringify(style), input.geometryType, JSON.stringify(input.fields)]
         );
@@ -127,14 +130,7 @@ export function freeLayersService(pg: Pool) {
       return inTransaction(pg, async (client) => {
         await lockMapForWrite(client, mapId, user, input.expectedRevision);
         await loadFreeLayer(client, mapId, layerId);
-        if (input.style !== undefined) checkStyle(input.style);
-        await client.query(
-          `UPDATE workspace.map_layers
-              SET title = COALESCE($2, title), style = COALESCE($3::jsonb, style)
-            WHERE id = $1`,
-          [layerId, input.title ?? null, input.style === undefined ? null : JSON.stringify(input.style)]
-        );
-        if (input.position !== undefined) await moveLayer(client, mapId, layerId, input.position);
+        await patchLayerRow(client, mapId, layerId, input);
         const revision = await bumpMap(client, mapId);
         return { layer: await loadSummary(client, layerId), revision };
       });
@@ -146,14 +142,7 @@ export function freeLayersService(pg: Pool) {
       return inTransaction(pg, async (client) => {
         await lockMapForWrite(client, mapId, user, input.expectedRevision);
         await loadFreeLayer(client, mapId, layerId);
-        const { rows } = await client.query<{ position: number }>(
-          `DELETE FROM workspace.map_layers WHERE id = $1 RETURNING position`, [layerId]
-        );
-        // Close the gap; the unique (map_id, position) is deferred, so one UPDATE is safe.
-        await client.query(
-          `UPDATE workspace.map_layers SET position = position - 1 WHERE map_id = $1 AND position > $2`,
-          [mapId, rows[0].position]
-        );
+        await deleteLayerRow(client, mapId, layerId);
         return { revision: await bumpMap(client, mapId) };
       });
     },
@@ -236,6 +225,37 @@ export function freeLayersService(pg: Pool) {
       });
     },
   };
+}
+
+// --- Layer-row operations shared by every layer kind (edit copies use them too) -----------
+// They run on the caller's client, after lockMapForWrite and after the caller has checked that
+// the layer belongs to the map; they neither check access nor bump the map.
+
+/** Apply a PATCH of the layer's title, style and/or position. */
+export async function patchLayerRow(
+  client: PoolClient, mapId: string, layerId: string,
+  input: { title?: string; style?: Record<string, unknown>; position?: number }
+): Promise<void> {
+  if (input.style !== undefined) checkStyle(input.style);
+  await client.query(
+    `UPDATE workspace.map_layers
+        SET title = COALESCE($2, title), style = COALESCE($3::jsonb, style)
+      WHERE id = $1`,
+    [layerId, input.title ?? null, input.style === undefined ? null : JSON.stringify(input.style)]
+  );
+  if (input.position !== undefined) await moveLayer(client, mapId, layerId, input.position);
+}
+
+/** Delete the layer row (its features cascade) and close the gap it leaves in the order. */
+export async function deleteLayerRow(client: PoolClient, mapId: string, layerId: string): Promise<void> {
+  const { rows } = await client.query<{ position: number }>(
+    `DELETE FROM workspace.map_layers WHERE id = $1 RETURNING position`, [layerId]
+  );
+  // Close the gap; the unique (map_id, position) is deferred, so one UPDATE is safe.
+  await client.query(
+    `UPDATE workspace.map_layers SET position = position - 1 WHERE map_id = $1 AND position > $2`,
+    [mapId, rows[0].position]
+  );
 }
 
 /** Move a layer to `target`, shifting the layers in between by one. Relies on the deferred unique. */

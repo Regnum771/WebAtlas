@@ -3,11 +3,13 @@ import { AuthError, NotFoundError, ValidationError } from '../../errors';
 import { validate } from '../../lib/validate';
 import type { CurrentUser } from '../../types/fastify';
 import { assertCanRead } from './access';
+import { editCopiesService } from './editCopies';
 import { freeLayersService, LAYER_NOT_FOUND } from './freeLayers';
 import { mapsService, type LayerKind } from './maps';
 import {
-  AddFeatureBody, AddFreeLayerBody, CreateMapBody, DeleteMapBody, FeatureParams, FeaturesQuery, LayerParams,
-  MapIdParams, RemoveBody, UpdateFeatureBody, UpdateLayerBody, UpdateMapBody,
+  AddEditCopyLayerBody, AddFeatureBody, AddFreeLayerBody, CreateMapBody, DeleteMapBody, EditCopyFeatureParams,
+  EditCopyFeaturesQuery, FeatureParams, FeaturesQuery, LayerParams, MapIdParams, RemoveBody, UpdateFeatureBody,
+  UpdateLayerBody, UpdateMapBody,
 } from './schemas';
 
 /*
@@ -65,7 +67,8 @@ const UNSUPPORTED_KIND = 'Loại lớp này chưa hỗ trợ thao tác này.';
 /**
  * The single dispatch point for layer routes: read the layer's kind once, scoped to the map.
  * Access is checked first, so a stranger gets the map's 404 before any layer lookup happens and
- * cannot tell which layers exist. Task 4 adds the 'edit_copy' branch at each call site.
+ * cannot tell which layers exist. 'free' goes to freeLayersService, 'edit_copy' to
+ * editCopiesService; the other kinds are reserved and refused.
  */
 async function layerKindOf(req: FastifyRequest, mapId: string, layerId: string): Promise<LayerKind> {
   const pg = req.server.pg;
@@ -81,54 +84,80 @@ function unsupported(): never {
   throw new ValidationError(UNSUPPORTED_KIND);
 }
 
+/** The service for a layer kind that supports layer and feature routes; refuses the others. */
+function serviceFor(req: FastifyRequest, kind: LayerKind) {
+  if (kind === 'free') return freeLayersService(req.server.pg);
+  if (kind === 'edit_copy') return editCopiesService(req.server.pg);
+  return unsupported();
+}
+
 export async function addLayer(req: FastifyRequest, reply: FastifyReply) {
   const { mapId } = validate(MapIdParams, req.params);
   const kind = (req.body as { kind?: unknown } | null | undefined)?.kind;
   if (kind === undefined) validate(AddFreeLayerBody, req.body); // throws: kind is required
-  if (kind !== 'free') unsupported();
-  const body = validate(AddFreeLayerBody, req.body);
-  const out = await freeLayersService(req.server.pg).addLayer(userOf(req), mapId, body);
-  reply.code(201).send(out);
+  if (kind === 'free') {
+    const body = validate(AddFreeLayerBody, req.body);
+    reply.code(201).send(await freeLayersService(req.server.pg).addLayer(userOf(req), mapId, body));
+  } else if (kind === 'edit_copy') {
+    const body = validate(AddEditCopyLayerBody, req.body);
+    reply.code(201).send(await editCopiesService(req.server.pg).addLayer(userOf(req), mapId, body));
+  } else {
+    unsupported();
+  }
 }
 
 export async function updateLayer(req: FastifyRequest, reply: FastifyReply) {
   const { mapId, layerId } = validate(LayerParams, req.params);
   const body = validate(UpdateLayerBody, req.body);
-  if ((await layerKindOf(req, mapId, layerId)) !== 'free') unsupported();
-  reply.send(await freeLayersService(req.server.pg).updateLayer(userOf(req), mapId, layerId, body));
+  const service = serviceFor(req, await layerKindOf(req, mapId, layerId));
+  reply.send(await service.updateLayer(userOf(req), mapId, layerId, body));
 }
 
 export async function removeLayer(req: FastifyRequest, reply: FastifyReply) {
   const { mapId, layerId } = validate(LayerParams, req.params);
   const body = validate(RemoveBody, req.body);
-  if ((await layerKindOf(req, mapId, layerId)) !== 'free') unsupported();
-  reply.send(await freeLayersService(req.server.pg).removeLayer(userOf(req), mapId, layerId, body));
+  const service = serviceFor(req, await layerKindOf(req, mapId, layerId));
+  reply.send(await service.removeLayer(userOf(req), mapId, layerId, body));
 }
 
 export async function listFeatures(req: FastifyRequest, reply: FastifyReply) {
   const { mapId, layerId } = validate(LayerParams, req.params);
+  const kind = await layerKindOf(req, mapId, layerId);
+  if (kind === 'edit_copy') {
+    // Validated after the kind is known: only an edit copy requires a bbox.
+    const query = validate(EditCopyFeaturesQuery, req.query);
+    reply.send(await editCopiesService(req.server.pg).features(userOf(req), mapId, layerId, query));
+    return;
+  }
+  if (kind !== 'free') unsupported();
   const query = validate(FeaturesQuery, req.query);
-  if ((await layerKindOf(req, mapId, layerId)) !== 'free') unsupported();
   reply.send(await freeLayersService(req.server.pg).features(userOf(req), mapId, layerId, query));
 }
 
 export async function addFeature(req: FastifyRequest, reply: FastifyReply) {
   const { mapId, layerId } = validate(LayerParams, req.params);
   const body = validate(AddFeatureBody, req.body);
-  if ((await layerKindOf(req, mapId, layerId)) !== 'free') unsupported();
-  reply.code(201).send(await freeLayersService(req.server.pg).addFeature(userOf(req), mapId, layerId, body));
+  const service = serviceFor(req, await layerKindOf(req, mapId, layerId));
+  reply.code(201).send(await service.addFeature(userOf(req), mapId, layerId, body));
+}
+
+/** The feature id in the route, in the shape the layer's kind uses for its features. */
+function featureIdOf(req: FastifyRequest, kind: LayerKind): string {
+  return validate(kind === 'edit_copy' ? EditCopyFeatureParams : FeatureParams, req.params).featureId;
 }
 
 export async function updateFeature(req: FastifyRequest, reply: FastifyReply) {
-  const { mapId, layerId, featureId } = validate(FeatureParams, req.params);
+  const { mapId, layerId } = validate(LayerParams, req.params);
   const body = validate(UpdateFeatureBody, req.body);
-  if ((await layerKindOf(req, mapId, layerId)) !== 'free') unsupported();
-  reply.send(await freeLayersService(req.server.pg).updateFeature(userOf(req), mapId, layerId, featureId, body));
+  const kind = await layerKindOf(req, mapId, layerId);
+  const service = serviceFor(req, kind);
+  reply.send(await service.updateFeature(userOf(req), mapId, layerId, featureIdOf(req, kind), body));
 }
 
 export async function removeFeature(req: FastifyRequest, reply: FastifyReply) {
-  const { mapId, layerId, featureId } = validate(FeatureParams, req.params);
+  const { mapId, layerId } = validate(LayerParams, req.params);
   const body = validate(RemoveBody, req.body);
-  if ((await layerKindOf(req, mapId, layerId)) !== 'free') unsupported();
-  reply.send(await freeLayersService(req.server.pg).removeFeature(userOf(req), mapId, layerId, featureId, body));
+  const kind = await layerKindOf(req, mapId, layerId);
+  const service = serviceFor(req, kind);
+  reply.send(await service.removeFeature(userOf(req), mapId, layerId, featureIdOf(req, kind), body));
 }
