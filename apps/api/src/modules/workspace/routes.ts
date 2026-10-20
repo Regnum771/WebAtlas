@@ -1,5 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { createMap, deleteMap, getMap, listMaps, updateMap } from './controller';
+import {
+  addFeature, addLayer, createMap, deleteMap, getMap, listFeatures, listMaps, removeFeature, removeLayer,
+  updateFeature, updateLayer, updateMap,
+} from './controller';
 
 // Personal maps. Any signed-in user has a workspace; who sees or writes a given map is decided
 // per map by the services (access.ts), not by a route guard.
@@ -10,4 +13,13 @@ export default async function workspaceRoutes(app: FastifyInstance) {
   app.get('/maps/:mapId', signedIn, getMap);
   app.patch('/maps/:mapId', signedIn, updateMap);
   app.delete('/maps/:mapId', signedIn, deleteMap);
+
+  // One route set for every layer kind; the controller dispatches on the layer's kind.
+  app.post('/maps/:mapId/layers', signedIn, addLayer);
+  app.patch('/maps/:mapId/layers/:layerId', signedIn, updateLayer);
+  app.delete('/maps/:mapId/layers/:layerId', signedIn, removeLayer);
+  app.get('/maps/:mapId/layers/:layerId/features', signedIn, listFeatures);
+  app.post('/maps/:mapId/layers/:layerId/features', signedIn, addFeature);
+  app.put('/maps/:mapId/layers/:layerId/features/:featureId', signedIn, updateFeature);
+  app.delete('/maps/:mapId/layers/:layerId/features/:featureId', signedIn, removeFeature);
 }
