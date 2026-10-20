@@ -4,6 +4,7 @@ import {
   ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError, StaleDraftError,
   DraftConflictError, DraftNotEditableError, DraftRevisionError,
 } from '@webatlas/versioning';
+import { MapRevisionError } from '../modules/workspace/access';
 
 export default fp(async (app) => {
   app.setNotFoundHandler((_req, reply) => {
@@ -22,6 +23,9 @@ export default fp(async (app) => {
     } else if (err instanceof DraftRevisionError) {
       // The draft moved since the caller read it (another tab, or a resolution elsewhere).
       appErr = new AppError(409, 'DRAFT_CHANGED', 'Bản đồ đã thay đổi ở nơi khác.');
+    } else if (err instanceof MapRevisionError) {
+      // A personal map moved since the caller read it (another tab); nothing was changed.
+      appErr = new AppError(409, 'MAP_CHANGED', 'Bản đồ đã thay đổi ở nơi khác.');
     } else if (err instanceof DraftNotEditableError) {
       appErr = new AppError(409, 'DRAFT_NOT_EDITABLE', 'Bản nháp đã được nộp, không sửa được nữa.');
     } else if (err instanceof DraftConflictError) {

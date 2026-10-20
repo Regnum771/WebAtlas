@@ -19,6 +19,7 @@ import assistantRoutes from './modules/assistant/routes';
 import { closeAssistantPool } from './modules/assistant/sql/pool';
 import { closeAnalysisPool } from './modules/analysis/pool';
 import scenariosRoutes from './modules/scenarios/routes';
+import workspaceRoutes from './modules/workspace/routes';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -52,6 +53,7 @@ export function buildApp(): FastifyInstance {
   app.register(roiRoutes, { prefix: '/api' });
   app.register(assistantRoutes, { prefix: '/api' });
   app.register(scenariosRoutes, { prefix: '/api' });
+  app.register(workspaceRoutes, { prefix: '/api/workspace' });
 
   // The assistant's read-only pool is a SEPARATE pg.Pool from app.pg (deliberately
   // — see modules/assistant/sql/pool.ts), so plugins/db.ts's onClose hook does not
