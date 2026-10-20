@@ -152,10 +152,12 @@ describe('migration 26: durable drafts', () => {
   });
 
   it('the assistant role cannot read draft resolutions', async () => {
-    await inRolledBackTx(async (c) => {
-      await c.query('SET LOCAL ROLE webatlas_assistant');
-      const err = await failure(c, `SELECT * FROM app.draft_resolutions`, []);
-      expect(err.code).toBe('42501');
-    });
+    // Asked of the grants themselves: a SELECT as the role fails earlier, for want of USAGE on
+    // schema app, and would pass even with a grant on the table.
+    const { rows } = await getPool().query<{ tbl: boolean; col: boolean }>(
+      `SELECT has_table_privilege('webatlas_assistant', 'app.draft_resolutions', 'SELECT') AS tbl,
+              has_any_column_privilege('webatlas_assistant', 'app.draft_resolutions', 'SELECT') AS col`
+    );
+    expect(rows[0]).toEqual({ tbl: false, col: false });
   });
 });
