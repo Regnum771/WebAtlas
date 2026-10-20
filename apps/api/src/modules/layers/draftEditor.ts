@@ -45,7 +45,12 @@ export function draftEditor(pg: Pool) {
   }
 
   return {
-    /** Open a personal draft of layer `key`, owned by `actor`, on the layer's active version. */
+    /**
+     * Open a personal draft of layer `key`, owned by `actor`, on the layer's active version.
+     * A caller that keeps the draft beyond its own transaction must attach it to a workspace map
+     * layer (map_layers.draft_id), or extend the orphan predicate in workspace/cleanup.ts.
+     * Otherwise discardOrphanDrafts deletes it once it is 24 h old.
+     */
     async open(key: string, actor: CurrentUser): Promise<{ draftId: string; revision: number }> {
       const def = getLayer(key);
       const draft = await inTransaction(pg, (client) => openDraft(client, def.key, actor.id));

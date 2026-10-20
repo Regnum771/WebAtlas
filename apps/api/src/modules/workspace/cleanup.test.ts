@@ -27,6 +27,9 @@ const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 const ago = (ms: number) => new Date(NOW.getTime() - ms);
 
+/** Every cleanup in this file is limited to its own users and drafts. */
+const scope = () => ({ ownerIds: [...ids.values()], draftIds: draftsMade });
+
 let rootId = '';
 const draftsMade: string[] = [];
 
@@ -153,7 +156,7 @@ describe('inactive maps', () => {
     const recent = await makeMap('Gần đây', { activity: ago(179 * DAY) });
     const already = await makeMap('Đã báo', { activity: ago(200 * DAY), notice: ago(5 * DAY) });
 
-    expect(await markInactive(getPool(), NOW)).toBeGreaterThanOrEqual(1);
+    expect(await markInactive(getPool(), NOW, scope())).toBe(1);
     expect((await mapState(old)).inactivity_notice_at).toEqual(NOW);
     expect((await mapState(recent)).inactivity_notice_at).toBeNull();
     // An existing notice keeps its date: the 30 days run from the first notice.
@@ -179,7 +182,7 @@ describe('inactive maps', () => {
     const keptDraft = await makeDraft(ids.get(O)!, NOW);
     await addEditCopy(notYet, keptDraft);
 
-    expect(await archiveNoticed(getPool(), NOW)).toBeGreaterThanOrEqual(1);
+    expect(await archiveNoticed(getPool(), NOW, scope())).toBe(1);
 
     expect((await mapState(due)).archived_at).toEqual(NOW);
     expect(await versionExists(dueDraft)).toBe(false);
@@ -202,7 +205,7 @@ describe('orphan drafts', () => {
     await addEditCopy(await makeMap('Có tham chiếu'), referencedOld);
     const submittedOld = await makeDraft(ids.get(O)!, stale, 'submitted');
 
-    expect(await discardOrphanDrafts(getPool(), NOW)).toBeGreaterThanOrEqual(2);
+    expect(await discardOrphanDrafts(getPool(), NOW, scope())).toBe(2);
 
     expect(await versionExists(noOwner)).toBe(false);
     expect(await versionExists(unreferencedOld)).toBe(false);
