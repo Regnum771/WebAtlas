@@ -3,8 +3,10 @@ import type pg from 'pg';
 import { getPool, closePool } from './testPool';
 import { openDraft, lockDraft, bumpRevision, discardDraft } from './drafts';
 import { DraftNotEditableError, DraftRevisionError, ConflictError, NotFoundError } from './errors';
+import { runStages } from './testLayerGuard';
 
 const LAYER = 'dams';
+const EMAILS = ['p2-drafts-owner@webatlas.test', 'p2-drafts-other@webatlas.test'];
 const created: string[] = [];
 const userIds: string[] = [];
 let owner = '';
@@ -13,8 +15,10 @@ let activeId = '';
 
 beforeAll(async () => {
   const pool = getPool();
-  // CI's DB has no users: create our own throwaway ones (deleted in afterAll).
-  for (const email of ['p2-drafts-owner@webatlas.test', 'p2-drafts-other@webatlas.test']) {
+  // CI's DB has no users: create our own throwaway ones (deleted in afterAll). A run that died
+  // before its afterAll leaves them behind, so clear leftovers first.
+  await pool.query(`DELETE FROM app.users WHERE email = ANY($1::text[])`, [EMAILS]);
+  for (const email of EMAILS) {
     const u = await pool.query<{ id: string }>(
       `INSERT INTO app.users (email, password_hash, role) VALUES ($1, 'x', 'viewer') RETURNING id`, [email]
     );
@@ -29,12 +33,20 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const pool = getPool();
-  for (const id of created) {
-    await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = $1`, [id]);
-    await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [id]);
+  try {
+    // Every stage runs even when an earlier one fails, so one failing delete leaks nothing else.
+    // Only drafts were committed here (some later had their status cleared), never activated:
+    // NOT is_active keeps this from ever removing the layer's active version.
+    await runStages([
+      () => pool.query(`DELETE FROM water.dams WHERE dataset_version_id = ANY($1::uuid[])`, [created]),
+      () => pool.query(
+        `DELETE FROM app.dataset_versions WHERE id = ANY($1::uuid[]) AND NOT is_active`, [created]
+      ),
+      () => pool.query(`DELETE FROM app.users WHERE email = ANY($1::text[])`, [EMAILS]),
+    ]);
+  } finally {
+    await closePool();
   }
-  await pool.query(`DELETE FROM app.users WHERE email LIKE 'p2-drafts-%@webatlas.test'`);
-  await closePool();
 });
 
 async function rollbackRelease(c: pg.PoolClient): Promise<void> {

@@ -197,6 +197,9 @@ afterAll(async () => {
   const pool = getPool();
   const userIds = [...users.values()].map((u) => u.id);
   let ours: string[] = [];
+  // Until the prior version is active again, one of ours is the active version of dams: deleting
+  // our versions then would leave the layer with none.
+  let restored = priorActive === null;
   try {
     await runStages([
       // Put the prior active version back in one transaction: there is never a moment with two
@@ -205,14 +208,17 @@ afterAll(async () => {
         if (!priorActive) return;
         await tx(async (c) => {
           await c.query(`UPDATE app.dataset_versions SET is_active = false WHERE layer_key = $1 AND is_active`, [LAYER]);
-          await c.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
+          const flipped = await c.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
+          // A vanished prior version would otherwise commit the layer with no active version.
+          if (flipped.rowCount !== 1) throw new Error(`prior active version ${priorActive} is gone`);
           await refreshCurrentRows(c, LAYER, priorActive!);
         });
+        restored = true;
       },
       // The pin's FK is ON DELETE RESTRICT: a leftover would block deleting a real version later.
       () => pool.query(`DELETE FROM app.version_pins WHERE holder = $1`, [PIN]),
       async () => {
-        if (!root) return;
+        if (!root || !restored) return;
         const { rows } = await pool.query<{ id: string }>(
           `WITH RECURSIVE d AS (
              SELECT id FROM app.dataset_versions WHERE id = $1

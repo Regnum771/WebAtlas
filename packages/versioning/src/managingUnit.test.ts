@@ -1,12 +1,13 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import type pg from 'pg';
 import { getPool, closePool } from './testPool';
 import { versionsService } from './service';
-import { refreshCurrentRows } from './currentRows';
+import { pinLayer, restoreActive, runStages, unpinLayer } from './testLayerGuard';
 import { stampManagingUnits } from './managingUnit';
 
 const LAYER = 'dams';
 const SOURCE = 'managingUnit.test';
+const PIN = 'managingUnit.test';
 // Inside ward 20194 (a point on its surface).
 const WARD_POINT = { lon: 107.98933869063237, lat: 16.124395 };
 const EXT_NEW = 900301;
@@ -15,26 +16,38 @@ const EXT_KEEP = 900302;
 const created: string[] = [];
 let priorActive: string | null = null;
 
+beforeAll(async () => {
+  // This file commits activations of its own ingests on dams: pin every existing version of the
+  // layer so retention cannot prune a real ingest while it runs (it keeps only
+  // EARLIER_LOADS_KEPT earlier loads).
+  await pinLayer(getPool(), LAYER, PIN);
+  priorActive = await versionsService(getPool()).getActiveVersionId(LAYER);
+});
+
 afterAll(async () => {
   const pool = getPool();
-  // Deactivate the test versions before restoring the prior one (one active per layer).
-  for (const id of created) {
-    await pool.query(`UPDATE app.dataset_versions SET is_active = false WHERE id = $1`, [id]);
+  // Until the prior version is active again, one of ours is the active version of dams: deleting
+  // our versions then would leave the layer with none.
+  let restored = priorActive === null;
+  try {
+    await runStages([
+      async () => {
+        if (!priorActive) return;
+        await restoreActive(pool, LAYER, priorActive);
+        restored = true;
+      },
+      () => unpinLayer(pool, PIN),
+      async () => {
+        if (!restored) return;
+        for (const id of created) {
+          await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = $1`, [id]);
+          await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [id]);
+        }
+      },
+    ]);
+  } finally {
+    await closePool();
   }
-  if (priorActive) {
-    await pool.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
-    const client = await pool.connect();
-    try {
-      await refreshCurrentRows(client, LAYER, priorActive);
-    } finally {
-      client.release();
-    }
-  }
-  for (const id of created) {
-    await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = $1`, [id]);
-    await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [id]);
-  }
-  await closePool();
 });
 
 async function newVersion(client: pg.PoolClient): Promise<string> {
@@ -72,7 +85,6 @@ describe('stampManagingUnits through versionsService.activate', () => {
   it('assigns the rule to a new external_id', async () => {
     const pool = getPool();
     const svc = versionsService(pool);
-    priorActive = await svc.getActiveVersionId(LAYER);
     const client = await pool.connect();
     try {
       await client.query('BEGIN');

@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import type pg from 'pg';
 import { getPool, closePool } from './testPool';
 import { versionsService } from './service';
-import { refreshCurrentRows } from './currentRows';
+import { pinLayer, restoreActive, runStages, unpinLayer } from './testLayerGuard';
 import { resolvedSql } from './resolve';
 import { openDraft, lockDraft } from './drafts';
 import { ConflictError } from './errors';
@@ -139,15 +139,10 @@ beforeAll(async () => {
     `INSERT INTO app.users (email, password_hash, role) VALUES ($1, 'x', 'viewer') RETURNING id`, [EMAIL]
   );
   owner = u.rows[0].id;
+  // This file commits activations on dams: pin every existing version of the layer so retention
+  // cannot prune a real ingest while it runs (it keeps only EARLIER_LOADS_KEPT earlier loads).
+  await pinLayer(pool, LAYER, PIN);
   priorActive = await versionsService(pool).getActiveVersionId(LAYER);
-  // Activating our own ingest root moves the layer's real version out of the active chain, and
-  // retention keeps only EARLIER_LOADS_KEPT earlier loads: pin it so no activation here prunes it.
-  if (priorActive) {
-    await pool.query(
-      `INSERT INTO app.version_pins (version_id, holder) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [priorActive, PIN]
-    );
-  }
   // Our own synthetic root: the layer's active state for the duration of this file.
   await tx(async (c) => {
     const { rows } = await c.query<{ id: string }>(
@@ -163,35 +158,30 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const pool = getPool();
+  // Until the prior version is active again, one of ours is the active version of dams: deleting
+  // our versions then would leave the layer with none.
+  let restored = priorActive === null;
   try {
-    try {
-      // Deactivate the test versions before restoring the prior one (one active per layer).
-      for (const id of created) {
-        await pool.query(`UPDATE app.dataset_versions SET is_active = false WHERE id = $1`, [id]);
-      }
-      if (priorActive) {
-        await pool.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
-        const c = await pool.connect();
-        try {
-          await refreshCurrentRows(c, LAYER, priorActive);
-        } finally {
-          c.release();
+    await runStages([
+      async () => {
+        if (!priorActive) return;
+        await restoreActive(pool, LAYER, priorActive);
+        restored = true;
+      },
+      () => unpinLayer(pool, PIN),
+      () => pool.query(`DELETE FROM app.draft_resolutions WHERE draft_id = ANY($1::uuid[])`, [created]),
+      // Rows first (no cascade from the version), then versions, children before parents.
+      async () => {
+        if (restored) await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = ANY($1::uuid[])`, [created]);
+      },
+      async () => {
+        if (!restored) return;
+        for (const id of [...created].reverse()) {
+          await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [id]);
         }
-      }
-    } finally {
-      // Always drop the pin: its FK is ON DELETE RESTRICT, so a leftover would block deleting
-      // the real version later.
-      if (priorActive) {
-        await pool.query(`DELETE FROM app.version_pins WHERE version_id = $1 AND holder = $2`, [priorActive, PIN]);
-      }
-    }
-    await pool.query(`DELETE FROM app.draft_resolutions WHERE draft_id = ANY($1::uuid[])`, [created]);
-    // Rows first (no cascade from the version), then versions, children before parents.
-    await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = ANY($1::uuid[])`, [created]);
-    for (const id of [...created].reverse()) {
-      await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [id]);
-    }
-    await pool.query(`DELETE FROM app.users WHERE email = $1`, [EMAIL]);
+      },
+      () => pool.query(`DELETE FROM app.users WHERE email = $1`, [EMAIL]),
+    ]);
   } finally {
     await closePool();
   }

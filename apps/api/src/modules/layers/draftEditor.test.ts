@@ -191,29 +191,33 @@ beforeAll(async () => {
 afterAll(async () => {
   const pool = getPool();
   const userIds = [owner?.id, other?.id].filter((x): x is string => typeof x === 'string');
+  // Until the prior version is active again, one of ours is the active version of dams: deleting
+  // our versions then would leave the layer with none.
+  let restored = priorActive === null;
   try {
     await runStages([
-      // Deactivate the test versions before restoring the prior one (one active per layer).
+      // Put the prior active version back in one transaction: there is never a moment with two
+      // active versions, or none.
       async () => {
-        for (const id of created) {
-          await pool.query(`UPDATE app.dataset_versions SET is_active = false WHERE id = $1`, [id]);
-        }
-        if (priorActive) {
-          await pool.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
-          const c = await pool.connect();
-          try {
-            await refreshCurrentRows(c, LAYER, priorActive);
-          } finally {
-            c.release();
-          }
-        }
+        if (!priorActive) return;
+        await tx(async (c) => {
+          await c.query(`UPDATE app.dataset_versions SET is_active = false WHERE layer_key = $1 AND is_active`, [LAYER]);
+          const flipped = await c.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
+          // A vanished prior version would otherwise commit the layer with no active version.
+          if (flipped.rowCount !== 1) throw new Error(`prior active version ${priorActive} is gone`);
+          await refreshCurrentRows(c, LAYER, priorActive!);
+        });
+        restored = true;
       },
       // The pin's FK is ON DELETE RESTRICT: a leftover would block deleting a real version later.
       () => pool.query(`DELETE FROM app.version_pins WHERE holder = $1`, [PIN]),
       () => pool.query(`DELETE FROM app.draft_resolutions WHERE draft_id = ANY($1::uuid[])`, [created]),
       // Rows first (no cascade from the version), then versions, children before parents.
-      () => pool.query(`DELETE FROM water.dams WHERE dataset_version_id = ANY($1::uuid[])`, [created]),
       async () => {
+        if (restored) await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = ANY($1::uuid[])`, [created]);
+      },
+      async () => {
+        if (!restored) return;
         for (const id of [...created].reverse()) {
           await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [id]);
         }

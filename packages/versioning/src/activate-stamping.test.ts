@@ -1,7 +1,7 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import { getPool, closePool } from './testPool';
 import { versionsService } from './service';
-import { refreshCurrentRows } from './currentRows';
+import { pinLayer, restoreActive, runStages, unpinLayer } from './testLayerGuard';
 
 // Regression guard for the failure mode recorded in docs/architecture/database-architecture.md
 // §9: a derived value whose refresh obligation lives in a call site rather than in a contract
@@ -10,6 +10,7 @@ import { refreshCurrentRows } from './currentRows';
 // future caller cannot forget it the way `rivers_overview`'s refresh once was forgotten.
 const LAYER = 'dams';
 const TEST_SOURCE = 'activate-stamping.test';
+const PIN = 'activate-stamping.test';
 
 // Held in outer scope so cleanup can run from afterAll. Cleanup MUST NOT sit after the
 // assertions: this test activates a throwaway version of a real layer, so a failing
@@ -19,35 +20,42 @@ const TEST_SOURCE = 'activate-stamping.test';
 let versionId: string | null = null;
 let priorActive: string | null = null;
 
+beforeAll(async () => {
+  // The activation below commits a synthetic ingest on dams: pin every existing version of the
+  // layer so retention cannot prune a real ingest (it keeps only EARLIER_LOADS_KEPT earlier loads).
+  await pinLayer(getPool(), LAYER, PIN);
+  // Whatever is active for 'dams' right now (seeded data), so we can restore it afterwards.
+  priorActive = await versionsService(getPool()).getActiveVersionId(LAYER);
+});
+
 afterAll(async () => {
   const pool = getPool();
-  if (versionId) {
-    // Deactivate before restoring the prior version: the partial unique index allows only
-    // one active row per layer_key at a time.
-    await pool.query(`UPDATE app.dataset_versions SET is_active = false WHERE id = $1`, [versionId]);
-    if (priorActive) {
-      await pool.query(`UPDATE app.dataset_versions SET is_active = true WHERE id = $1`, [priorActive]);
-      // Raw flip instead of activate(): move the current flag with it.
-      const client = await pool.connect();
-      try {
-        await refreshCurrentRows(client, LAYER, priorActive);
-      } finally {
-        client.release();
-      }
-    }
-    await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = $1`, [versionId]);
-    await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [versionId]);
+  // Until the prior version is active again, ours may be the active version of dams: deleting it
+  // then would leave the layer with none.
+  let restored = priorActive === null;
+  try {
+    await runStages([
+      async () => {
+        if (!versionId || !priorActive) return;
+        await restoreActive(pool, LAYER, priorActive);
+        restored = true;
+      },
+      () => unpinLayer(pool, PIN),
+      async () => {
+        if (!versionId || !restored) return;
+        await pool.query(`DELETE FROM water.dams WHERE dataset_version_id = $1`, [versionId]);
+        await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [versionId]);
+      },
+    ]);
+  } finally {
+    await closePool();
   }
-  await closePool();
 });
 
 describe('versionsService.activate stamps administrative codes as part of the contract', () => {
   it('stamps a thematic layer on activation even when the caller never calls stampAdminCodes', async () => {
     const pool = getPool();
     const svc = versionsService(pool);
-
-    // Whatever is active for 'dams' right now (seeded data), so we can restore it afterwards.
-    priorActive = await svc.getActiveVersionId(LAYER);
 
     const client = await pool.connect();
     try {
