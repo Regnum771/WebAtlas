@@ -114,6 +114,12 @@ export async function publishLayer(
   const store = `${ws}_water`;
   const native = spec.nativeName ?? defaultNativeName(spec.layer);
 
+  // The datastore is pinned to schema water. A qualified or workspace-prefixed name must never
+  // reach GeoServer, or a layer could be pointed at personal-map data.
+  if (!/^[a-z_][a-z0-9_]*$/.test(native) || native.startsWith('workspace')) {
+    throw new Error(`Lớp GeoServer chỉ được trỏ tới lược đồ water: ${native}`);
+  }
+
   if (!(await isPresent(gs, f, `/workspaces/${ws}`, `workspace ${ws}`))) {
     await expectOk(await gsRequest(gs, f, 'POST', '/workspaces', { workspace: { name: ws } }), `create workspace ${ws}`);
   }

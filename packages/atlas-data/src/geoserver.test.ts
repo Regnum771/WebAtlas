@@ -106,4 +106,13 @@ describe('publishLayer', () => {
       layer: { defaultStyle: { name: 'dams_style' } },
     });
   });
+
+  it('refuses a native name outside water, before any HTTP call', async () => {
+    for (const nativeName of ['workspace.features', 'workspace_features', 'water.dams_active', 'Dams', 'dams-active', '']) {
+      const f = scripted(READY);
+      await expect(publishLayer(gs, { layer: 'dams', nativeName }, f.impl), nativeName)
+        .rejects.toThrow(`Lớp GeoServer chỉ được trỏ tới lược đồ water: ${nativeName}`);
+      expect(f.calls, nativeName).toEqual([]);
+    }
+  });
 });
