@@ -199,6 +199,59 @@ describe('publishDraft on a draft whose layer moved on', () => {
   });
 });
 
+describe('pruneVersions locks', () => {
+  // A draft editor holds its draft FOR UPDATE and may then wait on a lock a publishing writer
+  // holds through activate() → pruneVersions(). If prune also waited on that draft row, the two
+  // would deadlock. Prune keeps every draft, so it locks only the versions it may remove.
+  // Committed rows on a layer key no real layer uses (prune leaves before touching any
+  // water.<layer> table here: nothing is doomed), deleted in finally.
+  it('does not wait on a draft another transaction holds, but still serialises on the other versions', async () => {
+    const layer = `zz_prune_lock_${randomUUID().slice(0, 8)}`;
+    const pool = getPool();
+    const ids: string[] = [];
+    const holder = await pool.connect();
+    const pruner = await pool.connect();
+    try {
+      const root = (await pool.query<{ id: string }>(
+        `INSERT INTO app.dataset_versions (layer_key, kind, source, label, is_active)
+         VALUES ($1, 'ingest', 'retention.test', 'lock root', true) RETURNING id::text AS id`, [layer]
+      )).rows[0].id;
+      ids.push(root);
+      const draft = (await pool.query<{ id: string }>(
+        `INSERT INTO app.dataset_versions (layer_key, kind, parent_version_id, source, label, draft_status)
+         VALUES ($1, 'edit', $2, 'retention.test', 'lock draft', 'personal') RETURNING id::text AS id`, [layer, root]
+      )).rows[0].id;
+      ids.push(draft);
+
+      await holder.query('BEGIN');
+      await holder.query(`SELECT id FROM app.dataset_versions WHERE id = $1 FOR UPDATE`, [draft]);
+
+      // The cast: the synthetic key exercises app.dataset_versions only (see above).
+      const prune = async () => {
+        await pruner.query('BEGIN');
+        try {
+          await pruner.query(`SET LOCAL lock_timeout = '1s'`);
+          return await pruneVersions(pruner, layer as never);
+        } finally {
+          await pruner.query('ROLLBACK');
+        }
+      };
+      expect(await prune()).toEqual({ versions: 0, rows: 0 });
+
+      // Control: the same holder on a non-draft version does block prune, so the check above is
+      // not passing for want of a lock.
+      await holder.query(`SELECT id FROM app.dataset_versions WHERE id = $1 FOR UPDATE`, [root]);
+      await expect(prune()).rejects.toMatchObject({ code: '55P03' });
+    } finally {
+      await holder.query('ROLLBACK').catch(() => {});
+      holder.release();
+      pruner.release();
+      // Children before parents.
+      for (const id of [...ids].reverse()) await pool.query(`DELETE FROM app.dataset_versions WHERE id = $1`, [id]);
+    }
+  });
+});
+
 describe('assertPrunable', () => {
   const versions = [
     { id: 'root', parent: null },

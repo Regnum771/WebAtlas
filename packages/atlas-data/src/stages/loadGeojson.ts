@@ -81,7 +81,14 @@ async function loadVersioned(
   // activates a new version the edit's own activation then fails on the one-active-version index.
   // Without the lock an edit committed during the load (rivers takes about 40 s) would be
   // deactivated by it, unseen by the guard below.
-  await client.query(`SELECT id FROM app.dataset_versions WHERE layer_key = $1 FOR UPDATE`, [load.layer]);
+  //
+  // Open drafts are left out: the load never writes them, and holding them would deadlock with
+  // a draft editor that holds its draft and waits on a lock a publishing writer holds while it
+  // waits here for the active row (pruneVersions skips drafts for the same reason).
+  await client.query(
+    `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND draft_status IS NULL FOR UPDATE`,
+    [load.layer]
+  );
 
   // Is what the layer rests on already this load? Either under the current labels, or under an
   // older one that is re-labelled here (a machine that never ran atlas:adopt): then there is

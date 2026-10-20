@@ -42,9 +42,21 @@ export async function pruneVersions(
 ): Promise<{ versions: number; rows: number }> {
   // Take the layer's version rows ourselves instead of trusting every caller to hold them:
   // the plan below must not go stale before the DELETE (a concurrent activation or edit
-  // would otherwise change what is kept). NO KEY UPDATE so open edit drafts, which hold a
-  // KEY SHARE on their parent version, are not waited on.
-  await client.query(`SELECT id FROM app.dataset_versions WHERE layer_key = $1 FOR NO KEY UPDATE`, [layerKey]);
+  // would otherwise change what is kept). NO KEY UPDATE so a transaction opening a draft,
+  // which holds a KEY SHARE on its parent version, is not waited on.
+  //
+  // Drafts themselves are not locked. They are always kept, so nothing here writes them, and
+  // locking them would deadlock: a draft editor holds its draft FOR UPDATE and may then wait on
+  // a lock (the external_id advisory lock) that a publishing writer holds through activate() and
+  // into this function. What a concurrent draft operation can change does not stale the plan:
+  // a rebase only moves a draft's parent onto the active version, which is kept; a new draft
+  // branches from the active version; a discard removes a draft, which then needs nothing kept.
+  // Publishing a draft clears its status, but a publish takes the active row first, and the
+  // active row is among those locked here, so a publish cannot overlap this prune.
+  await client.query(
+    `SELECT id FROM app.dataset_versions WHERE layer_key = $1 AND draft_status IS NULL FOR NO KEY UPDATE`,
+    [layerKey]
+  );
   const { rows: all } = await client.query<{ id: string; parent: string | null; doomed: boolean; active: boolean }>(
     `WITH RECURSIVE
        active_chain AS (
