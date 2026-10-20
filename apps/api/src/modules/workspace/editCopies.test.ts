@@ -352,7 +352,7 @@ describe('edit-copy layers', () => {
     expect((await call(R, 'DELETE', base, { expectedRevision: 1 })).statusCode).toBe(403);
   });
 
-  it('the read falls back to the resolved chain when the layer moved on', async () => {
+  it("after the layer moved on, untouched features show the current official state and the draft's edits stay", async () => {
     const { layer, base } = await mapWithEditCopy();
     const target = byExt(await read(base), DAMS[7])!;
     const res = await call(O, 'PUT', `${base}/features/${target.id}`, { properties: { name: 'sửa trong nháp' }, expectedRevision: 1 });
@@ -360,22 +360,19 @@ describe('edit-copy layers', () => {
 
     // Someone publishes a change to another dam: the draft's parent is no longer active.
     await upstream(DAMS[8], 'đổi ở lớp chính thức');
-    expect(await activeName(DAMS[8])).toBe('đổi ở lớp chính thức');
-
-    const fc = await read(base);
-    expect(fc.features).toHaveLength(10);
-    expect(fc.changed).toEqual([String(DAMS[7])]);
-    expect(byExt(fc, DAMS[7])!.properties.name).toBe('sửa trong nháp');
-    // The draft shows the state it branched from (P2: a draft edits what it branched from; a
-    // rebase is what brings an upstream change in). Reading the active view minus the draft's
-    // rows would show the upstream name here.
-    expect(byExt(fc, DAMS[8])!.properties.name).toBe(`dam-${DAMS[8]}`);
     const parent = await getPool().query(
       `SELECT parent_version_id <> (SELECT id FROM app.dataset_versions WHERE layer_key = 'dams' AND is_active) AS moved
          FROM app.dataset_versions WHERE id = $1`,
       [layer.draftId]
     );
     expect(parent.rows[0].moved).toBe(true);
+
+    // The draft's edit and the upstream change both appear.
+    const fc = await read(base);
+    expect(fc.features).toHaveLength(10);
+    expect(fc.changed).toEqual([String(DAMS[7])]);
+    expect(byExt(fc, DAMS[7])!.properties.name).toBe('sửa trong nháp');
+    expect(byExt(fc, DAMS[8])!.properties.name).toBe('đổi ở lớp chính thức');
   });
 
   it('deleting the layer or the map discards the draft', async () => {

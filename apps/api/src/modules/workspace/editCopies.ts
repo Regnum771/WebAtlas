@@ -1,7 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import {
-  NotFoundError as VersioningNotFoundError, bumpRevision, discardDraft, lockDraft, openDraft, resolvedSql,
-  touchedFeatures,
+  NotFoundError as VersioningNotFoundError, bumpRevision, discardDraft, lockDraft, openDraft, touchedFeatures,
 } from '@webatlas/versioning';
 import { AppError, NotFoundError } from '../../errors';
 import { inTransaction } from '../../lib/transaction';
@@ -78,42 +77,32 @@ async function readRow(client: PoolClient, def: LayerDef, rowId: string): Promis
 }
 
 /**
- * The draft's features inside `bbox`, `limit + 1` rows at most, never resolving the whole layer.
- * While the draft's parent is still the active version, its state is the active view minus the
- * features the draft holds a row for, plus the draft's own live rows; both halves reach the
- * layer's geometry indexes. Once the layer has moved on, the draft's chain is resolved with the
- * bbox applied outside (resolvedSql is an optimizer fence, but the chain is the draft's own).
+ * The edit copy's features inside `bbox`, `limit + 1` rows at most. One algorithm, whatever the
+ * draft's parent: the layer's current official rows (the `_active` view) minus the features the
+ * draft holds a row for, plus the draft's own live rows. An edit copy is drawn like the official
+ * layer with the draft's changes on top (spec: "drawn like the official layer, with an overlay
+ * marking what changed"), so once the layer has moved on, an untouched feature shows its current
+ * official state, not the state the draft branched from; a feature the draft touched shows the
+ * draft's row (a rebase is what reconciles the two). Both halves are plain bbox filters that
+ * reach the layer's geometry indexes: no version chain is ever resolved, which matters on rivers.
  */
 async function readInBBox(
   client: PoolClient, def: LayerDef, draftId: string, bbox: BBox, limit: number
 ): Promise<Array<{ id: string; geometry: unknown; properties: Record<string, unknown> }>> {
-  const { rows: v } = await client.query<{ onActive: boolean }>(
-    `SELECT v.parent_version_id IS NOT DISTINCT FROM a.id AS "onActive"
-       FROM app.dataset_versions v
-       LEFT JOIN app.dataset_versions a ON a.layer_key = v.layer_key AND a.is_active
-      WHERE v.id = $1`,
-    [draftId]
-  );
-  if (!v[0]) throw draftGone();
   const envelope = `ST_MakeEnvelope($2, $3, $4, $5, 4326)`;
   const geom = def.geomColumn;
-  let source: string;
-  if (v[0].onActive) {
-    const cols = ['id', 'external_id', geom, ...def.attributeColumns];
-    const pick = (alias: string) => cols.map((c) => `${alias}.${c}`).join(', ');
-    source = `
-      SELECT ${pick('a')} FROM ${def.table}_active a
-       WHERE a.${geom} && ${envelope}
-         AND NOT EXISTS (SELECT 1 FROM ${def.table} d
-                          WHERE d.dataset_version_id = $1 AND d.external_id = a.external_id)
-      UNION ALL
-      SELECT ${pick('d')} FROM ${def.table} d
-       WHERE d.dataset_version_id = $1 AND NOT d.deleted AND d.${geom} && ${envelope}`;
-  } else {
-    source = `SELECT * FROM (${resolvedSql(def.key, '*', '$1')}) r WHERE r.${geom} && ${envelope}`;
-  }
+  const cols = ['id', 'external_id', geom, ...def.attributeColumns];
+  const pick = (alias: string) => cols.map((c) => `${alias}.${c}`).join(', ');
   const { rows } = await client.query(
-    `SELECT ${featureSelect(def)} FROM (${source}) t ORDER BY t.id LIMIT $6`,
+    `SELECT ${featureSelect(def)} FROM (
+       SELECT ${pick('a')} FROM ${def.table}_active a
+        WHERE a.${geom} && ${envelope}
+          AND NOT EXISTS (SELECT 1 FROM ${def.table} d
+                           WHERE d.dataset_version_id = $1 AND d.external_id = a.external_id)
+       UNION ALL
+       SELECT ${pick('d')} FROM ${def.table} d
+        WHERE d.dataset_version_id = $1 AND NOT d.deleted AND d.${geom} && ${envelope}
+     ) t ORDER BY t.id LIMIT $6`,
     [draftId, ...bbox, limit + 1]
   );
   return rows;
@@ -215,7 +204,7 @@ export function editCopiesService(pg: Pool) {
       await assertCanRead(pg, mapId, user);
       const limit = Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
       return inTransaction(pg, async (client) => {
-        // One snapshot for the layer row, the parent check, the rows and the changed list.
+        // One snapshot for the layer row, the rows and the changed list.
         await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
         const layer = await loadEditCopy(client, mapId, layerId);
         const draftId = draftOf(layer);
