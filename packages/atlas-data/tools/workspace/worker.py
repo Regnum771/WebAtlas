@@ -28,6 +28,11 @@ from typing import Callable
 import psycopg2
 from psycopg2.extensions import connection
 
+if __name__ == "__main__":
+    # Handler modules import this one as `worker`; let them get the running module rather than a
+    # second copy with its own UserFacingError.
+    sys.modules.setdefault("worker", sys.modules[__name__])
+
 import jobs_db
 
 UNEXPECTED_MESSAGE = "Lỗi không mong đợi khi xử lý tệp."
@@ -97,6 +102,31 @@ class Steps:
 # workspace.jobs on it) and reports through `steps`; it returns the job's result. Tasks 6-8
 # register `import` and `export`.
 HANDLERS: dict[str, Callable[[connection, dict, Steps], dict]] = {}
+
+UNSUPPORTED_FORMAT_MESSAGE = "Định dạng tệp không được hỗ trợ."
+# Upload extensions by import path (Global Constraints: the formats read).
+VECTOR_EXTENSIONS = (".gpkg", ".geojson", ".json", ".zip", ".kml")
+RASTER_EXTENSIONS = (".tif", ".tiff")
+
+
+def import_extension(params: dict) -> str:
+    """The upload's extension, lower case: from its original name, else from its store path."""
+    for name in (params.get("originalName"), params.get("path")):
+        if isinstance(name, str):
+            ext = pathlib.PurePosixPath(name.replace("\\", "/")).suffix.lower()
+            if ext:
+                return ext
+    return ""
+
+
+def run_import(conn: connection, job: dict, steps: Steps) -> dict:
+    """The one `import` handler: dispatches on the upload's extension."""
+    ext = import_extension(job.get("params") or {})
+    if ext in VECTOR_EXTENSIONS:
+        return import_vector.run_import_vector(conn, job, steps)
+    # Rasters (RASTER_EXTENSIONS) are refused until the raster import (Task 7) replaces this branch.
+    steps.start("read")
+    raise UserFacingError(UNSUPPORTED_FORMAT_MESSAGE)
 
 
 def _beat(steps: Steps, stop: threading.Event):
@@ -197,6 +227,12 @@ def main(argv=None) -> int:
             conn = None
             time.sleep(RECONNECT_SECONDS)
 
+
+# Imported after everything above exists: the handler modules import UserFacingError and
+# store_root from this module.
+import import_vector  # noqa: E402
+
+HANDLERS["import"] = run_import
 
 if __name__ == "__main__":
     sys.exit(main())
