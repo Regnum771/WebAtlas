@@ -1,6 +1,6 @@
 import { mkdir, open, unlink } from 'node:fs/promises';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
+import { finished, type Readable } from 'node:stream';
 import { workspaceFilesDir } from '../../config/env';
 import { FileTooLargeError } from '../../errors';
 
@@ -37,6 +37,8 @@ export function resolveInStore(relPath: string): string {
  *
  * The source is never destroyed: once the write stops it is left flowing so the rest drains. A
  * multipart file stream that is destroyed stalls its parser, and the request never completes.
+ * A source that is destroyed by someone else before its end (an aborted upload) fails the write
+ * the same way: the partial file is closed and unlinked, and the promise rejects.
  */
 export async function writeStream(relPath: string, source: Readable, maxBytes: number): Promise<number> {
   const abs = resolveInStore(relPath);
@@ -56,7 +58,13 @@ export async function writeStream(relPath: string, source: Readable, maxBytes: n
         reject(err);
       };
       out.on('error', fail);
-      source.on('error', fail);
+      // A source error, or a source destroyed without one before its end (a client that
+      // disconnects mid-upload: multipart's cleanup destroys the file stream, which then emits only
+      // 'close'), fails the write: ERR_STREAM_PREMATURE_CLOSE. finished() also reports a source
+      // that was already destroyed before these listeners were attached (mkdir and open come first).
+      finished(source, (err) => {
+        if (err) fail(err);
+      });
       source.on('data', (chunk: Buffer) => {
         if (settled) return;
         bytes += chunk.length;

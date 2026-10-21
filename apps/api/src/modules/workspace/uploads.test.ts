@@ -3,14 +3,14 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Readable } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 import { runStages } from '@webatlas/versioning/testing';
 import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
 import { usersRepository } from '../users/repository';
 import { hashPassword } from '../../lib/password';
 import type { CurrentUser } from '../../types/fastify';
-import { resolveInStore, storeRoot, unlinkInStore } from './fileStore';
+import { resolveInStore, storeRoot, unlinkInStore, writeStream } from './fileStore';
 import { uploadsService } from './uploads';
 
 // A fresh store under the OS temp directory for this file; the previous value is restored after.
@@ -214,6 +214,37 @@ describe('uploads', () => {
     } finally {
       await getPool().query(`UPDATE app.users SET quota_bytes = DEFAULT WHERE id = $1`, [ids.get(O)]);
     }
+  });
+
+  it('an upload aborted mid-stream leaves nothing behind', async () => {
+    /** The promise's outcome, or 'pending' if it has not settled within `ms`. */
+    const outcome = (p: Promise<unknown>, ms = 3000) =>
+      Promise.race([
+        p.then(() => 'resolved', (e: unknown) => e),
+        new Promise((r) => setTimeout(() => r('pending'), ms)),
+      ]);
+    /** A source that sends 1000 bytes and is then destroyed without an error, as multipart does on a client abort. */
+    const aborting = () => {
+      const source = new PassThrough();
+      source.write(Buffer.alloc(1000, 3));
+      setTimeout(() => source.destroy(), 50);
+      return source;
+    };
+
+    // The store on its own: the write rejects and no partial file is left.
+    const rel = `aborted/${randomUUID()}.gpkg`;
+    createdPaths.push(rel); // unlinked after the test should the fix regress
+    const stored = await outcome(writeStream(rel, aborting(), 10_000));
+    expect(stored).toMatchObject({ code: 'ERR_STREAM_PREMATURE_CLOSE' });
+    expect(existsSync(path.join(STORE, rel))).toBe(false);
+
+    // Through the service: no row and no file either.
+    const uploaded = await outcome(
+      uploadsService(getPool()).upload(userFor(O), { filename: 'dut.gpkg', mimetype: 'application/octet-stream', file: aborting() })
+    );
+    expect(uploaded).toMatchObject({ code: 'ERR_STREAM_PREMATURE_CLOSE' });
+    expect(await fileRows(ids.get(O)!)).toHaveLength(0);
+    expect(filesUnder(ids.get(O)!)).toEqual([]);
   });
 
   it('uploads are private', async () => {
