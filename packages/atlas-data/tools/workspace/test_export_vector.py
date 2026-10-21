@@ -433,6 +433,20 @@ try:
           dist is not None and dist < 1.0 and back.crs.equals(CRS.from_user_input(VN2000_TM3_DA_NANG))
           and 500000 < projected.x < 600000)  # metres in the TM-3 zone, not degrees
 
+    # --- shapefile in vn2000 tm-3 round-trips within a metre (the .prj keeps the datum shift)
+    row, job_id, params = export(user_id, map_id, "shp", CRS_TM3, [FREE, EDIT])
+    path = stored(row)
+    members = unzip(path) if row["status"] == "succeeded" and path is not None else []
+    back = pyogrio.read_dataframe(work(f"{FREE_SLUG}_diem.shp")) if f"{FREE_SLUG}_diem.shp" in members else None
+    dist = None
+    if back is not None:
+        p = back[back["ma"] == 1].to_crs(4326).geometry.iloc[0]
+        dist = Geod(ellps="WGS84").inv(p.x, p.y, POINT_1[0], POINT_1[1])[2]
+    check("shapefile in vn2000 tm-3 round-trips within a metre",
+          dist is not None and dist < 1.0 and back.crs.equals(CRS.from_user_input(VN2000_TM3_DA_NANG)))
+    if dist is not None and dist >= 1.0:
+        print(f"     off by {dist:.1f} m; .prj: {open(work(f'{FREE_SLUG}_diem.prj'), encoding='ascii').read()[:160]}")
+
     # --- the export file row expires in 7 days
     f = file_row((gpkg_row.get("result") or {}).get("fileId"))
     check("the export file row expires in 7 days",

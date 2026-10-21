@@ -339,6 +339,12 @@ def write_shp_layer(work_dir, slug, layer, geoms, props, crs) -> list:
         path = os.path.join(work_dir, f"{stem}.shp")
         pyogrio.write_dataframe(gdf, path, driver="ESRI Shapefile", encoding="UTF-8",
                                 geometry_type=geometry_type, promote_to_multi=multi)
+        if crs.is_bound:
+            # GDAL writes the .prj as ESRI WKT, which has no TOWGS84: a VN-2000 CRS (a +towgs84
+            # datum shift, a pyproj BoundCRS) would read back as a bare WGS 84 ellipsoid, about
+            # 200 m off. WKT1_GDAL keeps the shift, and GDAL and QGIS read it back exactly.
+            with open(os.path.join(work_dir, f"{stem}.prj"), "w", encoding="ascii") as f:
+                f.write(crs.to_wkt("WKT1_GDAL"))
         cpg = os.path.join(work_dir, f"{stem}.cpg")
         with open(cpg, "w", encoding="ascii") as f:  # GDAL writes it too; make sure of the content
             f.write("UTF-8")
@@ -465,8 +471,10 @@ def run_export(conn, job, steps) -> dict:
                 os.replace(members[0], out_path)
             else:
                 zip_members(out_path, members)
-            os.replace(out_path, final)
+            # Registered before the rename, so no failure can leave the file in place unregistered
+            # (remove_in_store ignores a file that is not there).
             steps.on_rollback(lambda: remove_in_store(final))
+            os.replace(out_path, final)
         finally:
             remove_work_dir(work_dir)
 
