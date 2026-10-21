@@ -27,7 +27,7 @@ and builds the overviews. Nothing holds the whole image in memory.
 # GDAL drivers. It imports neither worker nor import_vector, so there is no import cycle.
 from workspace_common import (
     NO_CRS, OUT_OF_RANGE, UNSUPPORTED, UserFacingError, crs_label, file_stem, finish_map_write, layer_title,
-    lock_owned_map, resolve_upload, store_root,
+    lock_owned_map, remove_in_store, resolve_upload, store_root,
 )
 
 import math  # noqa: E402
@@ -139,18 +139,6 @@ def target_grid(src, crs):
 def overview_count(width: int, height: int) -> int:
     """Halvings until the smallest overview fits one block; at least one."""
     return max(1, math.ceil(math.log2(max(width, height) / BLOCKSIZE)))
-
-
-def remove_in_store(path: str):
-    """Remove one file, after checking it lies inside the store. A missing file is not an error."""
-    root = os.path.realpath(store_root())
-    full = os.path.realpath(path)
-    if full == root or os.path.commonpath([root, full]) != root:
-        raise RuntimeError(f"refusing to remove {path!r}: outside the store")
-    try:
-        os.remove(full)
-    except FileNotFoundError:
-        pass
 
 
 def source_window(src, crs, dst_bounds):

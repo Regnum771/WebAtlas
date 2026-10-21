@@ -105,6 +105,18 @@ def resolve_upload(rel: str) -> str:
     return full
 
 
+def remove_in_store(path: str):
+    """Remove one file, after checking it lies inside the store. A missing file is not an error."""
+    root = os.path.realpath(store_root())
+    full = os.path.realpath(path)
+    if full == root or os.path.commonpath([root, full]) != root:
+        raise RuntimeError(f"refusing to remove {path!r}: outside the store")
+    try:
+        os.remove(full)
+    except FileNotFoundError:
+        pass
+
+
 def file_stem(name: str) -> str:
     return pathlib.PurePosixPath(name.replace("\\", "/")).stem
 

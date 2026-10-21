@@ -40,6 +40,7 @@ from workspace_common import (  # noqa: E402,F401
     GDAL_CONFIG, GDAL_SKIP_DRIVERS, UNSUPPORTED, UserFacingError, configure_gdal, import_extension, store_root,
 )
 # The handlers import only workspace_common (never this module), so they load here without a cycle.
+import export_vector  # noqa: E402
 import import_raster  # noqa: E402
 import import_vector  # noqa: E402
 
@@ -112,8 +113,7 @@ class Steps:
 
 
 # Handlers by job kind. A handler writes only through `conn` (never commits it, never writes
-# workspace.jobs on it) and reports through `steps`; it returns the job's result. Tasks 6-8
-# register `import` and `export`.
+# workspace.jobs on it) and reports through `steps`; it returns the job's result.
 HANDLERS: dict[str, Callable[[connection, dict, Steps], dict]] = {}
 
 UNSUPPORTED_FORMAT_MESSAGE = UNSUPPORTED
@@ -236,6 +236,7 @@ def main(argv=None) -> int:
 
 
 HANDLERS["import"] = run_import
+HANDLERS["export"] = export_vector.run_export
 
 if __name__ == "__main__":
     sys.exit(main())
