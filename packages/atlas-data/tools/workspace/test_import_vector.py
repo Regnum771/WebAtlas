@@ -20,20 +20,24 @@ import sys
 import tempfile
 import uuid
 import warnings
+import time
 import zipfile
-
-import geopandas as gpd
-import numpy as np
-import pandas as pd
-import pyogrio
-from pyproj import Transformer
-from shapely.geometry import LineString, Point, Polygon
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-import jobs_db  # noqa: E402
+# worker first: it configures GDAL (skipped drivers, no network), which only takes effect when it
+# runs before GDAL registers its drivers, i.e. before pyogrio is imported.
 import worker  # noqa: E402
+import jobs_db  # noqa: E402
+
+import geopandas as gpd  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import pyogrio  # noqa: E402
+from pyogrio.errors import DataSourceError  # noqa: E402
+from pyproj import Transformer  # noqa: E402
+from shapely.geometry import LineString, Point, Polygon  # noqa: E402
 
 # geopandas warns when a frame without a CRS is written; those fixtures are deliberate.
 warnings.simplefilter("ignore", UserWarning)
@@ -441,6 +445,84 @@ try:
     row = run_import(user_id, map_id, "chi_trong.gpkg", "chi_trong.gpkg")
     check("a file whose every layer lacks geometry is refused",
           row["status"] == "failed" and row["error"] == MSG_UNSUPPORTED and len(layers(map_id)) == 1)
+
+    # --- a projected geojson without crs plus sourceCrs lands within a metre
+    user_id, map_id = new_map("geojson-tm3")
+    gpd.GeoDataFrame({"ten": ["Mốc"]}, geometry=[Point(x, y)]).to_file(store("moc_tm3.geojson"), driver="GeoJSON")
+    with open(store("moc_tm3.geojson"), encoding="utf-8") as f:
+        check("fixture: the TM-3 geojson has no crs member", '"crs"' not in f.read())
+    row = run_import(user_id, map_id, "moc_tm3.geojson", "moc_tm3.geojson",
+                     sourceCrs={"id": "vn2000-tm3-da-nang", "proj4": VN2000_TM3_DA_NANG})
+    ls = layers(map_id)
+    dist = q(
+        """SELECT ST_Distance(f.geom::geography, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography), f.source_crs
+             FROM workspace.features f WHERE f.layer_id = %s""",
+        (KNOWN_LON, KNOWN_LAT, ls[0]["id"] if ls else None),
+    )
+    check("a projected geojson without crs plus sourceCrs lands within a metre",
+          row["status"] == "succeeded" and dist is not None and len(dist) == 1 and dist[0][0] < 1.0
+          and dist[0][1] == VN2000_TM3_DA_NANG)
+    user_id, map_id = new_map("geojson-declared")
+    gpd.GeoDataFrame({"ma": [1]}, geometry=[Point(108.2, 16.0)], crs=4326).to_crs(32649) \
+        .to_file(store("utm_khai_bao.geojson"), driver="GeoJSON")
+    row = run_import(user_id, map_id, "utm_khai_bao.geojson", "utm_khai_bao.geojson",
+                     sourceCrs={"id": "vn2000-tm3-da-nang", "proj4": VN2000_TM3_DA_NANG})
+    ls = layers(map_id)
+    fs = features(ls[0]["id"]) if ls else []
+    check("a geojson that declares a projected crs keeps it over sourceCrs",
+          row["status"] == "succeeded" and fs and fs[0]["source_crs"] == "EPSG:32649"
+          and abs(fs[0]["x"] - 108.2) < 1e-6 and abs(fs[0]["y"] - 16.0) < 1e-6)
+
+    # --- GDAL is configured to open no VRT and fetch nothing
+    drivers = pyogrio.list_drivers()
+    check("GDAL drivers the worker never needs are skipped",
+          not any(d in drivers for d in ("VRT", "OGR_VRT", "WFS", "OAPIF", "WMS", "WMTS", "CSV", "SQLite", "HTTP"))
+          and all(d in drivers for d in ("GPKG", "GeoJSON", "KML", "ESRI Shapefile")))
+    t0 = time.monotonic()
+    try:
+        pyogrio.read_info("/vsicurl/https://example.com/webatlas-probe.geojson")
+        refused = False
+    except DataSourceError as e:
+        refused = "HTTP" not in str(e)  # refused before any request, not answered by the server
+    check("/vsicurl/ is refused without a request", refused and time.monotonic() - t0 < 5)
+
+    # --- a geojson holding VRT XML that points at another store file is refused
+    user_id, map_id = new_map("vrt")
+    gpd.GeoDataFrame({"bi_mat": ["của người khác"]}, geometry=[Point(108, 16)], crs=4326) \
+        .to_file(store("nan_nhan.geojson"), driver="GeoJSON")
+    # A declared geometry type, so the VRT layer lists as spatial and would be imported.
+    vrt = (f'<OGRVRTDataSource><OGRVRTLayer name="lay"><SrcDataSource>{store("nan_nhan.geojson")}</SrcDataSource>'
+           f'<SrcLayer>nan_nhan</SrcLayer><GeometryType>wkbPoint</GeometryType><LayerSRS>EPSG:4326</LayerSRS>'
+           f'</OGRVRTLayer></OGRVRTDataSource>')
+    with open(store("tan_cong.geojson"), "w", encoding="utf-8") as f:
+        f.write(vrt)
+    row = run_import(user_id, map_id, "tan_cong.geojson", "tan_cong.geojson")
+    check("a geojson holding VRT XML that points at another store file is refused",
+          row["status"] == "failed" and row["error"] == MSG_UNSUPPORTED and layers(map_id) == [])
+    with open(store("tan_cong.kml"), "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0"?>\n<!-- kml -->\n' + vrt)
+    row = run_import(user_id, map_id, "tan_cong.kml", "tan_cong.kml")
+    check("a kml whose root is not <kml> is refused",
+          row["status"] == "failed" and row["error"] == MSG_UNSUPPORTED and layers(map_id) == [])
+    with zipfile.ZipFile(store("tan_cong.zip"), "w") as zf:
+        zf.writestr("lay.shp", vrt)
+        zf.writestr("lay.dbf", b"")
+    row = run_import(user_id, map_id, "tan_cong.zip", "tan_cong.zip")
+    check("a zipped .shp that is not a shapefile is refused",
+          row["status"] == "failed" and row["error"] == MSG_UNSUPPORTED and layers(map_id) == [])
+    with open(store("gia.gpkg"), "w", encoding="utf-8") as f, open(store("nan_nhan.geojson"), encoding="utf-8") as g:
+        f.write(g.read())
+    row = run_import(user_id, map_id, "gia.gpkg", "gia.gpkg")
+    check("a .gpkg-named file holding GeoJSON is refused by the magic check",
+          row["status"] == "failed" and row["error"] == MSG_UNSUPPORTED and layers(map_id) == [])
+    with open(store("esri.json"), "w", encoding="utf-8") as f:
+        json.dump({"geometryType": "esriGeometryPoint", "spatialReference": {"wkid": 4326},
+                   "fields": [{"name": "ma", "type": "esriFieldTypeInteger"}],
+                   "features": [{"attributes": {"ma": 1}, "geometry": {"x": 108, "y": 16}}]}, f)
+    check("fixture: GDAL reads the .json as ESRIJSON", pyogrio.read_info(store("esri.json"))["driver"] == "ESRIJSON")
+    row = run_import(user_id, map_id, "esri.json", "esri.json")
+    check("a .json read by a driver other than GeoJSON is refused by the driver allowlist",
+          row["status"] == "failed" and row["error"] == MSG_UNSUPPORTED and layers(map_id) == [])
 
     # --- the import handler dispatches on the extension
     user_id, map_id = new_map("dispatch")

@@ -35,6 +35,38 @@ if __name__ == "__main__":
 
 import jobs_db
 
+# GDAL drivers the worker never needs. Each can make GDAL open other files or fetch URLs merely
+# because an upload's content names them (an <OGRVRTDataSource> in a .geojson, a WFS/WMS service
+# description, ...). PostgreSQL is listed even though this build's pyogrio has no such driver, so a
+# future build that does stays covered (GDAL warns once about the missing name).
+GDAL_SKIP_DRIVERS = ("VRT", "OGR_VRT", "WFS", "OAPIF", "WMS", "WMTS", "PostgreSQL", "CSV", "SQLite", "GML", "HTTP")
+GDAL_CONFIG = {
+    "GDAL_SKIP": " ".join(GDAL_SKIP_DRIVERS),
+    # No network: /vsicurl/ only opens names ending in one of these extensions, and none will.
+    "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".webatlas-no-network",
+    "GDAL_HTTP_TIMEOUT": "1",
+    "GDAL_HTTP_CONNECTTIMEOUT": "1",
+    "GDAL_HTTP_MAX_RETRY": "0",
+}
+
+
+def configure_gdal():
+    """
+    Restrict every GDAL the worker loads (pyogrio's, and rasterio's for Task 7) as GDAL_CONFIG says.
+    Set through the environment: GDAL reads the network options on each use, but reads GDAL_SKIP only
+    once, when it registers its drivers, i.e. when pyogrio is imported. So this must run before
+    pyogrio is imported, and refuses to go on if that already happened.
+    """
+    os.environ.update(GDAL_CONFIG)
+    if "pyogrio" in sys.modules:
+        import pyogrio
+
+        if "OGR_VRT" in pyogrio.list_drivers():
+            raise RuntimeError("GDAL was loaded before configure_gdal(); import worker before pyogrio")
+
+
+configure_gdal()
+
 UNEXPECTED_MESSAGE = "Lỗi không mong đợi khi xử lý tệp."
 STALE_MESSAGE = jobs_db.STALE_MESSAGE
 

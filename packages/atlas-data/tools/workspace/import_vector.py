@@ -10,9 +10,15 @@ handler's connection, inside the worker's one transaction, so any failure (row l
 archived map, quota) leaves the map untouched.
 
 Zipped Shapefiles are read in place through GDAL's /vsizip/: nothing is extracted to disk. The
-archive's entry names are listed with zipfile only to find the .shp members and skip unsafe entries
-(absolute names, names containing '..', symlinks); the one entry whose bytes are read from Python
-is a tiny .cpg, in memory.
+archive's entry names are listed with zipfile to find the .shp members and skip unsafe entries
+(absolute names, names containing '..', symlinks); the only bytes Python reads from an entry are
+the 4-byte header of each .shp (the magic check) and a tiny .cpg, in memory.
+
+GDAL picks its driver from a file's content, and some drivers open whatever the content names
+(an <OGRVRTDataSource> in a ".geojson" reads another user's file; WFS/WMS descriptions fetch
+URLs). So a file is only read when its content matches its extension (check_magic), GDAL opened it
+with that extension's driver (check_driver), and the worker has skipped the dangerous drivers and
+the network (worker.configure_gdal). Anything else is "Định dạng tệp không được hỗ trợ.".
 """
 import base64
 import codecs
@@ -76,7 +82,19 @@ CPG_MAX_BYTES = 64
 # Overall progress: reading 0-30, transforming 30-40, writing 40-100.
 PROGRESS_READ, PROGRESS_TRANSFORM, PROGRESS_WRITE = 30, 40, 100
 
-FAMILY_BY_TYPE_ID = {0: "point", 4: "point", 1: "line", 2: "line", 5: "line", 3: "polygon", 6: "polygon"}
+# Content checks (check_magic) and the only GDAL driver each extension may be read with (check_driver).
+MAGIC_READ_BYTES = 64 * 1024
+SQLITE_MAGIC = b"SQLite format 3\x00"
+SHP_MAGIC = b"\x00\x00\x27\x0a"  # the shapefile main header's file code, 9994 big-endian
+ALLOWED_DRIVERS = {
+    ".gpkg": ("GPKG",),
+    ".geojson": ("GeoJSON",),
+    ".json": ("GeoJSON",),
+    ".kml": ("KML", "LIBKML"),
+    ".zip": ("ESRI Shapefile",),
+}
+
+FAMILY_BY_TYPE_ID ={0: "point", 4: "point", 1: "line", 2: "line", 5: "line", 3: "polygon", 6: "polygon"}
 S_IFMT, S_IFLNK = 0o170000, 0o120000
 
 
@@ -256,6 +274,9 @@ def _zip_sources(zip_path: str) -> list:
             siblings = by_stem.get(name.replace("\\", "/")[:-4].lower(), [])
             if any(_unsafe_entry(s) for _, s in siblings):
                 continue  # a sidecar that is a link: skip the whole set
+            with zf.open(info) as f:
+                if f.read(len(SHP_MAGIC)) != SHP_MAGIC:
+                    raise UserFacingError(UNSUPPORTED)  # not a shapefile (e.g. VRT XML named .shp)
             cpg_codec = None
             cpg = next((s for ext, s in siblings if ext == "cpg"), None)
             if cpg is not None and cpg.file_size <= CPG_MAX_BYTES:
@@ -269,6 +290,52 @@ def _zip_sources(zip_path: str) -> list:
             if geometry_type is not None:
                 out.append(Source(gdal_path, layer, shapefile=True, cpg_codec=cpg_codec))
     return out
+
+
+def _looks_like_kml(head: bytes) -> bool:
+    """XML whose root element is <kml>, after an optional BOM, declaration, processing
+    instructions and comments."""
+    s = head[3:] if head.startswith(b"\xef\xbb\xbf") else head
+    while True:
+        s = s.lstrip()
+        if s.startswith(b"<?"):
+            end = s.find(b"?>")
+            if end < 0:
+                return False
+            s = s[end + 2:]
+        elif s.startswith(b"<!--"):
+            end = s.find(b"-->", 4)
+            if end < 0:
+                return False
+            s = s[end + 3:]
+        else:
+            return s.startswith(b"<kml") and s[4:5] in (b">", b"/", b" ", b"\t", b"\r", b"\n")
+
+
+def check_magic(path: str, ext: str):
+    """
+    Refuse a file whose content is not the format its extension names, before GDAL sees it: GDAL
+    picks its driver from the content, and some drivers (OGR VRT, WFS, ...) open other files or
+    URLs that the content names. Zips are checked per .shp member in _zip_sources.
+    """
+    with open(path, "rb") as f:
+        head = f.read(MAGIC_READ_BYTES)
+    if ext == ".gpkg":
+        ok = head.startswith(SQLITE_MAGIC)
+    elif ext in (".geojson", ".json"):
+        ok = (head[3:] if head.startswith(b"\xef\xbb\xbf") else head).lstrip()[:1] == b"{"
+    elif ext == ".kml":
+        ok = _looks_like_kml(head)
+    else:
+        ok = ext == ".zip"
+    if not ok:
+        raise UserFacingError(UNSUPPORTED)
+
+
+def check_driver(info: dict, ext: str):
+    """Refuse a layer GDAL opened with any driver but the one the extension allows."""
+    if info.get("driver") not in ALLOWED_DRIVERS.get(ext, ()):
+        raise UserFacingError(UNSUPPORTED)
 
 
 def _list_layers(path: str):
@@ -341,14 +408,32 @@ def _crs_label(crs: CRS, fallback: str | None) -> str:
         return crs.to_wkt()
 
 
+def _is_wgs84_lon_lat(crs) -> bool:
+    try:
+        auth = crs.to_authority(min_confidence=90)
+    except Exception:
+        auth = None
+    return auth in (("EPSG", "4326"), ("OGC", "CRS84")) or crs.equals(CRS.from_epsg(4326), ignore_axis_order=True)
+
+
 def _layer_crs(file_crs, driver: str, source_crs):
-    """The layer's CRS and its label: the file's own, else the chosen sourceCrs, else (GeoJSON only,
-    RFC 7946) WGS 84. GDAL already reports EPSG:4326 for a GeoJSON without a crs member."""
+    """
+    The layer's CRS and its label.
+    - GeoJSON: GDAL reports EPSG:4326 (OGC:CRS84) both for a file that says so and for one with no
+      crs member (RFC 7946), so the two cannot be told apart. A chosen sourceCrs therefore wins over
+      a reported EPSG:4326 / OGC:CRS84; any other reported CRS was declared by the file and wins.
+      Without a sourceCrs, WGS 84.
+    - Every other format: the file's own CRS, else the chosen sourceCrs, else fail with NO_CRS.
+    """
+    chosen = None
+    if source_crs and source_crs.get("proj4"):
+        chosen = CRS.from_user_input(source_crs["proj4"]), source_crs["proj4"]
+    if driver == "GeoJSON" and chosen and (file_crs is None or _is_wgs84_lon_lat(file_crs)):
+        return chosen[0], _crs_label(chosen[0], chosen[1])
     if file_crs is not None:
         return file_crs, _crs_label(file_crs, None)
-    if source_crs and source_crs.get("proj4"):
-        crs = CRS.from_user_input(source_crs["proj4"])
-        return crs, _crs_label(crs, source_crs["proj4"])
+    if chosen:
+        return chosen[0], _crs_label(chosen[0], chosen[1])
     if driver == "GeoJSON":
         return CRS.from_epsg(4326), "EPSG:4326"
     raise UserFacingError(NO_CRS)
@@ -386,11 +471,20 @@ def run_import_vector(conn, job, steps) -> dict:
     # --- read
     steps.start("read")
     path = _resolve_upload(params["path"])
+    # Three defences against a file that makes GDAL open something else: the content must match
+    # the extension (check_magic here, per .shp in _zip_sources), the driver GDAL picked must be the
+    # extension's (check_driver), and worker.configure_gdal skips the dangerous drivers and the network.
+    check_magic(path, ext)
     sources = list_sources(path, ext)
     infos = []
     for s in sources:
         options = {"ENCODING": "ISO-8859-1"} if s.shapefile else {}
-        infos.append(pyogrio.read_info(s.path, layer=s.layer, force_feature_count=True, **options))
+        try:
+            info = pyogrio.read_info(s.path, layer=s.layer, force_feature_count=True, **options)
+        except DataSourceError:
+            raise UserFacingError(UNSUPPORTED)
+        check_driver(info, ext)
+        infos.append(info)
     if sum(max(int(i.get("features") or 0), 0) for i in infos) > max_rows:
         raise UserFacingError(TOO_MANY_ROWS)
     metadata = _read_metadata(path) if infos and infos[0].get("driver") == "GPKG" else {}
