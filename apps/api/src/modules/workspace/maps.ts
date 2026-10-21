@@ -22,6 +22,12 @@ export interface LayerSummary {
   draftId: string | null;
   /** Rows in workspace.features for a free layer; null for every other kind. */
   featureCount: number | null;
+  /**
+   * A raster layer's display metadata (import_raster.py: width, height, bands, dtype, nodata,
+   * bounds4326, sourceCrs); null for every other kind. Its COG is read through the layer's
+   * /raster route; the file id itself stays private.
+   */
+  raster: Record<string, unknown> | null;
 }
 
 export interface MapSummary {
@@ -51,7 +57,8 @@ async function loadLayers(q: Queryable, mapId: string): Promise<LayerSummary[]> 
             l.layer_key AS "layerKey", l.draft_id AS "draftId",
             CASE WHEN l.kind = 'free'
                  THEN (SELECT count(*)::int FROM workspace.features f WHERE f.layer_id = l.id)
-            END AS "featureCount"
+            END AS "featureCount",
+            CASE WHEN l.kind = 'raster' THEN l.raster END AS raster
        FROM workspace.map_layers l
       WHERE l.map_id = $1
       ORDER BY l.position`,

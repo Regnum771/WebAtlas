@@ -3,16 +3,20 @@ import { stat } from 'node:fs/promises';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import { NotFoundError } from '../../errors';
+import { inTransaction } from '../../lib/transaction';
 import type { CurrentUser } from '../../types/fastify';
-import { assertCanRead } from './access';
+import { assertCanRead, bumpMap, lockMapForWrite } from './access';
 import { resolveInStore } from './fileStore';
+import { LAYER_NOT_FOUND, loadSummary, patchLayerRow } from './freeLayers';
+import type { LayerSummary } from './maps';
 import { FILE_NOT_FOUND } from './uploads';
 
 /*
  * Raster layers: the Cloud-Optimized GeoTIFF the worker made from an uploaded GeoTIFF
  * (import_raster.py), served by byte range so a map client reads only the tiles and overviews it
  * shows. Whoever may read the map (its owner and its recipients) may read its rasters; anyone
- * else gets the map's 404 (access.ts), before the layer is even looked up.
+ * else gets the map's 404 (access.ts), before the layer is even looked up. The owner may rename,
+ * restyle and move a raster layer; deleting one, and the COG's lifecycle, come with Task 9.
  */
 
 /** What a Range header asks for, against a file of a known size. */
@@ -53,6 +57,23 @@ export interface RasterFile {
 
 export function rastersService(pg: Pool) {
   return {
+    /** Rename, restyle or move a raster layer, through the layer-row helpers every kind shares. */
+    async updateLayer(
+      user: CurrentUser, mapId: string, layerId: string,
+      input: { title?: string; style?: Record<string, unknown>; position?: number; expectedRevision: number }
+    ): Promise<{ layer: LayerSummary; revision: number }> {
+      return inTransaction(pg, async (client) => {
+        await lockMapForWrite(client, mapId, user, input.expectedRevision);
+        const { rows } = await client.query(
+          `SELECT 1 FROM workspace.map_layers WHERE id = $1 AND map_id = $2 AND kind = 'raster'`, [layerId, mapId]
+        );
+        if (!rows[0]) throw new NotFoundError(LAYER_NOT_FOUND);
+        await patchLayerRow(client, mapId, layerId, input);
+        const revision = await bumpMap(client, mapId);
+        return { layer: await loadSummary(client, layerId), revision };
+      });
+    },
+
     /**
      * The COG of a raster layer the user may read. The caller has established that the layer is a
      * raster of this map; a layer whose files row is gone (file_id NULL), or whose file is missing

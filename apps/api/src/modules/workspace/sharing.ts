@@ -1,10 +1,16 @@
+import { randomUUID } from 'node:crypto';
+import { constants as fsConstants } from 'node:fs';
+import { copyFile, mkdir } from 'node:fs/promises';
+import path from 'node:path';
 import type { Pool, PoolClient } from 'pg';
 import { NotFoundError as VersioningNotFoundError, copyDraft } from '@webatlas/versioning';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../errors';
 import { inTransaction } from '../../lib/transaction';
 import type { CurrentUser } from '../../types/fastify';
 import { MAP_NOT_FOUND, OWNER_ONLY, mapRole, type Queryable } from './access';
+import { resolveInStore, unlinkInStore } from './fileStore';
 import { loadDetail, type MapDetail } from './maps';
+import { quotaExceeded, usageOf } from './uploads';
 
 /*
  * Sharing a personal map with users or access groups, and copying a map one can see.
@@ -81,6 +87,44 @@ function containsPattern(q: string): string {
 /** The copy's title, cut to the column's limit (counted in characters, as Postgres does). */
 function copyTitle(title: string): string {
   return Array.from(`${COPY_PREFIX}${title}`).slice(0, TITLE_MAX).join('');
+}
+
+/**
+ * A copy of a raster layer's COG owned by `ownerId`: the bytes at cog/<ownerId>/<newFileId>.tif and
+ * a files row of kind 'cog'. Returns the new file id, or null when the layer has no file any more
+ * (file_id NULL, or the file is missing from the store). The new path is pushed to `written`
+ * before the bytes are, so the caller can unlink it whatever happens next.
+ */
+async function copyCog(client: PoolClient, layerId: string, ownerId: string, written: string[]): Promise<string | null> {
+  const { rows } = await client.query<{ path: string; original_name: string; content_type: string; size_bytes: string }>(
+    `SELECT f.path, f.original_name, f.content_type, f.size_bytes
+       FROM workspace.map_layers l JOIN workspace.files f ON f.id = l.file_id
+      WHERE l.id = $1`,
+    [layerId]
+  );
+  if (!rows[0]) return null;
+  const fileId = randomUUID();
+  const rel = `cog/${ownerId}/${fileId}.tif`;
+  const target = resolveInStore(rel);
+  await mkdir(path.dirname(target), { recursive: true });
+  written.push(rel);
+  try {
+    // COPYFILE_EXCL: never overwrite; the new name is fresh anyway.
+    await copyFile(resolveInStore(rows[0].path), target, fsConstants.COPYFILE_EXCL);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      await unlinkInStore(rel);
+      written.pop();
+      return null;
+    }
+    throw err;
+  }
+  await client.query(
+    `INSERT INTO workspace.files (id, owner_id, kind, path, original_name, content_type, size_bytes)
+     VALUES ($1, $2, 'cog', $3, $4, $5, $6)`,
+    [fileId, ownerId, rel, rows[0].original_name, rows[0].content_type, rows[0].size_bytes]
+  );
+  return fileId;
 }
 
 /**
@@ -184,52 +228,76 @@ export function sharingService(pg: Pool) {
     /**
      * An independent copy of a map the user can see (owner or recipient), owned by the user and
      * starting at revision 0: free layers with their features, edit copies each with a copy of
-     * its draft on the same parent (copyDraft), a layer whose draft is gone with no draft. The
-     * copy shares nothing with the source, so later edits, deletions or a revoked share on
-     * either side leave the other alone.
+     * its draft on the same parent (copyDraft), a layer whose draft is gone with no draft, and
+     * raster layers each with a copy of its COG in the copier's store (copyCog; a raster whose
+     * file is gone is skipped). The copy shares nothing with the source, so later edits,
+     * deletions or a revoked share on either side leave the other alone.
      *
      * One transaction. The source map row is held FOR SHARE: every content write locks it FOR
      * UPDATE first (lockMapForWrite), so the source cannot change while it is being copied, and
-     * the lock order (map, then draft) is the one every edit-copy write uses.
+     * the lock order (map, then draft) is the one every edit-copy write uses. The copier's
+     * usage, with everything copied, must stay within their quota (413 QUOTA_EXCEEDED otherwise);
+     * a copy that fails or is refused leaves no row and unlinks every COG it wrote.
      */
     async copy(user: CurrentUser, mapId: string): Promise<MapDetail> {
-      return inTransaction(pg, async (client) => {
-        const { rows: src } = await client.query<{ title: string; description: string }>(
-          `SELECT title, description FROM workspace.maps
-            WHERE id = $1 AND archived_at IS NULL FOR SHARE`,
-          [mapId]
-        );
-        if (!src[0] || (await mapRole(client, mapId, user.id)) === null) throw new NotFoundError(MAP_NOT_FOUND);
-
-        const { rows: made } = await client.query<{ id: string }>(
-          `INSERT INTO workspace.maps (owner_id, title, description) VALUES ($1, $2, $3) RETURNING id`,
-          [user.id, copyTitle(src[0].title), src[0].description]
-        );
-        const copyId = made[0].id;
-
-        const { rows: layers } = await client.query<{ id: string; kind: string; draft_id: string | null }>(
-          `SELECT id, kind, draft_id FROM workspace.map_layers WHERE map_id = $1 ORDER BY position`, [mapId]
-        );
-        for (const layer of layers) {
-          const draftId = layer.kind === 'edit_copy' ? await copyLayerDraft(client, layer.draft_id, user.id) : null;
-          const { rows: copied } = await client.query<{ id: string }>(
-            `INSERT INTO workspace.map_layers
-               (map_id, kind, title, position, style, geometry_type, fields, layer_key, draft_id)
-             SELECT $1, kind, title, position, style, geometry_type, fields, layer_key, $3
-               FROM workspace.map_layers WHERE id = $2
-             RETURNING id`,
-            [copyId, layer.id, draftId]
+      // Store-relative paths of the COGs this copy wrote; unlinked one by one if it does not commit.
+      const written: string[] = [];
+      try {
+        return await inTransaction(pg, async (client) => {
+          const { rows: src } = await client.query<{ title: string; description: string }>(
+            `SELECT title, description FROM workspace.maps
+              WHERE id = $1 AND archived_at IS NULL FOR SHARE`,
+            [mapId]
           );
-          // Only free layers hold features today; copying by layer keeps any kind's features.
-          await client.query(
-            `INSERT INTO workspace.features (layer_id, geom, properties, source_row, source_crs)
-             SELECT $1, geom, properties, source_row, source_crs
-               FROM workspace.features WHERE layer_id = $2 ORDER BY id`,
-            [copied[0].id, layer.id]
+          if (!src[0] || (await mapRole(client, mapId, user.id)) === null) throw new NotFoundError(MAP_NOT_FOUND);
+          // Lock the copier first, as an upload does, so their quota checks take turns.
+          await client.query(`SELECT 1 FROM app.users WHERE id = $1 FOR UPDATE`, [user.id]);
+          const before = await usageOf(client, user.id);
+
+          const { rows: made } = await client.query<{ id: string }>(
+            `INSERT INTO workspace.maps (owner_id, title, description) VALUES ($1, $2, $3) RETURNING id`,
+            [user.id, copyTitle(src[0].title), src[0].description]
           );
-        }
-        return loadDetail(client, copyId, 'owner');
-      });
+          const copyId = made[0].id;
+
+          const { rows: layers } = await client.query<{ id: string; kind: string; draft_id: string | null }>(
+            `SELECT id, kind, draft_id FROM workspace.map_layers WHERE map_id = $1 ORDER BY position`, [mapId]
+          );
+          // Positions are renumbered, so a skipped raster leaves no gap.
+          let position = 0;
+          for (const layer of layers) {
+            let fileId: string | null = null;
+            if (layer.kind === 'raster') {
+              fileId = await copyCog(client, layer.id, user.id, written);
+              if (fileId === null) continue; // its file is gone: nothing to show
+            }
+            const draftId = layer.kind === 'edit_copy' ? await copyLayerDraft(client, layer.draft_id, user.id) : null;
+            const { rows: copied } = await client.query<{ id: string }>(
+              `INSERT INTO workspace.map_layers
+                 (map_id, kind, title, position, style, geometry_type, fields, layer_key, draft_id, file_id, raster)
+               SELECT $1, kind, title, $4, style, geometry_type, fields, layer_key, $3, $5, raster
+                 FROM workspace.map_layers WHERE id = $2
+               RETURNING id`,
+              [copyId, layer.id, draftId, position++, fileId]
+            );
+            // Only free layers hold features today; copying by layer keeps any kind's features.
+            await client.query(
+              `INSERT INTO workspace.features (layer_id, geom, properties, source_row, source_crs)
+               SELECT $1, geom, properties, source_row, source_crs
+                 FROM workspace.features WHERE layer_id = $2 ORDER BY id`,
+              [copied[0].id, layer.id]
+            );
+          }
+
+          const after = await usageOf(client, user.id);
+          if (after.usageBytes > after.quotaBytes) throw quotaExceeded(before.usageBytes, after.quotaBytes);
+          return loadDetail(client, copyId, 'owner');
+        });
+      } catch (err) {
+        // The rows were rolled back; the files go too. The original error is the one reported.
+        for (const rel of written) await unlinkInStore(rel).catch(() => undefined);
+        throw err;
+      }
     },
   };
 }

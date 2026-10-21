@@ -215,7 +215,7 @@ describe('edit-copy layers', () => {
     const { layer, revision } = res.json();
     expect(revision).toBe(1);
     expect(layer).toMatchObject({
-      kind: 'edit_copy', layerKey: LAYER, title: 'Sửa lớp Đập & hồ chứa', position: 0, featureCount: null,
+      kind: 'edit_copy', layerKey: LAYER, title: 'Sửa lớp Đập & hồ chứa', position: 0, featureCount: null, raster: null,
     });
     const { rows } = await getPool().query(
       `SELECT v.layer_key, v.draft_status, v.ingested_by, v.revision,

@@ -64,14 +64,14 @@ function mb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
 }
 
-function quotaExceeded(usedBytes: number, quotaBytes: number): QuotaExceededError {
+export function quotaExceeded(usedBytes: number, quotaBytes: number): QuotaExceededError {
   return new QuotaExceededError(`Vượt hạn mức dung lượng: đã dùng ${mb(usedBytes)}, hạn mức ${mb(quotaBytes)}.`);
 }
 
 type Queryable = Pool | PoolClient;
 
 /** The owner's usage and quota. */
-async function usageOf(q: Queryable, ownerId: string) {
+export async function usageOf(q: Queryable, ownerId: string) {
   const { rows } = await q.query<{ usage: string; quota: string }>(
     `SELECT workspace.usage_bytes(u.id) AS usage, u.quota_bytes AS quota
        FROM app.users u WHERE u.id = $1`,

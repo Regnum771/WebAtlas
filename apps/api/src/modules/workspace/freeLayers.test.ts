@@ -84,7 +84,7 @@ describe('free layers', () => {
     expect(created.statusCode).toBe(201);
     const { layer, revision } = created.json();
     expect(revision).toBe(1);
-    expect(layer).toMatchObject({ kind: 'free', title: 'Điểm đo', position: 0, geometryType: 'point', featureCount: 0, style: {} });
+    expect(layer).toMatchObject({ kind: 'free', title: 'Điểm đo', position: 0, geometryType: 'point', featureCount: 0, style: {}, raster: null });
     const base = `/maps/${map.id}/layers/${layer.id}`;
 
     const added = await call(O, 'POST', `${base}/features`, {

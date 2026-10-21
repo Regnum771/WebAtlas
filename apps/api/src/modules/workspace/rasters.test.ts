@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runStages } from '@webatlas/versioning/testing';
@@ -47,6 +47,21 @@ async function get(who: string, url: string, range?: string) {
     method: 'GET', url: `/api/workspace${url}`,
     headers: { authorization: `Bearer ${await tokenFor(who)}`, ...(range ? { range } : {}) },
   });
+}
+async function send(who: string, method: 'POST' | 'PATCH' | 'DELETE', url: string, payload?: Record<string, unknown>) {
+  return app.inject({
+    method, url: `/api/workspace${url}`,
+    headers: { authorization: `Bearer ${await tokenFor(who)}` },
+    ...(payload ? { payload } : {}),
+  });
+}
+
+const META = { width: 64, height: 64, bands: 1, dtype: 'uint8', nodata: null };
+
+/** The regular files in a user's COG directory (read only). */
+function cogFilesOf(userId: string): string[] {
+  const dir = path.join(STORE, 'cog', userId);
+  return existsSync(dir) ? readdirSync(dir) : [];
 }
 
 // What setup creates: the map, its layers and the store-relative paths of the files on disk.
@@ -95,7 +110,7 @@ beforeAll(async () => {
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO workspace.map_layers (map_id, kind, title, position, file_id, raster)
        VALUES ($1, 'raster', 'Ảnh', $2, $3, $4) RETURNING id`,
-      [mapId, position, fileId, { width: 64, height: 64, bands: 1, dtype: 'uint8', nodata: null }]
+      [mapId, position, fileId, META]
     );
     return { layerId: rows[0].id, fileId };
   }
@@ -113,7 +128,11 @@ beforeAll(async () => {
 afterAll(async () => {
   await runStages([
     async () => {
-      for (const rel of createdPaths) await unlinkInStore(rel);
+      // The files setup wrote, and any COG a copy wrote for a test user; each unlinked on its own.
+      const { rows } = await getPool().query<{ path: string }>(
+        `SELECT path FROM workspace.files WHERE owner_id = ANY($1::uuid[])`, [[...ids.values()]]
+      );
+      for (const rel of new Set([...createdPaths, ...rows.map((r) => r.path)])) await unlinkInStore(rel);
     },
     cleanupUsers,
     () => app.close(),
@@ -197,5 +216,88 @@ describe('raster layers', () => {
     const noLayer = await get(O, rasterUrl(randomUUID()));
     expect(noLayer.statusCode).toBe(404);
     expect(noLayer.json().error.code).toBe('NOT_FOUND');
+  });
+
+  it('the map lists raster metadata, never the file id', async () => {
+    const res = await get(R, `/maps/${mapId}`);
+    expect(res.statusCode).toBe(200);
+    const layers = res.json().map.layers as Array<Record<string, unknown>>;
+    expect(layers.map((l) => l.kind)).toEqual(['raster', 'raster', 'raster', 'free']);
+    expect(layers.find((l) => l.id === raster)!.raster).toEqual(META);
+    expect(layers.find((l) => l.id === free)!.raster).toBeNull();
+    expect(JSON.stringify(layers)).not.toMatch(/file_?id/i);
+  });
+
+  it('a raster layer is renamed, restyled and moved, but not deleted yet', async () => {
+    const forbidden = await send(R, 'PATCH', `/maps/${mapId}/layers/${raster}`, { title: 'Không được', expectedRevision: 0 });
+    expect(forbidden.statusCode).toBe(403);
+
+    const res = await send(O, 'PATCH', `/maps/${mapId}/layers/${raster}`, {
+      title: 'Ảnh mới', style: { opacity: 0.6 }, position: 2, expectedRevision: 0,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      revision: 1,
+      layer: { id: raster, kind: 'raster', title: 'Ảnh mới', style: { opacity: 0.6 }, position: 2, raster: META, featureCount: null },
+    });
+    const order = (await get(O, `/maps/${mapId}`)).json().map.layers.map((l: { id: string }) => l.id);
+    expect(order).toEqual([noFile, lostFile, raster, free]);
+
+    const removed = await send(O, 'DELETE', `/maps/${mapId}/layers/${raster}`, { expectedRevision: 1 });
+    expect(removed.statusCode).toBe(400);
+    expect(removed.json()).toEqual(UNSUPPORTED_KIND);
+  });
+
+  it('a copier over the quota gets 413 and nothing is created', async () => {
+    const recipient = ids.get(R)!;
+    await getPool().query(`UPDATE app.users SET quota_bytes = 500 WHERE id = $1`, [recipient]);
+    try {
+      const res = await send(R, 'POST', `/maps/${mapId}/copy`);
+      expect(res.statusCode).toBe(413);
+      expect(res.json().error.code).toBe('QUOTA_EXCEEDED');
+      expect(res.json().error.message).toBe('Vượt hạn mức dung lượng: đã dùng 0,0 MB, hạn mức 0,0 MB.');
+    } finally {
+      await getPool().query(`UPDATE app.users SET quota_bytes = DEFAULT WHERE id = $1`, [recipient]);
+    }
+    const counts = await getPool().query<{ maps: number; files: number; layers: number }>(
+      `SELECT (SELECT count(*)::int FROM workspace.maps WHERE owner_id = $1) AS maps,
+              (SELECT count(*)::int FROM workspace.files WHERE owner_id = $1) AS files,
+              (SELECT count(*)::int FROM workspace.map_layers l JOIN workspace.maps m ON m.id = l.map_id
+                WHERE m.owner_id = $1) AS layers`,
+      [recipient]
+    );
+    expect(counts.rows[0]).toEqual({ maps: 0, files: 0, layers: 0 });
+    expect(cogFilesOf(recipient)).toEqual([]);
+  });
+
+  it('copying a map with a raster layer gives the copier an independent COG', async () => {
+    const recipient = ids.get(R)!;
+    const res = await send(R, 'POST', `/maps/${mapId}/copy`);
+    expect(res.statusCode).toBe(201);
+    const copy = res.json().map;
+    // The rasters whose file is gone (file_id NULL, or missing on disk) are skipped; positions close up.
+    expect(copy.layers.map((l: { kind: string; position: number }) => [l.kind, l.position])).toEqual([['raster', 0], ['free', 1]]);
+    const copied = copy.layers[0];
+    expect(copied).toMatchObject({ kind: 'raster', title: 'Ảnh mới', style: { opacity: 0.6 }, raster: META });
+    expect(copied.id).not.toBe(raster);
+
+    const { rows } = await getPool().query<{ layer: string; owner_id: string; kind: string; path: string }>(
+      `SELECT l.id AS layer, f.owner_id, f.kind, f.path
+         FROM workspace.map_layers l JOIN workspace.files f ON f.id = l.file_id
+        WHERE l.id = ANY($1::uuid[])`,
+      [[raster, copied.id]]
+    );
+    const source = rows.find((r) => r.layer === raster)!;
+    const theirs = rows.find((r) => r.layer === copied.id)!;
+    expect(theirs).toMatchObject({ owner_id: recipient, kind: 'cog' });
+    expect(theirs.path).toMatch(new RegExp(`^cog/${recipient}/[0-9a-f-]{36}\\.tif$`));
+    expect(theirs.path).not.toBe(source.path);
+    expect(readFileSync(path.join(STORE, theirs.path)).equals(BODY)).toBe(true);
+
+    // The copy serves its own COG to its owner, and is no one else's.
+    const served = await get(R, rasterUrl(copied.id, copy.id));
+    expect(served.statusCode).toBe(200);
+    expect(served.rawPayload.equals(BODY)).toBe(true);
+    expect((await get(O, rasterUrl(copied.id, copy.id))).statusCode).toBe(404);
   });
 });

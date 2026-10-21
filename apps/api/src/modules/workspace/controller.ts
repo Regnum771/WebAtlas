@@ -108,7 +108,8 @@ const UNSUPPORTED_KIND = 'Loại lớp này chưa hỗ trợ thao tác này.';
  * The single dispatch point for layer routes: read the layer's kind once, scoped to the map.
  * Access is checked first, so a stranger gets the map's 404 before any layer lookup happens and
  * cannot tell which layers exist. 'free' goes to freeLayersService, 'edit_copy' to
- * editCopiesService; 'raster' has only its COG (getRaster); the other kinds are reserved and refused.
+ * editCopiesService; 'raster' has its COG (getRaster) and a layer PATCH (rastersService) but no
+ * features and, until Task 9, no DELETE; the other kinds are reserved and refused.
  */
 async function layerKindOf(req: FastifyRequest, mapId: string, layerId: string): Promise<LayerKind> {
   const pg = req.server.pg;
@@ -149,7 +150,9 @@ export async function addLayer(req: FastifyRequest, reply: FastifyReply) {
 export async function updateLayer(req: FastifyRequest, reply: FastifyReply) {
   const { mapId, layerId } = validate(LayerParams, req.params);
   const body = validate(UpdateLayerBody, req.body);
-  const service = serviceFor(req, await layerKindOf(req, mapId, layerId));
+  const kind = await layerKindOf(req, mapId, layerId);
+  // A raster layer has no features, but its row (title, style, position) is edited like any other.
+  const service = kind === 'raster' ? rastersService(req.server.pg) : serviceFor(req, kind);
   reply.send(await service.updateLayer(userOf(req), mapId, layerId, body));
 }
 

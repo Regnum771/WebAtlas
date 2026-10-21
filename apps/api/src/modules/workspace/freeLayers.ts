@@ -32,7 +32,8 @@ const LAYER_COLUMNS = `l.id, l.kind, l.title, l.position, l.style, l.geometry_ty
   l.layer_key AS "layerKey", l.draft_id AS "draftId",
   CASE WHEN l.kind = 'free'
        THEN (SELECT count(*)::int FROM workspace.features f WHERE f.layer_id = l.id)
-  END AS "featureCount"`;
+  END AS "featureCount",
+  CASE WHEN l.kind = 'raster' THEN l.raster END AS raster`;
 
 /** A free layer of this map; 404 when the id is not in this map or is not a free layer. */
 async function loadFreeLayer(q: Queryable, mapId: string, layerId: string): Promise<FreeLayerRow> {
