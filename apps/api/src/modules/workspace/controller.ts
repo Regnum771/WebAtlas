@@ -16,6 +16,7 @@ import {
   UpdateFeatureBody, UpdateLayerBody, UpdateMapBody,
 } from './schemas';
 import { adminSummary as adminSummaryQuery } from './cleanup';
+import { rastersService, sendRaster } from './rasters';
 import { sharingService } from './sharing';
 import { FILE_NOT_FOUND, uploadsService } from './uploads';
 
@@ -107,7 +108,7 @@ const UNSUPPORTED_KIND = 'Loại lớp này chưa hỗ trợ thao tác này.';
  * The single dispatch point for layer routes: read the layer's kind once, scoped to the map.
  * Access is checked first, so a stranger gets the map's 404 before any layer lookup happens and
  * cannot tell which layers exist. 'free' goes to freeLayersService, 'edit_copy' to
- * editCopiesService; the other kinds are reserved and refused.
+ * editCopiesService; 'raster' has only its COG (getRaster); the other kinds are reserved and refused.
  */
 async function layerKindOf(req: FastifyRequest, mapId: string, layerId: string): Promise<LayerKind> {
   const pg = req.server.pg;
@@ -171,6 +172,13 @@ export async function listFeatures(req: FastifyRequest, reply: FastifyReply) {
   if (kind !== 'free') unsupported();
   const query = validate(FeaturesQuery, req.query);
   reply.send(await freeLayersService(req.server.pg).features(userOf(req), mapId, layerId, query));
+}
+
+/** A raster layer's COG, by byte range. Only raster layers have one; their feature routes stay refused. */
+export async function getRaster(req: FastifyRequest, reply: FastifyReply) {
+  const { mapId, layerId } = validate(LayerParams, req.params);
+  if ((await layerKindOf(req, mapId, layerId)) !== 'raster') unsupported();
+  return sendRaster(req, reply, await rastersService(req.server.pg).cog(userOf(req), mapId, layerId));
 }
 
 export async function addFeature(req: FastifyRequest, reply: FastifyReply) {

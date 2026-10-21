@@ -568,8 +568,13 @@ try:
     with open(store("anh.tif"), "wb") as f:
         f.write(b"II*\x00")
     row = run_import(user_id, map_id, "anh.tif", "anh.tif")
-    check("a GeoTIFF is refused until the raster import exists",
+    check("a .tif goes to the raster import, which refuses a bare TIFF header",
           row["status"] == "failed" and row["error"] == MSG_UNSUPPORTED)
+    with open(store("bang.csv"), "w", encoding="utf-8") as f:
+        f.write("a,b\n1,2\n")
+    row = run_import(user_id, map_id, "bang.csv", "bang.csv")
+    check("an extension neither import reads is refused",
+          row["status"] == "failed" and row["error"] == MSG_UNSUPPORTED and layers(map_id) == [])
 
     # --- property values become plain JSON
     import import_vector  # noqa: E402

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { requireAdmin } from '../../authz/assert';
 import {
   addFeature, adminSummary, addLayer, addShare, copyMap, createExport, createImport, createMap, createUpload, deleteMap,
-  deleteUpload, downloadJob, getJob, getMap, getUpload, listFeatures, listJobs, listMaps, listShares, listShareTargets,
+  deleteUpload, downloadJob, getJob, getMap, getRaster, getUpload, listFeatures, listJobs, listMaps, listShares, listShareTargets,
   listUploads, previewExport, removeFeature, removeLayer, removeShare, updateFeature, updateLayer, updateMap,
 } from './controller';
 
@@ -28,6 +28,8 @@ export default async function workspaceRoutes(app: FastifyInstance) {
   app.patch('/maps/:mapId/layers/:layerId', signedIn, updateLayer);
   app.delete('/maps/:mapId/layers/:layerId', signedIn, removeLayer);
   app.get('/maps/:mapId/layers/:layerId/features', signedIn, listFeatures);
+  // A raster layer's COG, by byte range, for whoever may read the map (rasters.ts).
+  app.get('/maps/:mapId/layers/:layerId/raster', signedIn, getRaster);
   app.post('/maps/:mapId/layers/:layerId/features', signedIn, addFeature);
   app.put('/maps/:mapId/layers/:layerId/features/:featureId', signedIn, updateFeature);
   app.delete('/maps/:mapId/layers/:layerId/features/:featureId', signedIn, removeFeature);

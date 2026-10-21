@@ -51,15 +51,18 @@ GDAL_CONFIG = {
     "GDAL_HTTP_TIMEOUT": "1",
     "GDAL_HTTP_CONNECTTIMEOUT": "1",
     "GDAL_HTTP_MAX_RETRY": "0",
+    # PROJ (bundled with GDAL, rasterio and pyproj) may fetch grids from its CDN when enabled.
+    "PROJ_NETWORK": "OFF",
 }
 
 
 def configure_gdal():
     """
-    Restrict every GDAL the worker loads (pyogrio's, and rasterio's for Task 7) as GDAL_CONFIG says.
-    Set through the environment: GDAL reads the network options on each use, but reads GDAL_SKIP only
-    once, when it registers its drivers, i.e. when pyogrio is imported. So this must run before
-    pyogrio is imported, and refuses to go on if that already happened.
+    Restrict every GDAL the worker loads (pyogrio's and rasterio's; each wheel bundles its own) as
+    GDAL_CONFIG says. Set through the environment: GDAL reads the network options on each use, but
+    reads GDAL_SKIP only once, when it registers its drivers (pyogrio on import, rasterio when its
+    first Env starts). So this must run before either is imported, and refuses to go on if one of
+    them already registered its drivers.
     """
     os.environ.update(GDAL_CONFIG)
     # curl skips the proxy for hosts listed in NO_PROXY; the worker makes no HTTP request of its own.
@@ -70,6 +73,14 @@ def configure_gdal():
 
         if "OGR_VRT" in pyogrio.list_drivers():
             raise RuntimeError("GDAL was loaded before configure_gdal(); import worker before pyogrio")
+    if "rasterio" in sys.modules:
+        import rasterio
+
+        # Starting an Env registers the drivers if that has not happened yet, now with GDAL_SKIP
+        # set; VRT is then present only if rasterio registered them before this ran.
+        with rasterio.Env() as env:
+            if "VRT" in env.drivers():
+                raise RuntimeError("GDAL was loaded before configure_gdal(); import worker before rasterio")
 
 
 configure_gdal()
@@ -108,6 +119,24 @@ class Steps:
         self._job_id = job["id"]
         self._keys = {s["key"] for s in job.get("steps") or []}
         self._lock = threading.Lock()
+        self._undo = []
+
+    def on_rollback(self, fn: Callable[[], None]):
+        """
+        Run fn if the job's transaction is rolled back rather than committed: the handler failed,
+        the job was failed as stale meanwhile, the commit failed, or the worker was stopped. For
+        work the database cannot undo, such as a file the handler wrote to the store.
+        """
+        self._undo.append(fn)
+
+    def rolled_back(self):
+        """Called by run_once after a rollback: run every on_rollback callback, newest first."""
+        undo, self._undo = self._undo, []
+        for fn in reversed(undo):
+            try:
+                fn()
+            except Exception:  # one failed undo must not keep the others from running
+                traceback.print_exc(file=sys.stdout)
 
     def _check(self, key):
         if key not in self._keys:
@@ -163,7 +192,8 @@ def run_import(conn: connection, job: dict, steps: Steps) -> dict:
     ext = import_extension(job.get("params") or {})
     if ext in VECTOR_EXTENSIONS:
         return import_vector.run_import_vector(conn, job, steps)
-    # Rasters (RASTER_EXTENSIONS) are refused until the raster import (Task 7) replaces this branch.
+    if ext in RASTER_EXTENSIONS:
+        return import_raster.run_import_raster(conn, job, steps)
     steps.start("read")
     raise UserFacingError(UNSUPPORTED_FORMAT_MESSAGE)
 
@@ -200,9 +230,11 @@ def run_once(conn: connection, only_ids=None) -> bool:
             else:
                 # Failed as stale while we worked: drop the writes, keep the failure.
                 conn.rollback()
+                steps.rolled_back()
                 print(f"job {job_id}: no longer running; its writes were rolled back", flush=True)
         except Exception as e:
             conn.rollback()
+            steps.rolled_back()
             message = getattr(e, "user_message", None)
             if isinstance(message, str) and message:
                 print(f"job {job_id}: failed: {message}", flush=True)
@@ -214,6 +246,7 @@ def run_once(conn: connection, only_ids=None) -> bool:
         except BaseException:
             # Stopped mid-job (SIGTERM, Ctrl-C): say so now rather than after the stale timeout.
             conn.rollback()
+            steps.rolled_back()
             steps.fail(STALE_MESSAGE)
             raise
     finally:
@@ -270,6 +303,7 @@ def main(argv=None) -> int:
 # Imported after everything above exists: the handler modules import UserFacingError and
 # store_root from this module.
 import import_vector  # noqa: E402
+import import_raster  # noqa: E402
 
 HANDLERS["import"] = run_import
 

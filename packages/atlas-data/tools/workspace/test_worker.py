@@ -227,6 +227,31 @@ try:
     worker.run_once(conn, only_ids=[job])
     check("an unknown step key fails the job instead of being ignored", job_row(job)["status"] == "failed")
 
+    # --- on_rollback undoes work outside the database only when the transaction is rolled back
+    undone = []
+
+    def undo_then(fail):
+        def handler(c, job, steps):
+            steps.start("read")
+            steps.on_rollback(lambda: undone.append("first"))
+            steps.on_rollback(lambda: undone.append("second"))
+            if fail:
+                raise worker.UserFacingError("Z")
+            steps.done("read")
+            return {}
+        return handler
+
+    worker.HANDLERS["import"] = undo_then(False)
+    job = new_job()
+    worker.run_once(conn, only_ids=[job])
+    check("on_rollback callbacks do not run when the job commits",
+          job_row(job)["status"] == "succeeded" and undone == [])
+    worker.HANDLERS["import"] = undo_then(True)
+    job = new_job()
+    worker.run_once(conn, only_ids=[job])
+    check("on_rollback callbacks run, newest first, when the job fails",
+          job_row(job)["status"] == "failed" and undone == ["second", "first"])
+
     err = worker.UserFacingError("Y")
     check("UserFacingError carries user_message", err.user_message == "Y" and str(err) == "Y")
 finally:

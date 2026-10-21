@@ -461,6 +461,33 @@ def _title(*candidates) -> str:
     raise RuntimeError("no usable layer title")
 
 
+def lock_owned_map(cur, map_id, owner_id) -> int:
+    """
+    Lock the target map for the rest of the job's transaction and return the position after its
+    last layer. Fails with MAP_GONE when the map no longer exists, was archived, or is not the
+    job owner's.
+    """
+    cur.execute("SELECT owner_id::text, archived_at FROM workspace.maps WHERE id = %s FOR UPDATE", (map_id,))
+    found = cur.fetchone()
+    if found is None or found[1] is not None or found[0] != str(owner_id):
+        raise UserFacingError(MAP_GONE)
+    cur.execute("SELECT COALESCE(max(position), -1) + 1 FROM workspace.map_layers WHERE map_id = %s", (map_id,))
+    return cur.fetchone()[0]
+
+
+def finish_map_write(cur, map_id, owner_id):
+    """Bump the map's revision once, then fail with OVER_QUOTA if the owner's usage, with
+    everything this job wrote, is over their quota."""
+    cur.execute("SELECT workspace.bump_map(%s)", (map_id,))
+    cur.execute(
+        "SELECT workspace.usage_bytes(id) > quota_bytes FROM app.users WHERE id = %s",
+        (owner_id,),
+    )
+    over = cur.fetchone()
+    if over is None or over[0]:
+        raise UserFacingError(OVER_QUOTA)
+
+
 def run_import_vector(conn, job, steps) -> dict:
     params = job["params"]
     map_id, owner_id = params["mapId"], params["ownerId"]
@@ -566,12 +593,7 @@ def run_import_vector(conn, job, steps) -> dict:
     written = 0
     layer_ids = []
     with conn.cursor() as cur:
-        cur.execute("SELECT owner_id::text, archived_at FROM workspace.maps WHERE id = %s FOR UPDATE", (map_id,))
-        found = cur.fetchone()
-        if found is None or found[1] is not None or found[0] != str(owner_id):
-            raise UserFacingError(MAP_GONE)
-        cur.execute("SELECT COALESCE(max(position), -1) + 1 FROM workspace.map_layers WHERE map_id = %s", (map_id,))
-        position = cur.fetchone()[0]
+        position = lock_owned_map(cur, map_id, owner_id)
         for p in prepared:
             cur.execute(
                 """INSERT INTO workspace.map_layers (map_id, kind, title, position, style, geometry_type, fields)
@@ -593,13 +615,6 @@ def run_import_vector(conn, job, steps) -> dict:
                 )
                 written += min(end, len(p.wkb)) - start
                 steps.progress(PROGRESS_TRANSFORM + (PROGRESS_WRITE - PROGRESS_TRANSFORM) * written / max(rows_total, 1))
-        cur.execute("SELECT workspace.bump_map(%s)", (map_id,))
-        cur.execute(
-            "SELECT workspace.usage_bytes(id) > quota_bytes FROM app.users WHERE id = %s",
-            (owner_id,),
-        )
-        over = cur.fetchone()
-        if over is None or over[0]:
-            raise UserFacingError(OVER_QUOTA)
+        finish_map_write(cur, map_id, owner_id)
     steps.done("write")
     return {"layerIds": layer_ids, "rows": rows_total}
