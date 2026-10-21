@@ -91,6 +91,22 @@ export function activeRelation(def: LayerDef): string {
   return `${def.table}_active`;
 }
 
+/**
+ * The registry-derived arguments of workspace.edit_copy_rows for a layer: the base table, the
+ * relation holding the official rows, the geometry column and the attribute columns. Shared by
+ * the API read and the export job parameters, so both name the same relation.
+ */
+export function editCopyRowsArgs(
+  def: LayerDef, _draftId: string
+): { table: string; relation: string; geomColumn: string; columns: string[] } {
+  return {
+    table: def.table,
+    relation: activeRelation(def),
+    geomColumn: def.geomColumn,
+    columns: def.attributeColumns,
+  };
+}
+
 function selectSql(def: LayerDef, relation: string): string {
   const attrs = def.attributeColumns.map((c) => `'${c}', t.${c}`).join(', ');
   // jsonb_build_object over the fixed registry columns; geometry via ST_AsGeoJSON.
@@ -218,21 +234,14 @@ export function featuresRepository(pg: Pick<Pool, 'query'>) {
     async editCopyFeaturesInBBox(
       client: PoolClient, def: LayerDef, draftId: string, bbox: BBox, limit: number
     ): Promise<EditCopyFeatureRow[]> {
-      const envelope = `ST_MakeEnvelope($2, $3, $4, $5, 4326)`;
-      const geom = def.geomColumn;
-      const cols = ['id', 'external_id', geom, ...def.attributeColumns];
-      const pick = (alias: string) => cols.map((c) => `${alias}.${c}`).join(', ');
+      // The read itself is workspace.edit_copy_rows (migration 28), shared with the import/export
+      // worker. It applies LIMIT literally, so ask for one row more than the caller's limit.
+      const a = editCopyRowsArgs(def, draftId);
       const { rows } = await client.query<EditCopyFeatureRow>(
-        `SELECT ${editCopySelect(def)} FROM (
-           SELECT ${pick('a')} FROM ${activeRelation(def)} a
-            WHERE a.${geom} && ${envelope}
-              AND NOT EXISTS (SELECT 1 FROM ${def.table} d
-                               WHERE d.dataset_version_id = $1 AND d.external_id = a.external_id)
-           UNION ALL
-           SELECT ${pick('d')} FROM ${def.table} d
-            WHERE d.dataset_version_id = $1 AND NOT d.deleted AND d.${geom} && ${envelope}
-         ) t ORDER BY t.id LIMIT $6`,
-        [draftId, ...bbox, limit + 1]
+        `SELECT id, geometry, properties
+           FROM workspace.edit_copy_rows($1::regclass, $2::regclass, $3, $4, $5::text[],
+                                         ST_MakeEnvelope($6, $7, $8, $9, 4326), $10)`,
+        [a.table, a.relation, draftId, a.geomColumn, a.columns, ...bbox, limit + 1]
       );
       return rows;
     },
