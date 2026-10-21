@@ -6,8 +6,9 @@ params; the worker keeps no CRS table of its own), and recorded as a workspace.f
 'export' that expires after 7 days.
 
 Steps:
-- read: check that every layer is still in the map, and an edit copy still on the draft the API
-  saw, and settle each layer's columns;
+- read: check that the user may still read the map (workspace.map_role, the API's rule), that
+  every layer is still in the map and an edit copy still on the draft the API saw, and settle
+  each layer's columns;
 - write: layer by layer, read its rows from the database, reproject them and write them through
   GDAL (GPKG, GeoJSON or ESRI Shapefile), with a progress update (a heartbeat) between layers, so
   only one layer is in memory at a time;
@@ -41,8 +42,10 @@ import pyogrio
 import shapely
 from pyproj import CRS
 
-# The API's copy (apps/api/src/modules/workspace/jobs.ts NOTHING_TO_EXPORT, warnDraftGone).
+# The API's copy (apps/api/src/modules/workspace/jobs.ts NOTHING_TO_EXPORT, warnDraftGone;
+# access.ts MAP_NOT_FOUND).
 NOTHING_TO_EXPORT = "Bản đồ không có lớp nào để xuất."
+MAP_NOT_FOUND = "Không tìm thấy bản đồ."
 
 
 def draft_gone_message(title: str) -> str:
@@ -405,6 +408,11 @@ def run_export(conn, job, steps) -> dict:
 
         # --- read
         steps.start("read")
+        # The user may have lost the map since the export was queued (a share revoked, the map
+        # archived): check again, by the API's own rule, before anything is read.
+        cur.execute("SELECT workspace.map_role(%s, %s)", (params["mapId"], owner_id))
+        if cur.fetchone()[0] is None:
+            raise UserFacingError(MAP_NOT_FOUND)
         layers, skipped = check_layers(cur, params)
         if not layers:
             raise UserFacingError(NOTHING_TO_EXPORT)

@@ -10,8 +10,10 @@ export const OWNER_ONLY = 'Chỉ người tạo bản đồ được sửa bản
 
 /**
  * SQL predicate: map `m` is shared with the user in parameter `$userParam`, either directly or
- * through an access group the user belongs to right now. Used by mapRole and the "shared with
- * me" list so that both answer the same question the same way.
+ * through an access group the user belongs to right now. Used by the "shared with me" list, as a
+ * predicate over every map so the planner can join it. It is the same rule as the 'recipient'
+ * branch of workspace.map_role (migration 30), which mapRole and the worker call; change both
+ * together (mapRole.test.ts checks that they agree).
  */
 export function sharedWithUserSql(userParam: string): string {
   return `EXISTS (
@@ -25,15 +27,11 @@ export function sharedWithUserSql(userParam: string): string {
 /**
  * The user's role on a map, or null when the user may not see it at all. An archived map is
  * null for everyone, its owner included. Admin rights play no part: admin sees no one's maps.
+ * The rule lives in SQL (workspace.map_role, migration 30) so that the worker applies the same one.
  */
 export async function mapRole(q: Queryable, mapId: string, userId: string): Promise<MapRole | null> {
   const { rows } = await q.query<{ role: MapRole | null }>(
-    `SELECT CASE
-              WHEN m.owner_id = $2 THEN 'owner'
-              WHEN ${sharedWithUserSql('$2')} THEN 'recipient'
-            END AS role
-       FROM workspace.maps m
-      WHERE m.id = $1 AND m.archived_at IS NULL`,
+    `SELECT workspace.map_role($1, $2) AS role`,
     [mapId, userId]
   );
   return rows[0]?.role ?? null;

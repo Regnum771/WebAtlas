@@ -466,6 +466,29 @@ try:
     row, job_id, params = export(user_id, map_id, "geojson", CRS_WGS84, [gone])
     check("an export left with no layer fails with the API's message",
           row["status"] == "failed" and row["error"] == "Bản đồ không có lớp nào để xuất.")
+
+    # --- access is checked again when the job runs (workspace.map_role)
+    r_email = f"p3b-export-recipient-{uuid.uuid4().hex[:8]}@webatlas.test"
+    recipient = q("INSERT INTO app.users (email, password_hash, role) VALUES (%s, 'x', 'viewer') RETURNING id::text",
+                  (r_email,))[0][0]
+    users.append(recipient)
+    share = q("INSERT INTO workspace.map_shares (map_id, user_id) VALUES (%s, %s) RETURNING id", (map_id, recipient))[0][0]
+    row, job_id, params = export(recipient, map_id, "geojson", CRS_WGS84, [FREE])
+    f = file_row((row.get("result") or {}).get("fileId"))
+    check("a recipient may export a map shared with them; the file is theirs",
+          row["status"] == "succeeded" and f.get("owner_id") == recipient
+          and f.get("path", "").startswith(f"exports/{recipient}/{job_id}/"))
+    job_id, params = run_export(recipient, map_id, "geojson", CRS_WGS84, [FREE])
+    q("DELETE FROM workspace.map_shares WHERE id = %s", (share,))
+    row = run_job(job_id)
+    job_dir = os.path.join(STORE, "exports", recipient, job_id)
+    check("a recipient whose share was revoked after queueing gets nothing",
+          row["status"] == "failed" and row["error"] == "Không tìm thấy bản đồ."
+          and [s["status"] for s in row["steps"]] == ["failed", "pending", "pending"]
+          and row["result"] is None
+          and q("SELECT count(*) FROM workspace.files WHERE owner_id = %s AND path LIKE %s",
+                (recipient, f"exports/{recipient}/{job_id}/%"))[0][0] == 0
+          and (not os.path.isdir(job_dir) or os.listdir(job_dir) == []))
 finally:
     conn.rollback()
     stages = []
