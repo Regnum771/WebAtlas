@@ -44,8 +44,25 @@ OVER_QUOTA = "Vượt hạn mức dung lượng."
 UNSUPPORTED = "Định dạng tệp không được hỗ trợ."
 
 
+OUT_OF_RANGE = "Toạ độ nằm ngoài phạm vi kinh độ/vĩ độ; hãy kiểm tra hệ toạ độ nguồn."
+
+
 def skipped_message(n: int) -> str:
     return f"Bỏ qua {n} dòng không có hình học."
+
+
+def empty_layer_message(name: str) -> str:
+    return f'Bỏ qua lớp "{name}" vì không có hình học.'
+
+
+def _within_lon_lat(geoms) -> bool:
+    """Every geometry's bounds are finite and inside lon [-180, 180] / lat [-90, 90]."""
+    if len(geoms) == 0:
+        return True
+    b = shapely.bounds(geoms)  # (n, 4): xmin, ymin, xmax, ymax
+    return bool(np.isfinite(b).all()
+                and (b[:, 0] >= -180).all() and (b[:, 2] <= 180).all()
+                and (b[:, 1] >= -90).all() and (b[:, 3] <= 90).all())
 
 
 # The table a GeoPackage exported by this app carries (export_vector.py, Task 8).
@@ -378,7 +395,8 @@ def run_import_vector(conn, job, steps) -> dict:
         raise UserFacingError(TOO_MANY_ROWS)
     metadata = _read_metadata(path) if infos and infos[0].get("driver") == "GPKG" else {}
 
-    frames = []
+    layers = []  # (source, info, frame, kinds, rows-with-geometry mask), for layers that are imported
+    empty_layers = []
     total = 0
     for n, (s, info) in enumerate(zip(sources, infos)):
         options = {"ENCODING": "ISO-8859-1"} if s.shapefile else {}
@@ -389,31 +407,41 @@ def run_import_vector(conn, job, steps) -> dict:
         total += len(df)
         if total > max_rows:
             raise UserFacingError(TOO_MANY_ROWS)
-        frames.append((df, kinds))
+        geoms = np.asarray(df.geometry.array, dtype=object)
+        keep = ~(shapely.is_missing(geoms) | shapely.is_empty(geoms))
+        if keep.any():
+            layers.append((s, info, df, kinds, keep))
+        else:
+            # A layer without a single geometry becomes no map layer.
+            empty_layers.append(s.layer)
         steps.progress(PROGRESS_READ * (n + 1) / len(sources))
-    steps.done("read")
+    if not layers:
+        raise UserFacingError(UNSUPPORTED)
+    steps.done("read", " ".join(empty_layer_message(name) for name in empty_layers) or None)
 
     # --- transform
     steps.start("transform")
-    single = len(sources) == 1
+    single = len(layers) == 1
     order = sorted(
-        range(len(sources)),
-        key=lambda i: (0, metadata[sources[i].layer]["position"], i)
-        if sources[i].layer in metadata and metadata[sources[i].layer]["position"] is not None
+        range(len(layers)),
+        key=lambda i: (0, metadata[layers[i][0].layer]["position"], i)
+        if layers[i][0].layer in metadata and metadata[layers[i][0].layer]["position"] is not None
         else (1, 0, i),
     )
     prepared = []
     skipped = 0
     for i in order:
-        s, info, (df, kinds) = sources[i], infos[i], frames[i]
+        s, info, df, kinds, keep = layers[i]
         crs, label = _layer_crs(df.crs, info.get("driver", ""), params.get("sourceCrs"))
         geoms = np.asarray(df.geometry.array, dtype=object)
-        keep = ~(shapely.is_missing(geoms) | shapely.is_empty(geoms))
         skipped += int((~keep).sum())
         kept = gpd.GeoSeries(geoms[keep], crs=crs)
         if not crs.equals(CRS.from_epsg(4326)):
             kept = kept.to_crs(4326)
         geoms2d = shapely.force_2d(np.asarray(kept.array, dtype=object))
+        # A wrong (or absent, read as WGS 84) source CRS shows as coordinates off the globe.
+        if not _within_lon_lat(geoms2d):
+            raise UserFacingError(OUT_OF_RANGE)
         families = {FAMILY_BY_TYPE_ID.get(int(t)) for t in np.unique(shapely.get_type_id(geoms2d))}
         geometry_type = next(iter(families)) if len(families) == 1 else None
 

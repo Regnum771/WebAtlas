@@ -51,6 +51,7 @@ MSG_NO_CRS = "Tệp không ghi hệ toạ độ; hãy chọn hệ toạ độ ng
 MSG_MAP_GONE = "Bản đồ không còn."
 MSG_QUOTA = "Vượt hạn mức dung lượng."
 MSG_UNSUPPORTED = "Định dạng tệp không được hỗ trợ."
+MSG_OUT_OF_RANGE = "Toạ độ nằm ngoài phạm vi kinh độ/vĩ độ; hãy kiểm tra hệ toạ độ nguồn."
 
 STEPS = [
     {"key": "read", "label": "Đọc tệp", "status": "pending"},
@@ -407,6 +408,39 @@ try:
     check("a kml makes one layer per folder",
           row["status"] == "succeeded" and [l["title"] for l in ls] == ["Trạm đo", "Tuyến"]
           and [l["geometry_type"] for l in ls] == ["point", "line"])
+
+    # --- a projected geojson without crs is refused by the bounds check
+    user_id, map_id = new_map("bounds")
+    gpd.GeoDataFrame({"ten": ["mét"]}, geometry=[Point(500000, 1800000)]) \
+        .to_file(store("met.geojson"), driver="GeoJSON")
+    with open(store("met.geojson"), encoding="utf-8") as f:
+        check("fixture: the metre geojson has no crs member", '"crs"' not in f.read())
+    rev0 = revision(map_id)
+    row = run_import(user_id, map_id, "met.geojson", "met.geojson")
+    check("a projected geojson without crs is refused by the bounds check",
+          row["status"] == "failed" and row["error"] == MSG_OUT_OF_RANGE)
+    check("the bounds check writes nothing", layers(map_id) == [] and revision(map_id) == rev0)
+
+    # --- a layer with no geometry is skipped
+    user_id, map_id = new_map("emptylayer")
+    gpd.GeoDataFrame({"ten": ["a"]}, geometry=[Point(108, 16)], crs=4326) \
+        .to_file(store("co_trong.gpkg"), layer="co_hinh", driver="GPKG")
+    gpd.GeoDataFrame({"ten": ["b", "c"]}, geometry=gpd.GeoSeries([None, None]), crs=4326) \
+        .to_file(store("co_trong.gpkg"), layer="trong", driver="GPKG", geometry_type="Point")
+    check("fixture: the empty gpkg layer is spatial",
+          dict((str(n), g) for n, g in pyogrio.list_layers(store("co_trong.gpkg"))).get("trong") is not None)
+    row = run_import(user_id, map_id, "co_trong.gpkg", "co_trong.gpkg")
+    ls = layers(map_id)
+    check("a layer with no geometry is skipped",
+          row["status"] == "succeeded" and [l["title"] for l in ls] == ["co_trong"]
+          and row["result"] == {"layerIds": [ls[0]["id"]] if ls else None, "rows": 1})
+    check("a skipped layer is reported in the read step",
+          step(row, "read").get("message") == 'Bỏ qua lớp "trong" vì không có hình học.')
+    gpd.GeoDataFrame({"ten": ["b"]}, geometry=gpd.GeoSeries([None]), crs=4326) \
+        .to_file(store("chi_trong.gpkg"), layer="trong", driver="GPKG", geometry_type="Point")
+    row = run_import(user_id, map_id, "chi_trong.gpkg", "chi_trong.gpkg")
+    check("a file whose every layer lacks geometry is refused",
+          row["status"] == "failed" and row["error"] == MSG_UNSUPPORTED and len(layers(map_id)) == 1)
 
     # --- the import handler dispatches on the extension
     user_id, map_id = new_map("dispatch")
