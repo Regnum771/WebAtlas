@@ -26,16 +26,22 @@ export type ByteRange =
   | { kind: 'unsatisfiable' };
 
 // One range: "a-b", "a-" or the suffix "-n". The unit is case-insensitive (RFC 9110 §14.1).
-const SINGLE_RANGE = /^\s*bytes\s*=\s*(\d*)\s*-\s*(\d*)\s*$/i;
+// No whitespace inside the value and no two adjacent quantifiers that can share characters, so
+// matching is linear: a regex that lets `\s*` and `\d*` trade characters backtracks
+// polynomially, and a padded header would freeze the event loop.
+const SINGLE_RANGE = /^bytes=(\d*)-(\d*)$/i;
+// Far longer than any single range (two 16-digit offsets); a longer header is not one.
+const RANGE_HEADER_MAX = 200;
 
 /**
  * The part of a `size`-byte file a Range header asks for (RFC 9110 §14). A header that is absent,
- * names another unit, lists several ranges, or does not parse is ignored: the whole file, as the
- * RFC allows. A single range that starts at or past the end (or a suffix of zero bytes) cannot be
- * satisfied; an end past the file is clamped to its last byte.
+ * too long, names another unit, lists several ranges, or does not parse is ignored: the whole
+ * file, as the RFC allows. A single range that starts at or past the end (or a suffix of zero
+ * bytes) cannot be satisfied; an end past the file is clamped to its last byte.
  */
 export function parseRange(header: string | undefined, size: number): ByteRange {
-  const m = header === undefined ? null : SINGLE_RANGE.exec(header);
+  if (header === undefined || header.length > RANGE_HEADER_MAX) return { kind: 'all' };
+  const m = SINGLE_RANGE.exec(header.trim());
   if (!m) return { kind: 'all' };
   const [, first, last] = m;
   if (first === '' && last === '') return { kind: 'all' };

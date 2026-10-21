@@ -10,7 +10,9 @@ The suite creates its own app.users row (deleting it cascades to its maps, layer
 only ever claims its own jobs (only_ids), so a live worker or another suite's queue is untouched.
 """
 import json
+import os
 import pathlib
+import subprocess
 import sys
 import uuid
 
@@ -254,6 +256,26 @@ try:
 
     err = worker.UserFacingError("Y")
     check("UserFacingError carries user_message", err.user_message == "Y" and str(err) == "Y")
+
+    # --- worker.py loads however it is launched: no import cycle, one `worker` module
+    # Compose runs `python3 packages/.../worker.py` from /repo, so sys.path[0] is the script's directory.
+    script = str(HERE / "worker.py")
+    repo = str(HERE.parents[3])
+    launch_env = {**os.environ, "PYTHONPATH": str(HERE)}
+    probe = subprocess.run(
+        [sys.executable, "-c",
+         "import runpy, sys\n"
+         f"g = runpy.run_path({script!r}, run_name='not_main')\n"
+         "import worker\n"
+         "assert worker.HANDLERS is g['HANDLERS'] and worker.UserFacingError is g['UserFacingError']\n"
+         "assert callable(worker.HANDLERS['import'])\n"],
+        cwd=repo, env=launch_env, capture_output=True, text=True, timeout=120,
+    )
+    check("worker.py loads under another run name, as one module (runpy)",
+          probe.returncode == 0 or print(probe.stderr[-2000:]))
+    probe = subprocess.run([sys.executable, script, "--help"], cwd=repo, capture_output=True, text=True, timeout=120)
+    check("worker.py starts as a script (--help)",
+          (probe.returncode == 0 and "--once" in probe.stdout) or print(probe.stderr[-2000:]))
 finally:
     if original_import is None:
         worker.HANDLERS.pop("import", None)

@@ -15,75 +15,33 @@ A worker that dies mid-job leaves its job `running` with a heartbeat that stops 
 rolls back its open transaction, and fail_stale (run at start and every minute by any worker) fails
 the job with STALE_MESSAGE.
 """
-import argparse
-import os
-import pathlib
-import signal
 import sys
-import threading
-import time
-import traceback
-from typing import Callable
 
-import psycopg2
-from psycopg2.extensions import connection
+# Exactly one `worker` module, however this file is loaded: as the Compose script (`__main__`),
+# through runpy under another name, or imported as `worker`. A second copy would carry its own
+# HANDLERS and Steps. Registered before anything else is imported.
+sys.modules.setdefault("worker", sys.modules[__name__])
 
-if __name__ == "__main__":
-    # Handler modules import this one as `worker`; let them get the running module rather than a
-    # second copy with its own UserFacingError.
-    sys.modules.setdefault("worker", sys.modules[__name__])
+import argparse  # noqa: E402
+import signal  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+import traceback  # noqa: E402
+from typing import Callable  # noqa: E402
 
-import jobs_db
+import psycopg2  # noqa: E402
+from psycopg2.extensions import connection  # noqa: E402
 
-# GDAL drivers the worker never needs. Each can make GDAL open other files or fetch URLs merely
-# because an upload's content names them (an <OGRVRTDataSource> in a .geojson, a WFS/WMS service
-# description, ...). PostgreSQL is listed even though this build's pyogrio has no such driver, so a
-# future build that does stays covered (GDAL warns once about the missing name).
-GDAL_SKIP_DRIVERS = ("VRT", "OGR_VRT", "WFS", "OAPIF", "WMS", "WMTS", "PostgreSQL", "CSV", "SQLite", "GML", "HTTP")
-GDAL_CONFIG = {
-    "GDAL_SKIP": " ".join(GDAL_SKIP_DRIVERS),
-    # No network: /vsicurl/ only opens names ending in one of these extensions, and none will.
-    "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".webatlas-no-network",
-    # ... but that governs /vsi* only. CPLHTTPFetch (used e.g. by OSR for a GeoJSON "crs" of type
-    # link or url) ignores it, so every GDAL HTTP request is sent to a proxy that does not exist
-    # (port 9, discard): it fails at once and nothing reaches any host.
-    "GDAL_HTTP_PROXY": "127.0.0.1:9",
-    "GDAL_HTTP_TIMEOUT": "1",
-    "GDAL_HTTP_CONNECTTIMEOUT": "1",
-    "GDAL_HTTP_MAX_RETRY": "0",
-    # PROJ (bundled with GDAL, rasterio and pyproj) may fetch grids from its CDN when enabled.
-    "PROJ_NETWORK": "OFF",
-}
+import jobs_db  # noqa: E402
 
-
-def configure_gdal():
-    """
-    Restrict every GDAL the worker loads (pyogrio's and rasterio's; each wheel bundles its own) as
-    GDAL_CONFIG says. Set through the environment: GDAL reads the network options on each use, but
-    reads GDAL_SKIP only once, when it registers its drivers (pyogrio on import, rasterio when its
-    first Env starts). So this must run before either is imported, and refuses to go on if one of
-    them already registered its drivers.
-    """
-    os.environ.update(GDAL_CONFIG)
-    # curl skips the proxy for hosts listed in NO_PROXY; the worker makes no HTTP request of its own.
-    for name in ("NO_PROXY", "no_proxy"):
-        os.environ.pop(name, None)
-    if "pyogrio" in sys.modules:
-        import pyogrio
-
-        if "OGR_VRT" in pyogrio.list_drivers():
-            raise RuntimeError("GDAL was loaded before configure_gdal(); import worker before pyogrio")
-    if "rasterio" in sys.modules:
-        import rasterio
-
-        # Starting an Env registers the drivers if that has not happened yet, now with GDAL_SKIP
-        # set; VRT is then present only if rasterio registered them before this ran.
-        with rasterio.Env() as env:
-            if "VRT" in env.drivers():
-                raise RuntimeError("GDAL was loaded before configure_gdal(); import worker before rasterio")
-
-
-configure_gdal()
+# The leaf module first: importing it restricts GDAL (configure_gdal) before any handler loads
+# pyogrio or rasterio. Its names are re-exported here for the handlers' callers and the tests.
+from workspace_common import (  # noqa: E402,F401
+    GDAL_CONFIG, GDAL_SKIP_DRIVERS, UNSUPPORTED, UserFacingError, configure_gdal, import_extension, store_root,
+)
+# The handlers import only workspace_common (never this module), so they load here without a cycle.
+import import_raster  # noqa: E402
+import import_vector  # noqa: E402
 
 UNEXPECTED_MESSAGE = "Lỗi không mong đợi khi xử lý tệp."
 STALE_MESSAGE = jobs_db.STALE_MESSAGE
@@ -93,19 +51,6 @@ STALE_CHECK_SECONDS = 60
 STALE_AFTER_SECONDS = 600
 HEARTBEAT_SECONDS = 30
 RECONNECT_SECONDS = 5
-
-
-def store_root() -> pathlib.Path:
-    """The file store root, shared with the API (WORKSPACE_FILES_DIR)."""
-    return pathlib.Path(os.environ.get("WORKSPACE_FILES_DIR", "/repo/var/workspace-files"))
-
-
-class UserFacingError(Exception):
-    """An error whose message (Vietnamese, for the user) becomes the job's error as is."""
-
-    def __init__(self, user_message: str):
-        super().__init__(user_message)
-        self.user_message = user_message
 
 
 class Steps:
@@ -171,20 +116,10 @@ class Steps:
 # register `import` and `export`.
 HANDLERS: dict[str, Callable[[connection, dict, Steps], dict]] = {}
 
-UNSUPPORTED_FORMAT_MESSAGE = "Định dạng tệp không được hỗ trợ."
+UNSUPPORTED_FORMAT_MESSAGE = UNSUPPORTED
 # Upload extensions by import path (Global Constraints: the formats read).
 VECTOR_EXTENSIONS = (".gpkg", ".geojson", ".json", ".zip", ".kml")
 RASTER_EXTENSIONS = (".tif", ".tiff")
-
-
-def import_extension(params: dict) -> str:
-    """The upload's extension, lower case: from its original name, else from its store path."""
-    for name in (params.get("originalName"), params.get("path")):
-        if isinstance(name, str):
-            ext = pathlib.PurePosixPath(name.replace("\\", "/")).suffix.lower()
-            if ext:
-                return ext
-    return ""
 
 
 def run_import(conn: connection, job: dict, steps: Steps) -> dict:
@@ -299,11 +234,6 @@ def main(argv=None) -> int:
             conn = None
             time.sleep(RECONNECT_SECONDS)
 
-
-# Imported after everything above exists: the handler modules import UserFacingError and
-# store_root from this module.
-import import_vector  # noqa: E402
-import import_raster  # noqa: E402
 
 HANDLERS["import"] = run_import
 

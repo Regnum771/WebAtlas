@@ -9,6 +9,7 @@ import { getPool } from '../../db/pool';
 import { usersRepository } from '../users/repository';
 import { hashPassword } from '../../lib/password';
 import { unlinkInStore } from './fileStore';
+import { parseRange } from './rasters';
 
 // A fresh store under the OS temp directory for this file; the previous value is restored after.
 const previousStoreDir = process.env.WORKSPACE_FILES_DIR;
@@ -173,6 +174,27 @@ describe('raster layers', () => {
       expect(res.statusCode, range).toBe(200);
       expect(res.rawPayload.equals(BODY), range).toBe(true);
     }
+  });
+
+  it('a padded Range header is parsed in linear time and ignored', async () => {
+    const padded = 'bytes=' + ' '.repeat(5000) + '-' + ' '.repeat(5000) + 'x';
+    const t0 = performance.now();
+    const range = parseRange(padded, 1000);
+    expect(performance.now() - t0).toBeLessThan(50);
+    expect(range).toEqual({ kind: 'all' });
+    // Just under the length cap, the same shape is refused quickly too.
+    const near = 'bytes=' + ' '.repeat(90) + '-' + ' '.repeat(90) + 'x';
+    const t1 = performance.now();
+    expect(parseRange(near, 1000)).toEqual({ kind: 'all' });
+    expect(performance.now() - t1).toBeLessThan(50);
+    // Surrounding whitespace is trimmed; whitespace inside the value is not a range.
+    expect(parseRange('  bytes=0-9  ', 1000)).toEqual({ kind: 'part', start: 0, end: 9 });
+    expect(parseRange('bytes= 0-9', 1000)).toEqual({ kind: 'all' });
+    expect(parseRange('BYTES=-5', 1000)).toEqual({ kind: 'part', start: 995, end: 999 });
+
+    const res = await get(O, rasterUrl(raster), padded);
+    expect(res.statusCode).toBe(200);
+    expect(res.rawPayload.equals(BODY)).toBe(true);
   });
 
   it('bad range gets 416', async () => {

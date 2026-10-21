@@ -12,8 +12,8 @@ temporaries are removed whatever happens; and the finished COG is removed again 
 if the job's transaction does not commit.
 
 Security, as for vectors (import_vector.py): the content must start with a TIFF signature before
-GDAL sees it, GDAL may open it with the GTiff driver only, and worker.configure_gdal has skipped
-the dangerous drivers (the raster VRT driver among them) and the network. rasterio's
+GDAL sees it, GDAL may open it with the GTiff driver only, and workspace_common.configure_gdal has
+skipped the dangerous drivers (the raster VRT driver among them) and the network. rasterio's
 calculate_default_transform and WarpedVRT both need the VRT driver, so the target grid is computed
 here and rasterio.warp.reproject warps arrays.
 
@@ -23,7 +23,14 @@ warped with an explicit source transform and CRS (a Band source would take the C
 which a GeoTIFF without one does not have). The COG driver then copies that file block by block
 and builds the overviews. Nothing holds the whole image in memory.
 """
-import math
+# workspace_common before rasterio: importing it runs configure_gdal before rasterio registers its
+# GDAL drivers. It imports neither worker nor import_vector, so there is no import cycle.
+from workspace_common import (
+    NO_CRS, OUT_OF_RANGE, UNSUPPORTED, UserFacingError, crs_label, file_stem, finish_map_write, layer_title,
+    lock_owned_map, resolve_upload, store_root,
+)
+
+import math  # noqa: E402
 import os
 import uuid
 
@@ -31,21 +38,14 @@ import numpy as np
 import psycopg2.extras
 from pyproj import CRS as ProjCRS
 
-# worker before rasterio: configure_gdal must run before rasterio registers its GDAL drivers.
-from worker import UserFacingError, store_root
-from import_vector import (
-    NO_CRS, OUT_OF_RANGE, UNSUPPORTED, _crs_label, _file_stem, _resolve_upload, _title,
-    finish_map_write, lock_owned_map,
-)
-
-import rasterio  # noqa: E402
-import rasterio.shutil  # noqa: E402
-from affine import Affine  # noqa: E402
-from rasterio.crs import CRS  # noqa: E402
-from rasterio.enums import ColorInterp, Resampling  # noqa: E402
-from rasterio.errors import RasterioError  # noqa: E402
-from rasterio.warp import reproject, transform_bounds  # noqa: E402
-from rasterio.windows import Window  # noqa: E402
+import rasterio
+import rasterio.shutil
+from affine import Affine
+from rasterio.crs import CRS
+from rasterio.enums import ColorInterp, Resampling
+from rasterio.errors import RasterioError
+from rasterio.warp import reproject, transform_bounds
+from rasterio.windows import Window
 
 # Little-endian and big-endian TIFF, then BigTIFF.
 TIFF_MAGICS = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")
@@ -89,10 +89,10 @@ def open_source(path: str):
 def source_crs(src, chosen):
     """The CRS to warp from and its label: the file's own, else the chosen sourceCrs, else NO_CRS."""
     if src.crs:
-        return src.crs, _crs_label(ProjCRS.from_wkt(src.crs.to_wkt()), None)
+        return src.crs, crs_label(ProjCRS.from_wkt(src.crs.to_wkt()), None)
     if chosen and chosen.get("proj4"):
         proj4 = chosen["proj4"]
-        return CRS.from_user_input(proj4), _crs_label(ProjCRS.from_user_input(proj4), proj4)
+        return CRS.from_user_input(proj4), crs_label(ProjCRS.from_user_input(proj4), proj4)
     raise UserFacingError(NO_CRS)
 
 
@@ -215,13 +215,13 @@ def run_import_raster(conn, job, steps) -> dict:
     with rasterio.Env(**GDAL_OPTIONS):
         # --- read
         steps.start("read")
-        path = _resolve_upload(params["path"])
+        path = resolve_upload(params["path"])
         check_magic(path)
         with open_source(path) as src:
             # An identity transform: no georeferencing (GCP-only images are not supported).
             if src.transform.is_identity:
                 raise UserFacingError(UNSUPPORTED)
-            crs, crs_label = source_crs(src, params.get("sourceCrs"))
+            crs, source_label = source_crs(src, params.get("sourceCrs"))
             transform, width, height, bounds4326 = target_grid(src, crs)
             steps.progress(PROGRESS_READ)
             steps.done("read")
@@ -256,7 +256,7 @@ def run_import_raster(conn, job, steps) -> dict:
                 "dtype": src.dtypes[0],
                 "nodata": json_number(src.nodata, src.dtypes[0]),
                 "bounds4326": bounds4326,
-                "sourceCrs": crs_label,
+                "sourceCrs": source_label,
             }
 
     with conn.cursor() as cur:
@@ -269,7 +269,7 @@ def run_import_raster(conn, job, steps) -> dict:
         cur.execute(
             """INSERT INTO workspace.map_layers (map_id, kind, title, position, file_id, raster)
                VALUES (%s, 'raster', %s, %s, %s, %s) RETURNING id::text""",
-            (map_id, _title(_file_stem(original_name), original_name), position, file_id,
+            (map_id, layer_title(file_stem(original_name), original_name), position, file_id,
              psycopg2.extras.Json(raster)),
         )
         layer_id = cur.fetchone()[0]

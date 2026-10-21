@@ -18,16 +18,21 @@ GDAL picks its driver from a file's content, and some drivers open whatever the 
 (an <OGRVRTDataSource> in a ".geojson" reads another user's file; WFS/WMS descriptions fetch
 URLs). So a file is only read when its content matches its extension (check_magic), GDAL opened it
 with that extension's driver (check_driver), and the worker has skipped the dangerous drivers and
-the network (worker.configure_gdal). Anything else is "Định dạng tệp không được hỗ trợ.".
+the network (workspace_common.configure_gdal). Anything else is "Định dạng tệp không được hỗ trợ.".
 """
+# First: importing workspace_common restricts GDAL (configure_gdal) before pyogrio registers its
+# drivers, whichever module of the worker was loaded first. It imports no handler and not worker.
+from workspace_common import (
+    MAP_GONE, NO_CRS, OUT_OF_RANGE, OVER_QUOTA, UNSUPPORTED, UserFacingError, crs_label, file_stem,
+    finish_map_write, import_extension, layer_title, lock_owned_map, resolve_upload,
+)
+
 import base64
 import codecs
 import datetime
 import decimal
 import json
 import math
-import os
-import pathlib
 import unicodedata
 import zipfile
 from dataclasses import dataclass
@@ -41,16 +46,8 @@ import shapely
 from pyogrio.errors import DataSourceError
 from pyproj import CRS
 
-from worker import UserFacingError, import_extension, store_root
 
 TOO_MANY_ROWS = "Tệp có hơn 200.000 dòng."
-NO_CRS = "Tệp không ghi hệ toạ độ; hãy chọn hệ toạ độ nguồn."
-MAP_GONE = "Bản đồ không còn."
-OVER_QUOTA = "Vượt hạn mức dung lượng."
-UNSUPPORTED = "Định dạng tệp không được hỗ trợ."
-
-
-OUT_OF_RANGE = "Toạ độ nằm ngoài phạm vi kinh độ/vĩ độ; hãy kiểm tra hệ toạ độ nguồn."
 
 
 def skipped_message(n: int) -> str:
@@ -76,7 +73,6 @@ METADATA_TABLE = "webatlas_metadata"
 # Features are inserted this many at a time, with a progress update between batches, so no single
 # call holds the GIL long enough to starve the heartbeat thread.
 BATCH_ROWS = 1000
-TITLE_MAX = 200
 # A .cpg holds a code page name ("UTF-8", "1258"); anything longer is not one.
 CPG_MAX_BYTES = 64
 # Overall progress: reading 0-30, transforming 30-40, writing 40-100.
@@ -392,21 +388,6 @@ def _read_metadata(path: str) -> dict:
 # --- CRS ----------------------------------------------------------------------------------------
 
 
-def _crs_label(crs: CRS, fallback: str | None) -> str:
-    """source_crs: the authority code when pyproj finds one, otherwise the proj4."""
-    try:
-        auth = crs.to_authority(min_confidence=90)
-    except Exception:
-        auth = None
-    if auth:
-        return f"{auth[0]}:{auth[1]}"
-    if fallback:
-        return fallback
-    try:
-        return crs.to_proj4()
-    except Exception:
-        return crs.to_wkt()
-
 
 def _is_wgs84_lon_lat(crs) -> bool:
     try:
@@ -429,11 +410,11 @@ def _layer_crs(file_crs, driver: str, source_crs):
     if source_crs and source_crs.get("proj4"):
         chosen = CRS.from_user_input(source_crs["proj4"]), source_crs["proj4"]
     if driver == "GeoJSON" and chosen and (file_crs is None or _is_wgs84_lon_lat(file_crs)):
-        return chosen[0], _crs_label(chosen[0], chosen[1])
+        return chosen[0], crs_label(chosen[0], chosen[1])
     if file_crs is not None:
-        return file_crs, _crs_label(file_crs, None)
+        return file_crs, crs_label(file_crs, None)
     if chosen:
-        return chosen[0], _crs_label(chosen[0], chosen[1])
+        return chosen[0], crs_label(chosen[0], chosen[1])
     if driver == "GeoJSON":
         return CRS.from_epsg(4326), "EPSG:4326"
     raise UserFacingError(NO_CRS)
@@ -442,50 +423,6 @@ def _layer_crs(file_crs, driver: str, source_crs):
 # --- the handler ---------------------------------------------------------------------------------
 
 
-def _resolve_upload(rel: str) -> str:
-    root = os.path.realpath(store_root())
-    full = os.path.realpath(os.path.join(root, rel))
-    if os.path.commonpath([root, full]) != root or not os.path.isfile(full):
-        raise RuntimeError(f"import file {rel!r} is missing or outside the store")
-    return full
-
-
-def _file_stem(name: str) -> str:
-    return pathlib.PurePosixPath(name.replace("\\", "/")).stem
-
-
-def _title(*candidates) -> str:
-    for c in candidates:
-        if isinstance(c, str) and c.strip():
-            return c.strip()[:TITLE_MAX]
-    raise RuntimeError("no usable layer title")
-
-
-def lock_owned_map(cur, map_id, owner_id) -> int:
-    """
-    Lock the target map for the rest of the job's transaction and return the position after its
-    last layer. Fails with MAP_GONE when the map no longer exists, was archived, or is not the
-    job owner's.
-    """
-    cur.execute("SELECT owner_id::text, archived_at FROM workspace.maps WHERE id = %s FOR UPDATE", (map_id,))
-    found = cur.fetchone()
-    if found is None or found[1] is not None or found[0] != str(owner_id):
-        raise UserFacingError(MAP_GONE)
-    cur.execute("SELECT COALESCE(max(position), -1) + 1 FROM workspace.map_layers WHERE map_id = %s", (map_id,))
-    return cur.fetchone()[0]
-
-
-def finish_map_write(cur, map_id, owner_id):
-    """Bump the map's revision once, then fail with OVER_QUOTA if the owner's usage, with
-    everything this job wrote, is over their quota."""
-    cur.execute("SELECT workspace.bump_map(%s)", (map_id,))
-    cur.execute(
-        "SELECT workspace.usage_bytes(id) > quota_bytes FROM app.users WHERE id = %s",
-        (owner_id,),
-    )
-    over = cur.fetchone()
-    if over is None or over[0]:
-        raise UserFacingError(OVER_QUOTA)
 
 
 def run_import_vector(conn, job, steps) -> dict:
@@ -497,7 +434,7 @@ def run_import_vector(conn, job, steps) -> dict:
 
     # --- read
     steps.start("read")
-    path = _resolve_upload(params["path"])
+    path = resolve_upload(params["path"])
     # Three defences against a file that makes GDAL open something else: the content must match
     # the extension (check_magic here, per .shp in _zip_sources), the driver GDAL picked must be the
     # extension's (check_driver), and worker.configure_gdal skips the dangerous drivers and the network.
@@ -573,8 +510,8 @@ def run_import_vector(conn, job, steps) -> dict:
                       for row in zip(*values)] if columns else ["{}"] * int(keep.sum())
 
         meta = metadata.get(s.layer) or {}
-        title = _title(meta.get("title"), _file_stem(original_name) if single else s.layer,
-                       s.layer, _file_stem(original_name), original_name)
+        title = layer_title(meta.get("title"), file_stem(original_name) if single else s.layer,
+                       s.layer, file_stem(original_name), original_name)
         prepared.append(Prepared(
             title=title,
             style=meta.get("style") or {},
