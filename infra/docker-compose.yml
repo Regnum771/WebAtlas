@@ -72,6 +72,29 @@ services:
       GEOSERVER_DB_USER: ${POSTGRES_USER}
       GEOSERVER_DB_PASSWORD: ${POSTGRES_PASSWORD}
 
+  # The workspace import/export worker (packages/atlas-data/tools/workspace/worker.py): claims the
+  # jobs the API queues in workspace.jobs. Same image as `tools`. Behind its own profile, so a plain
+  # `docker compose up` (and the test suites) never start it; run it with
+  # `docker compose --profile worker up -d worker`.
+  worker:
+    profiles: ["worker"]
+    build:
+      context: ../packages/atlas-data/tools
+    image: webatlas-atlas-tools
+    working_dir: /repo
+    volumes:
+      - ..:/repo
+    environment:
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      # The file store the API writes uploads to and serves exports from (the repo's var/ via the mount).
+      WORKSPACE_FILES_DIR: /repo/var/workspace-files
+    command: ["python3", "packages/atlas-data/tools/workspace/worker.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   db_data:
   geoserver_data:
