@@ -366,6 +366,36 @@ describe('jobs', () => {
     expect(missing.json()).toEqual({ error: { code: 'NOT_FOUND', message: 'Không tìm thấy lớp.' } });
   });
 
+  it('an edit copy whose draft is gone is skipped with a warning', async () => {
+    const map = await createMap('Bản nháp mất');
+    const ec = await call(O, 'POST', `/maps/${map.id}/layers`, { kind: 'edit_copy', layerKey: 'rivers', expectedRevision: 0 });
+    expect(ec.statusCode).toBe(201);
+    const ecLayer = ec.json().layer as { id: string; title: string };
+    const free = await insertLayer(map.id, 'free', 'Điểm', { geometryType: 'point', fields: [{ name: 'đập', type: 'text' }] });
+    // The draft is discarded elsewhere; the layer row outlives it with draft_id NULL.
+    await getPool().query(`UPDATE workspace.map_layers SET draft_id = NULL WHERE id = $1`, [ecLayer.id]);
+    const gone = `Lớp "${ecLayer.title}" không còn bản nháp nên không được xuất.`;
+
+    const preview = await call(O, 'GET', `/maps/${map.id}/exports/preview?format=shp&crs=wgs84-dd`);
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toEqual({
+      // A folded name is a changed name, so it is listed.
+      layers: [{ layerId: free, title: 'Điểm', truncated: [{ from: 'đập', to: 'dap' }] }],
+      warnings: [...SHP_WARNINGS, gone],
+    });
+
+    const res = await call(O, 'POST', `/maps/${map.id}/exports`, { format: 'gpkg', crs: 'wgs84-dd' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().warnings).toEqual([gone]);
+    const { params } = await jobRow(res.json().job.id);
+    expect(params.layers.map((l: { layerId: string }) => l.layerId)).toEqual([free]);
+
+    // With only that layer left, there is nothing to export.
+    const only = await call(O, 'POST', `/maps/${map.id}/exports`, { format: 'gpkg', crs: 'wgs84-dd', layerIds: [ecLayer.id] });
+    expect(only.statusCode).toBe(400);
+    expect(only.json()).toEqual({ error: { code: 'VALIDATION_ERROR', message: 'Bản đồ không có lớp nào để xuất.' } });
+  });
+
   it('jobs are private', async () => {
     const res = await call(O, 'POST', `/maps/${shared.id}/exports`, { format: 'gpkg', crs: 'wgs84-dd' });
     expect(res.statusCode).toBe(201);

@@ -40,4 +40,27 @@ describe('shapefileFieldNames', () => {
 
     expect(shapefileFieldNames([])).toEqual([]);
   });
+
+  it('folds names to ASCII so every name fits the 10 bytes of a .dbf field', () => {
+    // Diacritics removed, đ/Đ to d/D, anything outside [A-Za-z0-9_] to '_', then cut.
+    expect(shapefileFieldNames(['ngày_xây_dựng'])).toEqual([{ from: 'ngày_xây_dựng', to: 'ngay_xay_d' }]);
+    // A short name that folds is changed, so it is reported: from !== to.
+    expect(shapefileFieldNames(['đập', 'Đơn vị'])).toEqual([
+      { from: 'đập', to: 'dap' },
+      { from: 'Đơn vị', to: 'Don_vi' },
+    ]);
+    // Only an ASCII-safe name of at most 10 characters counts as unchanged, and keeps its name
+    // even when a folded name would have taken it.
+    expect(tos(['đập', 'dap'])).toEqual(['dap_1', 'dap']);
+    expect(tos(['Tên công trình', 'Tên công trình 2'])).toEqual(['Ten_cong_t', 'Ten_cong_1']);
+    expect(tos(['a-b', 'a b'])).toEqual(['a_b', 'a_b_1']);
+
+    const names = ['Tên công trình thủy lợi', 'ngày', 'Ngày', 'dung tích (triệu m³)', 'Đập', 'ổ_ầ_ữ_ỹ_ợ_ằ'];
+    const out = tos(names);
+    for (const to of out) {
+      expect(Buffer.byteLength(to, 'utf8'), to).toBeLessThanOrEqual(10);
+      expect(to).toMatch(/^[A-Za-z0-9_]*$/);
+    }
+    expect(new Set(out.map((t) => t.toLowerCase())).size).toBe(out.length);
+  });
 });

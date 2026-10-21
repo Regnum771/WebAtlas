@@ -10,7 +10,6 @@ import { getLayer } from '../../layers/registry';
 import type { CurrentUser } from '../../types/fastify';
 import { editCopyRowsArgs } from '../layers/repository';
 import { MAP_NOT_FOUND, OWNER_ONLY, assertCanRead, mapRole, type Queryable } from './access';
-import { draftGone } from './editCopies';
 import { resolveInStore } from './fileStore';
 import { LAYER_NOT_FOUND } from './freeLayers';
 import { FILE_NOT_FOUND } from './uploads';
@@ -116,6 +115,7 @@ const WARN_SHP_STYLE = 'Shapefile không giữ kiểu hiển thị.';
 const WARN_SHP_SPLIT = 'Mỗi loại hình học được ghi thành một tệp riêng.';
 const WARN_RASTER = 'Lớp ảnh không được xuất; tải ảnh riêng từ lớp đó.';
 const WARN_GEOJSON_CRS = 'GeoJSON ngoài WGS 84 không theo chuẩn RFC 7946.';
+const warnDraftGone = (title: string) => `Lớp "${title}" không còn bản nháp nên không được xuất.`;
 
 const CONTENT_TYPES: Record<string, string> = {
   '.gpkg': 'application/geopackage+sqlite3',
@@ -200,14 +200,22 @@ interface MapLayerRow {
 }
 type ExportableRow = MapLayerRow & { kind: 'free' | 'edit_copy' };
 
+interface ExportSelection {
+  layers: ExportableRow[];
+  rasterSkipped: boolean;
+  /** Titles of the edit copies left out because their draft has been discarded. */
+  draftsGone: string[];
+}
+
 /**
  * The layers an export writes, in map order: those named in `layerIds`, or every layer of the
- * map. Only free layers and edit copies are written; a raster layer among them is skipped and
- * reported, and the reserved kinds are left out. A named layer that is not in the map is 404.
+ * map. Only free layers and edit copies are written. A raster layer among them is skipped and
+ * reported, and so is an edit copy whose draft is gone (draft_id NULL): there is nothing left to
+ * read. The reserved kinds are left out. A named layer that is not in the map is 404.
  */
 async function exportLayers(
   q: Queryable, mapId: string, layerIds: string[] | undefined
-): Promise<{ layers: ExportableRow[]; rasterSkipped: boolean }> {
+): Promise<ExportSelection> {
   const { rows } = await q.query<MapLayerRow>(
     `SELECT id, kind, title, style, geometry_type AS "geometryType", fields,
             layer_key AS "layerKey", draft_id AS "draftId"
@@ -221,10 +229,22 @@ async function exportLayers(
     const named = new Set(layerIds);
     selected = rows.filter((r) => named.has(r.id));
   }
+  const gone = (r: MapLayerRow) => r.kind === 'edit_copy' && r.draftId === null;
   return {
-    layers: selected.filter((r): r is ExportableRow => r.kind === 'free' || r.kind === 'edit_copy'),
+    layers: selected.filter((r): r is ExportableRow => (r.kind === 'free' || r.kind === 'edit_copy') && !gone(r)),
     rasterSkipped: selected.some((r) => r.kind === 'raster'),
+    draftsGone: selected.filter(gone).map((r) => r.title),
   };
+}
+
+/** The warnings shown for an export, in the same order by the preview and on queueing. */
+function exportWarnings(input: { format: ExportFormat }, crs: CrsParam, selection: ExportSelection): string[] {
+  const warnings: string[] = [];
+  if (input.format === 'shp') warnings.push(WARN_SHP_STYLE, WARN_SHP_SPLIT);
+  if (selection.rasterSkipped) warnings.push(WARN_RASTER);
+  for (const title of selection.draftsGone) warnings.push(warnDraftGone(title));
+  if (input.format === 'geojson' && !isWgs84(crs)) warnings.push(WARN_GEOJSON_CRS);
+  return warnings;
 }
 
 /**
@@ -310,9 +330,12 @@ export function jobsService(pg: Pool) {
 
     /**
      * Queue an export of the map. The owner and every recipient may export; the job, and the
-     * file it makes, belong to the user who asked.
+     * file it makes, belong to the user who asked. Returns the preview's warnings beside the job,
+     * so a layer left out is reported even when the export was queued without a preview.
      */
-    async enqueueExport(user: CurrentUser, mapId: string, input: ExportRequest): Promise<{ job: Job }> {
+    async enqueueExport(
+      user: CurrentUser, mapId: string, input: ExportRequest
+    ): Promise<{ job: Job; warnings: string[] }> {
       const crs = crsParam(input.crs);
       return inTransaction(pg, async (client) => {
         // One snapshot for the map's title, its layers and their field names.
@@ -322,16 +345,16 @@ export function jobsService(pg: Pool) {
           `SELECT title FROM workspace.maps WHERE id = $1`, [mapId]
         );
         if (!maps[0]) throw new NotFoundError(MAP_NOT_FOUND);
-        const { layers } = await exportLayers(client, mapId, input.layerIds);
+        const selection = await exportLayers(client, mapId, input.layerIds);
+        const { layers } = selection;
         if (layers.length === 0) throw new ValidationError(NOTHING_TO_EXPORT);
 
         const out: ExportLayerParams[] = [];
         for (const layer of layers) {
           let editCopy: ExportLayerParams['editCopy'] = null;
           if (layer.kind === 'edit_copy') {
-            if (layer.draftId === null) throw draftGone();
-            const args = editCopyRowsArgs(getLayer(layer.layerKey!), layer.draftId);
-            editCopy = { ...args, draftId: layer.draftId };
+            const draftId = layer.draftId!; // exportLayers leaves out edit copies without a draft
+            editCopy = { ...editCopyRowsArgs(getLayer(layer.layerKey!), draftId), draftId };
           }
           out.push({
             layerId: layer.id,
@@ -353,13 +376,15 @@ export function jobsService(pg: Pool) {
           downloadName: downloadNameFor(maps[0].title, input.format, out.length),
           layers: out,
         };
-        return { job: await insertJob(client, user.id, mapId, 'export', params, EXPORT_STEPS) };
+        const job = await insertJob(client, user.id, mapId, 'export', params, EXPORT_STEPS);
+        return { job, warnings: exportWarnings(input, crs, selection) };
       });
     },
 
     /**
      * What an export would do, before it is queued: the layers it writes, the Shapefile field
-     * names it would cut, and the warnings for the format and CRS chosen.
+     * names it would change (folded to ASCII or cut), and the warnings for the format and CRS
+     * chosen.
      */
     async preview(user: CurrentUser, mapId: string, input: ExportRequest): Promise<{
       layers: Array<{ layerId: string; title: string; truncated: FieldNames }>;
@@ -367,19 +392,15 @@ export function jobsService(pg: Pool) {
     }> {
       const crs = crsParam(input.crs);
       await assertCanRead(pg, mapId, user);
-      const { layers, rasterSkipped } = await exportLayers(pg, mapId, input.layerIds);
+      const selection = await exportLayers(pg, mapId, input.layerIds);
       const out = [];
-      for (const layer of layers) {
+      for (const layer of selection.layers) {
         const truncated = input.format === 'shp'
           ? shapefileFieldNames(await fieldNamesOf(pg, layer)).filter((n) => n.from !== n.to)
           : [];
         out.push({ layerId: layer.id, title: layer.title, truncated });
       }
-      const warnings: string[] = [];
-      if (input.format === 'shp') warnings.push(WARN_SHP_STYLE, WARN_SHP_SPLIT);
-      if (rasterSkipped) warnings.push(WARN_RASTER);
-      if (input.format === 'geojson' && !isWgs84(crs)) warnings.push(WARN_GEOJSON_CRS);
-      return { layers: out, warnings };
+      return { layers: out, warnings: exportWarnings(input, crs, selection) };
     },
 
     async get(user: CurrentUser, jobId: string): Promise<Job> {
