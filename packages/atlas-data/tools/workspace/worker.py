@@ -44,6 +44,10 @@ GDAL_CONFIG = {
     "GDAL_SKIP": " ".join(GDAL_SKIP_DRIVERS),
     # No network: /vsicurl/ only opens names ending in one of these extensions, and none will.
     "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".webatlas-no-network",
+    # ... but that governs /vsi* only. CPLHTTPFetch (used e.g. by OSR for a GeoJSON "crs" of type
+    # link or url) ignores it, so every GDAL HTTP request is sent to a proxy that does not exist
+    # (port 9, discard): it fails at once and nothing reaches any host.
+    "GDAL_HTTP_PROXY": "127.0.0.1:9",
     "GDAL_HTTP_TIMEOUT": "1",
     "GDAL_HTTP_CONNECTTIMEOUT": "1",
     "GDAL_HTTP_MAX_RETRY": "0",
@@ -58,6 +62,9 @@ def configure_gdal():
     pyogrio is imported, and refuses to go on if that already happened.
     """
     os.environ.update(GDAL_CONFIG)
+    # curl skips the proxy for hosts listed in NO_PROXY; the worker makes no HTTP request of its own.
+    for name in ("NO_PROXY", "no_proxy"):
+        os.environ.pop(name, None)
     if "pyogrio" in sys.modules:
         import pyogrio
 

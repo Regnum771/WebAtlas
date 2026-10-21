@@ -13,14 +13,16 @@ claims only its own job ids, so a live worker or another suite's queue is untouc
 """
 import base64
 import datetime
+import http.server
 import json
 import os
 import pathlib
 import sys
 import tempfile
+import threading
+import time
 import uuid
 import warnings
-import time
 import zipfile
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -485,6 +487,43 @@ try:
     except DataSourceError as e:
         refused = "HTTP" not in str(e)  # refused before any request, not answered by the server
     check("/vsicurl/ is refused without a request", refused and time.monotonic() - t0 < 5)
+
+    # --- a geojson crs link does not reach the network
+    hits = []
+
+    class Listener(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 (http.server's name)
+            hits.append(self.path)
+            body = b'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    listener = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Listener)
+    threading.Thread(target=listener.serve_forever, daemon=True).start()
+    try:
+        port = listener.server_address[1]
+        user_id, map_id = new_map("crslink")
+        for crs_type in ("link", "url"):
+            name = f"crs_{crs_type}.geojson"
+            with open(store(name), "w", encoding="utf-8") as f:
+                json.dump({
+                    "type": "FeatureCollection",
+                    "crs": {"type": crs_type, "properties": {"href": f"http://127.0.0.1:{port}/crs-{crs_type}",
+                                                             "url": f"http://127.0.0.1:{port}/crs-{crs_type}"}},
+                    "features": [{"type": "Feature", "properties": {"ten": "a"},
+                                  "geometry": {"type": "Point", "coordinates": [108.2, 16.0]}}],
+                }, f)
+            run_import(user_id, map_id, name, name)
+        print(f"     (the listener saw {len(hits)} request(s): {hits})")
+        check("a geojson crs link does not reach the network", hits == [])
+    finally:
+        listener.shutdown()
+        listener.server_close()
 
     # --- a geojson holding VRT XML that points at another store file is refused
     user_id, map_id = new_map("vrt")
