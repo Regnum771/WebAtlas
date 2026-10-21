@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { requireAdmin } from '../../authz/assert';
 import {
-  addFeature, adminSummary, addLayer, addShare, copyMap, createMap, deleteMap, getMap, listFeatures, listMaps, listShares,
-  listShareTargets, removeFeature, removeLayer, removeShare, updateFeature, updateLayer, updateMap,
+  addFeature, adminSummary, addLayer, addShare, copyMap, createMap, createUpload, deleteMap, deleteUpload, getMap,
+  getUpload, listFeatures, listMaps, listShares, listShareTargets, listUploads, removeFeature, removeLayer, removeShare,
+  updateFeature, updateLayer, updateMap,
 } from './controller';
 
 // Personal maps. Any signed-in user has a workspace; who sees or writes a given map is decided
@@ -30,6 +31,12 @@ export default async function workspaceRoutes(app: FastifyInstance) {
   app.post('/maps/:mapId/layers/:layerId/features', signedIn, addFeature);
   app.put('/maps/:mapId/layers/:layerId/features/:featureId', signedIn, updateFeature);
   app.delete('/maps/:mapId/layers/:layerId/features/:featureId', signedIn, removeFeature);
+
+  // Uploads belong to their owner alone (uploads.ts); multipart is registered in server.ts.
+  app.post('/uploads', signedIn, createUpload);
+  app.get('/uploads', signedIn, listUploads);
+  app.get('/uploads/:fileId', signedIn, getUpload);
+  app.delete('/uploads/:fileId', signedIn, deleteUpload);
 
   // Admin sees counts and sizes per owner, never content.
   app.get('/admin/summary', { preHandler: [app.authenticate, requireAdmin()] }, adminSummary);

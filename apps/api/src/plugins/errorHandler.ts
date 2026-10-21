@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin';
-import { AppError, ConflictError, InternalError, NotFoundError } from '../errors';
+import { AppError, ConflictError, FileTooLargeError, InternalError, NotFoundError } from '../errors';
 import {
   ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError, StaleDraftError,
   DraftConflictError, DraftNotEditableError, DraftRevisionError,
@@ -38,6 +38,9 @@ export default fp(async (app) => {
       appErr = new AppError(409, 'STALE_EDIT', err.message);
     } else if (err instanceof VersioningConflictError) {
       appErr = new ConflictError(err.message);
+    } else if ((err as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
+      // @fastify/multipart's own over-the-limit error (workspace uploads).
+      appErr = new FileTooLargeError();
     } else if ((err as { statusCode?: number }).statusCode === 429) {
       appErr = new AppError(429, 'RATE_LIMITED', 'Quá nhiều yêu cầu, vui lòng thử lại sau.');
     } else {

@@ -128,3 +128,7 @@ export const AddShareBody = z.union([
 ]);
 
 export const ShareTargetsQuery = z.object({ q: z.string().trim().min(2).max(100) });
+
+// --- Uploads ------------------------------------------------------------------------------
+
+export const FileIdParams = z.object({ fileId: z.string().uuid() });

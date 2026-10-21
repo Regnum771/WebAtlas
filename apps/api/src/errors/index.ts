@@ -28,6 +28,14 @@ export class ConflictError extends AppError {
 export class GeometryError extends AppError {
   constructor(message = 'Invalid geometry', details?: unknown) { super(422, 'GEOMETRY_ERROR', message, details); }
 }
+/** An uploaded file over the per-file limit (multipart's own "file too large" maps here too). */
+export class FileTooLargeError extends AppError {
+  constructor() { super(413, 'FILE_TOO_LARGE', 'Tệp lớn hơn 200 MB.'); }
+}
+/** Storing a file would take its owner over their quota. */
+export class QuotaExceededError extends AppError {
+  constructor(message: string) { super(413, 'QUOTA_EXCEEDED', message); }
+}
 export class InternalError extends AppError {
   constructor(message = 'Internal server error') { super(500, 'INTERNAL_ERROR', message); }
 }

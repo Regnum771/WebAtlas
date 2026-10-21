@@ -175,6 +175,11 @@ const MAP_ROUTES: Case[] = [
 ];
 // Routes that are not map-scoped; each has its own check below.
 const OTHER_ROUTES = ['GET /api/workspace/maps', 'POST /api/workspace/maps', 'GET /api/workspace/share-targets', 'GET /api/workspace/admin/summary'];
+// Owner-scoped, not map-scoped: a stranger's 404 on each is checked in uploads.test.ts ('uploads are private').
+const UPLOAD_ROUTES = [
+  'POST /api/workspace/uploads', 'GET /api/workspace/uploads',
+  'GET /api/workspace/uploads/:fileId', 'DELETE /api/workspace/uploads/:fileId',
+];
 
 function fill(pattern: string, c: Ctx, withBbox: boolean): string {
   const url = pattern.replace(':mapId', c.m).replace(':layerId', c.l).replace(':featureId', c.f).replace(':shareId', c.s);
@@ -186,6 +191,7 @@ describe('workspace isolation', () => {
     const covered = new Set([
       ...MAP_ROUTES.map((r) => `${r.method} /api/workspace${r.pattern}`),
       ...OTHER_ROUTES,
+      ...UPLOAD_ROUTES,
     ]);
     expect([...registered].sort()).toEqual([...covered].sort());
     for (const key of covered) {

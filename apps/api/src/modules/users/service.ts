@@ -19,10 +19,15 @@ export function usersService(pg: Pool) {
       await audit.record({ userId: actorId, action: 'create', tableName: 'app.users', featureId: user.id, after: user });
       return user;
     },
-    async update(id: string, patch: { full_name?: string | null; role?: Role; is_active?: boolean }, actorId?: string): Promise<UserRow> {
+    async update(
+      id: string,
+      patch: { full_name?: string | null; role?: Role; is_active?: boolean; quotaBytes?: number },
+      actorId?: string
+    ): Promise<UserRow> {
       const before = await repo.findById(id);
       if (!before) throw new NotFoundError('User not found');
-      const after = await repo.update(id, patch);
+      const { quotaBytes, ...rest } = patch;
+      const after = await repo.update(id, { ...rest, quota_bytes: quotaBytes });
       await audit.record({ userId: actorId, action: 'update', tableName: 'app.users', featureId: id, before, after });
       return after!;
     },

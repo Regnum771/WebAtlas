@@ -13,5 +13,7 @@ export const UpdateUserBody = z.object({
   full_name: z.string().nullable().optional(),
   role: Role.optional(),
   is_active: z.boolean().optional(),
+  /** Storage quota in bytes (workspace files and features). */
+  quotaBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
 });
 export const UserIdParams = z.object({ id: z.string().uuid() });

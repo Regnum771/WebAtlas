@@ -45,3 +45,5 @@ __pycache__/
 apps/api/src/db/seeds/data/dem/
 # Visual brainstorming companion scratch (not source)
 .superpowers/
+# Workspace file store default location (WORKSPACE_FILES_DIR): uploads, COGs, exports
+/var/

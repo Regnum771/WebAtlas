@@ -5,8 +5,14 @@ export type Role = 'admin' | 'viewer';
 export interface UserRow {
   id: string; email: string; full_name: string | null; role: Role;
   is_active: boolean; created_at: string; updated_at: string;
+  /** app.users.quota_bytes (bigint) as a number: quotas stay far below 2^53. */
+  quotaBytes: number;
 }
-const COLS = 'id, email, full_name, role, is_active, created_at, updated_at';
+export interface UserPatch { full_name?: string | null; role?: Role; is_active?: boolean; quota_bytes?: number }
+// PLAIN columns can also be prefixed (u.<col>); quota_bytes is selected through QUOTA.
+const PLAIN = 'id, email, full_name, role, is_active, created_at, updated_at';
+const QUOTA = (prefix = '') => `${prefix}quota_bytes::float8 AS "quotaBytes"`;
+const COLS = `${PLAIN}, ${QUOTA()}`;
 
 export function usersRepository(pg: Pool) {
   return {
@@ -21,7 +27,7 @@ export function usersRepository(pg: Pool) {
     /** Every user with the groups it belongs to. */
     async listWithGroups(): Promise<Array<UserRow & { groups: Array<{ id: string; name: string }> }>> {
       const { rows } = await pg.query(
-        `SELECT ${COLS.split(', ').map((c) => `u.${c}`).join(', ')},
+        `SELECT ${PLAIN.split(', ').map((c) => `u.${c}`).join(', ')}, ${QUOTA('u.')},
                 COALESCE((SELECT json_agg(json_build_object('id', g.id, 'name', g.name) ORDER BY g.name)
                             FROM app.user_groups ug JOIN app.access_groups g ON g.id = ug.group_id
                            WHERE ug.user_id = u.id), '[]'::json) AS groups
@@ -38,7 +44,7 @@ export function usersRepository(pg: Pool) {
       );
       return rows[0];
     },
-    async update(id: string, patch: { full_name?: string | null; role?: Role; is_active?: boolean }): Promise<UserRow | null> {
+    async update(id: string, patch: UserPatch): Promise<UserRow | null> {
       const sets: string[] = []; const vals: unknown[] = []; let i = 1;
       for (const [k, v] of Object.entries(patch)) { if (v !== undefined) { sets.push(`${k} = $${i++}`); vals.push(v); } }
       if (sets.length === 0) return this.findById(id);

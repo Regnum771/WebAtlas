@@ -1,5 +1,12 @@
 import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+
+/** The repository root, from this file's location (apps/api/src/config). */
+const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+/** Where the workspace file store lives when WORKSPACE_FILES_DIR is not set. */
+export const DEFAULT_WORKSPACE_FILES_DIR = path.join(REPO_ROOT, 'var', 'workspace-files');
 
 const EnvSchema = z.object({
   DATABASE_URL: z.string().url(),
@@ -20,9 +27,20 @@ const EnvSchema = z.object({
   ASSISTANT_DATABASE_URL: z.string().url().optional(),
   /** Where build_scenarios.py wrote the flood frames; defaults to the repo cache path. */
   FLOOD_FRAMES_DIR: z.string().optional(),
+  /** Root of the workspace file store (uploads, COGs, exports); see workspaceFilesDir(). */
+  WORKSPACE_FILES_DIR: z.string().optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 });
 
 export type AppConfig = z.infer<typeof EnvSchema>;
 
 export const config: AppConfig = EnvSchema.parse(process.env);
+
+/**
+ * The workspace file store root. Read from the environment on every call rather than from
+ * `config`, which is parsed once at import: tests point the store at a temp directory after the
+ * app's modules are loaded. An empty value counts as unset.
+ */
+export function workspaceFilesDir(): string {
+  return EnvSchema.shape.WORKSPACE_FILES_DIR.parse(process.env.WORKSPACE_FILES_DIR) || DEFAULT_WORKSPACE_FILES_DIR;
+}

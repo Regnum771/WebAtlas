@@ -1,3 +1,5 @@
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AuthError, NotFoundError, ValidationError } from '../../errors';
 import { validate } from '../../lib/validate';
@@ -8,11 +10,12 @@ import { freeLayersService, LAYER_NOT_FOUND } from './freeLayers';
 import { mapsService, type LayerKind } from './maps';
 import {
   AddEditCopyLayerBody, AddFeatureBody, AddFreeLayerBody, AddShareBody, CreateMapBody, DeleteMapBody,
-  EditCopyFeatureParams, EditCopyFeaturesQuery, FeatureParams, FeaturesQuery, LayerParams, MapIdParams, RemoveBody,
-  ShareParams, ShareTargetsQuery, UpdateFeatureBody, UpdateLayerBody, UpdateMapBody,
+  EditCopyFeatureParams, EditCopyFeaturesQuery, FeatureParams, FeaturesQuery, FileIdParams, LayerParams, MapIdParams,
+  RemoveBody, ShareParams, ShareTargetsQuery, UpdateFeatureBody, UpdateLayerBody, UpdateMapBody,
 } from './schemas';
 import { adminSummary as adminSummaryQuery } from './cleanup';
 import { sharingService } from './sharing';
+import { FILE_NOT_FOUND, uploadsService } from './uploads';
 
 /*
  * Handlers for /api/workspace. Every map-scoped handler validates its params, then hands the
@@ -194,6 +197,61 @@ export async function removeFeature(req: FastifyRequest, reply: FastifyReply) {
   const kind = await layerKindOf(req, mapId, layerId);
   const service = serviceFor(req, kind);
   reply.send(await service.removeFeature(userOf(req), mapId, layerId, featureIdOf(req, kind), body));
+}
+
+// --- Uploads ------------------------------------------------------------------------------
+
+/** One multipart field, `file`. Multipart is registered for the workspace routes only (server.ts). */
+export async function createUpload(req: FastifyRequest, reply: FastifyReply) {
+  const user = userOf(req);
+  if (!req.isMultipart()) throw new ValidationError();
+  const part = await req.file();
+  if (!part) throw new ValidationError();
+  if (part.fieldname !== 'file') {
+    part.file.resume(); // let the request body drain
+    throw new ValidationError();
+  }
+  const { upload } = await uploadsService(req.server.pg).upload(user, {
+    filename: part.filename, mimetype: part.mimetype, file: part.file,
+  });
+  reply.code(201).send({ upload });
+}
+
+export async function listUploads(req: FastifyRequest, reply: FastifyReply) {
+  const user = userOf(req);
+  const uploads = uploadsService(req.server.pg);
+  const [list, usage] = await Promise.all([uploads.list(user), uploads.usage(user)]);
+  reply.send({ uploads: list, ...usage });
+}
+
+/** RFC 5987 value: encodeURIComponent leaves ' ( ) * as they are, which attr-char does not allow. */
+function rfc5987(value: string): string {
+  return encodeURIComponent(value).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/** The original file, as a download. */
+export async function getUpload(req: FastifyRequest, reply: FastifyReply) {
+  const { fileId } = validate(FileIdParams, req.params);
+  const { absPath, originalName, contentType } = await uploadsService(req.server.pg).original(userOf(req), fileId);
+  let size: number;
+  try {
+    size = (await stat(absPath)).size;
+  } catch (err) {
+    // A row whose file is gone reads as a missing file, not a server error.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new NotFoundError(FILE_NOT_FOUND);
+    throw err;
+  }
+  reply
+    .header('Content-Type', contentType)
+    .header('Content-Length', size)
+    .header('Content-Disposition', `attachment; filename*=UTF-8''${rfc5987(originalName)}`);
+  return reply.send(createReadStream(absPath));
+}
+
+export async function deleteUpload(req: FastifyRequest, reply: FastifyReply) {
+  const { fileId } = validate(FileIdParams, req.params);
+  await uploadsService(req.server.pg).remove(userOf(req), fileId);
+  reply.code(204).send();
 }
 
 // --- Admin --------------------------------------------------------------------------------

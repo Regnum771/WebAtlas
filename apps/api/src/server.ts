@@ -20,6 +20,8 @@ import { closeAssistantPool } from './modules/assistant/sql/pool';
 import { closeAnalysisPool } from './modules/analysis/pool';
 import scenariosRoutes from './modules/scenarios/routes';
 import workspaceRoutes from './modules/workspace/routes';
+import multipart from '@fastify/multipart';
+import { MAX_UPLOAD_BYTES } from './modules/workspace/uploads';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -53,7 +55,13 @@ export function buildApp(): FastifyInstance {
   app.register(roiRoutes, { prefix: '/api' });
   app.register(assistantRoutes, { prefix: '/api' });
   app.register(scenariosRoutes, { prefix: '/api' });
-  app.register(workspaceRoutes, { prefix: '/api/workspace' });
+  // Multipart is parsed for the workspace routes only (uploads), inside their own scope. The
+  // limit is one byte over the per-file maximum so that a file over it is seen as too large
+  // (uploads.ts) rather than silently truncated at exactly the maximum.
+  app.register(async (workspace) => {
+    await workspace.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES + 1, files: 1 } });
+    await workspace.register(workspaceRoutes);
+  }, { prefix: '/api/workspace' });
 
   // The assistant's read-only pool is a SEPARATE pg.Pool from app.pg (deliberately
   // — see modules/assistant/sql/pool.ts), so plugins/db.ts's onClose hook does not
