@@ -42,12 +42,18 @@ const ALL = `${xOf(DAMS[0]) - 0.005},${Y - 0.01},${xOf(DAMS[9]) + 0.005},${Y + 0
 const created: string[] = [];
 let priorActive: string | null = null;
 
+// Each user calls from an address of its own, as separate clients would: the rate limit is 100
+// requests a minute per address, and the sweep alone sends more than that in all.
+const ADDRESS: Record<string, string> = { [O]: '10.0.0.1', [S]: '10.0.0.2', [R]: '10.0.0.3', [A]: '10.0.0.4' };
+
 // One login per user for the whole file: /api/auth/login allows 10 per minute.
 const tokens = new Map<string, string>();
 async function tokenFor(who: string) {
   const cached = tokens.get(who);
   if (cached) return cached;
-  const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: who, password: PW } });
+  const res = await app.inject({
+    method: 'POST', url: '/api/auth/login', payload: { email: who, password: PW }, remoteAddress: ADDRESS[who],
+  });
   expect(res.statusCode).toBe(200);
   const token = res.json().token as string;
   tokens.set(who, token);
@@ -58,6 +64,7 @@ async function call(who: string, method: Method, url: string, payload?: Record<s
   return app.inject({
     method, url: `/api/workspace${url}`,
     headers: { authorization: `Bearer ${await tokenFor(who)}` },
+    remoteAddress: ADDRESS[who],
     ...(payload ? { payload } : {}),
   });
 }
@@ -149,7 +156,7 @@ afterAll(async () => {
 });
 
 type Ctx = { m: string; l: string; f: string; s: string; rev: number };
-type Case = { method: Method; pattern: string; body?: (c: Ctx) => Record<string, unknown> };
+type Case = { method: Method; pattern: string; query?: string; body?: (c: Ctx) => Record<string, unknown> };
 
 // Every map-scoped route, with a body that passes validation so a 404 can only come from access.
 // The test below fails if a route is registered that this table does not list.
@@ -172,6 +179,10 @@ const MAP_ROUTES: Case[] = [
   }) },
   { method: 'PUT', pattern: '/maps/:mapId/layers/:layerId/features/:featureId', body: (c) => ({ properties: {}, expectedRevision: c.rev }) },
   { method: 'DELETE', pattern: '/maps/:mapId/layers/:layerId/features/:featureId', body: (c) => ({ expectedRevision: c.rev }) },
+  // A random file id: the map's 404 comes before the upload is looked up.
+  { method: 'POST', pattern: '/maps/:mapId/imports', body: () => ({ fileId: randomUUID() }) },
+  { method: 'POST', pattern: '/maps/:mapId/exports', body: () => ({ format: 'gpkg', crs: 'wgs84-dd' }) },
+  { method: 'GET', pattern: '/maps/:mapId/exports/preview', query: 'format=shp&crs=wgs84-dd' },
 ];
 // Routes that are not map-scoped; each has its own check below.
 const OTHER_ROUTES = ['GET /api/workspace/maps', 'POST /api/workspace/maps', 'GET /api/workspace/share-targets', 'GET /api/workspace/admin/summary'];
@@ -180,9 +191,12 @@ const UPLOAD_ROUTES = [
   'POST /api/workspace/uploads', 'GET /api/workspace/uploads',
   'GET /api/workspace/uploads/:fileId', 'DELETE /api/workspace/uploads/:fileId',
 ];
+// Owner-scoped, not map-scoped: a stranger's 404 on each is checked in jobs.test.ts ('jobs are private').
+const JOB_ROUTES = ['GET /api/workspace/jobs', 'GET /api/workspace/jobs/:jobId', 'GET /api/workspace/jobs/:jobId/download'];
 
-function fill(pattern: string, c: Ctx, withBbox: boolean): string {
-  const url = pattern.replace(':mapId', c.m).replace(':layerId', c.l).replace(':featureId', c.f).replace(':shareId', c.s);
+function fill(route: Case, c: Ctx, withBbox: boolean): string {
+  const url = route.pattern.replace(':mapId', c.m).replace(':layerId', c.l).replace(':featureId', c.f).replace(':shareId', c.s);
+  if (route.query) return `${url}?${route.query}`;
   return withBbox && url.endsWith('/features') ? `${url}?bbox=${ALL}` : url;
 }
 
@@ -192,6 +206,7 @@ describe('workspace isolation', () => {
       ...MAP_ROUTES.map((r) => `${r.method} /api/workspace${r.pattern}`),
       ...OTHER_ROUTES,
       ...UPLOAD_ROUTES,
+      ...JOB_ROUTES,
     ]);
     expect([...registered].sort()).toEqual([...covered].sort());
     for (const key of covered) {
@@ -232,8 +247,8 @@ describe('workspace isolation', () => {
           const real_ = { ...real, l: layer.l, f: layer.f };
           // The "missing" twin: the same shape with random uuids and a plausible revision.
           const ghost = { m: randomUUID(), l: randomUUID(), f: randomUUID(), s: randomUUID(), rev: before.revision };
-          const stranger = await call(who, route.method, fill(route.pattern, real_, true), route.body?.(real_));
-          const missing = await call(who, route.method, fill(route.pattern, ghost, true), route.body?.(ghost));
+          const stranger = await call(who, route.method, fill(route, real_, true), route.body?.(real_));
+          const missing = await call(who, route.method, fill(route, ghost, true), route.body?.(ghost));
           expect(stranger.statusCode, label).toBe(404);
           expect(stranger.json(), label).toEqual(NOT_FOUND);
           expect(missing.statusCode, label).toBe(404);
@@ -242,7 +257,7 @@ describe('workspace isolation', () => {
         }
       }
     }
-    // Per user: 12 routes without a layer id (one run) plus 5 layer routes (two runs).
+    // Per user: the routes without a layer id (one run) plus the layer routes (two runs).
     expect(sweeps).toBe(2 * (MAP_ROUTES.filter((r) => !r.pattern.includes(':layerId')).length
       + 2 * MAP_ROUTES.filter((r) => r.pattern.includes(':layerId')).length));
 

@@ -23,3 +23,4 @@ export * from './roi.js';
 export * from './crs.js';
 export * from './flood.js';
 export * from './access.js';
+export * from './shapefileNames.js';

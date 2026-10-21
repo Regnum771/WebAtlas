@@ -32,7 +32,7 @@ const byExternalId = new Intl.Collator('en', { numeric: true }).compare;
 
 interface EditCopyRow { id: string; layerKey: string; draftId: string | null }
 
-function draftGone(): AppError {
+export function draftGone(): AppError {
   return new AppError(410, 'DRAFT_GONE', DRAFT_GONE);
 }
 

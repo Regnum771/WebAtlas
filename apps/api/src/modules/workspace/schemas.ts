@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
+import { CRS_OPTIONS, EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 
 const Title = z.string().trim().min(1).max(200);
 const Description = z.string().max(2000);
@@ -132,3 +132,34 @@ export const ShareTargetsQuery = z.object({ q: z.string().trim().min(2).max(100)
 // --- Uploads ------------------------------------------------------------------------------
 
 export const FileIdParams = z.object({ fileId: z.string().uuid() });
+
+// --- Jobs ---------------------------------------------------------------------------------
+
+/** A CrsOption id from @webatlas/shared. Checked here: findCrs would fall back instead of failing. */
+const CrsId = z.string().refine((id) => CRS_OPTIONS.some((o) => o.id === id), { message: 'Unknown coordinate system' });
+const ExportFormat = z.enum(['gpkg', 'geojson', 'shp']);
+const LayerIds = z.array(z.string().uuid()).min(1).max(200);
+
+export const ImportBody = z.object({
+  fileId: z.string().uuid(),
+  sourceCrs: CrsId.nullish(),
+});
+
+export const ExportBody = z.object({
+  format: ExportFormat,
+  crs: CrsId,
+  layerIds: LayerIds.optional(),
+});
+
+/** The preview takes the export's choices as a query; layerIds is comma-separated (or repeated). */
+export const ExportPreviewQuery = z.object({
+  format: ExportFormat,
+  crs: CrsId,
+  layerIds: z.preprocess(
+    (v) => (v === undefined || v === '' ? undefined : [v].flat().flatMap((s) => String(s).split(',')).map((s) => s.trim())),
+    LayerIds.optional()
+  ),
+});
+
+export const JobIdParams = z.object({ jobId: z.string().uuid() });
+export const JobsQuery = z.object({ mapId: z.string().uuid().optional() });

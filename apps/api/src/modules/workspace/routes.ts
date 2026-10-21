@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { requireAdmin } from '../../authz/assert';
 import {
-  addFeature, adminSummary, addLayer, addShare, copyMap, createMap, createUpload, deleteMap, deleteUpload, getMap,
-  getUpload, listFeatures, listMaps, listShares, listShareTargets, listUploads, removeFeature, removeLayer, removeShare,
-  updateFeature, updateLayer, updateMap,
+  addFeature, adminSummary, addLayer, addShare, copyMap, createExport, createImport, createMap, createUpload, deleteMap,
+  deleteUpload, downloadJob, getJob, getMap, getUpload, listFeatures, listJobs, listMaps, listShares, listShareTargets,
+  listUploads, previewExport, removeFeature, removeLayer, removeShare, updateFeature, updateLayer, updateMap,
 } from './controller';
 
 // Personal maps. Any signed-in user has a workspace; who sees or writes a given map is decided
@@ -37,6 +37,15 @@ export default async function workspaceRoutes(app: FastifyInstance) {
   app.get('/uploads', signedIn, listUploads);
   app.get('/uploads/:fileId', signedIn, getUpload);
   app.delete('/uploads/:fileId', signedIn, deleteUpload);
+
+  // Imports and exports are jobs for the worker (jobs.ts). Queueing follows the map: the owner
+  // imports, the owner and recipients export. A job is its owner's alone.
+  app.post('/maps/:mapId/imports', signedIn, createImport);
+  app.post('/maps/:mapId/exports', signedIn, createExport);
+  app.get('/maps/:mapId/exports/preview', signedIn, previewExport);
+  app.get('/jobs', signedIn, listJobs);
+  app.get('/jobs/:jobId', signedIn, getJob);
+  app.get('/jobs/:jobId/download', signedIn, downloadJob);
 
   // Admin sees counts and sizes per owner, never content.
   app.get('/admin/summary', { preHandler: [app.authenticate, requireAdmin()] }, adminSummary);
