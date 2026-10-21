@@ -82,18 +82,16 @@ export async function lockMapForWrite(
   return { revision: map.revision };
 }
 
-/** Record a change to the map's content: next revision, fresh activity. Returns the new revision. */
+/**
+ * Record a change to the map's content: next revision, fresh activity. Returns the new revision.
+ * The rule lives in SQL (workspace.bump_map, migration 28) so that the worker applies the same one.
+ */
 export async function bumpMap(client: PoolClient, mapId: string): Promise<number> {
-  const { rows } = await client.query<{ revision: number }>(
-    `UPDATE workspace.maps
-        SET revision = revision + 1,
-            updated_at = now(),
-            last_activity_at = now(),
-            inactivity_notice_at = NULL
-      WHERE id = $1
-      RETURNING revision`,
+  const { rows } = await client.query<{ revision: number | null }>(
+    `SELECT workspace.bump_map($1) AS revision`,
     [mapId]
   );
-  if (!rows[0]) throw new NotFoundError(MAP_NOT_FOUND);
-  return rows[0].revision;
+  const revision = rows[0]?.revision ?? null;
+  if (revision === null) throw new NotFoundError(MAP_NOT_FOUND);
+  return revision;
 }
