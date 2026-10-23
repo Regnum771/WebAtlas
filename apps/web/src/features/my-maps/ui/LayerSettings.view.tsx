@@ -22,6 +22,8 @@ interface Props {
 
 const DELETE_COPY = 'Các đối tượng trong lớp sẽ bị xoá. Không khôi phục được.';
 const DELETE_DRAFT_COPY = 'Bản nháp sửa lớp sẽ bị huỷ. Không khôi phục được.';
+const FIELD_NAME_REQUIRED = 'Hãy nhập tên trường.';
+const DELETE_FIELDS_COPY = 'Giá trị của các trường bị xoá trong mọi đối tượng sẽ mất. Không khôi phục được.';
 
 /**
  * The owner's settings of one layer. Colour, width and fill are for free layers (an edit copy is
@@ -33,6 +35,7 @@ export function LayerSettingsView({ layer, onRename, onStyle, onMove, onSaveFiel
   const [title, setTitle] = useState(layer.title);
   const [rows, setRows] = useState<FieldRow[] | null>(null);
   const [asking, setAsking] = useState(false);
+  const [askingFields, setAskingFields] = useState(false);
   const [busy, setBusy] = useState<'rename' | 'fields' | 'remove' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldsError, setFieldsError] = useState<string | null>(null);
@@ -50,15 +53,29 @@ export function LayerSettingsView({ layer, onRename, onStyle, onMove, onSaveFiel
   async function move(direction: 'up' | 'down') {
     setError(await onMove(direction));
   }
-  async function saveFields() {
+  /**
+   * Saves the field rows. A blank new row (one the user added and did not fill) is dropped; a
+   * blank existing row is refused, since leaving it out would delete the field. A save that
+   * deletes a declared field asks first (`confirmed` is the answer).
+   */
+  async function saveFields(confirmed = false) {
     if (!rows) return;
-    setBusy('fields');
-    // A blank row is a row the user added and did not fill.
-    const edits = rows.filter((r) => r.name.trim() !== '').map((r) => (r.from === undefined
+    if (rows.some((r) => r.from !== undefined && r.name.trim() === '')) {
+      setFieldsError(FIELD_NAME_REQUIRED);
+      return;
+    }
+    const edits: FieldEdit[] = rows.filter((r) => r.from !== undefined || r.name.trim() !== '').map((r) => (r.from === undefined
       ? { name: r.name.trim(), type: r.type }
       : { name: r.name.trim(), type: r.type, from: r.from }));
+    const kept = new Set(rows.flatMap((r) => (r.from === undefined ? [] : [r.from])));
+    if (!confirmed && layer.fields.some((f) => !kept.has(f.name))) {
+      setAskingFields(true);
+      return;
+    }
+    setBusy('fields');
     const failure = await onSaveFields(edits);
     setBusy(null);
+    setAskingFields(false);
     if (failure === null) setRows(null);
     else setFieldsError(failure);
   }
@@ -139,6 +156,16 @@ export function LayerSettingsView({ layer, onRename, onStyle, onMove, onSaveFiel
         busy={busy === 'remove'}
         onConfirm={() => { void remove(); }}
         onCancel={() => setAsking(false)}
+      />
+      <ConfirmDialog
+        open={askingFields}
+        title="Xoá trường?"
+        message={DELETE_FIELDS_COPY}
+        confirmLabel="Xoá"
+        irreversible
+        busy={busy === 'fields'}
+        onConfirm={() => { void saveFields(true); }}
+        onCancel={() => setAskingFields(false)}
       />
     </Dialog>
   );

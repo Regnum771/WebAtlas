@@ -73,6 +73,49 @@ describe('LayerSettingsView', () => {
     expect(screen.getByLabelText('Tên trường')).toHaveValue('Sâu');
   });
 
+  it('blanking an existing field name refuses the save and keeps the field', async () => {
+    const h = handlers();
+    const user = userEvent.setup();
+    render(<LayerSettingsView layer={layer()} {...h} />);
+    await user.click(screen.getByRole('button', { name: 'Sửa trường' }));
+    await user.clear(screen.getByLabelText('Tên trường'));
+    await user.click(screen.getByRole('button', { name: 'Lưu trường' }));
+    expect(screen.getByText('Hãy nhập tên trường.')).toBeInTheDocument();
+    expect(h.onSaveFields).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: 'Xoá trường?' })).toBeNull();
+  });
+
+  it('a blank new row is dropped without asking', async () => {
+    const h = handlers();
+    const user = userEvent.setup();
+    render(<LayerSettingsView layer={layer()} {...h} />);
+    await user.click(screen.getByRole('button', { name: 'Sửa trường' }));
+    await user.click(screen.getByRole('button', { name: 'Thêm trường' }));
+    expect(screen.getAllByLabelText('Tên trường')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Lưu trường' }));
+    expect(screen.queryByRole('dialog', { name: 'Xoá trường?' })).toBeNull();
+    expect(h.onSaveFields).toHaveBeenCalledWith([{ name: 'Độ sâu', type: 'number', from: 'Độ sâu' }]);
+  });
+
+  it('removing a declared field asks first and saves only on Xoá', async () => {
+    const h = handlers();
+    const user = userEvent.setup();
+    render(<LayerSettingsView layer={layer({ fields: [{ name: 'Độ sâu', type: 'number' }, { name: 'Ghi chú', type: 'text' }] })} {...h} />);
+    await user.click(screen.getByRole('button', { name: 'Sửa trường' }));
+    await user.click(screen.getAllByRole('button', { name: 'Xoá trường' })[0]);
+    await user.click(screen.getByRole('button', { name: 'Lưu trường' }));
+    const confirm = screen.getByRole('dialog', { name: 'Xoá trường?' });
+    expect(within(confirm).getByText('Giá trị của các trường bị xoá trong mọi đối tượng sẽ mất. Không khôi phục được.')).toBeInTheDocument();
+    expect(h.onSaveFields).not.toHaveBeenCalled();
+    // Huỷ keeps the rows as they were edited, and saves nothing.
+    await user.click(within(confirm).getByRole('button', { name: 'Huỷ' }));
+    expect(h.onSaveFields).not.toHaveBeenCalled();
+    expect(screen.getAllByLabelText('Tên trường').map((i) => (i as HTMLInputElement).value)).toEqual(['Ghi chú']);
+    await user.click(screen.getByRole('button', { name: 'Lưu trường' }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Xoá trường?' })).getByRole('button', { name: 'Xoá' }));
+    expect(h.onSaveFields).toHaveBeenCalledWith([{ name: 'Ghi chú', type: 'text', from: 'Ghi chú' }]);
+  });
+
   it('deleting an edit copy shows the draft message', async () => {
     const h = handlers();
     const user = userEvent.setup();
