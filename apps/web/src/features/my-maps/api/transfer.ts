@@ -90,7 +90,13 @@ export async function downloadJobFile(jobId: string): Promise<{ blob: Blob; file
   return { blob: await res.blob(), filename: filenameFrom(res.headers.get('Content-Disposition')) };
 }
 
-/** Save a blob through a temporary object-URL link. */
+/** How long the object URL outlives the click, so the browser has started reading it. */
+export const REVOKE_DELAY_MS = 60_000;
+
+/**
+ * Save a blob through a temporary object-URL link. The URL is revoked later, not right after the
+ * click: some browsers start the download asynchronously and would find it already gone.
+ */
 export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -99,5 +105,5 @@ export function saveBlob(blob: Blob, filename: string): void {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
 }

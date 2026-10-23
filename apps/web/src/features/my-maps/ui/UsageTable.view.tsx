@@ -54,7 +54,7 @@ export function UsageTableView(p: Props) {
                 {p.editingId === r.userId ? (
                   <form onSubmit={(e) => { e.preventDefault(); p.onSave(); }}>
                     <input
-                      type="number" className="input" min={0} step={0.1} aria-label="Hạn mức (GB)"
+                      type="text" inputMode="decimal" className="input" aria-label="Hạn mức (GB)"
                       value={p.draft} onChange={(e) => p.onDraft(e.target.value)}
                     />{' '}
                     <Button type="submit" variant="solid" size="sm" busy={p.saving} disabled={!p.canSave}>Lưu</Button>{' '}

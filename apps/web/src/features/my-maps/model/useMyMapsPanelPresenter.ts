@@ -3,7 +3,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/workspace.api';
 import type { FieldDef, GeometryType, LayerKind, MapSummary } from '../api/workspace.api';
 import { showToast } from '../../../shared/ui/toast.store';
-import { dropGoneMap, isMapNotFound, keys, MapGoneError, useMapWrite, useMyMaps, useUploads } from './queries';
+import { dropGoneMap, isMapNotFound, keys, MapGoneError, mapDetailQuery, useMapWrite, useMyMaps, useUploads } from './queries';
 import { layerKindLabel } from './layerKindLabel';
 import { parseStyle, type PersonalLayerStyle } from './personalStyle';
 import {
@@ -58,11 +58,9 @@ export function useMyMapsPanelPresenter() {
   const sharedWithMe = maps.data?.sharedWithMe ?? [];
   const all = [...mine, ...sharedWithMe];
 
-  const expandedIds = all.filter((m) => store.expanded.has(m.id)).map((m) => m.id);
-  const details = useQueries({
-    queries: expandedIds.map((id) => ({ queryKey: keys.map(id), queryFn: () => api.getMap(id) })),
-  });
-  const detailOf = new Map(expandedIds.map((id, i) => [id, details[i].data]));
+  const expandedMaps = all.filter((m) => store.expanded.has(m.id));
+  const details = useQueries({ queries: expandedMaps.map(mapDetailQuery) });
+  const detailOf = new Map(expandedMaps.map((m, i) => [m.id, details[i].data]));
 
   const [dialog, setDialog] = useState<DialogState>(CLOSED);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -151,6 +149,8 @@ export function useMyMapsPanelPresenter() {
       await deleteWrite.run((expectedRevision) => api.deleteMap(mapId, expectedRevision));
       forgetMap(mapId, detailOf.get(mapId)?.layers.map((l) => l.id) ?? []);
       qc.removeQueries({ queryKey: keys.map(mapId) });
+      // Usage (Đã dùng) counts the map's features and files: read it again.
+      void qc.invalidateQueries({ queryKey: keys.uploads });
       setDeleteId(null);
     } catch (e) {
       if (e instanceof MapGoneError) {
@@ -170,7 +170,8 @@ export function useMyMapsPanelPresenter() {
     setCopyingId(mapId);
     try {
       const created = await api.copyMap(mapId);
-      await refreshMaps();
+      // The copy's features and files count in the copier's usage (Đã dùng): read it again.
+      await Promise.all([refreshMaps(), qc.invalidateQueries({ queryKey: keys.uploads })]);
       expandMap(created.id);
       showToast({ tone: 'success', title: `Đã tạo bản sao “${created.title}”.` });
     } catch (e) {

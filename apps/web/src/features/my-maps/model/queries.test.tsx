@@ -4,7 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ApiError } from '../../../shared/api/apiClient';
 import * as api from '../api/workspace.api';
-import { useJob, useMapWrite, MapChangedError, MapGoneError } from './queries';
+import { dropGoneMap, useJob, useMapWrite, MapChangedError, MapGoneError } from './queries';
+import { expandMap, getMyMaps, resetMyMapsStore, setLayerVisible } from './myMaps.store';
+import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
 
 vi.mock('../api/workspace.api');
 
@@ -83,6 +85,47 @@ describe('useJob', () => {
   });
 });
 
+describe('dropGoneMap', () => {
+  const GONE = 'Bản đồ này không còn được chia sẻ với anh/chị hoặc đã bị xoá.';
+  const summary = (id: string) => ({ id, title: id, role: 'recipient' });
+  beforeEach(() => { resetMyMapsStore(); resetToasts(); });
+
+  it('a map already gone from the list is still forgotten, without a toast', () => {
+    const { qc } = setup();
+    qc.setQueryData(['ws', 'maps'], { mine: [], sharedWithMe: [] });
+    expandMap('m1');
+    setLayerVisible('l1', false);
+    dropGoneMap(qc, 'm1', ['l1']);
+    expect(getMyMaps().expanded.has('m1')).toBe(false);
+    expect(getMyMaps().layers.l1).toBeUndefined();
+    expect(getToasts()).toEqual([]);
+  });
+
+  it('a listed map leaves the list with one toast; a second call is silent', () => {
+    const { qc } = setup();
+    qc.setQueryData(['ws', 'maps'], { mine: [], sharedWithMe: [summary('m1'), summary('m2')] });
+    qc.setQueryData(['ws', 'map', 'm1'], { id: 'm1', revision: 1, layers: [{ id: 'l1' }, { id: 'l2' }] });
+    expandMap('m1');
+    setLayerVisible('l2', false);
+    dropGoneMap(qc, 'm1');
+    expect(getMyMaps().expanded.has('m1')).toBe(false);
+    expect(getMyMaps().layers.l2).toBeUndefined();
+    expect(qc.getQueryData(['ws', 'map', 'm1'])).toBeUndefined();
+    expect(qc.getQueryData<{ sharedWithMe: { id: string }[] }>(['ws', 'maps'])?.sharedWithMe.map((m) => m.id)).toEqual(['m2']);
+    expect(getToasts().map((t) => t.title)).toEqual([GONE]);
+    resetToasts();
+    dropGoneMap(qc, 'm1');
+    expect(getToasts()).toEqual([]);
+  });
+
+  it('a cached detail alone still brings the toast', () => {
+    const { qc } = setup();
+    qc.setQueryData(['ws', 'map', 'm1'], { id: 'm1', revision: 1, layers: [] });
+    dropGoneMap(qc, 'm1');
+    expect(getToasts().map((t) => t.title)).toEqual([GONE]);
+  });
+});
+
 describe('useMapWrite', () => {
   it('an uncached map is read first and its revision sent', async () => {
     const { wrapper } = setup();
@@ -133,6 +176,20 @@ describe('useMapWrite', () => {
       expect(err).toBe(original);
       expect(qc.getQueryData(['ws', 'map', 'm1'])).toEqual({ id: 'm1', revision: 7, layers: [] });
     }
+  });
+
+  it('MAP_BUSY comes back with the API message as it is, and the next queued write still runs', async () => {
+    const { qc, wrapper } = setup();
+    qc.setQueryData(['ws', 'map', 'm1'], { id: 'm1', revision: 2, layers: [] });
+    const { result } = renderHook(() => useMapWrite('m1'), { wrapper });
+    const busy = new ApiError(409, 'MAP_BUSY', 'Bản đồ đang nhập dữ liệu; thử lại sau.');
+    const first = result.current.run(vi.fn().mockRejectedValue(busy)).catch((e: unknown) => e);
+    const next = vi.fn().mockResolvedValue({ revision: 3 });
+    const second = result.current.run(next);
+    expect(await first).toBe(busy);
+    await second;
+    expect(next).toHaveBeenCalledWith(2);
+    expect(qc.getQueryData(['ws', 'map', 'm1'])).toMatchObject({ revision: 3 });
   });
 
   it('writes to one map run one at a time; another map does not wait', async () => {

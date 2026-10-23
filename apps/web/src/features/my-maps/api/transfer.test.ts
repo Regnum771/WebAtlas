@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setAuthToken, ApiError, onUnauthorized } from '../../../shared/api/apiClient';
-import { uploadFile, downloadJobFile } from './transfer';
+import { uploadFile, downloadJobFile, saveBlob, REVOKE_DELAY_MS } from './transfer';
 
 class FakeXhr {
   static last: FakeXhr;
@@ -118,5 +118,33 @@ describe('downloadJobFile', () => {
     }));
     await expect(downloadJobFile('j')).rejects.toMatchObject({ status: 401, message: 'Phiên đăng nhập đã hết hạn.' });
     expect(cb).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('saveBlob', () => {
+  // jsdom has no object URLs: put stand-ins on URL and take them off again.
+  const original = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+  afterEach(() => {
+    URL.createObjectURL = original.create;
+    URL.revokeObjectURL = original.revoke;
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('clicks a download link and revokes its URL only later', () => {
+    vi.useFakeTimers();
+    const create = vi.fn(() => 'blob:x');
+    const revoke = vi.fn();
+    URL.createObjectURL = create;
+    URL.revokeObjectURL = revoke;
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const blob = new Blob(['x']);
+    saveBlob(blob, 'lu.gpkg');
+    expect(create).toHaveBeenCalledWith(blob);
+    expect(click).toHaveBeenCalledTimes(1);
+    expect((click.mock.contexts[0] as HTMLAnchorElement).download).toBe('lu.gpkg');
+    expect(revoke).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(REVOKE_DELAY_MS);
+    expect(revoke).toHaveBeenCalledWith('blob:x');
   });
 });

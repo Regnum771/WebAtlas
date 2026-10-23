@@ -8,7 +8,7 @@ import type { OwnerSummary } from '../api/workspace.api';
 export const GB = 1073741824;
 
 export interface UsageRow extends OwnerSummary {
-  /** Usage at or over the quota. */
+  /** Some usage, at or over the quota. */
   overQuota: boolean;
 }
 
@@ -34,7 +34,8 @@ export function useUsagePresenter() {
     () =>
       [...(query.data ?? [])]
         .sort((a, b) => b.usageBytes - a.usageBytes)
-        .map((o) => ({ ...o, overQuota: o.usageBytes >= o.quotaBytes })),
+        // Nothing stored is never over, even against a quota of 0.
+        .map((o) => ({ ...o, overQuota: o.usageBytes > 0 && o.usageBytes >= o.quotaBytes })),
     [query.data]
   );
 
@@ -43,8 +44,8 @@ export function useUsagePresenter() {
   function startEdit(userId: string) {
     const row = rows.find((r) => r.userId === userId);
     if (!row) return;
-    // Show the current quota in GB with at most one decimal (the amount is typed that way).
-    setDraft(String(Math.round((row.quotaBytes / GB) * 10) / 10));
+    // Show the current quota in GB with at most one decimal and a decimal comma (the amount is typed that way).
+    setDraft(String(Math.round((row.quotaBytes / GB) * 10) / 10).replace('.', ','));
     setSaveError(null);
     setEditingId(userId);
   }

@@ -144,6 +144,8 @@ export function useLayerEditorPresenter(mapId: string) {
   const remove = (layerId: string) =>
     guard(async () => {
       await write.run((expectedRevision) => api.removeLayer(mapId, layerId, expectedRevision), after);
+      // Usage (Đã dùng) counts the layer's features and files: read it again.
+      void qc.invalidateQueries({ queryKey: keys.uploads });
     });
 
   return { createDrawn, createEditCopy, rename, setStyle, move, saveFields, remove };

@@ -40,30 +40,50 @@ export function isMapNotFound(e: unknown): boolean {
 
 /**
  * A map the user can no longer read (revoked or deleted): it leaves the lists, its layers leave the
- * map and a toast says so. Runs once per map: once the cached list no longer holds it, a second
- * call (another layer's read, another observer) does nothing.
+ * map and a toast says so. The map and its detail are always forgotten (a focus refetch of the list
+ * may have dropped it already while its card and layers were still shown); the toast comes once,
+ * while the map is still listed or its detail cached, so a second call (another layer's read,
+ * another observer) is silent.
  */
 export function dropGoneMap(qc: QueryClient, mapId: string, layerIds: string[] = []): void {
   const lists = qc.getQueryData<{ mine: MapSummary[]; sharedWithMe: MapSummary[] }>(keys.maps);
-  if (lists && ![...lists.mine, ...lists.sharedWithMe].some((m) => m.id === mapId)) return;
-  const known = qc.getQueryData<MapDetail>(keys.map(mapId))?.layers.map((l) => l.id) ?? [];
+  const listed = lists !== undefined && [...lists.mine, ...lists.sharedWithMe].some((m) => m.id === mapId);
+  const detail = qc.getQueryData<MapDetail>(keys.map(mapId));
+  const known = detail?.layers.map((l) => l.id) ?? [];
   forgetMap(mapId, [...new Set([...layerIds, ...known])]);
-  if (lists) {
+  qc.removeQueries({ queryKey: keys.map(mapId) });
+  if (!listed && detail === undefined) return;
+  if (lists && listed) {
     qc.setQueryData(keys.maps, {
       ...lists,
       mine: lists.mine.filter((m) => m.id !== mapId),
       sharedWithMe: lists.sharedWithMe.filter((m) => m.id !== mapId),
     });
   }
-  qc.removeQueries({ queryKey: keys.map(mapId) });
   void qc.invalidateQueries({ queryKey: keys.maps });
   showToast({ tone: 'warning', title: MAP_GONE_COPY });
 }
 
 const POLL_MS = 1000;
 
+/**
+ * The user's maps and the maps shared with them. Read again when the window regains focus (the
+ * app's default is not to), so a share revoked or added elsewhere shows up.
+ */
 export function useMyMaps() {
-  return useQuery({ queryKey: keys.maps, queryFn: api.listMaps });
+  return useQuery({ queryKey: keys.maps, queryFn: api.listMaps, refetchOnWindowFocus: true });
+}
+
+/**
+ * The query of an open card's map detail. A shared map's detail is read again on window focus,
+ * so a revoked share is noticed (its 404 drops the map) without waiting for a viewport read.
+ */
+export function mapDetailQuery(m: Pick<MapSummary, 'id' | 'role'>) {
+  return {
+    queryKey: keys.map(m.id),
+    queryFn: () => api.getMap(m.id),
+    refetchOnWindowFocus: m.role === 'recipient',
+  };
 }
 
 export function useMapDetail(id: string | null) {

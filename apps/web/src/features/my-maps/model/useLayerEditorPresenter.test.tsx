@@ -24,7 +24,7 @@ vi.mock('../../../app/providers/MapProvider', () => ({ useMapContext: () => ({ m
 
 import { ApiError } from '../../../shared/api/apiClient';
 import { useLayerEditorPresenter } from './useLayerEditorPresenter';
-import { MAP_CHANGED_COPY, useMapDetail } from './queries';
+import { keys, MAP_CHANGED_COPY, useMapDetail } from './queries';
 import { getMyMaps, resetMyMapsStore } from './myMaps.store';
 
 const layer = (over: Record<string, unknown>) => ({
@@ -136,8 +136,11 @@ describe('useLayerEditorPresenter', () => {
   it('remove deletes the layer with the revision of the last read', async () => {
     removeLayer.mockResolvedValue({ revision: 5 });
     const { result } = setup();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
     await act(async () => { await result.current.remove('a'); });
     expect(removeLayer).toHaveBeenCalledWith('m1', 'a', 4);
+    // Đã dùng is read again.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.uploads });
   });
 
   /** A server that keeps a revision and the layers' order, and refuses a stale revision. */

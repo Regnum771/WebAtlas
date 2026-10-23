@@ -6,7 +6,7 @@ import { useMapEditing } from '../../map/model/mapEditing';
 import type { DrawnRoiGeometry } from '@webatlas/shared';
 import { setRoi } from '../../roi/model/roi.store';
 import type { MapDetail, PersonalFeature } from '../api/workspace.api';
-import { getMyMaps } from './myMaps.store';
+import { getMyMaps, useMyMapsStore } from './myMaps.store';
 import { personalFeatureAt } from './personalLayers';
 import { keys } from './queries';
 
@@ -84,12 +84,19 @@ export function usePersonalPopupPresenter() {
     return () => { map.un('postrender', update); };
   }, [map, open]);
 
-  const geometry = open?.card.feature.geometry ?? null;
+  // The card's map was folded, deleted or unshared: its layers left the map, so the card goes too.
+  const { expanded } = useMyMapsStore();
+  const shown = open && expanded.has(open.card.mapId) ? open : null;
+  useEffect(() => {
+    if (open && !shown) setOpen(null);
+  }, [open, shown]);
+
+  const geometry = shown?.card.feature.geometry ?? null;
   const canUseAsRoi = geometry !== null && ROI_GEOMETRY_TYPES.has(geometry.type);
 
   return {
-    card: open?.card ?? null,
-    anchor: open ? anchor : null,
+    card: shown?.card ?? null,
+    anchor: shown ? anchor : null,
     close: () => setOpen(null),
     canUseAsRoi,
     /**

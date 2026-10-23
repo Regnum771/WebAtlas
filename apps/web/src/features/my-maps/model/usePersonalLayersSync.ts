@@ -1,10 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useMapContext } from '../../../app/providers/MapProvider';
-import * as api from '../api/workspace.api';
 import { layerView, setTruncated, useMyMapsStore } from './myMaps.store';
 import { PERSONAL_Z_BASE, syncPersonalLayers, type PersonalLayerEntry } from './personalLayers';
-import { dropGoneMap, isMapNotFound, keys, useMyMaps } from './queries';
+import { dropGoneMap, isMapNotFound, mapDetailQuery, useMyMaps } from './queries';
 
 /**
  * Keeps the map's personal layers in step with the panel: the layers of every expanded map,
@@ -18,9 +17,7 @@ export function usePersonalLayersSync(): void {
   const qc = useQueryClient();
   const maps = useMyMaps();
   const expanded = [...(maps.data?.mine ?? []), ...(maps.data?.sharedWithMe ?? [])].filter((m) => store.expanded.has(m.id));
-  const details = useQueries({
-    queries: expanded.map((m) => ({ queryKey: keys.map(m.id), queryFn: () => api.getMap(m.id) })),
-  });
+  const details = useQueries({ queries: expanded.map(mapDetailQuery) });
 
   const rows = expanded.flatMap((m, i) => {
     const detail = details[i].data;

@@ -34,9 +34,11 @@ describe('UsageTableView', () => {
     const { rerender } = render(<UsageTableView {...base} onStartEdit={onStartEdit} />);
     await userEvent.click(screen.getByRole('button', { name: 'Sửa' }));
     expect(onStartEdit).toHaveBeenCalledWith('u1');
-    rerender(<UsageTableView {...base} editingId="u1" onSave={onSave} onCancel={onCancel} />);
-    const cell = screen.getByRole('spinbutton', { name: 'Hạn mức (GB)' });
-    expect(cell).toHaveValue(1);
+    rerender(<UsageTableView {...base} editingId="u1" draft="2,5" onSave={onSave} onCancel={onCancel} />);
+    // A text box with a decimal keypad: a number input would refuse the decimal comma.
+    const cell = screen.getByRole('textbox', { name: 'Hạn mức (GB)' });
+    expect(cell).toHaveValue('2,5');
+    expect(cell).toHaveAttribute('inputmode', 'decimal');
     await userEvent.click(screen.getByRole('button', { name: 'Lưu' }));
     await userEvent.click(screen.getByRole('button', { name: 'Huỷ' }));
     expect(onSave).toHaveBeenCalled();

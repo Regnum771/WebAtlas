@@ -30,7 +30,7 @@ vi.mock('../../roi/model/roi.store', () => ({ setRoi }));
 
 import { usePersonalPopupPresenter } from './usePersonalPopupPresenter';
 import { keys } from './queries';
-import { resetMyMapsStore, setPersonalEditing } from './myMaps.store';
+import { expandMap, forgetMap, resetMyMapsStore, setPersonalEditing, toggleExpanded } from './myMaps.store';
 
 const DETAIL = {
   id: 'm1', title: 'Lũ Đà Nẵng', description: '', ownerId: 'u1', ownerName: 'Tôi', revision: 3,
@@ -54,6 +54,8 @@ beforeEach(() => {
   h.hit = { mapId: 'm1', layerId: 'l1', feature: FEATURE };
   h.drawing = false; h.justEnded = false; h.editing = false;
   resetMyMapsStore();
+  // A personal feature is on the map only while its map's card is open.
+  expandMap('m1');
   setRoi.mockReset();
 });
 
@@ -96,6 +98,21 @@ describe('usePersonalPopupPresenter', () => {
     expect(result.current.card).not.toBeNull();
     h.hit = null;
     click();
+    expect(result.current.card).toBeNull();
+  });
+
+  it('the card closes when its map is folded or dropped, and stays closed when it opens again', () => {
+    const { result } = setup();
+    click();
+    expect(result.current.card).not.toBeNull();
+    act(() => toggleExpanded('m1'));
+    expect(result.current.card).toBeNull();
+    expect(result.current.anchor).toBeNull();
+    act(() => toggleExpanded('m1'));
+    expect(result.current.card).toBeNull();
+    click();
+    expect(result.current.card).not.toBeNull();
+    act(() => forgetMap('m1', ['l1']));
     expect(result.current.card).toBeNull();
   });
 

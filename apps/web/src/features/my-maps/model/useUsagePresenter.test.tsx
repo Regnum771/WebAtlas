@@ -30,10 +30,14 @@ describe('useUsagePresenter', () => {
   });
 
   it('a row over its quota is marked', async () => {
-    vi.mocked(ws.adminSummary).mockResolvedValue([owner('over', 6 * GB), owner('at', 5 * GB), owner('under', 1)]);
+    vi.mocked(ws.adminSummary).mockResolvedValue([
+      owner('over', 6 * GB), owner('at', 5 * GB), owner('under', 1), owner('empty-at-zero', 0, 0), owner('some-at-zero', 1, 0),
+    ]);
     const { result } = setup();
-    await waitFor(() => expect(result.current.rows).toHaveLength(3));
-    expect(Object.fromEntries(result.current.rows.map((r) => [r.userId, r.overQuota]))).toEqual({ over: true, at: true, under: false });
+    await waitFor(() => expect(result.current.rows).toHaveLength(5));
+    expect(Object.fromEntries(result.current.rows.map((r) => [r.userId, r.overQuota]))).toEqual({
+      over: true, at: true, under: false, 'empty-at-zero': false, 'some-at-zero': true,
+    });
   });
 
   it('saving 2,5 GB sends 2684354560 bytes', async () => {
@@ -47,6 +51,15 @@ describe('useUsagePresenter', () => {
     await act(async () => { await result.current.save(); });
     expect(users.updateUser).toHaveBeenCalledWith('u1', { quotaBytes: 2684354560 });
     expect(result.current.editingId).toBeNull();
+  });
+
+  it('the editor opens with the quota written with a decimal comma', async () => {
+    vi.mocked(ws.adminSummary).mockResolvedValue([owner('u1', 10, 2.5 * GB)]);
+    const { result } = setup();
+    await waitFor(() => expect(result.current.rows).toHaveLength(1));
+    act(() => result.current.startEdit('u1'));
+    expect(result.current.draft).toBe('2,5');
+    expect(result.current.canSave).toBe(true);
   });
 
   it('refuses an empty or negative amount and keeps the editor open', async () => {

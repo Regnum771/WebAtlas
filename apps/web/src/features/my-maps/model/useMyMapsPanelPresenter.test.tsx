@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
 const listMaps = vi.fn();
@@ -23,7 +23,7 @@ vi.mock('../api/workspace.api', () => ({
 import { useMyMapsPanelPresenter } from './useMyMapsPanelPresenter';
 import { ApiError } from '../../../shared/api/apiClient';
 import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
-import { MAP_CHANGED_COPY } from './queries';
+import { keys, MAP_CHANGED_COPY } from './queries';
 import { resetMyMapsStore, getMyMaps, expandMap, setTruncated } from './myMaps.store';
 
 const MINE = { id: 'm1', title: 'Lũ Đà Nẵng', description: '', ownerId: 'u1', ownerName: 'Tôi', revision: 3, updatedAt: '2026-10-01T00:00:00Z', layerCount: 2, role: 'owner' as const };
@@ -32,7 +32,7 @@ const SHARED = { ...MINE, id: 'm2', title: 'Sông Hàn', ownerId: 'u2', ownerNam
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-  return renderHook(() => useMyMapsPanelPresenter(), { wrapper });
+  return { client, ...renderHook(() => useMyMapsPanelPresenter(), { wrapper }) };
 }
 
 beforeEach(() => {
@@ -72,14 +72,17 @@ describe('useMyMapsPanelPresenter', () => {
 
   it('deleting asks first and sends the revision', async () => {
     deleteMap.mockResolvedValue(undefined);
-    const { result } = setup();
+    const { result, client } = setup();
     await waitFor(() => expect(result.current.loading).toBe(false));
     act(() => result.current.askDelete('m1'));
     expect(deleteMap).not.toHaveBeenCalled();
     expect(result.current.pendingDelete).toBe(true);
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
     await act(async () => { await result.current.confirmDelete(); });
     expect(deleteMap).toHaveBeenCalledWith('m1', 3);
     expect(result.current.pendingDelete).toBe(false);
+    // Đã dùng is read again.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.uploads });
   });
 
   it('a layer row carries the truncation count of its last read', async () => {
@@ -91,6 +94,24 @@ describe('useMyMapsPanelPresenter', () => {
     expect(result.current.own[0].layers![0].truncated).toBeNull();
     act(() => setTruncated('l1', 5000));
     expect(result.current.own[0].layers![0].truncated).toBe(5000);
+  });
+
+  it('the list and a shared map’s detail are read again on window focus; an own map’s detail is not', async () => {
+    expandMap('m1');
+    expandMap('m2');
+    const { result } = setup();
+    await waitFor(() => expect(result.current.own[0].layers).toEqual([]));
+    await waitFor(() => expect(result.current.shared[0].layers).toEqual([]));
+    listMaps.mockClear();
+    getMap.mockClear();
+    try {
+      act(() => { focusManager.setFocused(false); focusManager.setFocused(true); });
+      await waitFor(() => expect(listMaps).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(getMap).toHaveBeenCalledWith('m2'));
+      expect(getMap).not.toHaveBeenCalledWith('m1');
+    } finally {
+      focusManager.setFocused(undefined);
+    }
   });
 
   it('a recipient gets no rename or delete actions', async () => {
@@ -149,11 +170,14 @@ describe('useMyMapsPanelPresenter', () => {
   it('Tạo bản sao adds the copy to Của tôi, expanded, with a toast', async () => {
     const copy = { ...MINE, id: 'm9', title: 'Sông Hàn (bản sao)', revision: 1 };
     copyMap.mockResolvedValue({ ...copy, layers: [] });
-    const { result } = setup();
+    const { result, client } = setup();
     await waitFor(() => expect(result.current.loading).toBe(false));
     listMaps.mockResolvedValue({ mine: [MINE, copy], sharedWithMe: [SHARED] });
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
     await act(async () => { await result.current.copy('m2'); });
     expect(copyMap).toHaveBeenCalledWith('m2');
+    // Đã dùng is read again: the copy counts in it.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.uploads });
     await waitFor(() => expect(result.current.own.map((c) => c.id)).toEqual(['m1', 'm9']));
     expect(getMyMaps().expanded.has('m9')).toBe(true);
     expect(getToasts().map((t) => t.title)).toContain('Đã tạo bản sao “Sông Hàn (bản sao)”.');
