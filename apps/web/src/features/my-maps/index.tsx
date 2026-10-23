@@ -29,7 +29,9 @@ function PersonalFeatureCard() {
   const p = usePersonalPopupPresenter();
   if (!p.card || !p.anchor) return null;
   return createPortal(
-    <PersonalFeatureCardView title={p.card.title} rows={p.card.rows} anchor={p.anchor} onClose={p.close} />,
+    <PersonalFeatureCardView title={p.card.title} rows={p.card.rows} anchor={p.anchor}
+      canUseAsRoi={p.canUseAsRoi} onUseAsRoi={p.useAsRoi} onClose={p.close}
+    />,
     document.body,
   );
 }

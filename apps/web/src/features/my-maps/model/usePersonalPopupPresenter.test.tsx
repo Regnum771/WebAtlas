@@ -25,6 +25,8 @@ vi.mock('../../../app/providers/MapProvider', () => {
 vi.mock('../../map/model/drawingState', () => ({ isDrawing: () => h.drawing, drawingJustEnded: () => h.justEnded }));
 vi.mock('../../map/model/mapEditing', () => ({ useMapEditing: () => ({ editing: h.editing }) }));
 vi.mock('./personalLayers', () => ({ personalFeatureAt: () => h.hit }));
+const setRoi = vi.hoisted(() => vi.fn());
+vi.mock('../../roi/model/roi.store', () => ({ setRoi }));
 
 import { usePersonalPopupPresenter } from './usePersonalPopupPresenter';
 import { keys } from './queries';
@@ -52,6 +54,7 @@ beforeEach(() => {
   h.hit = { mapId: 'm1', layerId: 'l1', feature: FEATURE };
   h.drawing = false; h.justEnded = false; h.editing = false;
   resetMyMapsStore();
+  setRoi.mockReset();
 });
 
 describe('usePersonalPopupPresenter', () => {
@@ -94,5 +97,25 @@ describe('usePersonalPopupPresenter', () => {
     h.hit = null;
     click();
     expect(result.current.card).toBeNull();
+  });
+
+  it('a polygon feature becomes the drawn ROI', () => {
+    const polygon = { type: 'Polygon', coordinates: [[[108, 16], [108.1, 16], [108.1, 16.1], [108, 16]]] };
+    h.hit = { mapId: 'm1', layerId: 'l1', feature: { ...FEATURE, geometry: polygon } };
+    const { result } = setup();
+    click();
+    expect(result.current.canUseAsRoi).toBe(true);
+    act(() => result.current.useAsRoi());
+    expect(setRoi).toHaveBeenCalledWith({ source: 'drawn', geometry: polygon }, { fit: 'ifOutside' });
+    expect(result.current.card).toBeNull();
+  });
+
+  it('a MultiPolygon feature cannot be the ROI', () => {
+    h.hit = { mapId: 'm1', layerId: 'l1', feature: { ...FEATURE, geometry: { type: 'MultiPolygon', coordinates: [] } } };
+    const { result } = setup();
+    click();
+    expect(result.current.canUseAsRoi).toBe(false);
+    act(() => result.current.useAsRoi());
+    expect(setRoi).not.toHaveBeenCalled();
   });
 });

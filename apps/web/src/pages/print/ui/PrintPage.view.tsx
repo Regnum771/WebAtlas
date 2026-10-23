@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Button } from '../../../shared/ui/Button';
 import { Message } from '../../../shared/ui/Message';
 import { TextField } from '../../../shared/ui/TextField';
+import type { PersonalLegendItem } from '../../../features/my-maps/model/personalLegend';
 import { PAPER_SIZES, type PaperId, type PrintToggles } from '../model/usePrintPage';
 
 export interface PrintPageViewProps {
@@ -11,6 +12,8 @@ export interface PrintPageViewProps {
   imageUrl: string | null; capturing: boolean; exportError: string | null;
   attributions: string[]; scaleText: string; crsLabel: string; date: string;
   legend: ReactNode; analysis: ReactNode;
+  /** Visible personal layers, listed under "Bản của tôi" in the legend. */
+  personalLegend: PersonalLegendItem[];
   onDownload: () => void; onPrint: () => void; onClose: () => void;
 }
 
@@ -87,7 +90,31 @@ export function PrintPageView(p: PrintPageViewProps) {
             {p.toggles.date && <span>Ngày in: {p.date}</span>}
           </div>
           <div className="print-body">
-            {p.toggles.legend && <div className="print-legend">{p.legend}</div>}
+            {p.toggles.legend && (
+              <div className="print-legend">
+                {p.legend}
+                {p.personalLegend.length > 0 && (
+                  <section className="print-personal-legend">
+                    <h3>Bản của tôi</h3>
+                    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                      {p.personalLegend.map((item) => (
+                        <li key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span
+                            data-testid={`swatch-${item.id}`}
+                            aria-hidden="true"
+                            style={{
+                              display: 'inline-block', width: 28, height: 12, border: '1px solid #6b7280', flex: 'none',
+                              background: item.raster ? `linear-gradient(to right, #9ca3af, ${item.color})` : item.color,
+                            }}
+                          />
+                          <span>{item.title}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+              </div>
+            )}
             {p.analysis && <div className="print-analysis">{p.analysis}</div>}
           </div>
         </div>

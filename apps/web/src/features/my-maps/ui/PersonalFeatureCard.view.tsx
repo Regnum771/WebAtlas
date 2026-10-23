@@ -1,4 +1,5 @@
 import { X } from 'lucide-react';
+import { Button } from '../../../shared/ui/Button';
 import type { PersonalCardRow } from '../model/usePersonalPopupPresenter';
 
 interface Props {
@@ -6,6 +7,9 @@ interface Props {
   rows: PersonalCardRow[];
   /** The clicked point in window coordinates. */
   anchor: [number, number];
+  /** False for a multi-part geometry: the button is disabled and says why. */
+  canUseAsRoi: boolean;
+  onUseAsRoi: () => void;
   onClose: () => void;
 }
 
@@ -14,7 +18,7 @@ const CARD_WIDTH = 260;
 const CARD_HEIGHT = 350;
 
 /** Passive: a personal feature's card beside the click — the layer title and one `key: value` row per property. */
-export function PersonalFeatureCardView({ title, rows, anchor, onClose }: Props) {
+export function PersonalFeatureCardView({ title, rows, anchor, canUseAsRoi, onUseAsRoi, onClose }: Props) {
   const [x, y] = anchor;
   // Beside the pointer, flipped left or below when it would leave the window.
   const flipX = x + 15 + CARD_WIDTH > window.innerWidth;
@@ -40,6 +44,8 @@ export function PersonalFeatureCardView({ title, rows, anchor, onClose }: Props)
         {rows.map((row) => (
           <p key={row.key} className="info-row">{`${row.key}: ${row.value}`}</p>
         ))}
+        <Button size="sm" onClick={onUseAsRoi} disabled={!canUseAsRoi}>Dùng làm vùng phân tích</Button>
+        {!canUseAsRoi && <p className="info-row">Đối tượng nhiều phần chưa dùng được làm vùng phân tích.</p>}
       </div>
     </div>
   );

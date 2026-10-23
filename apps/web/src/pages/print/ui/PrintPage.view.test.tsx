@@ -9,7 +9,7 @@ function props(over: Partial<PrintPageViewProps> = {}): PrintPageViewProps {
     imageUrl: 'blob:map', capturing: false, exportError: null,
     attributions: ['Nền bản đồ: © OpenStreetMap contributors (ODbL)'],
     scaleText: '1:250.000', crsLabel: 'WGS 84', date: '17/9/2026',
-    legend: <div>LEGEND</div>, analysis: null,
+    legend: <div>LEGEND</div>, personalLegend: [], analysis: null,
     onDownload: vi.fn(), onPrint: vi.fn(), onClose: vi.fn(),
     ...over,
   };
@@ -24,6 +24,24 @@ describe('PrintPageView', () => {
     expect(screen.getByText('Hệ quy chiếu: WGS 84')).toBeInTheDocument();
     expect(screen.getByText('LEGEND')).toBeInTheDocument();
     expect(screen.getByText('Nền bản đồ: © OpenStreetMap contributors (ODbL)')).toBeInTheDocument();
+  });
+
+  it('print lists visible personal layers under Bản của tôi; hidden ones are left out', () => {
+    // The list is built from visible layers only (personalLegend.test.ts); the view shows what it gets.
+    const personalLegend = [
+      { id: 'a', title: 'Cống thoát nước', color: '#d9480f', raster: false },
+      { id: 'b', title: 'Ảnh vệ tinh Đà Nẵng', color: '#1971c2', raster: true },
+    ];
+    const { rerender } = render(<PrintPageView {...props({ personalLegend })} />);
+    expect(screen.getByRole('heading', { name: 'Bản của tôi' })).toBeInTheDocument();
+    expect(screen.getByText('Cống thoát nước')).toBeInTheDocument();
+    expect(screen.getByText('Ảnh vệ tinh Đà Nẵng')).toBeInTheDocument();
+    expect(screen.getByTestId('swatch-a').getAttribute('style')).toContain('background');
+    expect(screen.getByTestId('swatch-b').getAttribute('style')).toContain('linear-gradient');
+    rerender(<PrintPageView {...props({ personalLegend: [] })} />);
+    expect(screen.queryByText('Bản của tôi')).toBeNull();
+    rerender(<PrintPageView {...props({ personalLegend, toggles: { legend: false, scale: true, north: true, date: true, crs: true } })} />);
+    expect(screen.queryByText('Bản của tôi')).toBeNull();
   });
 
   it('titles the options panel In và xuất', () => {

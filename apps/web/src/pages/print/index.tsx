@@ -6,6 +6,8 @@ import { useAnalysisResult } from '../../features/analysis/model/analysisResult.
 import { ANALYSIS_TOOL_LABELS } from '../../features/analysis/model/tools';
 import { formatScale, scaleAtZoom } from '../../features/map/model/zoomScale';
 import { useCrsPreference } from '../../features/map/model/crsPreference';
+import { useSession } from '../../entities/session/model/session.store';
+import { usePersonalLegend } from '../../features/my-maps/model/personalLegend';
 import { usePrintPage } from './model/usePrintPage';
 import { PrintPageView } from './ui/PrintPage.view';
 
@@ -20,7 +22,10 @@ export default function PrintRoute() {
     visibleLayerIds: layersState.filter((l) => l.visible).map((l) => l.id),
     crsLabel: findCrs(crsId).alias,
   });
-  const zoom = map?.getView().getZoom() ?? 0;
+  // An anonymous visitor has no Bản của tôi section, so nothing is read for them.
+  const { status } = useSession();
+  const personalLegend = usePersonalLegend(status === 'authenticated');
+  const zoom =map?.getView().getZoom() ?? 0;
 
   return (
     <PrintPageView
@@ -30,6 +35,7 @@ export default function PrintRoute() {
       attributions={[...p.attributions, ...(analysis?.attribution ? [analysis.attribution] : [])]}
       scaleText={formatScale(scaleAtZoom(zoom))} crsLabel={p.crsLabel} date={p.date}
       legend={<Legend />}
+      personalLegend={personalLegend}
       analysis={analysis ? (
         <section>
           <h2>{ANALYSIS_TOOL_LABELS[analysis.op]}</h2>
