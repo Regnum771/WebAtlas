@@ -25,7 +25,7 @@ function UploadDialog({ targetMapId, onClose }: { targetMapId: string | null; on
   const close = () => { p.close(); onClose(); };
   return (
     <UploadDialogView
-      phase={p.phase} progress={p.progress} job={p.job} fileError={p.fileError}
+      phase={p.phase} progress={p.progress} job={p.job} fileName={p.file?.name ?? null} fileError={p.fileError}
       target={p.target} targets={p.targets} sourceCrs={p.sourceCrs} crsRequired={p.crsRequired}
       crsWarning={p.crsWarning} error={p.error} successText={p.successText}
       canSubmit={p.canSubmit} canRetry={p.canRetry}

@@ -8,7 +8,7 @@ import { UploadDialogView, type UploadDialogViewProps } from './UploadDialog.vie
 const GEOJSON_WARNING = 'Tệp GeoJSON thường đã ở WGS 84. Chỉ chọn hệ khác nếu chắc chắn toạ độ trong tệp là toạ độ phẳng.';
 
 const base = (over: Partial<UploadDialogViewProps> = {}): UploadDialogViewProps => ({
-  phase: 'idle', progress: 0, job: null, fileError: null,
+  phase: 'idle', progress: 0, job: null, fileName: null, fileError: null,
   target: NEW_MAP, targets: [{ id: 'm1', title: 'Lũ Đà Nẵng' }],
   sourceCrs: '', crsRequired: false, crsWarning: false, error: null, successText: null,
   canSubmit: false, canRetry: false,
@@ -42,6 +42,19 @@ describe('UploadDialogView', () => {
     expect(onFile).toHaveBeenCalledWith(file);
     rerender(<UploadDialogView {...base({ onFile, fileError: 'Tệp lớn hơn 200 MB.' })} />);
     expect(screen.getByRole('alert')).toHaveTextContent('Tệp lớn hơn 200 MB.');
+  });
+
+  it('shows Chưa chọn tệp. until a file is chosen, then its name', () => {
+    const { rerender } = render(<UploadDialogView {...base()} />);
+    expect(screen.getByText('Chưa chọn tệp.')).toBeInTheDocument();
+    // The native input stays reachable by its label, but only the Vietnamese button and name are drawn.
+    const input = screen.getByLabelText('Chọn tệp');
+    expect(input).toHaveClass('visually-hidden');
+    expect(input).toHaveAccessibleDescription(/Chưa chọn tệp\./);
+    rerender(<UploadDialogView {...base({ fileName: 'Cống thoát nước.geojson' })} />);
+    expect(screen.queryByText('Chưa chọn tệp.')).toBeNull();
+    expect(screen.getByText('Cống thoát nước.geojson')).toBeInTheDocument();
+    expect(screen.getByLabelText('Chọn tệp')).toHaveAccessibleDescription(/Cống thoát nước\.geojson/);
   });
 
   it('while uploading it shows the percentage', () => {

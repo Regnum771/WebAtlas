@@ -11,6 +11,8 @@ export interface UploadDialogViewProps {
   /** Upload progress, 0–100. */
   progress: number;
   job: Job | null;
+  /** The chosen file's name; null before one is chosen. */
+  fileName: string | null;
   fileError: string | null;
   /** NEW_MAP or one of `targets`. */
   target: string;
@@ -55,16 +57,24 @@ export function UploadDialogView(p: UploadDialogViewProps) {
         }}
       >
         <div className="field">
-          <label htmlFor="upload-file">Chọn tệp</label>
-          <input
-            id="upload-file"
-            type="file"
-            accept={ACCEPT}
-            disabled={locked}
-            aria-invalid={p.fileError ? true : undefined}
-            aria-describedby={p.fileError ? 'upload-file-error' : 'upload-file-hint'}
-            onChange={(e) => p.onFile(e.target.files?.[0] ?? null)}
-          />
+          {/* The native input is hidden (its button text follows the browser's language) but stays
+              focusable and labelled; the label, drawn as a button, opens the picker. */}
+          <div className="file-pick">
+            <input
+              id="upload-file"
+              type="file"
+              className="visually-hidden"
+              accept={ACCEPT}
+              disabled={locked}
+              aria-invalid={p.fileError ? true : undefined}
+              aria-describedby={`upload-file-name ${p.fileError ? 'upload-file-error' : 'upload-file-hint'}`}
+              onChange={(e) => p.onFile(e.target.files?.[0] ?? null)}
+            />
+            <label htmlFor="upload-file" className={locked ? 'btn sm file-pick-button disabled' : 'btn sm file-pick-button'}>
+              Chọn tệp
+            </label>
+            <span id="upload-file-name" className="file-pick-name">{p.fileName ?? 'Chưa chọn tệp.'}</span>
+          </div>
           <p id="upload-file-hint" className="hint">{HINT}</p>
           {p.fileError && <p id="upload-file-error" className="hint bad" role="alert">{p.fileError}</p>}
         </div>
