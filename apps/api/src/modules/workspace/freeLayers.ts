@@ -9,6 +9,8 @@ import type { LayerSummary } from './maps';
 export const LAYER_NOT_FOUND = 'Không tìm thấy lớp.';
 export const FEATURE_NOT_FOUND = 'Không tìm thấy đối tượng.';
 export const STYLE_TOO_LARGE = 'Kiểu hiển thị quá lớn.';
+/** A layer route that the layer's kind does not support. */
+export const UNSUPPORTED_KIND = 'Loại lớp này chưa hỗ trợ thao tác này.';
 export const IMPORTED_KEEPS_COLUMNS = 'Lớp nhập từ tệp giữ nguyên các cột gốc.';
 const STYLE_MAX_BYTES = 8 * 1024;
 export const DEFAULT_LIMIT = 5000;

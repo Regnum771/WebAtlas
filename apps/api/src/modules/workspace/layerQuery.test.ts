@@ -176,7 +176,7 @@ describe('compileQuery', () => {
     expect(used[0]).toBe(4);
   });
 
-  it('orders by the sort column, numeric-aware, NULLS LAST, then r.id', () => {
+  it('orders by the sort column, numeric-aware, empty text with the missing values, NULLS LAST, then r.id', () => {
     const num = compileQuery(COLUMNS, body({ sort: { field: 'cong_suat', dir: 'desc' } }), 1);
     expect(num.orderBy).toBe(
       `CASE WHEN (r.properties ->> $1::text) ~ ${NUM} THEN (r.properties ->> $1::text)::numeric END DESC NULLS LAST, r.id`
@@ -184,7 +184,10 @@ describe('compileQuery', () => {
     expect(num.params).toEqual(['cong_suat']);
 
     const text = compileQuery(COLUMNS, body({ sort: { field: 'ten', dir: 'asc' } }), 1);
-    expect(text.orderBy).toBe('(r.properties ->> $1::text) ASC NULLS LAST, r.id');
+    // An empty string sorts with the missing values, at the end.
+    expect(text.orderBy).toBe("NULLIF((r.properties ->> $1::text), '') ASC NULLS LAST, r.id");
+    const date = compileQuery(COLUMNS, body({ sort: { field: 'ngay', dir: 'desc' } }), 1);
+    expect(date.orderBy).toBe("NULLIF((r.properties ->> $1::text), '') DESC NULLS LAST, r.id");
   });
 
   it('dates compare as YYYY-MM-DD text and need a date-shaped value', () => {

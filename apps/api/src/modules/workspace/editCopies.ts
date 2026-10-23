@@ -30,7 +30,7 @@ export const DRAFT_GONE = 'Bản nháp của lớp này không còn.';
 
 const byExternalId = new Intl.Collator('en', { numeric: true }).compare;
 
-interface EditCopyRow { id: string; layerKey: string; draftId: string | null }
+export interface EditCopyRow { id: string; layerKey: string; draftId: string | null }
 
 function draftGone(): AppError {
   return new AppError(410, 'DRAFT_GONE', DRAFT_GONE);
@@ -48,7 +48,7 @@ async function loadEditCopy(q: Queryable, mapId: string, layerId: string): Promi
 }
 
 /** The layer's draft id; 410 once the draft has been discarded (draft_id goes NULL). */
-function draftOf(layer: EditCopyRow): string {
+export function draftOf(layer: EditCopyRow): string {
   if (layer.draftId === null) throw draftGone();
   return layer.draftId;
 }

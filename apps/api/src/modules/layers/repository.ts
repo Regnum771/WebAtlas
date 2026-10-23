@@ -107,6 +107,33 @@ export function editCopyRowsArgs(
   };
 }
 
+/**
+ * The layer table's source for an edit copy (workspace/layerTable.ts): the CTE `r(id, properties,
+ * geom)` over every row the edit copy shows, read through workspace.edit_copy_rows with no bbox and
+ * no limit, its parameters numbered from `firstParam`.
+ *
+ * The function's rows are kept once (`src`, MATERIALIZED, since the statement reads `r` several
+ * times). `r` is inlined, so the GeoJSON is turned back into a geometry only where a row's geom is
+ * used: the "in view" box and the page's bboxes, not the sort of every row.
+ */
+export function editCopyQuerySource(
+  def: LayerDef, draftId: string, firstParam: number
+): { with: string; params: unknown[] } {
+  const a = editCopyRowsArgs(def, draftId);
+  const p = (i: number) => `$${firstParam + i}`;
+  return {
+    with: `src AS MATERIALIZED (
+             SELECT id, properties, geometry
+               FROM workspace.edit_copy_rows(${p(0)}::regclass, ${p(1)}::regclass, ${p(2)}::uuid, ${p(3)}::text,
+                                             ${p(4)}::text[], NULL::geometry, NULL::integer)
+           ),
+           r AS NOT MATERIALIZED (
+             SELECT src.id, src.properties, ST_GeomFromGeoJSON(src.geometry) AS geom FROM src
+           )`,
+    params: [a.table, a.relation, draftId, a.geomColumn, a.columns],
+  };
+}
+
 function selectSql(def: LayerDef, relation: string): string {
   const attrs = def.attributeColumns.map((c) => `'${c}', t.${c}`).join(', ');
   // jsonb_build_object over the fixed registry columns; geometry via ST_AsGeoJSON.

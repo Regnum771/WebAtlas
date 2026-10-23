@@ -3,7 +3,7 @@ import { requireAdmin } from '../../authz/assert';
 import {
   addFeature, adminSummary, addLayer, addShare, copyMap, createExport, createImport, createMap, createUpload, deleteJob,
   deleteMap, deleteUpload, downloadJob, getJob, getMap, getRaster, getUpload, listFeatures, listJobs, listMaps, listShares, listShareTargets,
-  listUploads, previewExport, removeFeature, removeLayer, removeShare, updateFeature, updateLayer, updateMap,
+  listUploads, previewExport, queryLayer, removeFeature, removeLayer, removeShare, updateFeature, updateLayer, updateMap,
 } from './controller';
 
 // Personal maps. Any signed-in user has a workspace; who sees or writes a given map is decided
@@ -14,6 +14,8 @@ import {
 const FEATURES_LIMIT = { rateLimit: { max: 3000, timeWindow: '1 minute' } };
 const RASTER_LIMIT = { rateLimit: { max: 6000, timeWindow: '1 minute' } };
 const JOB_POLL_LIMIT = { rateLimit: { max: 600, timeWindow: '1 minute' } };
+// The layer table queries as the user types, pages and sorts.
+const TABLE_QUERY_LIMIT = { rateLimit: { max: 600, timeWindow: '1 minute' } };
 
 export default async function workspaceRoutes(app: FastifyInstance) {
   const signedIn = { preHandler: [app.authenticate] };
@@ -35,6 +37,8 @@ export default async function workspaceRoutes(app: FastifyInstance) {
   app.patch('/maps/:mapId/layers/:layerId', signedIn, updateLayer);
   app.delete('/maps/:mapId/layers/:layerId', signedIn, removeLayer);
   app.get('/maps/:mapId/layers/:layerId/features', { ...signedIn, config: FEATURES_LIMIT }, listFeatures);
+  // The layer table: a read whose filter travels in the body (layerTable.ts).
+  app.post('/maps/:mapId/layers/:layerId/query', { ...signedIn, config: TABLE_QUERY_LIMIT }, queryLayer);
   // A raster layer's COG, by byte range, for whoever may read the map (rasters.ts).
   app.get('/maps/:mapId/layers/:layerId/raster', { ...signedIn, config: RASTER_LIMIT }, getRaster);
   app.post('/maps/:mapId/layers/:layerId/features', signedIn, addFeature);

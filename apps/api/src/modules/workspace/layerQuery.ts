@@ -121,7 +121,8 @@ export function compileQuery(columns: Column[], body: LayerQueryBody, firstParam
   if (body.sort) {
     const col = column(body.sort.field);
     const v = `(${textOf(col.name)})`;
-    const key = col.type === 'number' ? `CASE WHEN ${v} ~ ${NUMBER_SQL} THEN ${v}::numeric END` : v;
+    // An empty string sorts with the missing values (NULLS LAST), not ahead of every other text.
+    const key = col.type === 'number' ? `CASE WHEN ${v} ~ ${NUMBER_SQL} THEN ${v}::numeric END` : `NULLIF(${v}, '')`;
     orderBy = `${key} ${body.sort.dir === 'desc' ? 'DESC' : 'ASC'} NULLS LAST, r.id`;
   }
 

@@ -174,6 +174,7 @@ const MAP_ROUTES: Case[] = [
   { method: 'PATCH', pattern: '/maps/:mapId/layers/:layerId', body: (c) => ({ title: 'Đổi tên lớp', expectedRevision: c.rev }) },
   { method: 'DELETE', pattern: '/maps/:mapId/layers/:layerId', body: (c) => ({ expectedRevision: c.rev }) },
   { method: 'GET', pattern: '/maps/:mapId/layers/:layerId/features' },
+  { method: 'POST', pattern: '/maps/:mapId/layers/:layerId/query', body: () => ({ q: 'bí mật' }) },
   // The map's 404 comes before the layer's kind is read, so a free or edit-copy layer id proves it too.
   { method: 'GET', pattern: '/maps/:mapId/layers/:layerId/raster' },
   { method: 'POST', pattern: '/maps/:mapId/layers/:layerId/features', body: (c) => ({

@@ -6,13 +6,14 @@ import { validate } from '../../lib/validate';
 import type { CurrentUser } from '../../types/fastify';
 import { assertCanRead } from './access';
 import { editCopiesService } from './editCopies';
-import { freeLayersService, LAYER_NOT_FOUND } from './freeLayers';
+import { freeLayersService, LAYER_NOT_FOUND, UNSUPPORTED_KIND } from './freeLayers';
+import { layerTableService } from './layerTable';
 import { jobsService } from './jobs';
 import { mapsService, type LayerKind } from './maps';
 import {
   AddEditCopyLayerBody, AddFeatureBody, AddFreeLayerBody, AddShareBody, CreateMapBody, DeleteMapBody,
   EditCopyFeatureParams, EditCopyFeaturesQuery, ExportBody, ExportPreviewQuery, FeatureParams, FeaturesQuery, FileIdParams,
-  ImportBody, JobIdParams, JobsQuery, LayerParams, MapIdParams, RemoveBody, ShareParams, ShareTargetsQuery,
+  ImportBody, JobIdParams, JobsQuery, LayerParams, LayerQueryBody, MapIdParams, RemoveBody, ShareParams, ShareTargetsQuery,
   UpdateFeatureBody, UpdateLayerBody, UpdateMapBody,
 } from './schemas';
 import { adminSummary as adminSummaryQuery } from './cleanup';
@@ -102,8 +103,6 @@ export async function listShareTargets(req: FastifyRequest, reply: FastifyReply)
 
 // --- Layers and features ------------------------------------------------------------------
 
-const UNSUPPORTED_KIND = 'Loại lớp này chưa hỗ trợ thao tác này.';
-
 /**
  * The single dispatch point for layer routes: read the layer's kind once, scoped to the map.
  * Access is checked first, so a stranger gets the map's 404 before any layer lookup happens and
@@ -179,6 +178,18 @@ export async function listFeatures(req: FastifyRequest, reply: FastifyReply) {
   if (kind !== 'free') unsupported();
   const query = validate(FeaturesQuery, req.query);
   reply.send(await freeLayersService(req.server.pg).features(userOf(req), mapId, layerId, query));
+}
+
+/**
+ * One page of a layer's table (filter, sort, page, locate), for whoever may read the map. Only the
+ * kinds with features have a table; a raster layer is refused after the map's check.
+ */
+export async function queryLayer(req: FastifyRequest, reply: FastifyReply) {
+  const { mapId, layerId } = validate(LayerParams, req.params);
+  const body = validate(LayerQueryBody, req.body);
+  const kind = await layerKindOf(req, mapId, layerId);
+  if (kind !== 'free' && kind !== 'edit_copy') unsupported();
+  reply.send(await layerTableService(req.server.pg).query(userOf(req), mapId, layerId, body));
 }
 
 /** A raster layer's COG, by byte range. Only raster layers have one; their feature routes stay refused. */
