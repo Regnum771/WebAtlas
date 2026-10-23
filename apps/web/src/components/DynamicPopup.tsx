@@ -133,6 +133,7 @@ const DynamicPopup: React.FC = () => {
       // A personal feature near the click answers with its own card (features/my-maps), found
       // with the card's own tolerance: a stricter test here would open both for a thin line.
       if (map.hasFeatureAtPixel(e.pixel, { layerFilter: isPersonalLayer, hitTolerance: PERSONAL_HIT_TOLERANCE })) {
+        clickSeq.current++; // an earlier click's lookup still in flight must not open a popup now
         setPopupData(null);
         setCandidates([]);
         return;

@@ -194,3 +194,18 @@ describe('DynamicPopup beside a personal line', () => {
     expect(h.info).toHaveLength(0);
   });
 });
+
+describe('DynamicPopup: a personal click after an official one', () => {
+  beforeEach(() => { h.handler = null; h.info.length = 0; h.members.length = 0; h.thematic = null; h.personalOnTop = false; h.personalNear = false; });
+  it('a basemap lookup still pending when a personal feature is clicked opens no popup', async () => {
+    const { container } = render(<DynamicPopup />);
+    await click(1); // an official spot: the basemap lookup starts
+    h.personalOnTop = true;
+    await click(2); // then a personal feature: the card owns this click
+    h.personalOnTop = false;
+    await act(async () => { h.info[0].resolve(found('Đường A', '1')); });
+    expect(container.querySelector('.dynamic-popup')).toBeNull();
+    expect(screen.queryByText('Đường A')).toBeNull();
+    expect(h.members).toHaveLength(0);
+  });
+});
