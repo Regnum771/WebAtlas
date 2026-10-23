@@ -202,6 +202,7 @@ const OWNER_ROUTES: OwnerCase[] = [
   { method: 'DELETE', pattern: '/uploads/:fileId', notFound: 'Không tìm thấy tệp.' },
   { method: 'GET', pattern: '/jobs/:jobId', notFound: 'Không tìm thấy công việc.' },
   { method: 'GET', pattern: '/jobs/:jobId/download', notFound: 'Không tìm thấy công việc.' },
+  { method: 'DELETE', pattern: '/jobs/:jobId', notFound: 'Không tìm thấy công việc.' },
 ];
 // Owner-scoped lists: checked below to leave out the owner's ids. POST /uploads stores the
 // caller's own file and reads no one else's (uploads.test.ts).
@@ -359,13 +360,15 @@ describe('workspace isolation', () => {
     }
     expect(sweeps).toBe(2 * OWNER_ROUTES.length);
 
-    // Nothing was removed: the owner still has the upload, the job and its file.
+    // Nothing was removed or scheduled: the owner still has the upload, the job and its file.
     const { rows } = await getPool().query(
       `SELECT (SELECT count(*)::int FROM workspace.files WHERE id = ANY($1::uuid[])) AS files,
+              (SELECT count(*)::int FROM workspace.files
+                WHERE id = ANY($1::uuid[]) AND (delete_after IS NULL OR delete_after > now())) AS live,
               (SELECT count(*)::int FROM workspace.jobs WHERE id = $2) AS jobs`,
       [[fileId, exportId], jobId]
     );
-    expect(rows[0]).toEqual({ files: 2, jobs: 1 });
+    expect(rows[0]).toEqual({ files: 2, live: 2, jobs: 1 });
   });
 
   it('the assistant role reads nothing in workspace', async () => {

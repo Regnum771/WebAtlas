@@ -16,6 +16,8 @@ export const MAX_LIMIT = 20000;
 type GeometryType = 'point' | 'line' | 'polygon';
 type FieldType = 'text' | 'number' | 'date';
 export interface FieldDef { name: string; type: FieldType }
+/** A field in a layer PATCH: `from` names the declared field it renames. */
+export type FieldEdit = FieldDef & { from?: string };
 export type GeoJsonGeometry = { type: string; coordinates: unknown[] } & Record<string, unknown>;
 
 const ALLOWED_GEOMETRIES: Record<GeometryType, string[]> = {
@@ -101,6 +103,63 @@ async function checkGeometry(client: PoolClient, layer: FreeLayerRow, geometry: 
   return json;
 }
 
+/**
+ * Replace a free layer's declared fields with `edits`, moving the features' properties along, on
+ * the caller's client after lockMapForWrite (the Fields rules were checked by the schema):
+ * - an entry with `from` renames that declared field: the key moves in every feature;
+ * - an entry without `from` keeps the declared field of that name, or adds a new one (no feature
+ *   gets the key: a missing key reads as no value);
+ * - a declared field that no entry keeps or renames is removed, and its key dropped everywhere.
+ * A type change (kept or renamed field) is refused while any feature holds a non-null value
+ * for it. Each declared field is the source of at most one entry.
+ */
+async function applyFieldEdits(client: PoolClient, layer: FreeLayerRow, edits: FieldEdit[]): Promise<void> {
+  const declared = new Map(layer.fields.map((f) => [f.name, f]));
+  const used = new Set<string>();
+  const moves: Array<{ from: string; to: string }> = [];
+  for (const edit of edits) {
+    if (edit.from !== undefined && !declared.has(edit.from)) {
+      throw new ValidationError(`Trường "${edit.from}" không có trong lớp.`, { field: 'fields' });
+    }
+    const source = edit.from ?? (declared.has(edit.name) ? edit.name : undefined);
+    if (source === undefined) continue; // a new field
+    if (used.has(source)) {
+      throw new ValidationError('Validation failed', { fieldErrors: { fields: [`Field "${source}" is used twice`] } });
+    }
+    used.add(source);
+    if (declared.get(source)!.type !== edit.type && (await hasValues(client, layer.id, source))) {
+      throw new ValidationError(`Không đổi kiểu được trường "${edit.name}" vì đã có giá trị.`, { field: 'fields' });
+    }
+    if (source !== edit.name) moves.push({ from: source, to: edit.name });
+  }
+  // The keys that change: every removed field and every renamed one's old name. New properties are
+  // built from each feature as it was, so a swap (a -> b, b -> a) moves both values.
+  const dropped = layer.fields.map((f) => f.name).filter((name) => !used.has(name) || moves.some((m) => m.from === name));
+  if (dropped.length > 0) {
+    await client.query(
+      `UPDATE workspace.features f
+          SET properties = (f.properties - $2::text[])
+                           || COALESCE((SELECT jsonb_object_agg(m.dst, f.properties -> m.src)
+                                          FROM unnest($3::text[], $4::text[]) AS m(src, dst)
+                                         WHERE f.properties ? m.src), '{}'::jsonb)
+        WHERE f.layer_id = $1 AND f.properties ?| $2::text[]`,
+      [layer.id, dropped, moves.map((m) => m.from), moves.map((m) => m.to)]
+    );
+  }
+  const fields: FieldDef[] = edits.map((e) => ({ name: e.name, type: e.type }));
+  await client.query(`UPDATE workspace.map_layers SET fields = $2::jsonb WHERE id = $1`, [layer.id, JSON.stringify(fields)]);
+}
+
+/** Whether any feature of the layer holds a non-null value under `key` (a JSON null is no value). */
+async function hasValues(client: PoolClient, layerId: string, key: string): Promise<boolean> {
+  const { rows } = await client.query<{ found: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM workspace.features
+                     WHERE layer_id = $1 AND COALESCE(properties -> $2, 'null'::jsonb) <> 'null'::jsonb) AS found`,
+    [layerId, key]
+  );
+  return rows[0].found;
+}
+
 const FEATURE_SELECT = `f.id::text AS id, ST_AsGeoJSON(f.geom)::jsonb AS geometry, f.properties`;
 function toFeature(r: { id: string; geometry: unknown; properties: unknown }) {
   return { type: 'Feature' as const, id: r.id, geometry: r.geometry, properties: r.properties };
@@ -129,11 +188,14 @@ export function freeLayersService(pg: Pool) {
 
     async updateLayer(
       user: CurrentUser, mapId: string, layerId: string,
-      input: { title?: string; style?: Record<string, unknown>; position?: number; expectedRevision: number }
+      input: {
+        title?: string; style?: Record<string, unknown>; position?: number; fields?: FieldEdit[]; expectedRevision: number;
+      }
     ): Promise<{ layer: LayerSummary; revision: number }> {
       return inTransaction(pg, async (client) => {
         await lockMapForWrite(client, mapId, user, input.expectedRevision);
-        await loadFreeLayer(client, mapId, layerId);
+        const layer = await loadFreeLayer(client, mapId, layerId);
+        if (input.fields !== undefined) await applyFieldEdits(client, layer, input.fields);
         await patchLayerRow(client, mapId, layerId, input);
         const revision = await bumpMap(client, mapId);
         return { layer: await loadSummary(client, layerId), revision };

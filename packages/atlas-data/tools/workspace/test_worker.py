@@ -279,6 +279,60 @@ try:
         locker.rollback()
         locker.close()
 
+    # --- keep_imported_original matches the files row by uuid
+    file_id = q(
+        """INSERT INTO workspace.files (owner_id, kind, path, original_name, content_type, size_bytes, delete_after)
+           VALUES (%s, 'upload', %s, 'tep.geojson', 'application/geo+json', 1, now() + interval '90 days')
+           RETURNING id::text""",
+        (user_id, f"uploads/{user_id}/{uuid.uuid4()}/original.geojson"),
+    )[0][0]
+
+    class Recording:
+        """conn as keep_imported_original sees it, recording each statement it runs."""
+
+        def __init__(self, inner):
+            self.inner = inner
+            self.statements = []
+
+        def cursor(self):
+            outer = self
+            real = self.inner.cursor()
+
+            class Cur:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *exc):
+                    real.close()
+
+                def execute(self, sql, args=None):
+                    outer.statements.append((sql, args))
+                    return real.execute(sql, args)
+
+            return Cur()
+
+    rec = Recording(conn)
+    try:
+        worker.keep_imported_original(rec, file_id.upper())  # a uuid in any letter case is the same uuid
+        sql, args = rec.statements[0] if rec.statements else ("", None)
+        check("keep_imported_original compares the uuid column to a uuid, not id::text",
+              len(rec.statements) == 1 and "id = %s::uuid" in sql and "id::text" not in sql)
+        with conn.cursor() as cur:
+            cur.execute("SELECT delete_after FROM workspace.files WHERE id = %s", (file_id,))
+            check("keep_imported_original clears the date of the row it names", cur.fetchone()[0] is None)
+            # The planner can reach the row through the primary key (seq scan priced out).
+            cur.execute("SET LOCAL enable_seqscan = off")
+            cur.execute("EXPLAIN " + sql, args)
+            plan = "\n".join(r[0] for r in cur.fetchall())
+        check("keep_imported_original's UPDATE uses the files primary key",
+              "files_pkey" in plan or print(plan))
+        rec.statements.clear()
+        worker.keep_imported_original(rec, "not-a-uuid")
+        worker.keep_imported_original(rec, None)
+        check("keep_imported_original ignores a fileId that is not a uuid", rec.statements == [])
+    finally:
+        conn.rollback()
+
     # --- the store root: empty is unset, relative is refused
     saved_root = os.environ.get("WORKSPACE_FILES_DIR")
     try:

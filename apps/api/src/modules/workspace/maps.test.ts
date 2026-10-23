@@ -189,6 +189,36 @@ describe('personal maps', () => {
     expect(del.statusCode).toBe(400);
   });
 
+  it("the owner reading a map refreshes its activity and clears a notice; a recipient's read does not", async () => {
+    const map = await createMap(O, 'Chỉ xem');
+    await shareWith(map.id, R);
+    const long = new Date(Date.now() - 200 * 24 * 60 * 60 * 1000);
+    const noticed = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    await getPool().query(
+      `UPDATE workspace.maps SET last_activity_at = $2, inactivity_notice_at = $3 WHERE id = $1`,
+      [map.id, long, noticed]
+    );
+    const state = async () => (await getPool().query<{
+      last_activity_at: Date; inactivity_notice_at: Date | null; revision: number; updated_at: Date;
+    }>(
+      `SELECT last_activity_at, inactivity_notice_at, revision, updated_at FROM workspace.maps WHERE id = $1`, [map.id]
+    )).rows[0];
+    const start = await state();
+
+    // A recipient's read is not the owner's activity.
+    expect((await call(R, 'GET', `/maps/${map.id}`)).statusCode).toBe(200);
+    expect(await state()).toEqual(start);
+
+    const before = Date.now();
+    expect((await call(O, 'GET', `/maps/${map.id}`)).statusCode).toBe(200);
+    const after = await state();
+    expect(after.inactivity_notice_at).toBeNull();
+    expect(after.last_activity_at.getTime()).toBeGreaterThan(before - 60_000);
+    // Reading is not a change to the content: neither the revision nor updated_at moves.
+    expect(after.revision).toBe(start.revision);
+    expect(after.updated_at).toEqual(start.updated_at);
+  });
+
   it('an archived map is invisible, even to its owner', async () => {
     const map = await createMap(O, 'Lưu trữ');
     await shareWith(map.id, R);

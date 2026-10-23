@@ -116,8 +116,28 @@ export function mapsService(pg: Pool) {
       });
     },
 
+    /**
+     * The map as the user sees it. The owner opening their map counts as activity: it refreshes
+     * last_activity_at and clears an inactivity notice (cleanup.ts markInactive / archiveNoticed),
+     * without touching the revision or updated_at, since nothing in the map changed. A
+     * recipient's read changes neither.
+     *
+     * The touch never waits: a map row locked by a write (lockMapForWrite, a running import,
+     * which holds it for the whole job) is skipped, and that write's bump_map refreshes the
+     * activity itself.
+     */
     async get(user: CurrentUser, mapId: string): Promise<MapDetail> {
       const role = await assertCanRead(pg, mapId, user);
+      if (role === 'owner') {
+        await pg.query(
+          `UPDATE workspace.maps
+              SET last_activity_at = now(), inactivity_notice_at = NULL
+            WHERE id = (SELECT id FROM workspace.maps
+                         WHERE id = $1 AND owner_id = $2 AND archived_at IS NULL
+                         FOR NO KEY UPDATE SKIP LOCKED)`,
+          [mapId, user.id]
+        );
+      }
       return loadDetail(pg, mapId, role);
     },
 

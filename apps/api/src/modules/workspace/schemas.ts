@@ -34,21 +34,36 @@ export const FeatureParams = LayerParams.extend({ featureId: z.string().regex(/^
 export const EditCopyFeatureParams = LayerParams.extend({ featureId: z.string().uuid() });
 
 const FieldType = z.enum(['text', 'number', 'date']);
-const FieldDef = z.object({ name: z.string().trim().min(1).max(63), type: FieldType });
-const Fields = z
-  .array(FieldDef)
-  .max(50)
-  .superRefine((fields, ctx) => {
-    const seen = new Set<string>();
-    for (const f of fields) {
-      const key = f.name.toLowerCase();
-      if (key === 'id' || seen.has(key)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Duplicate or reserved field name "${f.name}"` });
-        return;
+const FieldName = z.string().trim().min(1).max(63);
+const FieldDef = z.object({ name: FieldName, type: FieldType });
+/** A field in a layer PATCH: `from` names the declared field it renames. */
+const FieldEdit = FieldDef.extend({ from: FieldName.optional() });
+
+/** The Fields rules: at most 50, no duplicate names (ignoring case), `id` reserved. */
+function fieldList<T extends z.ZodTypeAny>(def: T) {
+  return z
+    .array(def)
+    .max(50)
+    .superRefine((fields: Array<{ name: string }>, ctx) => {
+      const seen = new Set<string>();
+      for (const f of fields) {
+        const key = f.name.toLowerCase();
+        if (key === 'id' || seen.has(key)) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Duplicate or reserved field name "${f.name}"` });
+          return;
+        }
+        seen.add(key);
       }
-      seen.add(key);
-    }
-  });
+    });
+}
+const Fields = fieldList(FieldDef);
+/** The fields of a free layer as they are to be: renamed (`from`), kept, added; any left out are removed. */
+const FieldEdits = fieldList(FieldEdit).superRefine((fields: Array<{ from?: string }>, ctx) => {
+  const sources = fields.flatMap((f) => (f.from === undefined ? [] : [f.from]));
+  if (new Set(sources).size !== sources.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'A field is renamed twice' });
+  }
+});
 const JsonObject = z.record(z.unknown());
 
 /** Body of POST /maps/:mapId/layers once the dispatcher has seen kind = 'free'. */
@@ -70,16 +85,19 @@ export const AddEditCopyLayerBody = z.object({
   expectedRevision: ExpectedRevision,
 });
 
+/** `fields` is for a free layer only; the dispatcher refuses it on any other kind. */
 export const UpdateLayerBody = z
   .object({
     title: Title.optional(),
     style: JsonObject.optional(),
     position: z.number().int().min(0).optional(),
+    fields: FieldEdits.optional(),
     expectedRevision: ExpectedRevision,
   })
-  .refine((b) => b.title !== undefined || b.style !== undefined || b.position !== undefined, {
-    message: 'Nothing to update',
-  });
+  .refine(
+    (b) => b.title !== undefined || b.style !== undefined || b.position !== undefined || b.fields !== undefined,
+    { message: 'Nothing to update' }
+  );
 
 export const RemoveBody = z.object({ expectedRevision: ExpectedRevision });
 

@@ -204,7 +204,9 @@ export function sharingService(pg: Pool) {
 
     /**
      * Who the caller can share with: active users other than the caller, and access groups,
-     * whose name (or, for users, email) contains `q`, case-insensitively. At most 10 of each.
+     * whose name (or, for users, email) contains `q`, ignoring case and Vietnamese diacritics
+     * ('dien' finds 'Điện'): both sides go through workspace.fold_text (migration 31). At most 10
+     * of each.
      */
     async targets(user: CurrentUser, q: string): Promise<ShareTargets> {
       const pattern = containsPattern(q);
@@ -212,13 +214,17 @@ export function sharingService(pg: Pool) {
         pg.query<ShareTargets['users'][number]>(
           `SELECT id, COALESCE(NULLIF(full_name, ''), email::text) AS name, email::text AS email
              FROM app.users
-            WHERE id <> $1 AND is_active AND (full_name ILIKE $2 OR email::text ILIKE $2)
+            WHERE id <> $1 AND is_active
+              AND (workspace.fold_text(full_name) LIKE workspace.fold_text($2)
+                   OR workspace.fold_text(email::text) LIKE workspace.fold_text($2))
             ORDER BY name, email
             LIMIT ${TARGETS_MAX}`,
           [user.id, pattern]
         ),
         pg.query<ShareTargets['groups'][number]>(
-          `SELECT id, name FROM app.access_groups WHERE name ILIKE $1 ORDER BY name LIMIT ${TARGETS_MAX}`,
+          `SELECT id, name FROM app.access_groups
+            WHERE workspace.fold_text(name) LIKE workspace.fold_text($1)
+            ORDER BY name LIMIT ${TARGETS_MAX}`,
           [pattern]
         ),
       ]);

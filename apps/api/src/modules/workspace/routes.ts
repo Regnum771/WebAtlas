@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { requireAdmin } from '../../authz/assert';
 import {
-  addFeature, adminSummary, addLayer, addShare, copyMap, createExport, createImport, createMap, createUpload, deleteMap,
-  deleteUpload, downloadJob, getJob, getMap, getRaster, getUpload, listFeatures, listJobs, listMaps, listShares, listShareTargets,
+  addFeature, adminSummary, addLayer, addShare, copyMap, createExport, createImport, createMap, createUpload, deleteJob,
+  deleteMap, deleteUpload, downloadJob, getJob, getMap, getRaster, getUpload, listFeatures, listJobs, listMaps, listShares, listShareTargets,
   listUploads, previewExport, removeFeature, removeLayer, removeShare, updateFeature, updateLayer, updateMap,
 } from './controller';
 
@@ -47,6 +47,7 @@ export default async function workspaceRoutes(app: FastifyInstance) {
   app.get('/maps/:mapId/exports/preview', signedIn, previewExport);
   app.get('/jobs', signedIn, listJobs);
   app.get('/jobs/:jobId', signedIn, getJob);
+  app.delete('/jobs/:jobId', signedIn, deleteJob);
   app.get('/jobs/:jobId/download', signedIn, downloadJob);
 
   // Admin sees counts and sizes per owner, never content.

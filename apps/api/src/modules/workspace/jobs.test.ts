@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -461,6 +461,84 @@ describe('jobs', () => {
     // An expired export is gone, whether or not the file has been removed yet.
     await getPool().query(`UPDATE workspace.files SET delete_after = now() - interval '1 minute' WHERE id = $1`, [rows[0].id]);
     expect((await call(O, 'GET', `/jobs/${jobId}/download`)).statusCode).toBe(404);
+  });
+
+  it('deleting a finished export frees its quota at once and its download answers 404', async () => {
+    const res = await call(O, 'POST', `/maps/${shared.id}/exports`, { format: 'gpkg', crs: 'wgs84-dd' });
+    expect(res.statusCode).toBe(201);
+    const jobId = res.json().job.id as string;
+    const { params } = await jobRow(jobId);
+
+    // Stand in for the worker: the file, its row and the job's result.
+    const rel = `exports/${ids.get(O)}/${jobId}/${params.downloadName}`;
+    const body = Buffer.from('an-export-that-takes-up-some-room');
+    createdPaths.push(rel);
+    await writeStream(rel, Readable.from([body]), 1024);
+    const { rows } = await getPool().query<{ id: string }>(
+      `INSERT INTO workspace.files (owner_id, kind, path, original_name, content_type, size_bytes, delete_after)
+       VALUES ($1, 'export', $2, $3, 'application/octet-stream', $4, now() + interval '7 days') RETURNING id`,
+      [ids.get(O), rel, params.downloadName, body.length]
+    );
+    const fileId = rows[0].id;
+    await getPool().query(
+      `UPDATE workspace.jobs SET status = 'succeeded', progress = 100, finished_at = now(), result = $2::jsonb
+        WHERE id = $1`,
+      [jobId, JSON.stringify({ fileId })]
+    );
+    const before = (await call(O, 'GET', '/uploads')).json().usageBytes as number;
+    expect((await call(O, 'GET', `/jobs/${jobId}/download`)).statusCode).toBe(200);
+
+    const removed = await call(O, 'DELETE', `/jobs/${jobId}`);
+    expect(removed.statusCode).toBe(204);
+    expect(removed.body).toBe('');
+
+    // The file no longer counts against the quota, from the very next request.
+    expect((await call(O, 'GET', '/uploads')).json().usageBytes).toBe(before - body.length);
+    // The job is gone, and with it the download.
+    for (const url of [`/jobs/${jobId}`, `/jobs/${jobId}/download`]) {
+      const gone = await call(O, 'GET', url);
+      expect(gone.statusCode, url).toBe(404);
+      expect(gone.json(), url).toEqual({ error: { code: 'NOT_FOUND', message: 'Không tìm thấy công việc.' } });
+    }
+    expect(await jobRow(jobId)).toBeUndefined();
+    // The row is scheduled for the sweep, not removed: the API never unlinks a file.
+    const { rows: file } = await getPool().query<{ due: boolean }>(
+      `SELECT delete_after <= now() AS due FROM workspace.files WHERE id = $1`, [fileId]
+    );
+    expect(file).toEqual([{ due: true }]);
+    expect(existsSync(path.join(STORE, ...rel.split('/')))).toBe(true);
+
+    // Deleting it again is a missing job.
+    const again = await call(O, 'DELETE', `/jobs/${jobId}`);
+    expect(again.statusCode).toBe(404);
+    expect(again.json()).toEqual({ error: { code: 'NOT_FOUND', message: 'Không tìm thấy công việc.' } });
+  });
+
+  it('a running job cannot be deleted (409 JOB_RUNNING)', async () => {
+    const res = await call(O, 'POST', `/maps/${shared.id}/exports`, { format: 'gpkg', crs: 'wgs84-dd' });
+    expect(res.statusCode).toBe(201);
+    const jobId = res.json().job.id as string;
+    const running = { error: { code: 'JOB_RUNNING', message: 'Công việc đang chạy, chưa xoá được.' } };
+
+    for (const status of ['queued', 'running']) {
+      await getPool().query(`UPDATE workspace.jobs SET status = $2 WHERE id = $1`, [jobId, status]);
+      const refused = await call(O, 'DELETE', `/jobs/${jobId}`);
+      expect(refused.statusCode, status).toBe(409);
+      expect(refused.json(), status).toEqual(running);
+      expect((await jobRow(jobId))?.status, status).toBe(status);
+    }
+
+    // Once it has failed it can go; a failed export has no file to schedule.
+    await getPool().query(
+      `UPDATE workspace.jobs SET status = 'failed', error = 'X', finished_at = now() WHERE id = $1`, [jobId]
+    );
+    // Someone else, even the map's recipient, gets the missing job's 404, and the job stays.
+    const theirs = await call(R, 'DELETE', `/jobs/${jobId}`);
+    expect(theirs.statusCode).toBe(404);
+    expect(theirs.json()).toEqual({ error: { code: 'NOT_FOUND', message: 'Không tìm thấy công việc.' } });
+    expect(await jobRow(jobId)).toBeDefined();
+    expect((await call(O, 'DELETE', `/jobs/${jobId}`)).statusCode).toBe(204);
+    expect(await jobRow(jobId)).toBeUndefined();
   });
 
   it('unknown CRS id is refused', async () => {

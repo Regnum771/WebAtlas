@@ -59,9 +59,10 @@ export async function markInactive(pg: Pool, now: Date, scope?: CleanupScope): P
  * Returns how many were archived.
  *
  * Do not schedule before P4 delivers inactivity notices. Until then nobody is told that a map
- * is about to be archived, and only writes refresh last_activity_at, so a map that is only being
- * read can reach this point and lose its drafts, which cannot be undone. The CLI
- * (scripts/workspaceCleanup.ts) runs it only when given --archive.
+ * is about to be archived, and only writes and the owner's own reads (mapsService.get) refresh
+ * last_activity_at, so a map that only its recipients read can reach this point and lose its
+ * drafts, which cannot be undone. The CLI (scripts/workspaceCleanup.ts) runs it only when given
+ * --archive.
  */
 export async function archiveNoticed(pg: Pool, now: Date, scope?: CleanupScope): Promise<number> {
   const cutoff = new Date(now.getTime() - ARCHIVE_AFTER_NOTICE_DAYS * DAY_MS);
@@ -94,20 +95,21 @@ export async function archiveNoticed(pg: Pool, now: Date, scope?: CleanupScope):
 }
 
 /**
- * The import job statuses that tie an upload to a map: one that is waiting, running or done. A
- * failed import left nothing in the map, so it neither makes the file one of the map's originals
- * nor keeps it alive for a live map.
+ * The import job statuses that make an upload one of the archived map's originals: one that is
+ * waiting, running or done. A failed import left nothing in the map. (Keeping the file for a
+ * live map takes a succeeded import: markArchivedOriginals.)
  */
 const LIVE_IMPORT_STATUSES = `('queued', 'running', 'succeeded')`;
 
 /**
  * Give the originals of a map just archived ORIGINALS_KEEP_DAYS from `now`: every upload that a
- * live import job (LIVE_IMPORT_STATUSES) of this map read (params.fileId), unless a live import
- * job of a map that is not archived read it too. That map still shows what came from the file,
- * so the file is kept as long as it is. A later date already set is never brought forward. Runs
- * after archived_at is set, so this map no longer counts as live. Importing the file again into a
- * live map clears the date once that import succeeds (worker.py run_import); while it is queued
- * or running, deleteExpiredFiles leaves the file alone.
+ * live import job (LIVE_IMPORT_STATUSES) of this map read (params.fileId), unless a succeeded
+ * import job of a map that is not archived read it too. That map shows what came from the file,
+ * so the file is kept as long as it is. An import into a live map that has not succeeded (queued,
+ * running or failed) put nothing there yet, so it does not keep the file: if it succeeds the
+ * worker clears the date (worker.py keep_imported_original), and while it is queued or running
+ * deleteExpiredFiles leaves the file alone (BEING_IMPORTED). A later date already set is never
+ * brought forward. Runs after archived_at is set, so this map no longer counts as live.
  */
 async function markArchivedOriginals(client: PoolClient, mapId: string, now: Date): Promise<void> {
   const keepUntil = new Date(now.getTime() + ORIGINALS_KEEP_DAYS * DAY_MS);
@@ -119,7 +121,7 @@ async function markArchivedOriginals(client: PoolClient, mapId: string, now: Dat
                      WHERE j.kind = 'import' AND j.status IN ${LIVE_IMPORT_STATUSES}
                        AND j.map_id = $1 AND j.params->>'fileId' = f.id::text)
         AND NOT EXISTS (SELECT 1 FROM workspace.jobs j JOIN workspace.maps m ON m.id = j.map_id
-                         WHERE j.kind = 'import' AND j.status IN ${LIVE_IMPORT_STATUSES}
+                         WHERE j.kind = 'import' AND j.status = 'succeeded'
                            AND m.archived_at IS NULL AND j.params->>'fileId' = f.id::text)`,
     [mapId, keepUntil]
   );
@@ -402,30 +404,44 @@ export interface OwnerSummary {
   maps: number;
   layers: number;
   features: number;
+  /** The stored size of the owner's free features alone. */
   bytes: number;
+  /** What counts against the quota: workspace.usage_bytes, live files included. */
+  usageBytes: number;
+  quotaBytes: number;
 }
 
-/** Per owner: counts and stored size of free features, archived maps included (their rows are kept). No titles, no content. */
+/**
+ * Per owner, for every user who owns a map or a file: counts and stored size of free features,
+ * archived maps included (their rows are kept), and the quota's usage and limit. No titles, no
+ * content. Largest usage first.
+ */
 export async function adminSummary(pg: Pool): Promise<OwnerSummary[]> {
   const { rows } = await pg.query<{
     user_id: string; email: string; maps: number; layers: number; features: number; bytes: string;
+    usage_bytes: string; quota_bytes: string;
   }>(
     `SELECT u.id AS user_id, u.email,
             (SELECT count(*) FROM workspace.maps m WHERE m.owner_id = u.id)::int AS maps,
             count(l.id)::int AS layers,
             COALESCE(sum(f.n), 0)::int AS features,
-            COALESCE(sum(f.bytes), 0)::bigint AS bytes
+            COALESCE(sum(f.bytes), 0)::bigint AS bytes,
+            workspace.usage_bytes(u.id) AS usage_bytes,
+            u.quota_bytes
        FROM app.users u
-       JOIN workspace.maps m ON m.owner_id = u.id
+       LEFT JOIN workspace.maps m ON m.owner_id = u.id
        LEFT JOIN workspace.map_layers l ON l.map_id = m.id
        LEFT JOIN LATERAL (
               SELECT count(*) AS n, sum(pg_column_size(x.geom) + pg_column_size(x.properties)) AS bytes
                 FROM workspace.features x WHERE x.layer_id = l.id
             ) f ON true
-      GROUP BY u.id, u.email
-      ORDER BY bytes DESC, u.email`
+      WHERE EXISTS (SELECT 1 FROM workspace.maps mm WHERE mm.owner_id = u.id)
+         OR EXISTS (SELECT 1 FROM workspace.files fl WHERE fl.owner_id = u.id)
+      GROUP BY u.id, u.email, u.quota_bytes
+      ORDER BY usage_bytes DESC, bytes DESC, u.email`
   );
   return rows.map((r) => ({
     userId: r.user_id, email: r.email, maps: r.maps, layers: r.layers, features: r.features, bytes: Number(r.bytes),
+    usageBytes: Number(r.usage_bytes), quotaBytes: Number(r.quota_bytes),
   }));
 }

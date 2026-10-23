@@ -338,6 +338,41 @@ describe('sharing a personal map', () => {
     expect((await call(O, 'GET', '/share-targets')).statusCode).toBe(400);
   });
 
+  it('share-target search ignores diacritics: "dien" finds "Điện"', async () => {
+    const targets = async (q: string) => {
+      const res = await call(O, 'GET', `/share-targets?q=${encodeURIComponent(q)}`);
+      expect(res.statusCode).toBe(200);
+      return res.json() as { users: Array<{ id: string; name: string; email: string }>; groups: Array<{ id: string; name: string }> };
+    };
+    // A user of this test only: the email search in the test above counts this file's users.
+    const dien = await usersRepository(getPool()).insert({
+      email: email('dien'), password_hash: await hashPassword(PW), full_name: 'Lê Thị Điện Xqwy', role: 'viewer',
+    });
+    ids.set(email('dien'), dien.id);
+    const groupId = await createGroup('Hồ Chứa Wqzj', []);
+    const user = { id: dien.id, name: 'Lê Thị Điện Xqwy', email: email('dien') };
+    const group = { id: groupId, name: `${GROUP_PREFIX}Hồ Chứa Wqzj` };
+
+    // Folded on both sides: no marks, any case, đ as d.
+    for (const q of ['dien xqwy', 'DIEN XQWY', 'điện xqwy', 'thi dien xq']) {
+      expect((await targets(q)).users, q).toContainEqual(user);
+    }
+    for (const q of ['ho chua wqzj', 'HỒ CHỨA WQZJ', 'chua wqzj']) {
+      expect((await targets(q)).groups, q).toEqual([group]);
+    }
+    // Emails are folded too, and LIKE wildcards stay literal.
+    expect((await targets('SHARING-DIEN')).users).toEqual([user]);
+    expect((await targets('di_n xqwy')).users).toEqual([]);
+
+    // workspace.fold_text (migration 31) is the API's alone, as workspace.map_role is.
+    for (const role of ['webatlas_assistant', 'public']) {
+      const { rows } = await getPool().query<{ ok: boolean }>(
+        `SELECT has_function_privilege($1, 'workspace.fold_text(text)', 'EXECUTE') AS ok`, [role]
+      );
+      expect(rows[0].ok, role).toBe(false);
+    }
+  });
+
   it('copy is independent and survives revocation', async () => {
     const { map, layer, feature } = await mapWithFeature(O, 'Bản đồ gốc');
     const ec = await call(O, 'POST', `/maps/${map.id}/layers`, { kind: 'edit_copy', layerKey: LAYER, expectedRevision: 2 });

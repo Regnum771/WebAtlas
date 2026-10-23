@@ -27,6 +27,7 @@ import signal  # noqa: E402
 import threading  # noqa: E402
 import time  # noqa: E402
 import traceback  # noqa: E402
+import uuid  # noqa: E402
 from typing import Callable  # noqa: E402
 
 import psycopg2  # noqa: E402
@@ -143,14 +144,21 @@ def keep_imported_original(conn: connection, file_id):
     no longer expires: clear a delete_after that archiving another map set (cleanup.ts
     markArchivedOriginals). In the job's transaction, so only a committed, successful import
     clears it; a failed one leaves the date and the sweep removes the file when it is due.
+
+    The row is matched by its uuid (id = %s::uuid), so the primary key finds it; comparing
+    id::text would read every row of workspace.files. A fileId that is not a uuid names no row.
     """
     if not isinstance(file_id, str):
+        return
+    try:
+        canonical = str(uuid.UUID(file_id))
+    except ValueError:
         return
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE workspace.files SET delete_after = NULL "
-            "WHERE id::text = %s AND kind = 'upload' AND delete_after IS NOT NULL",
-            (file_id,),
+            "WHERE id = %s::uuid AND kind = 'upload' AND delete_after IS NOT NULL",
+            (canonical,),
         )
 
 

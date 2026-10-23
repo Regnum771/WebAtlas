@@ -151,6 +151,8 @@ export async function updateLayer(req: FastifyRequest, reply: FastifyReply) {
   const { mapId, layerId } = validate(LayerParams, req.params);
   const body = validate(UpdateLayerBody, req.body);
   const kind = await layerKindOf(req, mapId, layerId);
+  // Only a free layer declares its own fields; an edit copy's come from the registry.
+  if (body.fields !== undefined && kind !== 'free') unsupported();
   // A raster layer has no features, but its row (title, style, position) is edited like any other.
   const service = kind === 'raster' ? rastersService(req.server.pg) : serviceFor(req, kind);
   reply.send(await service.updateLayer(userOf(req), mapId, layerId, body));
@@ -325,6 +327,13 @@ export async function listJobs(req: FastifyRequest, reply: FastifyReply) {
 export async function getJob(req: FastifyRequest, reply: FastifyReply) {
   const { jobId } = validate(JobIdParams, req.params);
   reply.send({ job: await jobsService(req.server.pg).get(userOf(req), jobId) });
+}
+
+/** A finished job of the user's own; an export's file is scheduled for the sweep (jobs.ts remove). */
+export async function deleteJob(req: FastifyRequest, reply: FastifyReply) {
+  const { jobId } = validate(JobIdParams, req.params);
+  await jobsService(req.server.pg).remove(userOf(req), jobId);
+  reply.code(204).send();
 }
 
 /** A succeeded export's file, as a download. */

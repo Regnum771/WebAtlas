@@ -335,12 +335,51 @@ describe('admin summary', () => {
     expect(mine.layers).toBeGreaterThanOrEqual(1);
     expect(mine.features).toBeGreaterThanOrEqual(2);
     expect(mine.bytes).toBeGreaterThan(0);
-    expect(Object.keys(mine).sort()).toEqual(['bytes', 'email', 'features', 'layers', 'maps', 'userId']);
+    expect(Object.keys(mine).sort()).toEqual(
+      ['bytes', 'email', 'features', 'layers', 'maps', 'quotaBytes', 'usageBytes', 'userId']
+    );
     expect(res.body).not.toContain('bí-mật');
     expect(res.body).not.toContain(title);
 
     // The same function, called directly.
     expect((await adminSummary(getPool())).find((o) => o.userId === ids.get(O))?.features).toBe(mine.features);
+  });
+
+  it("the summary counts an owner's files in usageBytes and lists a user who has only uploads", async () => {
+    // Rows only: nothing is read from the store.
+    const insertFile = (owner: string, size: number, deleteAfter: string | null) => getPool().query(
+      `INSERT INTO workspace.files (owner_id, kind, path, original_name, content_type, size_bytes, delete_after)
+       VALUES ($1, 'upload', $2, 'tep', 'application/octet-stream', $3, ${deleteAfter ?? 'NULL'})`,
+      [owner, `uploads/${owner}/${randomUUID()}/original.geojson`, size]
+    );
+    const map = await makeMap('Có tệp');
+    await addFeature(await addFreeLayer(map, 'Điểm'), { ten: 'a' });
+    await insertFile(ids.get(O)!, 1000, null);
+    await insertFile(ids.get(O)!, 300, `now() + interval '1 day'`);
+    await insertFile(ids.get(O)!, 7000, `now() - interval '1 minute'`); // expired: no longer counts
+    // V owns no map, only an upload.
+    await insertFile(ids.get(V)!, 2048, null);
+    await getPool().query(`UPDATE app.users SET quota_bytes = 5000000 WHERE id = $1`, [ids.get(V)]);
+
+    const res = await app.inject({
+      method: 'GET', url: '/api/workspace/admin/summary',
+      headers: { authorization: `Bearer ${await tokenFor(ADM)}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const owners = res.json().owners as Array<Record<string, unknown> & { userId: string; bytes: number }>;
+    const mine = owners.find((o) => o.userId === ids.get(O))!;
+    // bytes stays the free features alone; usageBytes is the quota's measure, files included.
+    expect(mine.bytes).toBeGreaterThan(0);
+    expect(mine.usageBytes).toBe(mine.bytes + 1300);
+    expect(mine.quotaBytes).toBe(1073741824);
+    const { rows } = await getPool().query<{ usage: string }>(`SELECT workspace.usage_bytes($1) AS usage`, [ids.get(O)]);
+    expect(mine.usageBytes).toBe(Number(rows[0].usage));
+
+    expect(owners.find((o) => o.userId === ids.get(V))).toEqual({
+      userId: ids.get(V), email: V, maps: 0, layers: 0, features: 0, bytes: 0, usageBytes: 2048, quotaBytes: 5000000,
+    });
+    // Someone with neither maps nor files is not listed.
+    expect(owners.find((o) => o.userId === ids.get(ADM))).toBeUndefined();
   });
 
   it('the summary route is admin-only', async () => {
@@ -378,7 +417,7 @@ describe('file lifecycle', () => {
     const neverImported = await addFile(owner(), 'upload');
     const reimported = await addFile(owner(), 'upload'); // imported into the due map, imported again below
     const failedLive = await addFile(owner(), 'upload'); // its import into the live map failed: marked
-    const queuedLive = await addFile(owner(), 'upload'); // an import into the live map is queued: kept
+    const queuedLive = await addFile(owner(), 'upload'); // an import into the live map is only queued: marked
     const failedDueOnly = await addFile(owner(), 'upload'); // only a failed import into the due map: not an original
     for (const f of [onlyDue, alsoLive, alsoArchived, reimported, failedLive, queuedLive]) {
       await addImportJob(owner(), due, f.id);
@@ -398,8 +437,10 @@ describe('file lifecycle', () => {
     expect(await deleteAfterOf(alsoArchived.id)).toEqual(keepUntil);
     expect(await deleteAfterOf(reimported.id)).toEqual(keepUntil);
     expect(await deleteAfterOf(failedLive.id)).toEqual(keepUntil);
+    // Its import clears the date if it succeeds (worker.py keep_imported_original); until then
+    // the sweep leaves the file alone (BEING_IMPORTED).
+    expect(await deleteAfterOf(queuedLive.id)).toEqual(keepUntil);
     expect(await deleteAfterOf(alsoLive.id)).toBeNull();
-    expect(await deleteAfterOf(queuedLive.id)).toBeNull();
     expect(await deleteAfterOf(liveOnly.id)).toBeNull();
     expect(await deleteAfterOf(neverImported.id)).toBeNull();
     expect(await deleteAfterOf(failedDueOnly.id)).toBeNull();
@@ -425,6 +466,26 @@ describe('file lifecycle', () => {
     const expired = await ownerCall('POST', `/maps/${live}/imports`, { fileId: onlyDue.id });
     expect(expired.statusCode).toBe(404);
     expect(expired.json()).toEqual({ error: { code: 'NOT_FOUND', message: 'Không tìm thấy tệp.' } });
+  });
+
+  it("an archived map's original is kept for a live map only by a succeeded import", async () => {
+    const due = await makeOwnedMap(owner(), 'Sắp lưu trữ (2)', { notice: ago(31 * DAY) });
+    const live = await makeOwnedMap(owner(), 'Đang dùng (2)');
+    const byStatus = new Map<string, { id: string }>();
+    for (const status of ['queued', 'running', 'succeeded', 'failed'] as const) {
+      const file = await addFile(owner(), 'upload', { disk: false });
+      await addImportJob(owner(), due, file.id); // each one an original of the due map
+      await addImportJob(owner(), live, file.id, status);
+      byStatus.set(status, file);
+    }
+
+    expect(await archiveNoticed(getPool(), NOW, lifecycleScope())).toBe(1);
+
+    const keepUntil = new Date(NOW.getTime() + ORIGINALS_KEEP_DAYS * DAY);
+    expect(await deleteAfterOf(byStatus.get('succeeded')!.id)).toBeNull();
+    for (const status of ['queued', 'running', 'failed']) {
+      expect(await deleteAfterOf(byStatus.get(status)!.id), status).toEqual(keepUntil);
+    }
   });
 
   it('expired files are unlinked and their rows deleted; a missing file does not stop the sweep', async () => {
