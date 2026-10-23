@@ -65,6 +65,25 @@ describe('ModifyController', () => {
     expect(interactionsOfType(map, Translate)).toHaveLength(0);
   });
 
+  it('startOnCopy edits a copy of the geometry, never the handed-in object, and cancel drops the copy', () => {
+    const geometry = { type: 'Point', coordinates: [108, 13] };
+    const onChange = vi.fn();
+    ctrl.startOnCopy(geometry, onChange);
+    const translate = interactionsOfType(map, Translate)[0] as Translate;
+    // Translate keeps its features in a private collection; read it to move the copy as a drag would.
+    const copy = (translate as unknown as { features_: { item: (i: number) => Feature } }).features_.item(0);
+    (copy.getGeometry() as Point).setCoordinates(fromLonLat([109, 14]));
+    translate.dispatchEvent({ type: 'translateend', features: { getArray: () => [copy] } } as never);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0].coordinates[0]).toBeCloseTo(109, 2);
+    expect(geometry.coordinates).toEqual([108, 13]);
+    // The copy is drawn on its own unmanaged layer: not one of the map's layers.
+    expect(map.getLayers().getLength()).toBe(0);
+    ctrl.cancel();
+    expect(interactionsOfType(map, Translate)).toHaveLength(0);
+    expect(interactionsOfType(map, Modify)).toHaveLength(0);
+  });
+
   it('starting again cancels the prior (no interaction leak)', () => {
     ctrl.start(new Feature(new Point(fromLonLat([108, 13]))), () => {});
     ctrl.start(new Feature(new Point(fromLonLat([108, 13]))), () => {});

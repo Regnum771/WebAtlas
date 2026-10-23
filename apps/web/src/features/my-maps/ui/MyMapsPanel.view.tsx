@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '../../../shared/ui/Button';
 import { ConfirmDialog } from '../../../shared/ui/ConfirmDialog';
@@ -32,6 +33,8 @@ interface Props {
   onLayerOpacity: (layerId: string, opacity: number) => void;
   onAddLayer: (mapId: string, kind: 'drawn' | 'edit_copy') => void;
   onLayerSettings: (mapId: string, layerId: string) => void;
+  /** The drawing and editing controls of an owner's expanded card. */
+  renderEditor?: (card: MapCardData) => ReactNode;
   onDialogTitle: (title: string) => void;
   onDialogSubmit: () => void;
   onDialogClose: () => void;
@@ -58,6 +61,7 @@ export function MyMapsPanelView(p: Props) {
           onLayerOpacity={p.onLayerOpacity}
           onAddLayer={(kind) => p.onAddLayer(card.id, kind)}
           onLayerSettings={(layerId) => p.onLayerSettings(card.id, layerId)}
+          editor={card.canWrite && card.expanded ? p.renderEditor?.(card) : undefined}
         />
       ))}
     </ul>

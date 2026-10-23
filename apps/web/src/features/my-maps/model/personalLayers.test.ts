@@ -421,6 +421,20 @@ describe('personalFeatureAt', () => {
     expect((spy.mock.calls[0][2] as { hitTolerance?: number }).hitTolerance).toBe(PERSONAL_HIT_TOLERANCE);
   });
 
+  it('with a map id, only that map\'s layers are hit', async () => {
+    const map = makeMap();
+    listFeatures.mockResolvedValueOnce(fc([point('a', 108.25, 16.05)], false));
+    syncPersonalLayers(map, [entry(FREE)]);
+    const free = byId(map, 'ws:l1');
+    free.getSource()!.loadFeatures(WIDE, 1000, EPSG3857);
+    await vi.waitFor(() => expect(free.getSource()!.getFeatures()).toHaveLength(1));
+    vi.spyOn(map, 'forEachFeatureAtPixel').mockImplementation(((_px: unknown, cb: (f: FeatureLike, l: Layer) => unknown, opts?: { layerFilter?: (l: Layer) => boolean }) =>
+      (!opts?.layerFilter || opts.layerFilter(free as unknown as Layer)
+        ? cb(free.getSource()!.getFeatures()[0], free as unknown as Layer) : undefined)) as never);
+    expect(personalFeatureAt(map, [10, 10], 'm1')?.feature.id).toBe('a');
+    expect(personalFeatureAt(map, [10, 10], 'other')).toBeNull();
+  });
+
   it('returns null when no personal feature is under the pixel', () => {
     const map = makeMap();
     vi.spyOn(map, 'forEachFeatureAtPixel').mockReturnValue(undefined);

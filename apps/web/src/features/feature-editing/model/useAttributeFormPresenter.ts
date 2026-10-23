@@ -2,10 +2,21 @@ import { useState, useMemo, useCallback } from 'react';
 import { LAYER_ATTRIBUTE_MAP, type EditableLayerKey } from '@webatlas/shared';
 import { ApiError } from '../../../shared/api/apiClient';
 import { refusalOf } from '../../../shared/api/refusal';
-import { createFeature, updateFeature } from '../api/features.api';
+import { createFeature, updateFeature, type SaveWarning } from '../api/features.api';
 import { showWarnings } from './saveWarnings';
 import { useManagingUnitField } from './useManagingUnitField';
 import type { GeoJSONGeometry } from '../../map/model/mapEditing';
+
+/** What a `save` dependency answers: the API's save warnings, if any. */
+export type SaveResult = { warnings?: SaveWarning[] } | void;
+
+/**
+ * Saves the form somewhere other than the official layer routes (a personal edit copy). It gets
+ * the properties the official save would send and the geometry to save (null on an edit whose
+ * shape did not move). An ApiError it throws is shown as the official one would be; any other
+ * error's message is shown as it comes, so it must be written for the user.
+ */
+export type SaveFn = (properties: Record<string, unknown>, geometry: GeoJSONGeometry | null) => Promise<SaveResult>;
 
 interface Args {
   layerKey: EditableLayerKey;
@@ -15,6 +26,10 @@ interface Args {
   mode?: 'create' | 'edit';
   initialValues?: Record<string, string>;
   featureId?: string;
+  /** Used instead of the official create/update when given. */
+  save?: SaveFn;
+  /** The managing unit picker offers the whole unit tree (useManagingUnitField). */
+  anyUnit?: boolean;
 }
 
 export const MANAGING_UNIT_COLUMN = 'managing_unit';
@@ -47,7 +62,7 @@ function messageFor(e: ApiError): { error: string | null; fieldErrors: Record<st
 
 export function useAttributeFormPresenter({
   layerKey, attributes, geometry, onSaved,
-  mode = 'create', initialValues, featureId,
+  mode = 'create', initialValues, featureId, save, anyUnit,
 }: Args) {
   const labels = useMemo(() => {
     const map = LAYER_ATTRIBUTE_MAP[layerKey].attributes;
@@ -60,7 +75,7 @@ export function useAttributeFormPresenter({
     Object.fromEntries(attributes.map((c) => [c, initialValues?.[c] ?? '']))
   );
   const initialUnit = initialValues?.[MANAGING_UNIT_COLUMN] ?? '';
-  const managingUnit = useManagingUnitField({ layerKey, mode, geometry, initial: initialUnit });
+  const managingUnit = useManagingUnitField({ layerKey, mode, geometry, initial: initialUnit, anyUnit });
   const hasUnitField = attributes.includes(MANAGING_UNIT_COLUMN);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +108,9 @@ export function useAttributeFormPresenter({
       if (unit && (mode === 'create' || unit !== initialUnit)) properties[MANAGING_UNIT_COLUMN] = unit;
     }
     try {
-      if (mode === 'edit') {
+      if (save) {
+        showWarnings((await save(properties, geometry))?.warnings);
+      } else if (mode === 'edit') {
         // featureId is guaranteed non-null in edit mode: the container only renders the edit form for a real selection.
         // No geometry key unless there is one to save: the API then keeps the stored shape.
         showWarnings((await updateFeature(layerKey, featureId!, geometry ? { geometry, properties } : { properties }))?.warnings);
@@ -107,13 +124,15 @@ export function useAttributeFormPresenter({
         setError(mapped.error);
         setErrorDetail(refusalOf(e)?.detail ?? null);
         setFieldErrors(mapped.fieldErrors);
+      } else if (save && e instanceof Error) {
+        setError(e.message);
       } else {
         setError('Chưa lưu được. Thử lại.');
       }
     } finally {
       setSaving(false);
     }
-  }, [mode, geometry, values, layerKey, featureId, onSaved, hasUnitField, managingUnit.error, managingUnit.locked, managingUnit.submittable, initialUnit]);
+  }, [mode, geometry, values, layerKey, featureId, onSaved, save, hasUnitField, managingUnit.error, managingUnit.locked, managingUnit.submittable, initialUnit]);
 
   return { values, labels, setField, managingUnit, canSave, saving, error, errorDetail, fieldErrors, submit };
 }

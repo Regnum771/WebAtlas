@@ -9,10 +9,10 @@ vi.mock('../api/features.api', () => ({
 }));
 const unit = vi.hoisted(() => ({
   state: { value: '', submittable: null as string | null, error: null as string | null, locked: false },
-  args: null as null | { mode: string },
+  args: null as null | { mode: string; anyUnit?: boolean },
 }));
 vi.mock('./useManagingUnitField', () => ({
-  useManagingUnitField: (args: { mode: string }) => {
+  useManagingUnitField: (args: { mode: string; anyUnit?: boolean }) => {
     unit.args = args;
     return {
       ...unit.state, setValue: vi.fn(), options: [], suggestion: null, hint: null, readOnlyText: null, tree: null,
@@ -214,6 +214,13 @@ describe('useAttributeFormPresenter (edit mode)', () => {
       expect(createFeature).toHaveBeenCalledWith('dams', { geometry: baseArgs.geometry, properties: { managing_unit: '48' } });
     });
 
+    it('forwards anyUnit to the managing unit field', () => {
+      renderHook(() => useAttributeFormPresenter({ ...baseArgs, anyUnit: true }));
+      expect(unit.args?.anyUnit).toBe(true);
+      renderHook(() => useAttributeFormPresenter(baseArgs));
+      expect(unit.args?.anyUnit).toBeFalsy();
+    });
+
     it('does not submit a unit the user cannot write', async () => {
       unit.state = { value: '51', submittable: null, error: 'Quảng Ngãi nằm ngoài phạm vi của anh/chị — hãy chọn đơn vị khác.', locked: false };
       const { result } = renderHook(() => useAttributeFormPresenter({ ...baseArgs, attributes: ['name', 'managing_unit'] }));
@@ -221,5 +228,68 @@ describe('useAttributeFormPresenter (edit mode)', () => {
       await act(async () => { await result.current.submit(); });
       expect(createFeature).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('useAttributeFormPresenter with a save dependency', () => {
+  beforeEach(() => {
+    createFeature.mockReset();
+    updateFeature.mockReset();
+    resetToasts();
+    unit.state = { value: '', submittable: null, error: null, locked: false };
+  });
+
+  it('useAttributeFormPresenter without save still calls the official API', async () => {
+    createFeature.mockResolvedValue({ id: 'x', warnings: [] });
+    updateFeature.mockResolvedValue({ id: 'f1', warnings: [] });
+    const { result } = renderHook(() => useAttributeFormPresenter(baseArgs));
+    act(() => result.current.setField('name', 'Hoa Binh'));
+    await act(async () => { await result.current.submit(); });
+    expect(createFeature).toHaveBeenCalledWith('dams', { geometry: baseArgs.geometry, properties: { name: 'Hoa Binh' } });
+    const { result: edit } = renderHook(() => useAttributeFormPresenter({
+      ...baseArgs, mode: 'edit', featureId: 'f1', geometry: null, initialValues: { name: 'A' },
+    }));
+    await act(async () => { await edit.current.submit(); });
+    expect(updateFeature).toHaveBeenCalledWith('dams', 'f1', { properties: { name: 'A' } });
+  });
+
+  it('a save dependency replaces the official create and update, and its warnings are shown', async () => {
+    const save = vi.fn().mockResolvedValue({ warnings: [{ code: 'OUTSIDE_MANAGING_UNIT', message: 'Hình nằm ngoài Đà Nẵng.' }] });
+    const onSaved = vi.fn();
+    const { result } = renderHook(() => useAttributeFormPresenter({ ...baseArgs, onSaved, save }));
+    act(() => result.current.setField('name', 'Hoa Binh'));
+    await act(async () => { await result.current.submit(); });
+    expect(save).toHaveBeenCalledWith({ name: 'Hoa Binh' }, baseArgs.geometry);
+    expect(createFeature).not.toHaveBeenCalled();
+    expect(onSaved).toHaveBeenCalled();
+    expect(getToasts()).toEqual([expect.objectContaining({ tone: 'warning', title: 'Hình nằm ngoài Đà Nẵng.' })]);
+
+    save.mockClear();
+    save.mockResolvedValue(undefined);
+    const { result: edit } = renderHook(() => useAttributeFormPresenter({
+      ...baseArgs, mode: 'edit', featureId: 'f1', geometry: null, initialValues: { name: 'A' }, save,
+    }));
+    act(() => edit.current.setField('name', 'B'));
+    await act(async () => { await edit.current.submit(); });
+    expect(save).toHaveBeenCalledWith({ name: 'B' }, null);
+    expect(updateFeature).not.toHaveBeenCalled();
+  });
+
+  it("a save dependency's own failure shows its message, and the typed values stay", async () => {
+    const save = vi.fn().mockRejectedValue(new Error('Bản đồ đã thay đổi ở nơi khác. Đã tải lại bản mới nhất; hãy thử lại.'));
+    const onSaved = vi.fn();
+    const { result } = renderHook(() => useAttributeFormPresenter({ ...baseArgs, onSaved, save }));
+    act(() => result.current.setField('name', 'Hoa Binh'));
+    await act(async () => { await result.current.submit(); });
+    expect(result.current.error).toBe('Bản đồ đã thay đổi ở nơi khác. Đã tải lại bản mới nhất; hãy thử lại.');
+    expect(result.current.values.name).toBe('Hoa Binh');
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('an API error from a save dependency is mapped like the official one', async () => {
+    const save = vi.fn().mockRejectedValue(new ApiError(422, 'GEOMETRY_ERROR', 'bad geom'));
+    const { result } = renderHook(() => useAttributeFormPresenter({ ...baseArgs, save }));
+    await act(async () => { await result.current.submit(); });
+    expect(result.current.error).toBe('Hình vẽ không hợp lệ. Vẽ lại.');
   });
 });

@@ -21,6 +21,8 @@ interface MapEditingValue {
   enterEditMode: (onSelected: (sel: EditSelection) => void) => void;
   exitEditMode: () => void;
   startModify: (onChange: (g: GeoJSONGeometry) => void) => void;
+  /** Reshapes a copy of a feature handed in directly (a personal one), not the official selection. */
+  startModifyFeature: (feature: { geometry: GeoJSONGeometry }, onChange: (g: GeoJSONGeometry) => void) => void;
   cancelModify: () => void;
   clearSelection: () => void;
 }
@@ -79,13 +81,16 @@ export function MapEditingProvider({ children }: { children: ReactNode }) {
     const f = selectRef.current?.getSelectedFeature();
     if (f) modifyRef.current?.start(f, onChange);
   }, []);
+  const startModifyFeature = useCallback((feature: { geometry: GeoJSONGeometry }, onChange: (g: GeoJSONGeometry) => void) => {
+    modifyRef.current?.startOnCopy(feature.geometry, onChange);
+  }, []);
   const cancelModify = useCallback(() => { modifyRef.current?.cancel(); }, []);
   const clearSelection = useCallback(() => { selectRef.current?.clear(); }, []);
 
   return (
     <MapEditingContext.Provider value={{
       hasMap, startDraw, cancelDraw, refreshLayer, registerRefresh, registerSetSelectActive,
-      editing, enterEditMode, exitEditMode, startModify, cancelModify, clearSelection,
+      editing, enterEditMode, exitEditMode, startModify, startModifyFeature, cancelModify, clearSelection,
     }}>
       {children}
     </MapEditingContext.Provider>

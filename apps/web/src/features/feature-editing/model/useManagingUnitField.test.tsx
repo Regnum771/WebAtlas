@@ -212,3 +212,30 @@ describe('useManagingUnitField', () => {
     expect(result.current.value).toBe('48');
   });
 });
+
+describe('useManagingUnitField with anyUnit (a personal edit copy)', () => {
+  it("the managing unit picker in an edit copy offers units outside the user's jurisdiction", async () => {
+    suggest.mockResolvedValue('51');
+    const { result } = renderHook(
+      () => useManagingUnitField({ layerKey: 'dams', mode: 'create', geometry: G1, initial: '', anyUnit: true }), { wrapper },
+    );
+    await waitFor(() => expect(result.current.options).toHaveLength(4));
+    expect(result.current.allowed('51')).toBe(true);
+    await flush();
+    // The suggestion is the default, even outside the jurisdiction: the check comes at submit (P4).
+    expect(result.current.value).toBe('51');
+    expect(result.current.error).toBeNull();
+    expect(result.current.submittable).toBe('51');
+  });
+
+  it('edit: a current unit outside the jurisdiction stays editable', async () => {
+    mockUser = { isAdmin: false, grants: [] };
+    const { result } = renderHook(
+      () => useManagingUnitField({ layerKey: 'dams', mode: 'edit', geometry: null, initial: '51', anyUnit: true }), { wrapper },
+    );
+    await waitFor(() => expect(result.current.options).toHaveLength(4));
+    expect(result.current.locked).toBe(false);
+    expect(result.current.readOnlyText).toBeNull();
+    expect(result.current.submittable).toBe('51');
+  });
+});

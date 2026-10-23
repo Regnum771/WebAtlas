@@ -33,6 +33,9 @@ vi.mock('../features/my-maps/model/usePersonalLayersSync', () => ({ usePersonalL
 vi.mock('../features/my-maps/model/usePersonalPopupPresenter', () => ({
   usePersonalPopupPresenter: () => ({ card: null, anchor: null, close: () => {} }),
 }));
+vi.mock('../features/my-maps/model/usePersonalEditingPresenter', () => ({
+  usePersonalEditingPresenter: () => ({ mapId: null, kind: null, step: null }),
+}));
 vi.mock('../features/legend', () => ({ default: () => <div>LEGEND</div> }));
 vi.mock('../features/assistant', () => ({ default: () => <div>ASSISTANT</div> }));
 vi.mock('../features/flood-scenario', () => ({

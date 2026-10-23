@@ -278,14 +278,20 @@ export function fitToExtent4326(map: Map, extent: [number, number, number, numbe
   view.fit(target, { padding: [60, 60, 60, 60], maxZoom: FIT_MAX_ZOOM, duration: 400 });
 }
 
-/** The topmost personal feature under a pixel, as the API's GeoJSON (EPSG:4326), with its map and layer. */
+/**
+ * The topmost personal feature under a pixel, as the API's GeoJSON (EPSG:4326), with its map and
+ * layer. With `mapId`, only that map's layers are hit (a feature-edit mode on one map).
+ */
 export function personalFeatureAt(
-  map: Map, pixel: number[],
+  map: Map, pixel: number[], mapId?: string,
 ): { mapId: string; layerId: string; feature: PersonalFeature } | null {
   const hit = map.forEachFeatureAtPixel(
     pixel,
     (feature, layer) => ({ feature: feature as Feature, layer: layer as Layer }),
-    { layerFilter: (layer) => isPersonalLayer(layer), hitTolerance: PERSONAL_HIT_TOLERANCE },
+    {
+      layerFilter: (layer) => isPersonalLayer(layer) && (mapId === undefined || layer.get('mapId') === mapId),
+      hitTolerance: PERSONAL_HIT_TOLERANCE,
+    },
   );
   if (!hit) return null;
   const geo = format.writeFeatureObject(hit.feature, {

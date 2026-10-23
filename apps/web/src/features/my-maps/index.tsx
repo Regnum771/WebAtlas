@@ -8,7 +8,12 @@ import { useMyMapsPanelPresenter, type MapCardData } from './model/useMyMapsPane
 import { usePersonalLayersSync } from './model/usePersonalLayersSync';
 import { usePersonalPopupPresenter } from './model/usePersonalPopupPresenter';
 import { useUploadPresenter } from './model/useUploadPresenter';
+import { usePersonalEditingPresenter } from './model/usePersonalEditingPresenter';
+import { useAttributeFormPresenter } from '../feature-editing/model/useAttributeFormPresenter';
+import { AttributeFormView } from '../feature-editing/ui/AttributeForm.view';
 import { EditCopyDialogView } from './ui/EditCopyDialog.view';
+import { FreeFeatureFormView } from './ui/FreeFeatureForm.view';
+import { PersonalEditingView } from './ui/PersonalEditing.view';
 import { LayerSettingsView } from './ui/LayerSettings.view';
 import { MyMapsPanelView } from './ui/MyMapsPanel.view';
 import { NewLayerDialogView } from './ui/NewLayerDialog.view';
@@ -75,9 +80,64 @@ function LayerDialogs({ dialog, cards, onClose }: { dialog: LayerDialog; cards: 
   );
 }
 
+type Editing = ReturnType<typeof usePersonalEditingPresenter>;
+
+/**
+ * An edit copy's feature in the official attribute form, saved through the workspace route; the
+ * managing unit may be any unit (the jurisdiction check comes when the draft is submitted).
+ */
+function EditCopyForm({ editing, copy }: { editing: Editing; copy: NonNullable<Editing['editCopy']> }) {
+  const form = useAttributeFormPresenter({
+    layerKey: copy.layerKey, attributes: copy.attributes, geometry: editing.geometryToSave,
+    mode: copy.featureId ? 'edit' : 'create', featureId: copy.featureId, initialValues: copy.initialValues,
+    onSaved: editing.onSaved, save: editing.saveEditCopy, anyUnit: true,
+  });
+  return (
+    <AttributeFormView
+      attributes={copy.attributes} labels={form.labels} values={form.values} fieldErrors={form.fieldErrors}
+      error={form.error} errorDetail={form.errorDetail} canSave={form.canSave} saving={form.saving}
+      managingUnit={form.managingUnit} onField={form.setField} onSubmit={() => { void form.submit(); }} onCancel={editing.leave}
+    />
+  );
+}
+
+/** The open feature's form: a free layer's own fields, or an edit copy's official attributes. */
+function FeatureForm({ editing }: { editing: Editing }) {
+  if (editing.targetKind === 'free') {
+    return (
+      <FreeFeatureFormView
+        fields={editing.freeFields} values={editing.freeValues} error={editing.freeError} saving={editing.saving}
+        onField={editing.setFreeValue} onSubmit={() => { void editing.submitFree(); }} onCancel={editing.leave}
+      />
+    );
+  }
+  // Keyed per feature: the form seeds its values once.
+  if (editing.editCopy) return <EditCopyForm key={editing.targetKey} editing={editing} copy={editing.editCopy} />;
+  return null;
+}
+
+/** Vẽ thêm and Sửa đối tượng on an owner's expanded card; one mode at a time for the whole section. */
+function CardEditor({ editing, mapId }: { editing: Editing; mapId: string }) {
+  const active = editing.mapId === mapId;
+  return (
+    <PersonalEditingView
+      active={active} kind={editing.kind} step={editing.step} layers={editing.drawable} drawShape={editing.drawShape}
+      isNew={editing.isNew} reshaping={editing.reshaping}
+      confirmOpen={active && editing.confirmOpen} deleting={editing.deleting} error={editing.error}
+      onDraw={() => editing.startDrawMode(mapId)} onEdit={() => editing.startEditMode(mapId)}
+      onPick={editing.pickLayer} onLeave={editing.leave} onReshape={editing.reshape}
+      onAskDelete={editing.requestDelete} onConfirmDelete={() => { void editing.confirmDelete(); }}
+      onCancelDelete={editing.cancelDelete}
+    >
+      {active && editing.step === 'form' && <FeatureForm editing={editing} />}
+    </PersonalEditingView>
+  );
+}
+
 function MyMapsPanel() {
   usePersonalLayersSync();
   const p = useMyMapsPanelPresenter();
+  const editing = usePersonalEditingPresenter();
   const [layerDialog, setLayerDialog] = useState<LayerDialog | null>(null);
   const [upload, setUpload] = useState<{ targetMapId: string | null } | null>(null);
   return (
@@ -92,6 +152,7 @@ function MyMapsPanel() {
         onLayerVisible={p.setLayerVisible} onLayerOpacity={p.setLayerOpacity}
         onAddLayer={(mapId, kind) => setLayerDialog({ kind, mapId } as LayerDialog)}
         onLayerSettings={(mapId, layerId) => setLayerDialog({ kind: 'settings', mapId, layerId })}
+        renderEditor={(card) => <CardEditor editing={editing} mapId={card.id} />}
         onDialogTitle={p.setTitle} onDialogSubmit={() => { void p.submit(); }} onDialogClose={p.closeDialog}
         onConfirmDelete={() => { void p.confirmDelete(); }} onCancelDelete={p.cancelDelete}
       />

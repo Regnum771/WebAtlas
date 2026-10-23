@@ -20,9 +20,9 @@ const activate = vi.fn(); const deactivate = vi.fn(); const getSelectedFeature =
 vi.mock('./SelectController', () => ({
   SelectController: vi.fn().mockImplementation(() => ({ activate, deactivate, getSelectedFeature, clear: selClear, dispose: vi.fn() })),
 }));
-const modStart = vi.fn(); const modCancel = vi.fn();
+const modStart = vi.fn(); const modCancel = vi.fn(); const modStartOnCopy = vi.fn();
 vi.mock('./ModifyController', () => ({
-  ModifyController: vi.fn().mockImplementation(() => ({ start: modStart, cancel: modCancel, dispose: vi.fn() })),
+  ModifyController: vi.fn().mockImplementation(() => ({ start: modStart, startOnCopy: modStartOnCopy, cancel: modCancel, dispose: vi.fn() })),
 }));
 
 import { MapEditingProvider, useMapEditing } from './mapEditing';
@@ -74,6 +74,17 @@ describe('useMapEditing edit-existing', () => {
     const onChange = vi.fn();
     act(() => result.current.startModify(onChange));
     expect(modStart).toHaveBeenCalled();
+  });
+
+  it('startModifyFeature edits a copy of the handed-in feature, without any selection', () => {
+    const { result } = renderHook(() => useMapEditing(), { wrapper });
+    const onChange = vi.fn();
+    const geometry = { type: 'Point', coordinates: [108, 16] };
+    act(() => result.current.startModifyFeature({ geometry }, onChange));
+    expect(modStartOnCopy).toHaveBeenCalledWith(geometry, onChange);
+    expect(modStart).not.toHaveBeenCalled();
+    act(() => result.current.cancelModify());
+    expect(modCancel).toHaveBeenCalled();
   });
 
   it('enterEditMode disables the rivers-highlight select; exitEditMode re-enables it', () => {

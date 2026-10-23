@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '../../../shared/ui/Button';
 import { Spinner } from '../../../shared/ui/Spinner';
@@ -15,10 +15,12 @@ interface Props {
   onLayerOpacity: (layerId: string, opacity: number) => void;
   onAddLayer: (kind: 'drawn' | 'edit_copy') => void;
   onLayerSettings: (layerId: string) => void;
+  /** Owner only: the feature drawing and editing controls (PersonalEditingView), shown when expanded. */
+  editor?: ReactNode;
 }
 
 /** A map in the list: its title, owner and layer count; expanded, its layers and (for the owner) the actions. */
-export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onLayerVisible, onLayerOpacity, onAddLayer, onLayerSettings }: Props) {
+export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onLayerVisible, onLayerOpacity, onAddLayer, onLayerSettings, editor }: Props) {
   const [adding, setAdding] = useState(false);
   const Chevron = card.expanded ? ChevronDown : ChevronRight;
   return (
@@ -55,6 +57,7 @@ export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onLa
               <Button size="sm" onClick={() => { setAdding(false); onAddLayer('edit_copy'); }}>Sửa một lớp chính thức</Button>
             </div>
           )}
+          {card.canWrite && editor}
         </div>
       )}
     </li>

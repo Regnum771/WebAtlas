@@ -16,6 +16,11 @@ interface Args {
   geometry: GeoJSONGeometry | null;
   /** The feature's current unit code on edit; '' on create or when it has none. */
   initial: string;
+  /**
+   * A personal edit copy: offer the whole unit tree, with the suggested unit as the default.
+   * A personal draft is not checked against jurisdiction; that check comes when it is submitted.
+   */
+  anyUnit?: boolean;
 }
 
 export interface ManagingUnitFieldState {
@@ -49,7 +54,7 @@ export interface ManagingUnitFieldState {
  * (debounced, stale answers dropped) until the user picks one; on edit it starts at the
  * feature's current unit. The API enforces jurisdiction regardless.
  */
-export function useManagingUnitField({ layerKey: _layerKey, mode, geometry, initial }: Args): ManagingUnitFieldState {
+export function useManagingUnitField({ layerKey: _layerKey, mode, geometry, initial, anyUnit = false }: Args): ManagingUnitFieldState {
   const tree = useUnitTree();
   const can = useCan();
   const { currentUser } = useSession();
@@ -57,10 +62,11 @@ export function useManagingUnitField({ layerKey: _layerKey, mode, geometry, init
 
   const options = useMemo(() => {
     if (!tree) return [];
+    if (anyUnit) return [...tree.values()];
     return [...tree.values()].filter((n) => can(opPermission, n.code) && can('submission.review', n.code));
     // `can` is a fresh closure each render; only the tree and the signed-in user change its answers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tree, currentUser, opPermission]);
+  }, [tree, currentUser, opPermission, anyUnit]);
   const optionCodes = useMemo(() => new Set(options.map((n) => n.code)), [options]);
   const allowed = useMemo(() => (code: string) => optionCodes.has(code), [optionCodes]);
 
@@ -93,7 +99,7 @@ export function useManagingUnitField({ layerKey: _layerKey, mode, geometry, init
 
   // The unit the API checks an edit against: the feature's own, or VN when it has none.
   const current = initial || COUNTRY_UNIT;
-  const locked = mode === 'edit' && !(can('feature.update', current) && can('submission.review', current));
+  const locked = !anyUnit && mode === 'edit' && !(can('feature.update', current) && can('submission.review', current));
   const readOnlyText = locked && loaded ? `${nameOf(current)} — ngoài phạm vi của anh/chị` : null;
   const outOfScope = !initial && chosen === null && suggestion !== null && loaded && !optionCodes.has(suggestion);
   const error = outOfScope ? `${nameOf(suggestion!)} nằm ngoài phạm vi của anh/chị — hãy chọn đơn vị khác.` : null;
