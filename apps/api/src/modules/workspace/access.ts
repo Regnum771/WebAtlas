@@ -56,19 +56,50 @@ export class MapRevisionError extends Error {
 }
 
 /**
+ * The map row stayed locked past MAP_LOCK_TIMEOUT (a running import holds it for the whole job).
+ * Mapped to 409 MAP_BUSY by the error handler; nothing was changed.
+ */
+export class MapBusyError extends Error {
+  constructor(mapId: string) {
+    super(`Map ${mapId} is locked by another write`);
+    this.name = 'MapBusyError';
+  }
+}
+
+/** How long a write waits for the map row before it gives up with MapBusyError. */
+export const MAP_LOCK_TIMEOUT = '3s';
+/** Postgres lock_not_available: a lock_timeout ran out. */
+const LOCK_NOT_AVAILABLE = '55P03';
+
+/**
  * Lock the map row for the rest of the transaction and check that `user` may write it at
  * `expectedRevision`. Order matters: visibility first (404), then ownership (403), then the
  * revision (409), so that neither a stranger nor a recipient learns the revision.
+ *
+ * The wait for the row is bounded: a write during a running import fails fast with MapBusyError
+ * instead of hanging until the import ends (and holding up the client's queue of writes to the
+ * map). The bound covers this lock only; the transaction's own lock_timeout is put back after it.
  */
 export async function lockMapForWrite(
   client: PoolClient, mapId: string, user: CurrentUser, expectedRevision: number
 ): Promise<{ revision: number }> {
-  const { rows } = await client.query<{ owner_id: string; revision: number }>(
-    `SELECT owner_id, revision FROM workspace.maps
-      WHERE id = $1 AND archived_at IS NULL
-      FOR UPDATE`,
-    [mapId]
+  const { rows: setting } = await client.query<{ previous: string }>(
+    `SELECT current_setting('lock_timeout') AS previous, set_config('lock_timeout', $1, true)`,
+    [MAP_LOCK_TIMEOUT]
   );
+  let rows: { owner_id: string; revision: number }[];
+  try {
+    ({ rows } = await client.query<{ owner_id: string; revision: number }>(
+      `SELECT owner_id, revision FROM workspace.maps
+        WHERE id = $1 AND archived_at IS NULL
+        FOR UPDATE`,
+      [mapId]
+    ));
+  } catch (e) {
+    if ((e as { code?: string }).code === LOCK_NOT_AVAILABLE) throw new MapBusyError(mapId);
+    throw e;
+  }
+  await client.query(`SELECT set_config('lock_timeout', $1, true)`, [setting[0].previous]);
   const map = rows[0];
   if (!map) throw new NotFoundError(MAP_NOT_FOUND);
   if (map.owner_id !== user.id) {

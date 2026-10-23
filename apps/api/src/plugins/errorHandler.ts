@@ -6,7 +6,7 @@ import {
   ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError, StaleDraftError,
   DraftConflictError, DraftNotEditableError, DraftRevisionError,
 } from '@webatlas/versioning';
-import { MapRevisionError } from '../modules/workspace/access';
+import { MapBusyError, MapRevisionError } from '../modules/workspace/access';
 
 /** @fastify/multipart's errors for a part over the route's limits (fields, files, parts). */
 const MULTIPART_PART_LIMITS = new Set(['FST_FIELDS_LIMIT', 'FST_FILES_LIMIT', 'FST_PARTS_LIMIT']);
@@ -35,6 +35,9 @@ export default fp(async (app) => {
     } else if (err instanceof MapRevisionError) {
       // A personal map moved since the caller read it (another tab); nothing was changed.
       appErr = new AppError(409, 'MAP_CHANGED', 'Bản đồ đã thay đổi ở nơi khác.');
+    } else if (err instanceof MapBusyError) {
+      // A running import holds the map row; the write gave up waiting and changed nothing.
+      appErr = new AppError(409, 'MAP_BUSY', 'Bản đồ đang nhập dữ liệu; thử lại sau.');
     } else if (err instanceof DraftNotEditableError) {
       appErr = new AppError(409, 'DRAFT_NOT_EDITABLE', 'Bản nháp đã được nộp, không sửa được nữa.');
     } else if (err instanceof DraftConflictError) {

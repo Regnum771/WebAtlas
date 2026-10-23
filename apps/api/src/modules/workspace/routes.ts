@@ -8,6 +8,13 @@ import {
 
 // Personal maps. Any signed-in user has a workspace; who sees or writes a given map is decided
 // per map by the services (access.ts), not by a route guard.
+// The reads a map view and a running job make many times a minute have their own budgets per
+// address, as /tiles does, so they neither hit the global 100/min nor eat the writes' share of it:
+// viewport feature reads on every pan, COG byte ranges, and a job polled every second.
+const FEATURES_LIMIT = { rateLimit: { max: 3000, timeWindow: '1 minute' } };
+const RASTER_LIMIT = { rateLimit: { max: 6000, timeWindow: '1 minute' } };
+const JOB_POLL_LIMIT = { rateLimit: { max: 600, timeWindow: '1 minute' } };
+
 export default async function workspaceRoutes(app: FastifyInstance) {
   const signedIn = { preHandler: [app.authenticate] };
   app.get('/maps', signedIn, listMaps);
@@ -27,9 +34,9 @@ export default async function workspaceRoutes(app: FastifyInstance) {
   app.post('/maps/:mapId/layers', signedIn, addLayer);
   app.patch('/maps/:mapId/layers/:layerId', signedIn, updateLayer);
   app.delete('/maps/:mapId/layers/:layerId', signedIn, removeLayer);
-  app.get('/maps/:mapId/layers/:layerId/features', signedIn, listFeatures);
+  app.get('/maps/:mapId/layers/:layerId/features', { ...signedIn, config: FEATURES_LIMIT }, listFeatures);
   // A raster layer's COG, by byte range, for whoever may read the map (rasters.ts).
-  app.get('/maps/:mapId/layers/:layerId/raster', signedIn, getRaster);
+  app.get('/maps/:mapId/layers/:layerId/raster', { ...signedIn, config: RASTER_LIMIT }, getRaster);
   app.post('/maps/:mapId/layers/:layerId/features', signedIn, addFeature);
   app.put('/maps/:mapId/layers/:layerId/features/:featureId', signedIn, updateFeature);
   app.delete('/maps/:mapId/layers/:layerId/features/:featureId', signedIn, removeFeature);
@@ -46,7 +53,7 @@ export default async function workspaceRoutes(app: FastifyInstance) {
   app.post('/maps/:mapId/exports', signedIn, createExport);
   app.get('/maps/:mapId/exports/preview', signedIn, previewExport);
   app.get('/jobs', signedIn, listJobs);
-  app.get('/jobs/:jobId', signedIn, getJob);
+  app.get('/jobs/:jobId', { ...signedIn, config: JOB_POLL_LIMIT }, getJob);
   app.delete('/jobs/:jobId', signedIn, deleteJob);
   app.get('/jobs/:jobId/download', signedIn, downloadJob);
 
