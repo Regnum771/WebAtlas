@@ -134,4 +134,43 @@ describe('useMapWrite', () => {
       expect(qc.getQueryData(['ws', 'map', 'm1'])).toEqual({ id: 'm1', revision: 7, layers: [] });
     }
   });
+
+  it('writes to one map run one at a time; another map does not wait', async () => {
+    const { qc, wrapper } = setup();
+    qc.setQueryData(['ws', 'map', 'm1'], { id: 'm1', revision: 1, layers: [] });
+    qc.setQueryData(['ws', 'map', 'm2'], { id: 'm2', revision: 1, layers: [] });
+    const one = renderHook(() => useMapWrite('m1'), { wrapper }).result;
+    const two = renderHook(() => useMapWrite('m2'), { wrapper }).result;
+    const log: string[] = [];
+    let release!: () => void;
+    const slow = vi.fn(async (rev: number) => {
+      log.push(`slow start ${rev}`);
+      await new Promise<void>((r) => { release = r; });
+      log.push('slow end');
+      return { revision: 2 };
+    });
+    const next = vi.fn(async (rev: number) => { log.push(`next start ${rev}`); return { revision: 3 }; });
+    const other = vi.fn(async () => { log.push('other'); return 'x'; });
+    const p1 = one.current.run(slow);
+    const p2 = one.current.run(next);
+    await two.current.run(other);
+    await Promise.resolve();
+    expect(log).toEqual(['slow start 1', 'other']);
+    release();
+    await Promise.all([p1, p2]);
+    // The queued write read the revision the first one answered.
+    expect(log).toEqual(['slow start 1', 'other', 'slow end', 'next start 2']);
+  });
+
+  it('refetch: false keeps the cache for the caller to patch', async () => {
+    const { qc, wrapper } = setup();
+    qc.setQueryData(['ws', 'map', 'm1'], { id: 'm1', revision: 1, layers: [] });
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const { result } = renderHook(() => useMapWrite('m1'), { wrapper });
+    const after = vi.fn();
+    await result.current.run(async () => ({ revision: 2 }), { refetch: false, after });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ['ws', 'map', 'm1'] });
+    expect(qc.getQueryData(['ws', 'map', 'm1'])).toEqual({ id: 'm1', revision: 2, layers: [] });
+    expect(after).toHaveBeenCalled();
+  });
 });

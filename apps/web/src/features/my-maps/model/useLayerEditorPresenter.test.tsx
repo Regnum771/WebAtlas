@@ -24,7 +24,7 @@ vi.mock('../../../app/providers/MapProvider', () => ({ useMapContext: () => ({ m
 
 import { ApiError } from '../../../shared/api/apiClient';
 import { useLayerEditorPresenter } from './useLayerEditorPresenter';
-import { MAP_CHANGED_COPY } from './queries';
+import { MAP_CHANGED_COPY, useMapDetail } from './queries';
 import { getMyMaps, resetMyMapsStore } from './myMaps.store';
 
 const layer = (over: Record<string, unknown>) => ({
@@ -37,10 +37,12 @@ const DETAIL = {
   layers: [layer({ id: 'a', position: 0 }), layer({ id: 'b', position: 1 })],
 };
 
+let client: QueryClient;
 function setup() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-  return renderHook(() => useLayerEditorPresenter('m1'), { wrapper });
+  // The panel keeps the map's detail observed while its card is open, so a write's refetch lands in the cache.
+  return renderHook(() => { useMapDetail('m1'); return useLayerEditorPresenter('m1'); }, { wrapper });
 }
 
 beforeEach(() => {
@@ -136,5 +138,68 @@ describe('useLayerEditorPresenter', () => {
     const { result } = setup();
     await act(async () => { await result.current.remove('a'); });
     expect(removeLayer).toHaveBeenCalledWith('m1', 'a', 4);
+  });
+
+  /** A server that keeps a revision and the layers' order, and refuses a stale revision. */
+  function fakeServer(ids: string[]) {
+    const state = { revision: 4, order: ids, styles: {} as Record<string, unknown> };
+    const snapshot = () => ({
+      ...DETAIL, revision: state.revision,
+      layers: state.order.map((id, position) => layer({ id, position, style: state.styles[id] ?? {} })),
+    });
+    getMap.mockImplementation(async () => snapshot());
+    updateLayer.mockImplementation(async (_m: string, id: string, input: { expectedRevision: number; position?: number; style?: unknown }) => {
+      if (input.expectedRevision !== state.revision) throw new ApiError(409, 'MAP_CHANGED', 'stale');
+      if (input.position !== undefined) {
+        const next = state.order.filter((x) => x !== id);
+        next.splice(input.position, 0, id);
+        state.order = next;
+      }
+      if (input.style) state.styles[id] = input.style;
+      state.revision += 1;
+      return { layer: layer({ id, style: state.styles[id] ?? {} }), revision: state.revision };
+    });
+    return state;
+  }
+
+  it('two quick moves both succeed with consecutive revisions', async () => {
+    const server = fakeServer(['a', 'b', 'c']);
+    const { result } = setup();
+    let results: (string | null)[] = [];
+    await act(async () => {
+      results = await Promise.all([result.current.move('c', 'up'), result.current.move('c', 'up')]);
+    });
+    expect(results).toEqual([null, null]);
+    expect(updateLayer.mock.calls.map((c) => c[2].expectedRevision)).toEqual([4, 5]);
+    expect(server.order).toEqual(['c', 'a', 'b']);
+  });
+
+  it('a style save queued behind a rename uses the rename revision', async () => {
+    fakeServer(['a', 'b']);
+    const { result } = setup();
+    await act(async () => { await result.current.rename('b', 'B'); });
+    updateLayer.mockClear();
+    vi.useFakeTimers();
+    let renamed: Promise<string | null> = Promise.resolve(null);
+    act(() => { result.current.setStyle('a', { width: 4 }); });
+    act(() => { renamed = result.current.rename('b', 'B2'); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); await renamed; });
+    expect(updateLayer.mock.calls.map((c) => c[2].expectedRevision)).toEqual([5, 6]);
+  });
+
+  it('a landed style save does not overwrite a newer pending style', async () => {
+    fakeServer(['a']);
+    const { result } = setup();
+    await act(async () => { await result.current.rename('a', 'A'); });
+    vi.useFakeTimers();
+    act(() => { result.current.setStyle('a', { width: 3 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    // The first save is on its way; a newer change arrives before it lands.
+    act(() => { result.current.setStyle('a', { width: 6 }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const cached = client.getQueryData<{ layers: { style: { width: number } }[] }>(['ws', 'map', 'm1']);
+    expect(cached?.layers[0].style.width).toBe(6);
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(updateLayer).toHaveBeenLastCalledWith('m1', 'a', expect.objectContaining({ style: expect.objectContaining({ width: 6 }) }));
   });
 });

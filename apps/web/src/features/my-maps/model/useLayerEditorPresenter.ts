@@ -31,11 +31,25 @@ export function useLayerEditorPresenter(mapId: string) {
   const write = useMapWrite(mapId);
   const pending = useRef(new Map<string, PendingStyle>());
 
+  /** Puts the style changes still waiting to be saved back over what a refetch brought in. */
+  function reapplyPending(): void {
+    if (pending.current.size === 0) return;
+    qc.setQueryData<MapDetail>(keys.map(mapId), (d) => d && {
+      ...d,
+      layers: d.layers.map((l) => {
+        const queued = pending.current.get(l.id);
+        return queued ? { ...l, style: { ...queued.style } } : l;
+      }),
+    });
+  }
+  const after = { after: reapplyPending };
+
   async function guard(action: () => Promise<void>): Promise<WriteResult> {
     try {
       await action();
       return null;
     } catch (e) {
+      reapplyPending();
       if (e instanceof MapGoneError) {
         showToast({ tone: 'warning', title: e.message });
         return null;
@@ -50,24 +64,32 @@ export function useLayerEditorPresenter(mapId: string) {
     guard(async () => {
       const fields = input.fields.map((f) => ({ name: f.name.trim(), type: f.type })).filter((f) => f.name !== '');
       const { layer } = await write.run((expectedRevision) =>
-        api.addFreeLayer(mapId, { title: input.title.trim(), geometryType: input.geometryType, fields, expectedRevision }));
+        api.addFreeLayer(mapId, { title: input.title.trim(), geometryType: input.geometryType, fields, expectedRevision }), after);
       setLayerVisible(layer.id, true);
     });
 
   const createEditCopy = (layerKey: string) =>
     guard(async () => {
-      const { layer } = await write.run((expectedRevision) => api.addEditCopy(mapId, { layerKey, expectedRevision }));
+      const { layer } = await write.run((expectedRevision) => api.addEditCopy(mapId, { layerKey, expectedRevision }), after);
       setLayerVisible(layer.id, true);
     });
 
   const rename = (layerId: string, title: string) =>
     guard(async () => {
-      await write.run((expectedRevision) => api.updateLayer(mapId, layerId, { title: title.trim(), expectedRevision }));
+      await write.run((expectedRevision) => api.updateLayer(mapId, layerId, { title: title.trim(), expectedRevision }), after);
     });
 
   async function saveStyle(layerId: string, style: PersonalLayerStyle): Promise<void> {
     const failure = await guard(async () => {
-      await write.run((expectedRevision) => api.updateLayer(mapId, layerId, { style: { ...style }, expectedRevision }));
+      await write.run((expectedRevision) => api.updateLayer(mapId, layerId, { style: { ...style }, expectedRevision }), {
+        // No refetch: patch the saved layer in and keep any newer pending style over it, so nothing snaps back.
+        refetch: false,
+        after: ({ layer }) => {
+          qc.setQueryData<MapDetail>(keys.map(mapId), (d) =>
+            d && { ...d, layers: d.layers.map((l) => (l.id === layer.id ? { ...layer, style: { ...layer.style } } : l)) });
+          reapplyPending();
+        },
+      });
     });
     if (failure) showToast({ tone: 'error', title: failure });
   }
@@ -102,23 +124,26 @@ export function useLayerEditorPresenter(mapId: string) {
 
   const move = (layerId: string, direction: 'up' | 'down') =>
     guard(async () => {
-      const layers = [...(detail()?.layers ?? [])].sort((a, b) => a.position - b.position);
-      const at = layers.findIndex((l) => l.id === layerId);
-      const neighbour = layers[direction === 'up' ? at - 1 : at + 1];
-      if (at < 0 || !neighbour) return;
-      await write.run((expectedRevision) => api.updateLayer(mapId, layerId, { position: neighbour.position, expectedRevision }));
+      await write.run(async (expectedRevision) => {
+        // Read when the write runs (after earlier queued writes), not when the button was pressed.
+        const layers = [...(detail()?.layers ?? [])].sort((a, b) => a.position - b.position);
+        const at = layers.findIndex((l) => l.id === layerId);
+        const neighbour = layers[direction === 'up' ? at - 1 : at + 1];
+        if (at < 0 || !neighbour) return { revision: expectedRevision };
+        return api.updateLayer(mapId, layerId, { position: neighbour.position, expectedRevision });
+      }, after);
     });
 
   const saveFields = (layerId: string, fields: FieldEdit[]) =>
     guard(async () => {
-      await write.run((expectedRevision) => api.updateLayer(mapId, layerId, { fields, expectedRevision }));
+      await write.run((expectedRevision) => api.updateLayer(mapId, layerId, { fields, expectedRevision }), after);
       // Renamed and removed fields change every feature's properties: read the view again.
       if (map) refreshPersonalLayer(map, layerId);
     });
 
   const remove = (layerId: string) =>
     guard(async () => {
-      await write.run((expectedRevision) => api.removeLayer(mapId, layerId, expectedRevision));
+      await write.run((expectedRevision) => api.removeLayer(mapId, layerId, expectedRevision), after);
     });
 
   return { createDrawn, createEditCopy, rename, setStyle, move, saveFields, remove };

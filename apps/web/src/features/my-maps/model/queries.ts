@@ -70,13 +70,26 @@ export function useMapJobs(mapId: string) {
   return useQuery({ queryKey: keys.jobs(mapId), queryFn: () => api.listJobs({ mapId }) });
 }
 
+export interface MapWriteOptions<T> {
+  /** False: the caller patches the cached map itself (in `after`), so no refetch can overwrite newer local state. */
+  refetch?: boolean;
+  /** Runs after the revision is advanced and the cache refreshed, before the next queued write starts. */
+  after?: (result: T) => void;
+}
+
+/** Per map: the tail of its write chain, so writes to one map run one at a time. */
+const chains = new Map<string, Promise<unknown>>();
+
 /**
- * Runs a write on a map with the revision of the last read. A stale revision refetches the map
- * and throws MapChangedError; the map's 404 drops it from the cache and throws MapGoneError.
+ * Runs a write on a map with the revision of the last read. Writes to one map are queued: each
+ * starts after the previous one settled, and a successful write moves the cached revision to the
+ * one the API answered, so the next write never sends a stale one. A stale revision (another tab)
+ * refetches the map and throws MapChangedError; the map's 404 drops it from the cache and throws
+ * MapGoneError.
  */
 export function useMapWrite(mapId: string) {
   const qc = useQueryClient();
-  async function run<T>(write: (expectedRevision: number) => Promise<T>): Promise<T> {
+  async function runNow<T>(write: (expectedRevision: number) => Promise<T>, options: MapWriteOptions<T>): Promise<T> {
     const refresh = () =>
       Promise.all([qc.invalidateQueries({ queryKey: keys.map(mapId) }), qc.invalidateQueries({ queryKey: keys.maps })]);
     try {
@@ -86,7 +99,13 @@ export function useMapWrite(mapId: string) {
         (await qc.fetchQuery<MapDetail>({ queryKey: keys.map(mapId), queryFn: () => api.getMap(mapId) }));
       const revision = map.revision;
       const result = await write(revision);
-      await refresh();
+      const answered = (result as { revision?: unknown } | null)?.revision;
+      if (typeof answered === 'number') {
+        qc.setQueryData<MapDetail>(keys.map(mapId), (d) => (d ? { ...d, revision: answered } : d));
+      }
+      if (options.refetch === false) await qc.invalidateQueries({ queryKey: keys.maps });
+      else await refresh();
+      options.after?.(result);
       return result;
     } catch (e) {
       if (e instanceof ApiError && e.code === 'MAP_CHANGED') {
@@ -101,6 +120,13 @@ export function useMapWrite(mapId: string) {
       }
       throw e;
     }
+  }
+  function run<T>(write: (expectedRevision: number) => Promise<T>, options: MapWriteOptions<T> = {}): Promise<T> {
+    const task = (chains.get(mapId) ?? Promise.resolve()).catch(() => undefined).then(() => runNow(write, options));
+    chains.set(mapId, task);
+    const clear = () => { if (chains.get(mapId) === task) chains.delete(mapId); };
+    task.then(clear, clear);
+    return task;
   }
   return { run };
 }
