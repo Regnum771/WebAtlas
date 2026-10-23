@@ -202,6 +202,34 @@ describe('free layer fields', () => {
     expect(write.statusCode).toBe(200);
   });
 
+  it('fields on a layer whose features carry undeclared keys are refused', async () => {
+    const refusal = { code: 'VALIDATION_ERROR', message: 'Lớp nhập từ tệp giữ nguyên các cột gốc.' };
+    // An imported layer: no declared fields, the file's columns on its features.
+    const imported = await layerWith([], [{ ma_ho: 'H01', dung_tich: 12.5 }, {}]);
+    const res = await call(O, 'PATCH', imported.url, { fields: [{ name: 'ghi_chu', type: 'text' }], expectedRevision: 0 });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatchObject(refusal);
+    expect(await layerState(imported.layerId)).toEqual({ fields: [], revision: 0 });
+    expect(await propertiesOf(imported.layerId)).toEqual([{ ma_ho: 'H01', dung_tich: 12.5 }, {}]);
+
+    // A layer that declares some fields but whose features carry another key is refused too.
+    const mixed = await layerWith([{ name: 'ten', type: 'text' }], [{ ten: 'A' }, { ten: 'B', cot_goc: 1 }]);
+    const mixedRes = await call(O, 'PATCH', mixed.url, { fields: [], expectedRevision: 0 });
+    expect(mixedRes.statusCode).toBe(400);
+    expect(mixedRes.json().error).toMatchObject(refusal);
+    expect(await propertiesOf(mixed.layerId)).toEqual([{ ten: 'A' }, { ten: 'B', cot_goc: 1 }]);
+
+    // Other edits of such a layer still work.
+    const renamed = await call(O, 'PATCH', imported.url, { title: 'Hồ chứa', expectedRevision: 0 });
+    expect(renamed.statusCode).toBe(200);
+
+    // A layer with no fields and no features (or only empty properties) may declare some.
+    const empty = await layerWith([], [{}]);
+    const declared = await call(O, 'PATCH', empty.url, { fields: [{ name: 'ten', type: 'text' }], expectedRevision: 0 });
+    expect(declared.statusCode).toBe(200);
+    expect(declared.json().layer.fields).toEqual([{ name: 'ten', type: 'text' }]);
+  });
+
   it('fields on an edit copy are refused', async () => {
     const { mapId, layerId, url } = await layerWith([{ name: 'ten', type: 'text' }], []);
     // An edit copy whose draft is gone and a raster layer, as rows: no draft or file is needed

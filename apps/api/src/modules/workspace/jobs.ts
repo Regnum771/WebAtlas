@@ -29,6 +29,7 @@ import { FILE_NOT_FOUND } from './uploads';
 
 export const JOB_NOT_FOUND = 'Không tìm thấy công việc.';
 export const JOB_RUNNING = 'Công việc đang chạy, chưa xoá được.';
+export const EXPORTS_ONLY = 'Chỉ xoá được tệp đã xuất.';
 export const NOTHING_TO_EXPORT = 'Bản đồ không có lớp nào để xuất.';
 
 /** The most rows an import may bring in, across all of the file's layers. */
@@ -438,11 +439,13 @@ export function jobsService(pg: Pool) {
     },
 
     /**
-     * Delete one of the user's own jobs once it has finished (succeeded or failed); anyone else
-     * gets the missing job's 404. A queued or running job is refused with 409 JOB_RUNNING: the
-     * worker has it, or is about to. For an export, the file it made is given delete_after =
-     * now() in the same transaction, so it stops counting against the quota at once; the
-     * cleanup sweep removes it later (the API never unlinks a file in a request).
+     * Delete one of the user's own export jobs once it has finished (succeeded or failed); anyone
+     * else gets the missing job's 404. An import job, whatever its status, is refused with 400
+     * EXPORTS_ONLY: its row is what ties an upload to the maps it fed (cleanup.ts
+     * markArchivedOriginals). A queued or running export is refused with 409 JOB_RUNNING: the
+     * worker has it, or is about to. The file the export made is given delete_after = now() in
+     * the same transaction, so it stops counting against the quota at once; the cleanup sweep
+     * removes it later (the API never unlinks a file in a request).
      *
      * The job row is locked first: a worker claims a queued job under the same lock (jobs_db.py
      * claim, FOR UPDATE SKIP LOCKED), so a job cannot start between the check and the delete.
@@ -455,9 +458,10 @@ export function jobsService(pg: Pool) {
         );
         const job = rows[0];
         if (!job) throw new NotFoundError(JOB_NOT_FOUND);
+        if (job.kind !== 'export') throw new ValidationError(EXPORTS_ONLY);
         if (job.status === 'queued' || job.status === 'running') throw new AppError(409, 'JOB_RUNNING', JOB_RUNNING);
         const fileId = (job.result as Partial<ExportResult> | null)?.fileId;
-        if (job.kind === 'export' && typeof fileId === 'string') {
+        if (typeof fileId === 'string') {
           await client.query(
             `UPDATE workspace.files SET delete_after = now()
               WHERE id = $1 AND owner_id = $2 AND kind = 'export'

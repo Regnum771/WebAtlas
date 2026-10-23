@@ -541,6 +541,43 @@ describe('jobs', () => {
     expect(await jobRow(jobId)).toBeUndefined();
   });
 
+  it('deleting an import job is refused and changes nothing', async () => {
+    const up = await uploadAs(O);
+    const exportsOnly = { error: { code: 'VALIDATION_ERROR', message: 'Chỉ xoá được tệp đã xuất.' } };
+    // Rows as the API and the worker leave them: one import still queued, one that succeeded.
+    const jobIds: string[] = [];
+    for (const status of ['queued', 'succeeded', 'failed']) {
+      const { rows } = await getPool().query<{ id: string }>(
+        `INSERT INTO workspace.jobs (owner_id, map_id, kind, status, params, result)
+         VALUES ($1, $2, 'import', $3, $4::jsonb, $5::jsonb) RETURNING id`,
+        [
+          ids.get(O), shared.id, status, JSON.stringify({ fileId: up.id, mapId: shared.id, ownerId: ids.get(O) }),
+          status === 'succeeded' ? JSON.stringify({ layerIds: [], rows: 0 }) : null,
+        ]
+      );
+      jobIds.push(rows[0].id);
+    }
+    const usage = (await call(O, 'GET', '/uploads')).json().usageBytes as number;
+
+    for (const jobId of jobIds) {
+      const res = await call(O, 'DELETE', `/jobs/${jobId}`);
+      expect(res.statusCode, jobId).toBe(400);
+      expect(res.json(), jobId).toEqual(exportsOnly);
+    }
+    // Every job is still there, and the upload is untouched.
+    const { rows } = await getPool().query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM workspace.jobs WHERE id = ANY($1::uuid[])`, [jobIds]
+    );
+    expect(rows[0].n).toBe(3);
+    const { rows: file } = await getPool().query(`SELECT delete_after FROM workspace.files WHERE id = $1`, [up.id]);
+    expect(file).toEqual([{ delete_after: null }]);
+    expect((await call(O, 'GET', '/uploads')).json().usageBytes).toBe(usage);
+    // Someone else still gets the missing job's 404, not the 400.
+    const theirs = await call(S, 'DELETE', `/jobs/${jobIds[1]}`);
+    expect(theirs.statusCode).toBe(404);
+    expect(theirs.json()).toEqual({ error: { code: 'NOT_FOUND', message: 'Không tìm thấy công việc.' } });
+  });
+
   it('unknown CRS id is refused', async () => {
     const up = await uploadAs(O);
     const cases = [

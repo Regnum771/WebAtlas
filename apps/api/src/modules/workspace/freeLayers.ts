@@ -9,6 +9,7 @@ import type { LayerSummary } from './maps';
 export const LAYER_NOT_FOUND = 'Không tìm thấy lớp.';
 export const FEATURE_NOT_FOUND = 'Không tìm thấy đối tượng.';
 export const STYLE_TOO_LARGE = 'Kiểu hiển thị quá lớn.';
+export const IMPORTED_KEEPS_COLUMNS = 'Lớp nhập từ tệp giữ nguyên các cột gốc.';
 const STYLE_MAX_BYTES = 8 * 1024;
 export const DEFAULT_LIMIT = 5000;
 export const MAX_LIMIT = 20000;
@@ -111,10 +112,20 @@ async function checkGeometry(client: PoolClient, layer: FreeLayerRow, geometry: 
  *   gets the key: a missing key reads as no value);
  * - a declared field that no entry keeps or renames is removed, and its key dropped everywhere.
  * A type change (kept or renamed field) is refused while any feature holds a non-null value
- * for it. Each declared field is the source of at most one entry.
+ * for it. Each declared field is the source of at most one entry. A layer whose features carry a
+ * key it does not declare (an imported layer) is refused with IMPORTED_KEEPS_COLUMNS.
  */
 async function applyFieldEdits(client: PoolClient, layer: FreeLayerRow, edits: FieldEdit[]): Promise<void> {
   const declared = new Map(layer.fields.map((f) => [f.name, f]));
+  // An imported layer's features carry the file's own columns, which the layer does not declare.
+  // Declaring fields would make checkProperties refuse those keys on the next feature write, so
+  // such a layer keeps its columns as they came.
+  const { rows: undeclared } = await client.query<{ found: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM workspace.features f, jsonb_object_keys(f.properties) AS k(key)
+                     WHERE f.layer_id = $1 AND NOT (k.key = ANY($2::text[]))) AS found`,
+    [layer.id, [...declared.keys()]]
+  );
+  if (undeclared[0].found) throw new ValidationError(IMPORTED_KEEPS_COLUMNS, { field: 'fields' });
   const used = new Set<string>();
   const moves: Array<{ from: string; to: string }> = [];
   for (const edit of edits) {
