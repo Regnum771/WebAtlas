@@ -1,10 +1,19 @@
 import fp from 'fastify-plugin';
-import { AppError, ConflictError, FileTooLargeError, InternalError, NotFoundError } from '../errors';
+import {
+  AppError, ConflictError, FileTooLargeError, InternalError, MALFORMED_UPLOAD, NotFoundError, ValidationError,
+} from '../errors';
 import {
   ConflictError as VersioningConflictError, NotFoundError as VersioningNotFoundError, StaleDraftError,
   DraftConflictError, DraftNotEditableError, DraftRevisionError,
 } from '@webatlas/versioning';
 import { MapRevisionError } from '../modules/workspace/access';
+
+/** @fastify/multipart's errors for a part over the route's limits (fields, files, parts). */
+const MULTIPART_PART_LIMITS = new Set(['FST_FIELDS_LIMIT', 'FST_FILES_LIMIT', 'FST_PARTS_LIMIT']);
+/** @fastify/multipart's errors for a body it cannot accept. */
+const MULTIPART_INVALID = new Set([
+  'FST_PROTO_VIOLATION', 'FST_INVALID_MULTIPART_CONTENT_TYPE', 'FST_INVALID_JSON_FIELD_ERROR',
+]);
 
 export default fp(async (app) => {
   app.setNotFoundHandler((_req, reply) => {
@@ -41,6 +50,11 @@ export default fp(async (app) => {
     } else if ((err as { code?: string }).code === 'FST_REQ_FILE_TOO_LARGE') {
       // @fastify/multipart's own over-the-limit error (workspace uploads).
       appErr = new FileTooLargeError();
+    } else if (MULTIPART_PART_LIMITS.has((err as { code?: string }).code ?? '')) {
+      // A text field, or a part beyond the file, in a workspace upload (server.ts limits).
+      appErr = new AppError(413, 'TOO_MANY_PARTS', 'Mỗi lần tải lên chỉ gửi một tệp, trong trường "file".');
+    } else if (MULTIPART_INVALID.has((err as { code?: string }).code ?? '')) {
+      appErr = new ValidationError(MALFORMED_UPLOAD);
     } else if ((err as { statusCode?: number }).statusCode === 429) {
       appErr = new AppError(429, 'RATE_LIMITED', 'Quá nhiều yêu cầu, vui lòng thử lại sau.');
     } else {

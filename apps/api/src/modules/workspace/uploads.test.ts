@@ -247,6 +247,62 @@ describe('uploads', () => {
     expect(filesUnder(ids.get(O)!)).toEqual([]);
   });
 
+  it('a text field or a malformed body is refused with a 4xx and leaves nothing behind', async () => {
+    const boundary = `----p3b${randomUUID().replace(/-/g, '')}`;
+    const ct = `multipart/form-data; boundary=${boundary}`;
+    const field = `--${boundary}\r\nContent-Disposition: form-data; name="ghi_chu"\r\n\r\n${'a'.repeat(4096)}\r\n`;
+    const filePart = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="diem.kml"\r\n` +
+      `Content-Type: application/octet-stream\r\n\r\n<kml/>`;
+    const send = async (payload: string, contentType = ct) => app.inject({
+      method: 'POST', url: '/api/workspace/uploads', payload,
+      headers: { 'content-type': contentType, ...(await auth(O)) },
+    });
+    const MALFORMED = { error: { code: 'VALIDATION_ERROR', message: 'Yêu cầu tải lên không hợp lệ.' } };
+
+    // A text field alone: over the route's limit of none (server.ts), refused before any buffering.
+    const fieldOnly = await send(`${field}--${boundary}--\r\n`);
+    expect(fieldOnly.statusCode).toBe(413);
+    expect(fieldOnly.json()).toEqual({
+      error: { code: 'TOO_MANY_PARTS', message: 'Mỗi lần tải lên chỉ gửi một tệp, trong trường "file".' },
+    });
+    // A text field ahead of the file: 413 when the limit is seen first, 400 when multipart has
+    // already handed the file over and then cuts it off (both in one chunk, as here).
+    const fieldFirst = await send(`${field}${filePart}\r\n--${boundary}--\r\n`);
+    expect([400, 413]).toContain(fieldFirst.statusCode);
+    expect(fieldFirst.statusCode).not.toBe(201);
+    // A body that breaks off inside the file, and one without a boundary: malformed, not a 500.
+    const truncated = await send(filePart);
+    expect(truncated.statusCode).toBe(400);
+    expect(truncated.json()).toEqual(MALFORMED);
+    const noBoundary = await send(`${filePart}\r\n--${boundary}--\r\n`, 'multipart/form-data');
+    expect(noBoundary.statusCode).toBe(400);
+    expect(noBoundary.json()).toEqual(MALFORMED);
+
+    expect(await fileRows(ids.get(O)!)).toHaveLength(0);
+    expect(filesUnder(ids.get(O)!)).toEqual([]);
+  });
+
+  it('an expired upload is neither listed nor served', async () => {
+    const res = await upload(O, 'het-han.geojson', Buffer.from('{}'));
+    expect(res.statusCode).toBe(201);
+    const up = res.json().upload;
+    await trackUpload(up.id);
+    await getPool().query(`UPDATE workspace.files SET delete_after = now() - interval '1 second' WHERE id = $1`, [up.id]);
+
+    const list = await call(O, 'GET', '/uploads');
+    expect(list.statusCode).toBe(200);
+    expect(list.json().uploads.map((u: { id: string }) => u.id)).not.toContain(up.id);
+    const read = await call(O, 'GET', `/uploads/${up.id}`);
+    expect(read.statusCode).toBe(404);
+    expect(read.json()).toEqual(NOT_FOUND);
+
+    // Given more time, it is back: expiry is all that hid it.
+    await getPool().query(`UPDATE workspace.files SET delete_after = now() + interval '1 hour' WHERE id = $1`, [up.id]);
+    expect((await call(O, 'GET', '/uploads')).json().uploads.map((u: { id: string }) => u.id)).toContain(up.id);
+    expect((await call(O, 'GET', `/uploads/${up.id}`)).statusCode).toBe(200);
+    await call(O, 'DELETE', `/uploads/${up.id}`);
+  });
+
   it('uploads are private', async () => {
     const res = await upload(O, 'diem.kml', Buffer.from('<kml/>'));
     expect(res.statusCode).toBe(201);

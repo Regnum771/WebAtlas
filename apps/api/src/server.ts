@@ -56,10 +56,16 @@ export function buildApp(): FastifyInstance {
   app.register(assistantRoutes, { prefix: '/api' });
   app.register(scenariosRoutes, { prefix: '/api' });
   // Multipart is parsed for the workspace routes only (uploads), inside their own scope. The
-  // limit is one byte over the per-file maximum so that a file over it is seen as too large
-  // (uploads.ts) rather than silently truncated at exactly the maximum.
+  // file limit is one byte over the per-file maximum so that a file over it is seen as too large
+  // (uploads.ts) rather than silently truncated at exactly the maximum. POST /uploads reads one
+  // part, the file, and no text field; req.file() buffers every text field ahead of the file, so
+  // none is allowed (fields: 0, fieldSize as a backstop) and at most two parts are parsed (the
+  // file, plus room for one stray part to be refused or ignored rather than buffered). A text
+  // field before the file fails with FST_FIELDS_LIMIT (plugins/errorHandler.ts: 413).
   app.register(async (workspace) => {
-    await workspace.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES + 1, files: 1 } });
+    await workspace.register(multipart, {
+      limits: { fileSize: MAX_UPLOAD_BYTES + 1, files: 1, fields: 0, fieldSize: 1024, parts: 2 },
+    });
     await workspace.register(workspaceRoutes);
   }, { prefix: '/api/workspace' });
 

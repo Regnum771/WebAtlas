@@ -50,6 +50,12 @@ interface UploadRow {
 
 const UPLOAD_COLS = 'id, original_name, size_bytes, created_at';
 
+/**
+ * An upload whose delete_after has passed is gone, whether or not the sweep has removed it yet:
+ * it is neither listed nor served (as jobs.ts enqueueImport refuses to import it).
+ */
+const NOT_EXPIRED = '(delete_after IS NULL OR delete_after > now())';
+
 function toUpload(row: UploadRow): Upload {
   return {
     id: row.id,
@@ -132,10 +138,11 @@ export function uploadsService(pg: Pool, opts: { maxBytes?: number } = {}) {
       }
     },
 
+    /** The owner's uploads. One whose delete_after has passed is gone (NOT_EXPIRED). */
     async list(user: CurrentUser): Promise<Upload[]> {
       const { rows } = await pg.query<UploadRow>(
         `SELECT ${UPLOAD_COLS} FROM workspace.files
-          WHERE owner_id = $1 AND kind = 'upload'
+          WHERE owner_id = $1 AND kind = 'upload' AND ${NOT_EXPIRED}
           ORDER BY created_at DESC, id`,
         [user.id]
       );
@@ -160,7 +167,7 @@ export function uploadsService(pg: Pool, opts: { maxBytes?: number } = {}) {
     async original(user: CurrentUser, fileId: string): Promise<{ absPath: string; originalName: string; contentType: string }> {
       const { rows } = await pg.query<{ path: string; original_name: string; content_type: string }>(
         `SELECT path, original_name, content_type FROM workspace.files
-          WHERE id = $1 AND owner_id = $2 AND kind = 'upload'`,
+          WHERE id = $1 AND owner_id = $2 AND kind = 'upload' AND ${NOT_EXPIRED}`,
         [fileId, user.id]
       );
       if (!rows[0]) throw new NotFoundError(FILE_NOT_FOUND);

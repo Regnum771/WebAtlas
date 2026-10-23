@@ -32,6 +32,8 @@ export class GeometryError extends AppError {
 export class FileTooLargeError extends AppError {
   constructor() { super(413, 'FILE_TOO_LARGE', 'Tệp lớn hơn 200 MB.'); }
 }
+/** A workspace upload whose multipart body cannot be parsed (no boundary, cut short, ...). */
+export const MALFORMED_UPLOAD = 'Yêu cầu tải lên không hợp lệ.';
 /** Storing a file would take its owner over their quota. */
 export class QuotaExceededError extends AppError {
   constructor(message: string) { super(413, 'QUOTA_EXCEEDED', message); }

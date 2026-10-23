@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { AuthError, NotFoundError, ValidationError } from '../../errors';
+import { AuthError, MALFORMED_UPLOAD, NotFoundError, ValidationError } from '../../errors';
 import { validate } from '../../lib/validate';
 import type { CurrentUser } from '../../types/fastify';
 import { assertCanRead } from './access';
@@ -220,16 +220,35 @@ export async function removeFeature(req: FastifyRequest, reply: FastifyReply) {
 export async function createUpload(req: FastifyRequest, reply: FastifyReply) {
   const user = userOf(req);
   if (!req.isMultipart()) throw new ValidationError();
-  const part = await req.file();
+  let part: Awaited<ReturnType<FastifyRequest['file']>>;
+  try {
+    part = await req.file();
+  } catch (err) {
+    // @fastify/multipart's own errors (a limit, FST_*) are mapped by the error handler. Anything
+    // else is busboy refusing the body (no boundary, an overlong one): the request is malformed.
+    const code = (err as { code?: unknown }).code;
+    if (typeof code === 'string' && code.startsWith('FST_')) throw err;
+    throw new ValidationError(MALFORMED_UPLOAD);
+  }
   if (!part) throw new ValidationError();
   if (part.fieldname !== 'file') {
     part.file.resume(); // let the request body drain
     throw new ValidationError();
   }
-  const { upload } = await uploadsService(req.server.pg).upload(user, {
-    filename: part.filename, mimetype: part.mimetype, file: part.file,
-  });
-  reply.code(201).send({ upload });
+  const file = part.file;
+  try {
+    const { upload } = await uploadsService(req.server.pg).upload(user, {
+      filename: part.filename, mimetype: part.mimetype, file,
+    });
+    reply.code(201).send({ upload });
+  } catch (err) {
+    // The file stream was cut off before its end: multipart destroys it when the body breaks
+    // off inside the file, or when a part over the limits (server.ts) came with it in the same
+    // chunk. The request was malformed; it is not a server fault. The service never destroys
+    // the stream itself (it drains it), so any other failure is reported as it is.
+    if (file.destroyed && !file.readableEnded) throw new ValidationError(MALFORMED_UPLOAD);
+    throw err;
+  }
 }
 
 export async function listUploads(req: FastifyRequest, reply: FastifyReply) {
