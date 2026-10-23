@@ -34,6 +34,10 @@ vi.mock('../../../app/providers/MapProvider', () => ({ useMapContext: () => ({ m
 import { ApiError } from '../../../shared/api/apiClient';
 import { useUploadPresenter, NEW_MAP } from './useUploadPresenter';
 import { getMyMaps, resetMyMapsStore } from './myMaps.store';
+import { getPendingImports, resetPendingImports } from './pendingImports.store';
+import { usePendingImportPresenter } from './usePendingImportPresenter';
+import { keys } from './queries';
+import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
 
 const NO_CRS = 'Tệp không ghi hệ toạ độ; hãy chọn hệ toạ độ nguồn.';
 const MINE = {
@@ -52,7 +56,18 @@ const layer = (over: Record<string, unknown>) => ({
 function setup(targetMapId: string | null = null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-  return renderHook(() => useUploadPresenter({ targetMapId }), { wrapper });
+  return { client, wrapper, ...renderHook(() => useUploadPresenter({ targetMapId }), { wrapper }) };
+}
+
+/** Uploads a file into m1, waits for its import to run, then closes and unmounts the dialog. */
+async function closeWhileRunning() {
+  const s = setup('m1');
+  act(() => s.result.current.setFile(new File(['x'], 'a.gpkg')));
+  await act(async () => { await s.result.current.submit(); });
+  await waitFor(() => expect(s.result.current.phase).toBe('running'));
+  act(() => s.result.current.close());
+  s.unmount();
+  return s;
 }
 
 /** An upload that never finishes by itself and rejects with ABORTED when its signal fires. */
@@ -69,6 +84,8 @@ beforeEach(() => {
   [listMaps, getMap, createMap, queueImport, getJob, listFeatures, listUploads, uploadFile, fitToExtent4326]
     .forEach((m) => m.mockReset());
   resetMyMapsStore();
+  resetPendingImports();
+  resetToasts();
   listMaps.mockResolvedValue({ mine: [MINE], sharedWithMe: [] });
   listUploads.mockResolvedValue({ uploads: [], usageBytes: 0, quotaBytes: 1 });
   getMap.mockResolvedValue({ ...MINE, layers: [] });
@@ -228,6 +245,43 @@ describe('useUploadPresenter', () => {
     act(() => result.current.setFile(new File(['x'], 'a.gpkg')));
     await act(async () => { await result.current.submit(); });
     await waitFor(() => expect(result.current.successText).toBe('Đã nhập xong.'));
+  });
+
+  it('closing during running still refreshes the map and turns the new layers on when the job succeeds', async () => {
+    const { client, wrapper } = await closeWhileRunning();
+    expect(getPendingImports()).toEqual([{ jobId: 'j1', mapId: 'm1' }]);
+    const entry = getPendingImports()[0];
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    getJob.mockResolvedValue(job('j1', 'succeeded', { result: { layerIds: ['l9', 'l10'], rows: 12 } }));
+    renderHook(() => usePendingImportPresenter(entry), { wrapper });
+    await waitFor(() => expect(getPendingImports()).toEqual([]));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.maps });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.map('m1') });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.uploads });
+    expect(getMyMaps().expanded.has('m1')).toBe(true);
+    expect(getMyMaps().layers.l9?.visible).toBe(true);
+    expect(getMyMaps().layers.l10?.visible).toBe(true);
+    expect(getToasts().map((t) => [t.tone, t.title])).toEqual([['success', 'Đã nhập xong. 12 đối tượng.']]);
+  });
+
+  it('closing during running shows the job error as a toast when it fails', async () => {
+    const { wrapper } = await closeWhileRunning();
+    const entry = getPendingImports()[0];
+    getJob.mockResolvedValue(job('j1', 'failed', { error: NO_CRS }));
+    renderHook(() => usePendingImportPresenter(entry), { wrapper });
+    await waitFor(() => expect(getPendingImports()).toEqual([]));
+    expect(getToasts().map((t) => [t.tone, t.title])).toEqual([['error', NO_CRS]]);
+    expect(getMyMaps().expanded.has('m1')).toBe(false);
+  });
+
+  it('closing after the import ended hands nothing off', async () => {
+    getJob.mockResolvedValue(job('j1', 'succeeded', { result: { layerIds: [], rows: 0 } }));
+    const { result } = setup('m1');
+    act(() => result.current.setFile(new File(['x'], 'a.gpkg')));
+    await act(async () => { await result.current.submit(); });
+    await waitFor(() => expect(result.current.phase).toBe('succeeded'));
+    act(() => result.current.close());
+    expect(getPendingImports()).toEqual([]);
   });
 
   it('the GeoJSON CRS warning shows only for a .geojson with a non-WGS 84 choice', () => {

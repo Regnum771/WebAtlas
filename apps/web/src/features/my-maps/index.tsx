@@ -12,6 +12,8 @@ import { ExportDialogView } from './ui/ExportDialog.view';
 import { useSharePresenter } from './model/useSharePresenter';
 import { ShareDialogView } from './ui/ShareDialog.view';
 import { useUploadPresenter } from './model/useUploadPresenter';
+import { usePendingImports, type PendingImport } from './model/pendingImports.store';
+import { usePendingImportPresenter } from './model/usePendingImportPresenter';
 import { usePersonalEditingPresenter } from './model/usePersonalEditingPresenter';
 import { useAttributeFormPresenter } from '../feature-editing/model/useAttributeFormPresenter';
 import { AttributeFormView } from '../feature-editing/ui/AttributeForm.view';
@@ -34,6 +36,12 @@ function PersonalFeatureCard() {
     />,
     document.body,
   );
+}
+
+/** Follows one import its dialog left while it was still running; renders nothing. */
+function PendingImportWatch({ entry }: { entry: PendingImport }) {
+  usePendingImportPresenter(entry);
+  return null;
 }
 
 /** The upload dialog; mounted only while open, so each opening starts idle. */
@@ -174,6 +182,7 @@ function MyMapsPanel() {
   usePersonalLayersSync();
   const p = useMyMapsPanelPresenter();
   const editing = usePersonalEditingPresenter();
+  const pendingImports = usePendingImports();
   const [layerDialog, setLayerDialog] = useState<LayerDialog | null>(null);
   const [upload, setUpload] = useState<{ targetMapId: string | null } | null>(null);
   const [exportMapId, setExportMapId] = useState<string | null>(null);
@@ -202,6 +211,7 @@ function MyMapsPanel() {
       {exportMapId && <ExportDialog mapId={exportMapId} onClose={() => setExportMapId(null)} />}
       {shareMapId && <ShareDialog mapId={shareMapId} onClose={() => setShareMapId(null)} />}
       <PersonalFeatureCard />
+      {pendingImports.map((entry) => <PendingImportWatch key={entry.jobId} entry={entry} />)}
     </>
   );
 }

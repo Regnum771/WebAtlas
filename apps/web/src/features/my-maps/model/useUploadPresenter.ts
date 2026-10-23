@@ -6,6 +6,8 @@ import * as api from '../api/workspace.api';
 import type { Job, LayerSummary, MapDetail, PersonalFeature } from '../api/workspace.api';
 import { uploadFile } from '../api/transfer';
 import { expandMap, setLayerVisible } from './myMaps.store';
+import { handOffImport } from './pendingImports.store';
+import { importDoneText } from './usePendingImportPresenter';
 import { fitToExtent4326 } from './personalLayers';
 import { keys, useJob, useMyMaps } from './queries';
 
@@ -208,8 +210,14 @@ export function useUploadPresenter({ targetMapId }: { targetMapId: string | null
     await queue(fileId, crs, token, file.name);
   }
 
-  /** Aborts an upload in flight and stops following the job; the dialog starts over when opened again. */
+  /**
+   * Aborts an upload in flight; the dialog starts over when opened again. An import still queued
+   * or running is handed to <MyMaps />, which shows its result when it ends.
+   */
   function close(): void {
+    if (jobId && (!job || job.status === 'queued' || job.status === 'running')) {
+      handOffImport({ jobId, mapId: job?.mapId ?? mapIdRef.current });
+    }
     run.current++;
     abort.current?.abort();
     abort.current = null;
@@ -276,7 +284,7 @@ export function useUploadPresenter({ targetMapId }: { targetMapId: string | null
     crsRequired,
     crsWarning: file !== null && isGeoJson(file.name) && sourceCrs !== AUTO_CRS && !WGS84_IDS.includes(sourceCrs),
     error,
-    successText: phase === 'succeeded' ? `Đã nhập xong.${rows > 0 ? ` ${rows} đối tượng.` : ''}` : null,
+    successText: phase === 'succeeded' ? importDoneText(rows) : null,
     canSubmit: file !== null && fileError === null && !busy && phase !== 'succeeded',
     canRetry: phase === 'failed' && crsRequired && fileId !== null && sourceCrs !== AUTO_CRS,
     setFile,
