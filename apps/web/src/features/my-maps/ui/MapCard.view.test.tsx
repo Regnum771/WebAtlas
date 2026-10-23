@@ -146,3 +146,25 @@ describe('MapCardView tidy card', () => {
     expect(screen.queryByText('Sửa đối tượng')).toBeNull();
   });
 });
+
+describe('MapCardView copying', () => {
+  it('while a copy runs the menu item is disabled and labelled Đang sao chép…', async () => {
+    const onCopy = vi.fn();
+    const user = userEvent.setup();
+    render(<ul><MapCardView card={card({ canWrite: false, ownerLabel: 'của Lan', copying: true })} {...props} onCopy={onCopy} /></ul>);
+    await openMenu(user);
+    const item = screen.getByRole('menuitem', { name: 'Đang sao chép…' });
+    expect(item).toBeDisabled();
+    expect(screen.queryByRole('menuitem', { name: 'Tạo bản sao' })).toBeNull();
+    await user.click(item);
+    expect(onCopy).not.toHaveBeenCalled();
+  });
+
+  it('the header shows a spinner while copying', () => {
+    const copying = card({ canWrite: false, ownerLabel: 'của Lan', copying: true });
+    const { rerender } = render(<ul><MapCardView card={copying} {...props} /></ul>);
+    expect(screen.getByRole('status', { name: 'Đang sao chép' })).toBeInTheDocument();
+    rerender(<ul><MapCardView card={{ ...copying, copying: false }} {...props} /></ul>);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});

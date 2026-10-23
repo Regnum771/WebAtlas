@@ -4,6 +4,8 @@ export interface CardMenuItem {
   label: string;
   onSelect: () => void;
   danger?: boolean;
+  /** Shown but not selectable (a running action). */
+  disabled?: boolean;
 }
 
 interface Props {
@@ -75,6 +77,7 @@ export function CardMenuView({ items }: Props) {
               ref={(el) => { itemRefs.current[i] = el; }}
               type="button"
               role="menuitem"
+              disabled={item.disabled}
               className={item.danger ? 'card-menu-item danger' : 'card-menu-item'}
               onClick={() => { close(); item.onSelect(); }}
             >

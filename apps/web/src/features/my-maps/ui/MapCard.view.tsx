@@ -40,7 +40,9 @@ export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onEx
     ]
     : [
       { label: 'Tải xuống', onSelect: onExport },
-      { label: 'Tạo bản sao', onSelect: onCopy },
+      card.copying
+        ? { label: 'Đang sao chép…', onSelect: onCopy, disabled: true }
+        : { label: 'Tạo bản sao', onSelect: onCopy },
     ];
   return (
     <li className="my-map-card">
@@ -49,6 +51,7 @@ export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onEx
           <Chevron size={16} aria-hidden="true" />
           <span className="my-map-title">{card.title}</span>
         </button>
+        {card.copying && <Spinner label="Đang sao chép" />}
         <CardMenuView items={menu} />
       </div>
       <p className="my-map-meta">
