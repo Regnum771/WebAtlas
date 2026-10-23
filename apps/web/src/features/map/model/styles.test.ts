@@ -12,6 +12,7 @@ import {
   droughtSurveyStyle,
   saltwaterIntrusionStyle,
   floodGenerationStyle,
+  officialStyleFor,
 } from './styles';
 
 // Minimal fake OL feature: only get() is used by the style functions.
@@ -252,5 +253,21 @@ describe('riversStyle level of detail', () => {
 
   it('draws a ditch when fully zoomed in', () => {
     expect(riversStyle(feature(1), resolutionForScale(100_000))).toBeDefined();
+  });
+});
+
+describe('officialStyleFor', () => {
+  it('maps each editable layer to the style its official layer draws with', () => {
+    expect(officialStyleFor('rivers')).toBe(riversStyle);
+    expect(officialStyleFor('lakes')).toBe(lakesStyle);
+    expect(officialStyleFor('stations')).toBe(stationsStyle);
+    expect(officialStyleFor('flood_zones')).toBe(floodStyle);
+    expect(officialStyleFor('drought_points')).toBe(droughtSurveyStyle);
+    expect(officialStyleFor('saltwater_intrusion')).toBe(saltwaterIntrusionStyle);
+    expect(officialStyleFor('flood_generation')).toBe(floodGenerationStyle);
+    // Dams: the official cartodiagram with no status filter (the filter belongs to the official layer).
+    const dams = officialStyleFor('dams') as (f: unknown) => Style | undefined;
+    const style = dams(fakeFeature({ statusSlug: 'nguy_hiem', ratedPower: 100 }));
+    expect(((style as Style).getImage() as CircleStyle).getFill()!.getColor()).toBe('#ef4444');
   });
 });

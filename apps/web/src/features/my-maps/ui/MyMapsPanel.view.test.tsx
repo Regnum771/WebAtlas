@@ -33,10 +33,10 @@ describe('MyMapsPanelView', () => {
 
   it('an expanded card lists its layers with their kind labels', () => {
     const layers = [
-      { id: 'a', title: 'Vẽ', kindLabel: 'Lớp vẽ', visible: true, opacity: 1 },
-      { id: 'b', title: 'Nhập', kindLabel: 'Lớp từ tệp', visible: false, opacity: 1 },
-      { id: 'c', title: 'Bản sao', kindLabel: 'Sửa lớp Sông', visible: true, opacity: 1 },
-      { id: 'd', title: 'Ảnh vệ tinh', kindLabel: 'Ảnh', visible: true, opacity: 1 },
+      { id: 'a', title: 'Vẽ', kindLabel: 'Lớp vẽ', visible: true, opacity: 1, truncated: null },
+      { id: 'b', title: 'Nhập', kindLabel: 'Lớp từ tệp', visible: false, opacity: 1, truncated: null },
+      { id: 'c', title: 'Bản sao', kindLabel: 'Sửa lớp Sông', visible: true, opacity: 1, truncated: null },
+      { id: 'd', title: 'Ảnh vệ tinh', kindLabel: 'Ảnh', visible: true, opacity: 1, truncated: null },
     ];
     render(<MyMapsPanelView {...base} own={[card({ expanded: true, layers })]} />);
     for (const k of ['Lớp vẽ', 'Lớp từ tệp', 'Sửa lớp Sông', 'Ảnh']) expect(screen.getByText(k)).toBeInTheDocument();

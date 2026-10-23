@@ -1,0 +1,98 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+
+const h = vi.hoisted(() => ({
+  handlers: new Map<string, (e: unknown) => void>(),
+  hit: null as null | { mapId: string; layerId: string; feature: unknown },
+  drawing: false,
+  justEnded: false,
+  editing: false,
+}));
+
+vi.mock('../../../app/providers/MapProvider', () => {
+  const target = document.createElement('div');
+  target.getBoundingClientRect = () => ({ left: 300, top: 50, right: 1300, bottom: 850, width: 1000, height: 800, x: 300, y: 50, toJSON: () => ({}) });
+  const map = {
+    on: (ev: string, fn: (e: unknown) => void) => { h.handlers.set(ev, fn); },
+    un: (ev: string) => { h.handlers.delete(ev); },
+    getPixelFromCoordinate: () => [40, 60],
+    getTargetElement: () => target,
+  };
+  return { useMapContext: () => ({ map }) };
+});
+vi.mock('../../map/model/drawingState', () => ({ isDrawing: () => h.drawing, drawingJustEnded: () => h.justEnded }));
+vi.mock('../../map/model/mapEditing', () => ({ useMapEditing: () => ({ editing: h.editing }) }));
+vi.mock('./personalLayers', () => ({ personalFeatureAt: () => h.hit }));
+
+import { usePersonalPopupPresenter } from './usePersonalPopupPresenter';
+import { keys } from './queries';
+import { resetMyMapsStore, setPersonalEditing } from './myMaps.store';
+
+const DETAIL = {
+  id: 'm1', title: 'Lũ Đà Nẵng', description: '', ownerId: 'u1', ownerName: 'Tôi', revision: 3,
+  updatedAt: '2026-10-01T00:00:00Z', layerCount: 1, role: 'owner' as const,
+  layers: [{ id: 'l1', kind: 'free', title: 'Cống thoát nước', position: 0, style: {}, geometryType: 'point', fields: [], layerKey: null, draftId: null, featureCount: 1, raster: null }],
+};
+const FEATURE = {
+  type: 'Feature', id: 'f1', geometry: { type: 'Point', coordinates: [108.2, 16.05] },
+  properties: { ten: 'Cống A', so_cua: 3, ghi_chu: null },
+};
+
+function setup() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(keys.map('m1'), DETAIL);
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return renderHook(() => usePersonalPopupPresenter(), { wrapper });
+}
+const click = () => act(() => { h.handlers.get('singleclick')!({ pixel: [40, 60], coordinate: [1, 2] }); });
+
+beforeEach(() => {
+  h.hit = { mapId: 'm1', layerId: 'l1', feature: FEATURE };
+  h.drawing = false; h.justEnded = false; h.editing = false;
+  resetMyMapsStore();
+});
+
+describe('usePersonalPopupPresenter', () => {
+  it('shows the layer title and the properties, with null as —', () => {
+    const { result } = setup();
+    expect(result.current.card).toBeNull();
+    click();
+    expect(result.current.card).toMatchObject({
+      title: 'Cống thoát nước',
+      rows: [{ key: 'ten', value: 'Cống A' }, { key: 'so_cua', value: '3' }, { key: 'ghi_chu', value: '—' }],
+    });
+    // Placed at the click, shifted by where the map starts in the window.
+    expect(result.current.anchor).toEqual([340, 110]);
+    act(() => result.current.close());
+    expect(result.current.card).toBeNull();
+  });
+
+  it('opens nothing while a drawing or an edit mode holds the map, official or personal', () => {
+    const { result, rerender } = setup();
+    for (const flag of ['drawing', 'justEnded', 'editing'] as const) {
+      h[flag] = true;
+      rerender();
+      click();
+      expect(result.current.card).toBeNull();
+      h[flag] = false;
+      rerender();
+    }
+    act(() => setPersonalEditing(true));
+    click();
+    expect(result.current.card).toBeNull();
+    act(() => setPersonalEditing(false));
+    click();
+    expect(result.current.card).not.toBeNull();
+  });
+
+  it('a click off any personal feature closes the card', () => {
+    const { result } = setup();
+    click();
+    expect(result.current.card).not.toBeNull();
+    h.hit = null;
+    click();
+    expect(result.current.card).toBeNull();
+  });
+});

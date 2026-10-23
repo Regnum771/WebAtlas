@@ -1,7 +1,8 @@
 import { Style, Circle as CircleStyle, Fill, Stroke, Text } from 'ol/style';
+import type { StyleLike } from 'ol/style/Style';
 import { scaleAtResolution } from './zoomScale';
 import type { ReservoirFilterType } from './MapModel';
-import { DAM_STATUS_DISPLAY, toDamStatusSlug, type DamStatusSlug, LAYER_PALETTE } from '@webatlas/shared';
+import { DAM_STATUS_DISPLAY, toDamStatusSlug, type DamStatusSlug, type EditableLayerKey, LAYER_PALETTE } from '@webatlas/shared';
 
 // LAYER_PALETTE (packages/shared) holds the raw '#rrggbb' identity colors so the
 // legend and the map can't silently diverge; opacity variants are still built
@@ -233,4 +234,25 @@ export function makeRiverSelectStyle() {
     const cap = feature.get('streamOrder') || 6;
     return RIVER_SELECT_STYLES[riverBucket(cap)];
   };
+}
+
+/**
+ * The style each editable layer's official map layer draws with (MapModel), so an edit copy
+ * in a personal map is drawn like the layer it copies. Rivers leave out the clicked-river
+ * highlight, and dams the reservoir status filter: both belong to the official layer only.
+ * The styles read ISO property names (streamOrder, statusSlug, ratedPower).
+ */
+const damsAll = makeDamsStyle(() => 'all');
+const OFFICIAL_STYLES: Record<EditableLayerKey, StyleLike> = {
+  dams: damsAll,
+  rivers: riversStyle,
+  lakes: lakesStyle,
+  stations: stationsStyle,
+  flood_zones: floodStyle,
+  drought_points: droughtSurveyStyle,
+  saltwater_intrusion: saltwaterIntrusionStyle,
+  flood_generation: floodGenerationStyle,
+};
+export function officialStyleFor(layerKey: EditableLayerKey): StyleLike {
+  return OFFICIAL_STYLES[layerKey];
 }

@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   overlayOnTop: false,
   labelOnTop: false,
   thematic: null as null | Record<string, unknown>,
+  personalOnTop: false,
 }));
 
 vi.mock('../entities/session/model/useUnitTree', async () => {
@@ -34,6 +35,11 @@ vi.mock('../app/providers/MapProvider', () => {
     on: (ev: string, fn: (e: unknown) => void) => { if (ev === 'singleclick') h.handler = fn; },
     un: () => {},
     forEachFeatureAtPixel: (_px: unknown, cb: (f: unknown, l: unknown) => unknown) => {
+      // A feature of a personal map's layer (an edit copy of dams: database column names, no layerKey).
+      if (h.personalOnTop) {
+        cb({ getProperties: () => ({ external_id: '7', name: 'Đập của tôi' }), getId: () => 'r7' },
+          { get: (k: string) => (k === 'personal' ? true : k === 'id' ? 'ws:l1' : undefined) });
+      }
       if (h.thematic) cb({ getProperties: () => h.thematic, getId: () => undefined }, { get: () => 'layer_dams' });
       if (h.overlayOnTop) cb({ getProperties: () => ({ geometry: {}, label: 'Vùng phân tích' }), getId: () => undefined }, { get: () => 'layer_roi' });
       // A province tile's label point carries only code and name; the polygon has the full attributes.
@@ -154,5 +160,18 @@ describe('DynamicPopup managing unit', () => {
     render(<DynamicPopup />);
     await click(1);
     expect(screen.queryByText('Đơn vị chủ quản:')).not.toBeInTheDocument();
+  });
+});
+
+describe('DynamicPopup over a personal layer', () => {
+  beforeEach(() => { h.handler = null; h.info.length = 0; h.members.length = 0; h.thematic = null; h.personalOnTop = true; });
+  it('a click on a personal layer opens no official popup and selects nothing', async () => {
+    const { container } = render(<DynamicPopup />);
+    await click(1);
+    h.personalOnTop = false;
+    // The personal feature card answers this click; the official popup stays shut and asks
+    // GeoServer nothing.
+    expect(container.querySelector('.dynamic-popup')).toBeNull();
+    expect(h.info).toHaveLength(0);
   });
 });

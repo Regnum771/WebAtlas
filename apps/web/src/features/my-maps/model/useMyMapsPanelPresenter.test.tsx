@@ -22,7 +22,7 @@ import { useMyMapsPanelPresenter } from './useMyMapsPanelPresenter';
 import { ApiError } from '../../../shared/api/apiClient';
 import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
 import { MAP_CHANGED_COPY } from './queries';
-import { resetMyMapsStore, getMyMaps } from './myMaps.store';
+import { resetMyMapsStore, getMyMaps, expandMap, setTruncated } from './myMaps.store';
 
 const MINE = { id: 'm1', title: 'Lũ Đà Nẵng', description: '', ownerId: 'u1', ownerName: 'Tôi', revision: 3, updatedAt: '2026-10-01T00:00:00Z', layerCount: 2, role: 'owner' as const };
 const SHARED = { ...MINE, id: 'm2', title: 'Sông Hàn', ownerId: 'u2', ownerName: 'Lan', revision: 5, role: 'recipient' as const };
@@ -78,6 +78,17 @@ describe('useMyMapsPanelPresenter', () => {
     await act(async () => { await result.current.confirmDelete(); });
     expect(deleteMap).toHaveBeenCalledWith('m1', 3);
     expect(result.current.pendingDelete).toBe(false);
+  });
+
+  it('a layer row carries the truncation count of its last read', async () => {
+    const layer = { id: 'l1', kind: 'free', title: 'Điểm', position: 0, style: {}, geometryType: 'point', fields: [], layerKey: null, draftId: null, featureCount: 9000, raster: null };
+    getMap.mockImplementation(async (id: string) => ({ ...(id === 'm1' ? MINE : SHARED), layers: id === 'm1' ? [layer] : [] }));
+    expandMap('m1');
+    const { result } = setup();
+    await waitFor(() => expect(result.current.own[0].layers).toHaveLength(1));
+    expect(result.current.own[0].layers![0].truncated).toBeNull();
+    act(() => setTruncated('l1', 5000));
+    expect(result.current.own[0].layers![0].truncated).toBe(5000);
   });
 
   it('a recipient gets no rename or delete actions', async () => {

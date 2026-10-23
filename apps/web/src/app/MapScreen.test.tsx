@@ -28,6 +28,11 @@ vi.mock('../features/my-maps/model/useMyMapsPanelPresenter', () => ({
     pendingDelete: false, deleteError: null, deleting: false, askDelete: () => {}, cancelDelete: () => {}, confirmDelete: async () => {},
   }),
 }));
+// Its map side (personal layers, feature card) needs the OpenLayers map; not under test here.
+vi.mock('../features/my-maps/model/usePersonalLayersSync', () => ({ usePersonalLayersSync: () => {} }));
+vi.mock('../features/my-maps/model/usePersonalPopupPresenter', () => ({
+  usePersonalPopupPresenter: () => ({ card: null, anchor: null, close: () => {} }),
+}));
 vi.mock('../features/legend', () => ({ default: () => <div>LEGEND</div> }));
 vi.mock('../features/assistant', () => ({ default: () => <div>ASSISTANT</div> }));
 vi.mock('../features/flood-scenario', () => ({

@@ -10,6 +10,7 @@ import VectorSource from 'ol/source/Vector';
 import { createEditingStyle } from 'ol/style/Style';
 import type { EditableLayerKey } from '@webatlas/shared';
 import { olGeometryTo4326GeoJSON, geoJSON4326ToOlGeometry, type GeoJSONGeometry } from './geo';
+import { isPersonalLayer } from './overlayLayers';
 import { fetchFeatureGeometry } from '../../search/api/search.api';
 
 export interface EditSelection {
@@ -53,9 +54,11 @@ export class SelectController {
   activate(onSelect: (sel: EditSelection) => void): void {
     this.deactivate();
     const editableIds = new Set(Object.keys(this.layerKeyByStateId));
+    // A personal map's layer is never official data to edit, whatever its id.
+    const isEditable = (layer: BaseLayer) => editableIds.has(layer.get('id')) && !isPersonalLayer(layer);
     const select = new Select({
       // Only hit-test the editable WFS layers: Select never selects tile features.
-      layers: (layer: BaseLayer) => editableIds.has(layer.get('id')) && !isEditableTileLayer(layer),
+      layers: (layer: BaseLayer) => isEditable(layer) && !isEditableTileLayer(layer),
     });
     select.on('select', (evt: SelectEvent) => {
       const feature = evt.selected[0];
@@ -96,7 +99,7 @@ export class SelectController {
           hit = { feature, layer };
           return true;
         },
-        { layerFilter: (l) => editableIds.has(l.get('id')) && (isEditableTileLayer(l) || !l.get('waterTileLayer')) },
+        { layerFilter: (l) => isEditable(l) && (isEditableTileLayer(l) || !l.get('waterTileLayer')) },
       );
       const found = hit as { feature: FeatureLike; layer: Layer } | null;
       if (!found || !isEditableTileLayer(found.layer)) return;

@@ -10,6 +10,7 @@ import RenderFeature from 'ol/render/Feature';
 import Point from 'ol/geom/Point';
 import type LineString from 'ol/geom/LineString';
 import { fromLonLat } from 'ol/proj';
+import MapBrowserEvent from 'ol/MapBrowserEvent';
 import { SelectController } from './SelectController';
 import { createWaterTileLayer } from './waterTiles';
 import { API_BASE_URL } from '../../../shared/config';
@@ -195,5 +196,46 @@ describe('SelectController on vector-tile water layers', () => {
     ctrl.deactivate();
     click();
     expect(hit).not.toHaveBeenCalled();
+  });
+});
+
+describe('SelectController and personal layers', () => {
+  let map: Map; let damsLayer: VectorLayer<VectorSource>; let ctrl: SelectController;
+  beforeEach(() => {
+    ({ map, damsLayer } = makeMap());
+    ctrl = new SelectController(map, { layer_dams: 'dams', layer_rivers: 'rivers' });
+  });
+  afterEach(() => { ctrl.dispose(); map.setTarget(undefined); vi.restoreAllMocks(); });
+
+  it('a click on a personal layer opens no official popup and selects nothing', () => {
+    // A personal layer is skipped for carrying `personal: true`, not for its id: even one that
+    // reused an editable layer's id (and a feature id shaped like "dams.<id>") stays out.
+    const personal = new VectorLayer({ source: new VectorSource(), properties: { id: 'layer_dams', personal: true } });
+    map.addLayer(personal);
+    const mine = new Feature({ geometry: new Point(fromLonLat([108, 13])), external_id: '7' });
+    mine.setId('dams.r7');
+    personal.getSource()!.addFeature(mine);
+    const dam = new Feature({ geometry: new Point(fromLonLat([108, 13])) });
+    dam.setId('dams.official');
+    damsLayer.getSource()!.addFeature(dam);
+    const filters: Array<(l: Layer) => boolean> = [];
+    vi.spyOn(map, 'forEachFeatureAtPixel').mockImplementation(((_px: unknown, cb: (f: FeatureLike, l: Layer) => unknown, opts?: { layerFilter?: (l: Layer) => boolean }) => {
+      if (opts?.layerFilter) filters.push(opts.layerFilter);
+      // Only the personal feature is under the click.
+      if (opts?.layerFilter && !opts.layerFilter(personal as unknown as Layer)) return undefined;
+      return cb(mine, personal as unknown as Layer) || undefined;
+    }) as never);
+    const onSelect = vi.fn();
+    ctrl.activate(onSelect);
+    const select = selectInteractions(map)[0];
+    const evt = new MapBrowserEvent('singleclick', map, new MouseEvent('click') as never);
+    evt.pixel = [10, 10];
+    select.handleEvent(evt);
+    map.dispatchEvent(evt);
+    expect(filters.length).toBeGreaterThanOrEqual(2); // the Select path and the tile path both asked
+    for (const filter of filters) expect(filter(personal as unknown as Layer)).toBe(false);
+    expect(select.getFeatures().getLength()).toBe(0);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(ctrl.getSelectedFeature()).toBeNull();
   });
 });

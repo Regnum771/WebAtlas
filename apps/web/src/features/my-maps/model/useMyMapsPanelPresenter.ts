@@ -15,6 +15,8 @@ export interface LayerRowData {
   kindLabel: string;
   visible: boolean;
   opacity: number;
+  /** The last viewport read was cut at this many features; null when it was complete. */
+  truncated: number | null;
 }
 export interface MapCardData {
   id: string;
@@ -74,6 +76,7 @@ export function useMyMapsPanelPresenter() {
       layers: expanded && detail
         ? [...detail.layers].sort((a, b) => a.position - b.position).map((l) => ({
           id: l.id, title: l.title, kindLabel: layerKindLabel(l), ...layerView(l.id),
+          truncated: store.truncated[l.id] ?? null,
         }))
         : null,
     };

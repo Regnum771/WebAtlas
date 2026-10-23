@@ -6,7 +6,10 @@ interface Props {
   onOpacity: (opacity: number) => void;
 }
 
-/** One personal layer: a checkbox with its title, its kind, and an opacity slider while visible. */
+/**
+ * One personal layer: a checkbox with its title, its kind, an opacity slider while visible, and
+ * a note when the last viewport read was cut short.
+ */
 export function LayerRowView({ layer, onVisible, onOpacity }: Props) {
   return (
     <div className="layer-row my-maps-layer">
@@ -25,6 +28,11 @@ export function LayerRowView({ layer, onVisible, onOpacity }: Props) {
           aria-label={`Độ mờ ${layer.title}`}
           onChange={(e) => onOpacity(parseFloat(e.target.value))}
         />
+      )}
+      {layer.visible && layer.truncated !== null && (
+        <p className="my-maps-truncated">
+          {`Chỉ hiện ${layer.truncated} đối tượng đầu trong khung nhìn; phóng to để xem đủ.`}
+        </p>
       )}
     </div>
   );
