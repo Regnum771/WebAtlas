@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { Pool, PoolClient } from 'pg';
 import { NotFoundError as VersioningNotFoundError, copyDraft } from '@webatlas/versioning';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../errors';
+import { containsPattern } from '../../lib/like';
 import { inTransaction } from '../../lib/transaction';
 import type { CurrentUser } from '../../types/fastify';
 import { MAP_NOT_FOUND, OWNER_ONLY, mapRole, type Queryable } from './access';
@@ -77,11 +78,6 @@ async function lockOwnedMap(client: PoolClient, mapId: string, user: CurrentUser
 async function loadShare(q: Queryable, shareId: string): Promise<Share> {
   const { rows } = await q.query<Share>(`${SHARE_SELECT} WHERE s.id = $1`, [shareId]);
   return rows[0];
-}
-
-/** `q` as a LIKE pattern matching it anywhere, with its own wildcards taken literally. */
-function containsPattern(q: string): string {
-  return `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
 
 /** The copy's title, cut to the column's limit (counted in characters, as Postgres does). */

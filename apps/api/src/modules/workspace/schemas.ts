@@ -135,6 +135,38 @@ export const EditCopyFeaturesQuery = z.object({
   limit: Limit.optional(),
 });
 
+// --- The layer table ----------------------------------------------------------------------
+
+/** A table condition's operator; which ones a column takes depends on its type (layerQuery.ts). */
+export const LayerQueryOp = z.enum(['contains', 'eq', 'neq', 'empty', 'notEmpty', 'lt', 'lte', 'gt', 'gte']);
+/** A column name as the layer's rows carry it: not trimmed, since an imported key may hold spaces. */
+const ColumnName = z.string().min(1).max(255);
+
+/**
+ * Body of POST .../layers/:layerId/query: the table's search box, conditions, "in view" box,
+ * sort and page. Field names are checked against the layer's columns by compileQuery.
+ */
+export const LayerQueryBody = z.object({
+  q: z.string().max(200).optional(),
+  conditions: z
+    .array(
+      z.object({
+        field: ColumnName,
+        op: LayerQueryOp,
+        value: z.union([z.string().max(200), z.number().finite()]).optional(),
+      })
+    )
+    .max(10)
+    .default([]),
+  match: z.enum(['all', 'any']).default('all'),
+  bbox: z.tuple([z.number().finite(), z.number().finite(), z.number().finite(), z.number().finite()]).optional(),
+  sort: z.object({ field: ColumnName, dir: z.enum(['asc', 'desc']) }).optional(),
+  offset: z.number().int().min(0).max(2_147_483_647).default(0),
+  limit: z.number().int().min(1).max(500).default(100),
+  /** A feature id whose position in the filtered, sorted list the answer also carries. */
+  locate: z.string().min(1).max(64).optional(),
+});
+
 // --- Sharing ------------------------------------------------------------------------------
 
 export const ShareParams = MapIdParams.extend({ shareId: z.string().uuid() });
