@@ -11,6 +11,7 @@ interface Props {
   onRename: () => void;
   onDelete: () => void;
   onUpload: () => void;
+  onExport: () => void;
   onLayerVisible: (layerId: string, visible: boolean) => void;
   onLayerOpacity: (layerId: string, opacity: number) => void;
   onAddLayer: (kind: 'drawn' | 'edit_copy') => void;
@@ -20,7 +21,7 @@ interface Props {
 }
 
 /** A map in the list: its title, owner and layer count; expanded, its layers and (for the owner) the actions. */
-export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onLayerVisible, onLayerOpacity, onAddLayer, onLayerSettings, editor }: Props) {
+export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onExport, onLayerVisible, onLayerOpacity, onAddLayer, onLayerSettings, editor }: Props) {
   const [adding, setAdding] = useState(false);
   const Chevron = card.expanded ? ChevronDown : ChevronRight;
   return (
@@ -43,6 +44,10 @@ export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onLa
               onSettings={card.canWrite ? () => onLayerSettings(layer.id) : undefined}
             />
           ))}
+          {/* The owner and the people it is shared with may all download. */}
+          <div className="my-map-actions">
+            <Button size="sm" onClick={onExport}>Tải xuống</Button>
+          </div>
           {card.canWrite && (
             <div className="my-map-actions">
               <Button size="sm" aria-expanded={adding} onClick={() => setAdding((v) => !v)}>Thêm lớp</Button>

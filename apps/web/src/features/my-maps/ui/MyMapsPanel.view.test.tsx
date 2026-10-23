@@ -11,7 +11,7 @@ const base = {
   pendingDelete: false, deleteError: null, deleting: false,
   onToggleCollapsed: noop, onRetry: noop, onNewMap: noop, onToggleCard: noop, onRename: noop, onAskDelete: noop,
   onLayerVisible: noop, onLayerOpacity: noop, onDialogTitle: noop, onDialogSubmit: noop, onDialogClose: noop,
-  onConfirmDelete: noop, onCancelDelete: noop, onUpload: noop,
+  onConfirmDelete: noop, onCancelDelete: noop, onUpload: noop, onExport: noop,
   onAddLayer: noop, onLayerSettings: noop,
 };
 const extra = {

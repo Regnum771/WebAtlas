@@ -15,8 +15,27 @@ const card = (over: Partial<MapCardData> = {}): MapCardData => ({
 const noop = vi.fn();
 const props = {
   onToggle: noop, onRename: noop, onDelete: noop, onUpload: noop, onLayerVisible: noop, onLayerOpacity: noop,
-  onAddLayer: noop, onLayerSettings: noop,
+  onAddLayer: noop, onLayerSettings: noop, onExport: noop,
 };
+
+describe('MapCardView export', () => {
+  it('a recipient can export', async () => {
+    const onExport = vi.fn();
+    render(<ul><MapCardView card={card({ canWrite: false, ownerLabel: 'của Lan' })} {...props} onExport={onExport} /></ul>);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Tải xuống' }));
+    expect(onExport).toHaveBeenCalled();
+  });
+
+  it('the owner can export too', () => {
+    render(<ul><MapCardView card={card()} {...props} /></ul>);
+    expect(screen.getByRole('button', { name: 'Tải xuống' })).toBeInTheDocument();
+  });
+
+  it('a collapsed card has no export button', () => {
+    render(<ul><MapCardView card={card({ expanded: false })} {...props} /></ul>);
+    expect(screen.queryByRole('button', { name: 'Tải xuống' })).toBeNull();
+  });
+});
 
 describe('MapCardView layer actions', () => {
   it('Thêm lớp opens a menu with both ways to add a layer', async () => {
