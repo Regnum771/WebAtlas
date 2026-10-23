@@ -110,7 +110,7 @@ beforeEach(() => {
 });
 
 describe('syncPersonalLayers', () => {
-  it('adds one layer per visible entry with id ws:<id> and personal: true; removes stale ones', () => {
+  it('adds one layer per visible entry with id ws:<id> and personal: true; removes stale ones', async () => {
     const map = makeMap();
     syncPersonalLayers(map, [
       entry(FREE, { zIndex: 802, opacity: 0.6 }),
@@ -118,7 +118,10 @@ describe('syncPersonalLayers', () => {
       entry(HIDDEN, { visible: false }),
       entry(RASTER),
     ]);
-    expect(personalLayers(map).map((l) => l.get('id')).sort()).toEqual(['ws:l1', 'ws:l2', 'ws:l4']);
+    // Vector layers are added at once; the raster once its code has loaded.
+    expect(personalLayers(map).map((l) => l.get('id')).sort()).toEqual(['ws:l1', 'ws:l2']);
+    await vi.waitFor(() =>
+      expect(personalLayers(map).map((l) => l.get('id')).sort()).toEqual(['ws:l1', 'ws:l2', 'ws:l4']));
     for (const l of personalLayers(map)) {
       expect(l.get('personal')).toBe(true);
       expect(l.get('mapId')).toBe('m1');
@@ -222,11 +225,17 @@ describe('syncPersonalLayers', () => {
 describe('raster layers', () => {
   const lastGeoTIFF = () => built.geotiff[built.geotiff.length - 1] as GeoTIFFOptions;
   const lastStyle = () => (built.tile[built.tile.length - 1] as { style: TileStyle }).style;
+  /** Syncs, then waits for the one new raster layer (the raster code loads on demand). */
+  const syncAndLoad = async (map: Map, entries: PersonalLayerEntry[]) => {
+    const before = built.tile.length;
+    syncPersonalLayers(map, entries);
+    await vi.waitFor(() => expect(built.tile).toHaveLength(before + 1));
+  };
 
   it("a raster entry builds a WebGLTile over the layer's raster URL with the bearer header", async () => {
     setAuthToken('tok-1');
     const map = makeMap();
-    syncPersonalLayers(map, [entry(RGB, { zIndex: 803, opacity: 0.7 })]);
+    await syncAndLoad(map, [entry(RGB, { zIndex: 803, opacity: 0.7 })]);
     const tile = personalLayers(map).find((l) => l.get('id') === 'ws:l5') as unknown as WebGLTileLayer;
     expect(tile).toBeInstanceOf(WebGLTileLayer);
     expect(tile.get('personal')).toBe(true);
@@ -258,28 +267,28 @@ describe('raster layers', () => {
     expect(personalLayers(map)).toEqual([]);
   });
 
-  it("stats set the source's min and max; a one-band raster draws grey", () => {
+  it("stats set the source's min and max; a one-band raster draws grey", async () => {
     const map = makeMap();
     const grey = ['band', 1];
     // One uint8 band without nodata: the worker's alpha band is band 2, read as 0-255.
-    syncPersonalLayers(map, [entry(raster('g1', { stats: [{ min: 3, max: 90 }] }))]);
+    await syncAndLoad(map, [entry(raster('g1', { stats: [{ min: 3, max: 90 }] }))]);
     expect(lastGeoTIFF().sources[0]).toMatchObject({ min: [3, 0], max: [90, 255] });
     expect(lastGeoTIFF().sources[0].nodata).toBeUndefined();
     expect(lastStyle().color).toEqual(['array', grey, grey, grey, ['band', 2]]);
 
     // A float elevation model with nodata: no alpha band; the source adds one for nodata (band 2).
-    syncPersonalLayers(map, [entry(raster('g2', { dtype: 'float32', nodata: -9999, stats: [{ min: 2.5, max: 1480 }] }))]);
+    await syncAndLoad(map, [entry(raster('g2', { dtype: 'float32', nodata: -9999, stats: [{ min: 2.5, max: 1480 }] }))]);
     expect(lastGeoTIFF().sources[0]).toMatchObject({ min: [2.5], max: [1480], nodata: -9999 });
     expect(lastStyle().color).toEqual(['array', grey, grey, grey, ['band', 2]]);
 
     // NaN nodata arrives as the string "NaN".
-    syncPersonalLayers(map, [entry(raster('g3', { dtype: 'float32', nodata: 'NaN', stats: [{ min: 0, max: 1 }] }))]);
+    await syncAndLoad(map, [entry(raster('g3', { dtype: 'float32', nodata: 'NaN', stats: [{ min: 0, max: 1 }] }))]);
     expect(Number.isNaN(lastGeoTIFF().sources[0].nodata)).toBe(true);
   });
 
-  it('an RGBA source keeps its own alpha band; a uint16 alpha band counts as a mask', () => {
+  it('an RGBA source keeps its own alpha band; a uint16 alpha band counts as a mask', async () => {
     const map = makeMap();
-    syncPersonalLayers(map, [entry(raster('a1', {
+    await syncAndLoad(map, [entry(raster('a1', {
       bands: 4, dtype: 'uint16', stats: [{ min: 1, max: 900 }, { min: 2, max: 800 }, { min: 3, max: 700 }],
     }))]);
     // Any alpha above 0 is opaque: read as 0-1, it is clamped to 1.
@@ -287,19 +296,44 @@ describe('raster layers', () => {
     expect(lastStyle().color).toEqual(['array', ['band', 1], ['band', 2], ['band', 3], ['band', 4]]);
   });
 
-  it('without stats, a uint8 raster spans 0-255 and other types use no bounds', () => {
+  it('without stats, a uint8 raster spans 0-255 and other types use no bounds', async () => {
     const map = makeMap();
     // Imported before stats existed: no alpha band was added.
-    syncPersonalLayers(map, [entry(raster('o1', { bands: 3 }))]);
+    await syncAndLoad(map, [entry(raster('o1', { bands: 3 }))]);
     expect(lastGeoTIFF().sources[0]).toMatchObject({ min: 0, max: 255 });
     expect(lastStyle().color).toEqual(['array', ['band', 1], ['band', 2], ['band', 3], 1]);
 
-    syncPersonalLayers(map, [entry(raster('o2', { dtype: 'int16', nodata: -32768 }))]);
+    await syncAndLoad(map, [entry(raster('o2', { dtype: 'int16', nodata: -32768 }))]);
     const source = lastGeoTIFF().sources[0];
     expect(source.min).toBeUndefined();
     expect(source.max).toBeUndefined();
     expect(source.nodata).toBe(-32768);
     expect(lastStyle().color).toEqual(['array', ['band', 1], ['band', 1], ['band', 1], ['band', 2]]);
+  });
+
+  it('a raster entry removed before the raster code loads is never added', async () => {
+    const map = makeMap();
+    // Shown, then hidden in the same tick: the load (even a cached one) finishes after both syncs.
+    syncPersonalLayers(map, [entry(FREE), entry(RGB)]);
+    syncPersonalLayers(map, [entry(FREE), entry(RGB, { visible: false })]);
+    // Its map collapsed before the load: no entry at all.
+    syncPersonalLayers(map, [entry(raster('r2', {}))]);
+    syncPersonalLayers(map, []);
+    await import('./rasterLayer');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(built.tile).toHaveLength(0);
+    expect(personalLayers(map)).toEqual([]);
+
+    // Hidden and shown again before the load: added exactly once, with the latest order and opacity.
+    syncPersonalLayers(map, [entry(RGB, { zIndex: 801 })]);
+    syncPersonalLayers(map, [entry(RGB, { visible: false })]);
+    syncPersonalLayers(map, [entry(RGB, { zIndex: 806, opacity: 0.5 })]);
+    await vi.waitFor(() => expect(built.tile).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 0));
+    const ids = personalLayers(map).map((l) => l.get('id'));
+    expect(ids).toEqual(['ws:l5']);
+    expect(personalLayers(map)[0].getZIndex()).toBe(806);
+    expect(personalLayers(map)[0].getOpacity()).toBe(0.5);
   });
 });
 
