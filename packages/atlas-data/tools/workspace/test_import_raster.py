@@ -45,6 +45,8 @@ VN2000_TM3_DA_NANG = (
     "+units=m +no_defs"
 )
 KNOWN_LON, KNOWN_LAT = 108.2022, 16.0544
+# A transverse Mercator far from the image (central meridian 125 E): its grid is turned in EPSG:3857.
+SKEWED_TM = "+proj=tmerc +lat_0=0 +lon_0=125 +k=1 +x_0=500000 +y_0=0 +ellps=WGS84 +units=m +no_defs"
 
 MSG_NO_CRS = "Tệp không ghi hệ toạ độ; hãy chọn hệ toạ độ nguồn."
 MSG_MAP_GONE = "Bản đồ không còn."
@@ -256,7 +258,7 @@ try:
     else:
         check("a geotiff becomes a 3857 COG with metadata: driver GTiff, EPSG:3857, overviews", False)
     check("raster metadata: exactly the documented keys",
-          set(meta) == {"width", "height", "bands", "dtype", "nodata", "bounds4326", "sourceCrs"})
+          set(meta) == {"width", "height", "bands", "dtype", "nodata", "bounds4326", "sourceCrs", "stats"})
     check("raster.bounds4326 is within 1e-6 of the input bounds",
           close_to(meta.get("bounds4326"), [108.0, 15.9, 108.064, 15.964], 1e-6))
     check("raster.sourceCrs is the file's authority code", meta.get("sourceCrs") == "EPSG:4326")
@@ -330,6 +332,66 @@ try:
                   and (alpha == 0).any() and (alpha == 255).any())
     else:
         check("the COG carries the source's nodata", False)
+
+    # --- transparent warped edges: an image in a transverse Mercator centred 17 degrees east is turned
+    # about 4.6 degrees in EPSG:3857, so the COG's corners lie outside it and hold only the warp's fill
+    user_id, map_id = new_map("alpha")
+    to_skewed = Transformer.from_crs("EPSG:4326", SKEWED_TM, always_xy=True)
+    sx, sy = to_skewed.transform(KNOWN_LON, KNOWN_LAT)
+    skewed = (sx - 3200, sy - 3200, sx + 3200, sy + 3200)
+    rgb = pattern(64, 64, 3)
+    run_import(user_id, map_id, geotiff("tm_rgb.tif", crs=SKEWED_TM, bounds=skewed, count=3, data=rgb), "tm_rgb.tif")
+    dem = pattern(64, 64, 1, "float32") * 10
+    dem[0, 20:30, 20:30] = -9999
+    run_import(user_id, map_id, geotiff("tm_dem.tif", crs=SKEWED_TM, bounds=skewed, dtype="float32", nodata=-9999,
+                                        data=dem), "tm_dem.tif")
+    # Not 8-bit and without nodata: GDAL makes no mask of a uint16 alpha band, yet its 0s are transparent.
+    run_import(user_id, map_id, geotiff("tm_u16.tif", crs=SKEWED_TM, bounds=skewed, dtype="uint16",
+                                        data=pattern(64, 64, 1, "uint16") * 100), "tm_u16.tif")
+    ls = layers(map_id)
+    files = cog_rows(user_id)
+    metas = [l["raster"] for l in ls]
+    if len(files) == 3:
+        with rasterio.open(store(files[0]["path"])) as cog:
+            alpha = cog.read(cog.count)
+            corners = [alpha[0, 0], alpha[0, -1], alpha[-1, 0], alpha[-1, -1]]
+            check("a source without nodata or alpha gets an alpha band; its corners are transparent after warping",
+                  cog.count == 4 and cog.colorinterp[3] == ColorInterp.alpha and cog.nodata is None
+                  and all(c == 0 for c in corners) and alpha[cog.height // 2, cog.width // 2] == 255
+                  and metas[0]["bands"] == 3)
+        with rasterio.open(store(files[1]["path"])) as cog:
+            check("a source with nodata gets no alpha band: its nodata marks the edges",
+                  cog.count == 1 and cog.nodata == -9999 and cog.read(1)[0, 0] == -9999)
+    else:
+        check("a source without nodata or alpha gets an alpha band; its corners are transparent after warping", False)
+
+    # --- per-band value range, from the smallest overview, without nodata or transparent pixels
+    def stats_ok(stats, want_bands, lo, hi):
+        return (isinstance(stats, list) and len(stats) == want_bands
+                and all(set(s) == {"min", "max"} and lo <= s["min"] <= s["max"] <= hi for s in stats))
+    stats = [m.get("stats") for m in metas]
+    rgb_stats = stats[0] if stats else None
+    check("stats hold one min/max per data band and exclude nodata",
+          len(stats) == 3
+          # RGB: three data bands (not the added alpha); the warp's 0 fill is transparent, not a value.
+          and stats_ok(rgb_stats, 3, 1, 253) and all(s["min"] > 0 for s in rgb_stats)
+          and rgb_stats[2]["max"] > rgb_stats[0]["min"]
+          # Float with nodata -9999: the nodata block and edges are left out.
+          and stats_ok(stats[1], 1, 10, 2510) and stats[1][0]["max"] > stats[1][0]["min"]
+          # uint16 with an added alpha band: its 0 fill is left out too.
+          and stats_ok(stats[2], 1, 100, 25100) and stats[2][0]["max"] > stats[2][0]["min"])
+    user_id, map_id = new_map("rgba")
+    rgba = pattern(64, 64, 4)
+    rgba[3] = 255
+    rgba[3, :, :10] = 0
+    rgba[0, :, :10] = 0  # what a transparent pixel holds must not count
+    run_import(user_id, map_id, geotiff("rgba2.tif", count=4, data=rgba,
+                                        colorinterp=[ColorInterp.red, ColorInterp.green, ColorInterp.blue,
+                                                     ColorInterp.alpha]), "rgba2.tif")
+    ls = layers(map_id)
+    rgba_stats = ls[0]["raster"].get("stats") if ls else None
+    check("an RGBA source has stats for its three colour bands; pixels its alpha hides are left out",
+          stats_ok(rgba_stats, 3, 1, 254) and rgba_stats[0]["min"] > 0 and ls[0]["raster"]["bands"] == 4)
 
     # --- content that is not a GeoTIFF is refused before GDAL picks a driver
     user_id, map_id = new_map("content")

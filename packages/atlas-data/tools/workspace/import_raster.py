@@ -17,6 +17,11 @@ skipped the dangerous drivers (the raster VRT driver among them) and the network
 calculate_default_transform and WarpedVRT both need the VRT driver, so the target grid is computed
 here and rasterio.warp.reproject warps arrays.
 
+Display: a source with neither nodata nor an alpha band gets an alpha band in the COG (the warper's
+destination alpha), so the parts of the warped grid outside the image are transparent rather than
+black. The layer's metadata holds each data band's value range (stats), read from the COG's smallest
+overview without nodata or transparent pixels, which the web map scales the colours to.
+
 Memory: the destination is warped CHUNK x CHUNK pixels at a time into a tiled intermediate GTiff.
 For each chunk only the source window under it (plus a small margin) is read, as an array, and
 warped with an explicit source transform and CRS (a Band source would take the CRS from the file,
@@ -161,12 +166,19 @@ def source_window(src, crs, dst_bounds):
 
 
 def warp(src, crs, transform, width, height, out_path, steps):
-    """Warp every band of src onto the target grid, chunk by chunk, into a tiled GTiff at out_path."""
+    """
+    Warp every band of src onto the target grid, chunk by chunk, into a tiled GTiff at out_path. A
+    source with neither nodata nor an alpha band gets one more band, an alpha band the warper fills.
+    """
     count, dtype, nodata = src.count, src.dtypes[0], src.nodata
-    alpha = next((i + 1 for i, ci in enumerate(src.colorinterp) if ci == ColorInterp.alpha), 0)
+    src_alpha = next((i + 1 for i, ci in enumerate(src.colorinterp) if ci == ColorInterp.alpha), 0)
+    add_alpha = nodata is None and not src_alpha
+    dst_count = count + 1 if add_alpha else count
+    dst_alpha = dst_count if add_alpha else src_alpha
+    colorinterp = list(src.colorinterp) + ([ColorInterp.alpha] if add_alpha else [])
     fill = 0 if nodata is None else nodata
     profile = {
-        "driver": "GTiff", "width": width, "height": height, "count": count, "dtype": dtype,
+        "driver": "GTiff", "width": width, "height": height, "count": dst_count, "dtype": dtype,
         "crs": DST_CRS, "transform": transform, "nodata": nodata,
         "tiled": True, "blockxsize": BLOCKSIZE, "blockysize": BLOCKSIZE,
         # Temporary: fast compression only to keep it small on disk.
@@ -175,24 +187,56 @@ def warp(src, crs, transform, width, height, out_path, steps):
     windows = [Window(col, row, min(CHUNK, width - col), min(CHUNK, height - row))
                for row in range(0, height, CHUNK) for col in range(0, width, CHUNK)]
     with rasterio.open(out_path, "w", **profile) as dst:
-        dst.colorinterp = src.colorinterp
+        dst.colorinterp = colorinterp
         try:
             dst.write_colormap(1, src.colormap(1))
         except ValueError:
             pass  # no palette
         for n, window in enumerate(windows):
-            out = np.full((count, window.height, window.width), fill, dtype=dtype)
+            # A chunk starts as fill, alpha 0 included: what the warp does not reach stays transparent.
+            out = np.full((dst_count, window.height, window.width), fill, dtype=dtype)
             read = source_window(src, crs, dst.window_bounds(window))
             if read is not None:
                 reproject(
                     source=src.read(window=read), destination=out,
-                    src_transform=src.window_transform(read), src_crs=crs, src_nodata=nodata, src_alpha=alpha,
+                    src_transform=src.window_transform(read), src_crs=crs, src_nodata=nodata, src_alpha=src_alpha,
                     dst_transform=dst.window_transform(window), dst_crs=DST_CRS, dst_nodata=nodata,
-                    dst_alpha=alpha, resampling=Resampling.nearest,
+                    dst_alpha=dst_alpha, resampling=Resampling.nearest,
                 )
             dst.write(out, window=window)
             # Between chunks: progress (a heartbeat too) and a moment for the heartbeat thread.
             steps.progress(PROGRESS_READ + (PROGRESS_WARP - PROGRESS_READ) * (n + 1) / len(windows))
+
+
+def band_stats(path: str) -> list:
+    """
+    Each data band's value range (alpha bands left out) as [{min, max}], read from the smallest
+    overview of the COG at path. Pixels that are nodata, transparent (alpha 0) or not finite do not
+    count; a band with none left gets 0..0.
+    """
+    with rasterio.open(path) as cog:
+        dtype, nodata = cog.dtypes[0], cog.nodata
+        bands = [i + 1 for i, ci in enumerate(cog.colorinterp) if ci != ColorInterp.alpha]
+        alpha = next((i + 1 for i, ci in enumerate(cog.colorinterp) if ci == ColorInterp.alpha), 0)
+        factor = max(cog.overviews(1) or [1])
+        # GDAL serves a read at an overview's size from that overview.
+        size = (math.ceil(cog.height / factor), math.ceil(cog.width / factor))
+        data = cog.read(bands, out_shape=(len(bands), *size), resampling=Resampling.nearest)
+        # The mask is built here: GDAL derives none from an alpha band wider than 8 bits.
+        shown = cog.read(alpha, out_shape=size, resampling=Resampling.nearest) > 0 if alpha else np.ones(size, bool)
+    stats = []
+    for band in data:
+        keep = shown.copy()
+        if nodata is not None:
+            keep &= ~np.isnan(band) if math.isnan(nodata) else band != nodata
+        if np.issubdtype(band.dtype, np.floating):
+            keep &= np.isfinite(band)
+        values = band[keep]
+        if values.size == 0:
+            stats.append({"min": 0, "max": 0})
+        else:
+            stats.append({"min": json_number(values.min(), dtype), "max": json_number(values.max(), dtype)})
+    return stats
 
 
 def run_import_raster(conn, job, steps) -> dict:
@@ -236,6 +280,7 @@ def run_import_raster(conn, job, steps) -> dict:
             finally:
                 for t in temporaries:
                     remove_in_store(t)
+            stats = band_stats(final)
             steps.progress(PROGRESS_COG)
             raster = {
                 "width": width,
@@ -245,6 +290,7 @@ def run_import_raster(conn, job, steps) -> dict:
                 "nodata": json_number(src.nodata, src.dtypes[0]),
                 "bounds4326": bounds4326,
                 "sourceCrs": source_label,
+                "stats": stats,
             }
 
     with conn.cursor() as cur:

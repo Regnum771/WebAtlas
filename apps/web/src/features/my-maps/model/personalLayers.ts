@@ -4,10 +4,14 @@ import type { Extent } from 'ol/extent';
 import GeoJSON from 'ol/format/GeoJSON';
 import type Layer from 'ol/layer/Layer';
 import VectorLayer from 'ol/layer/Vector';
+import WebGLTileLayer, { type Style as TileStyle } from 'ol/layer/WebGLTile';
 import { bbox as bboxStrategy } from 'ol/loadingstrategy';
 import { transformExtent, type ProjectionLike } from 'ol/proj';
+import GeoTIFF, { type SourceInfo } from 'ol/source/GeoTIFF';
 import VectorSource from 'ol/source/Vector';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
+import { getAuthToken } from '../../../shared/api/apiClient';
+import { API_BASE_URL } from '../../../shared/config';
 import { listFeatures, type GeoJsonGeometry, type LayerSummary, type PersonalFeature } from '../api/workspace.api';
 import { isPersonalLayer, PERSONAL_HIT_TOLERANCE, PERSONAL_LAYER_PROP } from '../../map/model/overlayLayers';
 import { editCopyStyle, olStyleFor, parseStyle } from './personalStyle';
@@ -50,8 +54,15 @@ interface Drawn {
   removed: boolean;
 }
 
+/** A raster layer: the COG read by byte range, drawn with WebGL. */
+interface DrawnRaster {
+  layer: WebGLTileLayer;
+  entry: PersonalLayerEntry;
+}
+
 interface Registry {
   drawn: globalThis.Map<string, Drawn>;
+  rasters: globalThis.Map<string, DrawnRaster>;
   onMoveEnd: () => void;
 }
 
@@ -124,6 +135,96 @@ function create(entry: PersonalLayerEntry): Drawn {
   return rec;
 }
 
+type Band = ['band', number];
+
+/** How a raster layer's COG is read and drawn, from its metadata (import_raster.py). */
+interface RasterPlan {
+  source: Omit<SourceInfo, 'url'>;
+  color: TileStyle['color'];
+}
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** nodata as stored: a number, or "NaN" / "Infinity" / "-Infinity", which jsonb cannot hold as numbers. */
+function nodataOf(value: unknown): number | undefined {
+  if (typeof value === 'number') return value;
+  if (value === 'NaN' || value === 'Infinity' || value === '-Infinity') return Number(value);
+  return undefined;
+}
+
+/**
+ * The bands of a raster layer's COG and how they are drawn:
+ * - data bands are scaled to their `stats` range; without stats a uint8 image spans 0-255 and
+ *   other types are left to the source (the file's statistics, else the type's range);
+ * - one band (or two) is drawn grey, three or more as RGB from bands 1-3;
+ * - an alpha band masks: the source's own (the band after the data bands), or the one the worker
+ *   adds to an image with neither nodata nor alpha (band count + 1). Both are known only from
+ *   `stats`, which lists the data bands; a raster imported before stats existed has no added band;
+ * - nodata masks too: the GeoTIFF source then appends an alpha band of its own after the file's.
+ */
+function rasterPlan(layer: LayerSummary): RasterPlan {
+  const meta = layer.raster ?? {};
+  const bands = finite(meta.bands) && meta.bands >= 1 ? meta.bands : 1;
+  const dtype = typeof meta.dtype === 'string' ? meta.dtype : null;
+  const nodata = nodataOf(meta.nodata);
+  const stats = Array.isArray(meta.stats) && meta.stats.length > 0
+    ? (meta.stats as unknown[]).map((s) => {
+      const { min, max } = (s ?? {}) as { min?: unknown; max?: unknown };
+      // An empty or constant band has no range to scale to: the source's default applies.
+      return finite(min) && finite(max) && max > min ? { min, max } : null;
+    })
+    : null;
+
+  const dataBands = stats ? Math.min(stats.length, bands) : bands;
+  let alphaBand: number | null = null;
+  if (stats && bands > stats.length) alphaBand = bands;
+  else if (stats && nodata === undefined) alphaBand = bands + 1;
+  const fileBands = Math.max(bands, alphaBand ?? 0);
+
+  const source: Omit<SourceInfo, 'url'> = {};
+  if (stats) {
+    const min: Array<number | undefined> = stats.map((s) => s?.min);
+    const max: Array<number | undefined> = stats.map((s) => s?.max);
+    if (alphaBand) {
+      // 8-bit alpha keeps its levels; a wider one (GDAL writes 65535, 32767 or 255) counts as on/off.
+      min[alphaBand - 1] = 0;
+      max[alphaBand - 1] = dtype === 'uint8' ? 255 : 1;
+    }
+    source.min = min;
+    source.max = max;
+  } else if (dtype === 'uint8') {
+    source.min = 0;
+    source.max = 255;
+  }
+  if (nodata !== undefined) source.nodata = nodata;
+
+  const band = (n: number): Band => ['band', n];
+  const masks = [alphaBand, nodata !== undefined ? fileBands + 1 : null]
+    .filter((n): n is number => n !== null)
+    .map(band);
+  const alpha = masks.length === 0 ? 1 : masks.length === 1 ? masks[0] : ['*', ...masks];
+  const color = dataBands >= 3
+    ? ['array', band(1), band(2), band(3), alpha]
+    : ['array', band(1), band(1), band(1), alpha];
+  return { source, color };
+}
+
+function createRaster(entry: PersonalLayerEntry): DrawnRaster {
+  const { source, color } = rasterPlan(entry.layer);
+  const token = getAuthToken();
+  const url = `${API_BASE_URL}/api/workspace/maps/${entry.mapId}/layers/${entry.layer.id}/raster`;
+  const layer = new WebGLTileLayer({
+    source: new GeoTIFF({
+      sources: [{ url, ...source }],
+      ...(token ? { sourceOptions: { headers: { Authorization: `Bearer ${token}` } } } : {}),
+      normalize: true,
+    }),
+    style: { color },
+    properties: { id: `ws:${entry.layer.id}`, [PERSONAL_LAYER_PROP]: true, mapId: entry.mapId, layerId: entry.layer.id },
+  });
+  return { layer, entry };
+}
+
 /** After a move: forget the stale views, and redraw so the current view is read if it needs to be. */
 function forgetStaleViews(drawn: globalThis.Map<string, Drawn>): void {
   for (const rec of drawn.values()) {
@@ -142,21 +243,49 @@ function remove(map: Map, drawn: globalThis.Map<string, Drawn>, layerId: string,
   rec.entry.onTruncated(layerId, null);
 }
 
+/** The visible raster entries on the map, each kept across syncs; only opacity and order change. */
+function syncRasters(map: Map, rasters: globalThis.Map<string, DrawnRaster>, entries: PersonalLayerEntry[]): void {
+  const wanted = new globalThis.Map(
+    entries.filter((e) => e.visible && e.layer.kind === 'raster').map((e) => [e.layer.id, e] as const),
+  );
+  for (const [layerId, rec] of [...rasters]) {
+    if (wanted.get(layerId)?.mapId !== rec.entry.mapId) {
+      map.removeLayer(rec.layer);
+      rec.layer.dispose();
+      rasters.delete(layerId);
+    }
+  }
+  for (const [layerId, entry] of wanted) {
+    let rec = rasters.get(layerId);
+    if (!rec) {
+      rec = createRaster(entry);
+      map.addLayer(rec.layer);
+      rasters.set(layerId, rec);
+    }
+    rec.entry = entry;
+    if (rec.layer.getZIndex() !== entry.zIndex) rec.layer.setZIndex(entry.zIndex);
+    if (rec.layer.getOpacity() !== entry.opacity) rec.layer.setOpacity(entry.opacity);
+  }
+}
+
 /**
- * Puts the visible vector entries on the map and takes everything else off: a hidden layer, a
- * collapsed map, a deleted layer. A repeat sync keeps each layer (and its loaded features) and
- * only updates style, opacity and order.
+ * Puts the visible entries on the map (vector layers read by viewport, rasters as WebGL tiles) and
+ * takes everything else off: a hidden layer, a collapsed map, a deleted layer. A repeat sync keeps
+ * each layer (and its loaded features) and only updates style, opacity and order.
  */
 export function syncPersonalLayers(map: Map, entries: PersonalLayerEntry[]): void {
   let registry = registries.get(map);
   if (!registry) {
     if (entries.length === 0) return;
-    const created: Registry = { drawn: new globalThis.Map(), onMoveEnd: () => forgetStaleViews(created.drawn) };
+    const created: Registry = {
+      drawn: new globalThis.Map(), rasters: new globalThis.Map(), onMoveEnd: () => forgetStaleViews(created.drawn),
+    };
     map.on('moveend', created.onMoveEnd);
     registries.set(map, created);
     registry = created;
   }
-  const { drawn } = registry;
+  const { drawn, rasters } = registry;
+  syncRasters(map, rasters, entries);
   const wanted = new globalThis.Map(
     entries.filter((e) => e.visible && isVector(e.layer)).map((e) => [e.layer.id, e] as const),
   );
@@ -182,7 +311,7 @@ export function syncPersonalLayers(map: Map, entries: PersonalLayerEntry[]): voi
     if (rec.layer.getZIndex() !== entry.zIndex) rec.layer.setZIndex(entry.zIndex);
     if (rec.layer.getOpacity() !== entry.opacity) rec.layer.setOpacity(entry.opacity);
   }
-  if (drawn.size === 0) {
+  if (drawn.size === 0 && rasters.size === 0) {
     map.un('moveend', registry.onMoveEnd);
     registries.delete(map);
   }

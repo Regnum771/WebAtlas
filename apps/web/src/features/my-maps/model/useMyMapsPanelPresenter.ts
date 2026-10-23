@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/workspace.api';
-import type { MapSummary } from '../api/workspace.api';
+import type { LayerKind, MapSummary } from '../api/workspace.api';
 import { showToast } from '../../../shared/ui/toast.store';
 import { keys, MapGoneError, useMapWrite, useMyMaps, useUploads } from './queries';
 import { layerKindLabel } from './layerKindLabel';
@@ -11,6 +11,7 @@ import {
 
 export interface LayerRowData {
   id: string;
+  kind: LayerKind;
   title: string;
   kindLabel: string;
   visible: boolean;
@@ -75,7 +76,7 @@ export function useMyMapsPanelPresenter() {
       canWrite: m.role === 'owner',
       layers: expanded && detail
         ? [...detail.layers].sort((a, b) => a.position - b.position).map((l) => ({
-          id: l.id, title: l.title, kindLabel: layerKindLabel(l), ...layerView(l.id),
+          id: l.id, kind: l.kind, title: l.title, kindLabel: layerKindLabel(l), ...layerView(l.id),
           truncated: store.truncated[l.id] ?? null,
         }))
         : null,

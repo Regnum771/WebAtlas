@@ -8,7 +8,8 @@ interface Props {
 
 /**
  * One personal layer: a checkbox with its title, its kind, an opacity slider while visible, and
- * a note when the last viewport read was cut short.
+ * a note when the last viewport read was cut short. A raster has the opacity slider only: it is
+ * not read by viewport, so it has no note.
  */
 export function LayerRowView({ layer, onVisible, onOpacity }: Props) {
   return (
@@ -29,7 +30,7 @@ export function LayerRowView({ layer, onVisible, onOpacity }: Props) {
           onChange={(e) => onOpacity(parseFloat(e.target.value))}
         />
       )}
-      {layer.visible && layer.truncated !== null && (
+      {layer.visible && layer.kind !== 'raster' && layer.truncated !== null && (
         <p className="my-maps-truncated">
           {`Chỉ hiện ${layer.truncated} đối tượng đầu trong khung nhìn; phóng to để xem đủ.`}
         </p>

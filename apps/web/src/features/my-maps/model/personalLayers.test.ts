@@ -19,7 +19,34 @@ vi.mock('../api/workspace.api', () => ({
   listFeatures: (...args: unknown[]) => listFeatures(...args),
 }));
 
+// The real OpenLayers classes, recording the options they were built with.
+const built = vi.hoisted(() => ({ geotiff: [] as unknown[], tile: [] as unknown[] }));
+vi.mock('ol/source/GeoTIFF', async (importOriginal) => {
+  const { default: GeoTIFF } = await importOriginal<typeof import('ol/source/GeoTIFF')>();
+  class Recorded extends GeoTIFF {
+    constructor(options: ConstructorParameters<typeof GeoTIFF>[0]) {
+      super(options);
+      built.geotiff.push(options);
+    }
+  }
+  return { default: Recorded };
+});
+vi.mock('ol/layer/WebGLTile', async (importOriginal) => {
+  const { default: WebGLTile } = await importOriginal<typeof import('ol/layer/WebGLTile')>();
+  class Recorded extends WebGLTile {
+    constructor(options: ConstructorParameters<typeof WebGLTile>[0]) {
+      super(options);
+      built.tile.push(options);
+    }
+  }
+  return { default: Recorded };
+});
+
+import WebGLTileLayer, { type Style as TileStyle } from 'ol/layer/WebGLTile';
+import GeoTIFF, { type Options as GeoTIFFOptions } from 'ol/source/GeoTIFF';
 import type { LayerSummary, PersonalFeature } from '../api/workspace.api';
+import { setAuthToken } from '../../../shared/api/apiClient';
+import { API_BASE_URL } from '../../../shared/config';
 import { isPersonalLayer, PERSONAL_HIT_TOLERANCE } from '../../map/model/overlayLayers';
 import {
   fitToExtent4326, personalFeatureAt, refreshPersonalLayer, syncPersonalLayers, type PersonalLayerEntry,
@@ -40,6 +67,16 @@ const FREE = layer({ id: 'l1' });
 const COPY = layer({ id: 'l2', kind: 'edit_copy', title: 'Sửa lớp Hồ', geometryType: null, layerKey: 'lakes' });
 const HIDDEN = layer({ id: 'l3', title: 'Ẩn' });
 const RASTER = layer({ id: 'l4', kind: 'raster', title: 'Ảnh', geometryType: null });
+const rasterMeta = (over: Record<string, unknown>) => ({
+  width: 100, height: 80, bands: 1, dtype: 'uint8', nodata: null, bounds4326: [108, 16, 108.1, 16.1],
+  sourceCrs: 'EPSG:4326', ...over,
+});
+const raster = (id: string, meta: Record<string, unknown>) =>
+  layer({ id, kind: 'raster', title: 'Ảnh', geometryType: null, featureCount: null, raster: rasterMeta(meta) });
+// An RGB image without nodata: the worker gave it an alpha band (band 4).
+const RGB = raster('l5', {
+  bands: 3, stats: [{ min: 10, max: 200 }, { min: 5, max: 180 }, { min: 0, max: 250 }],
+});
 
 const entry = (l: LayerSummary, over: Partial<PersonalLayerEntry> = {}): PersonalLayerEntry => ({
   mapId: 'm1', layer: l, visible: true, opacity: 1, zIndex: 800, onTruncated: vi.fn(), ...over,
@@ -59,9 +96,17 @@ const EPSG3857 = getProjection('EPSG:3857')!;
 const WIDE = transformExtent([107, 15, 109, 17], 'EPSG:4326', 'EPSG:3857');
 const ZOOMED = transformExtent([108.1, 16, 108.3, 16.2], 'EPSG:4326', 'EPSG:3857');
 
+// A GeoTIFF source starts reading its URL at once: the request is recorded and never answered.
+const fetchMock = vi.fn((..._args: unknown[]) => new Promise<Response>(() => {}));
+
 beforeEach(() => {
   listFeatures.mockReset();
   resetMyMapsStore();
+  built.geotiff.length = 0;
+  built.tile.length = 0;
+  fetchMock.mockClear();
+  vi.stubGlobal('fetch', fetchMock);
+  setAuthToken(null);
 });
 
 describe('syncPersonalLayers', () => {
@@ -71,9 +116,9 @@ describe('syncPersonalLayers', () => {
       entry(FREE, { zIndex: 802, opacity: 0.6 }),
       entry(COPY, { zIndex: 801 }),
       entry(HIDDEN, { visible: false }),
-      entry(RASTER), // rasters are drawn by Task 6
+      entry(RASTER),
     ]);
-    expect(personalLayers(map).map((l) => l.get('id')).sort()).toEqual(['ws:l1', 'ws:l2']);
+    expect(personalLayers(map).map((l) => l.get('id')).sort()).toEqual(['ws:l1', 'ws:l2', 'ws:l4']);
     for (const l of personalLayers(map)) {
       expect(l.get('personal')).toBe(true);
       expect(l.get('mapId')).toBe('m1');
@@ -108,7 +153,7 @@ describe('syncPersonalLayers', () => {
     source.loadFeatures(WIDE, 1000, EPSG3857);
     await vi.waitFor(() => expect(onTruncated).toHaveBeenCalledWith('l1', 2));
     const { unmount } = render(createElement(LayerRowView, {
-      layer: { id: 'l1', title: FREE.title, kindLabel: 'Lớp vẽ', visible: true, opacity: 1, truncated: getMyMaps().truncated.l1 ?? null },
+      layer: { id: 'l1', kind: 'free', title: FREE.title, kindLabel: 'Lớp vẽ', visible: true, opacity: 1, truncated: getMyMaps().truncated.l1 ?? null },
       onVisible: () => {}, onOpacity: () => {},
     }));
     expect(screen.getByText('Chỉ hiện 2 đối tượng đầu trong khung nhìn; phóng to để xem đủ.')).toBeInTheDocument();
@@ -171,6 +216,90 @@ describe('syncPersonalLayers', () => {
     source.loadFeatures(WIDE, 1000, EPSG3857);
     await vi.waitFor(() => expect(source.getFeatures()).toHaveLength(1));
     expect(listFeatures).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('raster layers', () => {
+  const lastGeoTIFF = () => built.geotiff[built.geotiff.length - 1] as GeoTIFFOptions;
+  const lastStyle = () => (built.tile[built.tile.length - 1] as { style: TileStyle }).style;
+
+  it("a raster entry builds a WebGLTile over the layer's raster URL with the bearer header", async () => {
+    setAuthToken('tok-1');
+    const map = makeMap();
+    syncPersonalLayers(map, [entry(RGB, { zIndex: 803, opacity: 0.7 })]);
+    const tile = personalLayers(map).find((l) => l.get('id') === 'ws:l5') as unknown as WebGLTileLayer;
+    expect(tile).toBeInstanceOf(WebGLTileLayer);
+    expect(tile.get('personal')).toBe(true);
+    expect(tile.get('mapId')).toBe('m1');
+    expect(tile.getZIndex()).toBe(803);
+    expect(tile.getOpacity()).toBe(0.7);
+    expect(tile.getSource()).toBeInstanceOf(GeoTIFF);
+
+    const url = `${API_BASE_URL}/api/workspace/maps/m1/layers/l5/raster`;
+    const options = lastGeoTIFF();
+    expect(options.sources).toHaveLength(1);
+    expect(options.sources[0].url).toBe(url);
+    expect(options.sourceOptions?.headers).toEqual({ Authorization: 'Bearer tok-1' });
+    expect(options.normalize).toBe(true);
+    // The source really asks for the COG with the token.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [requested, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(requested)).toBe(url);
+    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer tok-1');
+    // Bands 1-3 as red, green and blue; the alpha band the worker added masks.
+    expect(lastStyle().color).toEqual(['array', ['band', 1], ['band', 2], ['band', 3], ['band', 4]]);
+
+    // A repeat sync keeps the layer; hiding it takes it off the map.
+    syncPersonalLayers(map, [entry(RGB, { zIndex: 801, opacity: 1 })]);
+    expect(personalLayers(map).find((l) => l.get('id') === 'ws:l5')).toBe(tile);
+    expect(tile.getZIndex()).toBe(801);
+    expect(built.tile).toHaveLength(1);
+    syncPersonalLayers(map, [entry(RGB, { visible: false })]);
+    expect(personalLayers(map)).toEqual([]);
+  });
+
+  it("stats set the source's min and max; a one-band raster draws grey", () => {
+    const map = makeMap();
+    const grey = ['band', 1];
+    // One uint8 band without nodata: the worker's alpha band is band 2, read as 0-255.
+    syncPersonalLayers(map, [entry(raster('g1', { stats: [{ min: 3, max: 90 }] }))]);
+    expect(lastGeoTIFF().sources[0]).toMatchObject({ min: [3, 0], max: [90, 255] });
+    expect(lastGeoTIFF().sources[0].nodata).toBeUndefined();
+    expect(lastStyle().color).toEqual(['array', grey, grey, grey, ['band', 2]]);
+
+    // A float elevation model with nodata: no alpha band; the source adds one for nodata (band 2).
+    syncPersonalLayers(map, [entry(raster('g2', { dtype: 'float32', nodata: -9999, stats: [{ min: 2.5, max: 1480 }] }))]);
+    expect(lastGeoTIFF().sources[0]).toMatchObject({ min: [2.5], max: [1480], nodata: -9999 });
+    expect(lastStyle().color).toEqual(['array', grey, grey, grey, ['band', 2]]);
+
+    // NaN nodata arrives as the string "NaN".
+    syncPersonalLayers(map, [entry(raster('g3', { dtype: 'float32', nodata: 'NaN', stats: [{ min: 0, max: 1 }] }))]);
+    expect(Number.isNaN(lastGeoTIFF().sources[0].nodata)).toBe(true);
+  });
+
+  it('an RGBA source keeps its own alpha band; a uint16 alpha band counts as a mask', () => {
+    const map = makeMap();
+    syncPersonalLayers(map, [entry(raster('a1', {
+      bands: 4, dtype: 'uint16', stats: [{ min: 1, max: 900 }, { min: 2, max: 800 }, { min: 3, max: 700 }],
+    }))]);
+    // Any alpha above 0 is opaque: read as 0-1, it is clamped to 1.
+    expect(lastGeoTIFF().sources[0]).toMatchObject({ min: [1, 2, 3, 0], max: [900, 800, 700, 1] });
+    expect(lastStyle().color).toEqual(['array', ['band', 1], ['band', 2], ['band', 3], ['band', 4]]);
+  });
+
+  it('without stats, a uint8 raster spans 0-255 and other types use no bounds', () => {
+    const map = makeMap();
+    // Imported before stats existed: no alpha band was added.
+    syncPersonalLayers(map, [entry(raster('o1', { bands: 3 }))]);
+    expect(lastGeoTIFF().sources[0]).toMatchObject({ min: 0, max: 255 });
+    expect(lastStyle().color).toEqual(['array', ['band', 1], ['band', 2], ['band', 3], 1]);
+
+    syncPersonalLayers(map, [entry(raster('o2', { dtype: 'int16', nodata: -32768 }))]);
+    const source = lastGeoTIFF().sources[0];
+    expect(source.min).toBeUndefined();
+    expect(source.max).toBeUndefined();
+    expect(source.nodata).toBe(-32768);
+    expect(lastStyle().color).toEqual(['array', ['band', 1], ['band', 1], ['band', 1], ['band', 2]]);
   });
 });
 

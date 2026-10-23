@@ -33,10 +33,10 @@ describe('MyMapsPanelView', () => {
 
   it('an expanded card lists its layers with their kind labels', () => {
     const layers = [
-      { id: 'a', title: 'Vẽ', kindLabel: 'Lớp vẽ', visible: true, opacity: 1, truncated: null },
-      { id: 'b', title: 'Nhập', kindLabel: 'Lớp từ tệp', visible: false, opacity: 1, truncated: null },
-      { id: 'c', title: 'Bản sao', kindLabel: 'Sửa lớp Sông', visible: true, opacity: 1, truncated: null },
-      { id: 'd', title: 'Ảnh vệ tinh', kindLabel: 'Ảnh', visible: true, opacity: 1, truncated: null },
+      { id: 'a', kind: 'free' as const, title: 'Vẽ', kindLabel: 'Lớp vẽ', visible: true, opacity: 1, truncated: null },
+      { id: 'b', kind: 'free' as const, title: 'Nhập', kindLabel: 'Lớp từ tệp', visible: false, opacity: 1, truncated: null },
+      { id: 'c', kind: 'edit_copy' as const, title: 'Bản sao', kindLabel: 'Sửa lớp Sông', visible: true, opacity: 1, truncated: null },
+      { id: 'd', kind: 'raster' as const, title: 'Ảnh vệ tinh', kindLabel: 'Ảnh', visible: true, opacity: 1, truncated: null },
     ];
     render(<MyMapsPanelView {...base} own={[card({ expanded: true, layers })]} />);
     for (const k of ['Lớp vẽ', 'Lớp từ tệp', 'Sửa lớp Sông', 'Ảnh']) expect(screen.getByText(k)).toBeInTheDocument();
@@ -45,6 +45,15 @@ describe('MyMapsPanelView', () => {
     expect(screen.queryByRole('slider', { name: 'Độ mờ Nhập' })).toBeNull();
     expect(screen.getByRole('slider', { name: 'Độ mờ Vẽ' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Đổi tên' })).toBeInTheDocument();
+  });
+
+  it('a raster row has its opacity slider only, never the truncation note', () => {
+    const layers = [
+      { id: 'd', kind: 'raster' as const, title: 'Ảnh vệ tinh', kindLabel: 'Ảnh', visible: true, opacity: 0.4, truncated: 7 },
+    ];
+    render(<MyMapsPanelView {...base} own={[card({ expanded: true, layers })]} />);
+    expect(screen.getByRole('slider', { name: 'Độ mờ Ảnh vệ tinh' })).toHaveValue('0.4');
+    expect(screen.queryByText(/Chỉ hiện/)).toBeNull();
   });
 
   it('a shared card names its owner and offers no owner actions', () => {
