@@ -133,7 +133,7 @@ describe('useMyMapsPanelPresenter', () => {
   });
 
   it('a map gone on delete leaves the list', async () => {
-    deleteMap.mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'x'));
+    deleteMap.mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'Không tìm thấy bản đồ.'));
     const { result } = setup();
     await waitFor(() => expect(result.current.loading).toBe(false));
     listMaps.mockResolvedValue({ mine: [], sharedWithMe: [SHARED] });

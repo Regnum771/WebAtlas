@@ -26,6 +26,8 @@ interface Props {
   onToggleCard: (mapId: string) => void;
   onRename: (mapId: string) => void;
   onAskDelete: (mapId: string) => void;
+  /** Opens the upload dialog: into a new map (null) or into the given map. */
+  onUpload: (mapId: string | null) => void;
   onLayerVisible: (layerId: string, visible: boolean) => void;
   onLayerOpacity: (layerId: string, opacity: number) => void;
   onDialogTitle: (title: string) => void;
@@ -49,6 +51,7 @@ export function MyMapsPanelView(p: Props) {
           onToggle={() => p.onToggleCard(card.id)}
           onRename={() => p.onRename(card.id)}
           onDelete={() => p.onAskDelete(card.id)}
+          onUpload={() => p.onUpload(card.id)}
           onLayerVisible={p.onLayerVisible}
           onLayerOpacity={p.onLayerOpacity}
         />
@@ -72,7 +75,7 @@ export function MyMapsPanelView(p: Props) {
             <>
               <div className="my-maps-buttons">
                 <Button size="sm" onClick={p.onNewMap}>Bản đồ mới</Button>
-                <Button size="sm" disabled>Tải tệp lên</Button>
+                <Button size="sm" onClick={() => p.onUpload(null)}>Tải tệp lên</Button>
               </div>
               <h3 className="layers-group-title">Của tôi</h3>
               {p.own.length === 0

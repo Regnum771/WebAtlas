@@ -42,6 +42,39 @@ describe('useJob', () => {
     expect(getJob).toHaveBeenCalledTimes(3);
   });
 
+  it('a transient error keeps polling', async () => {
+    const getJob = vi.mocked(api.getJob);
+    getJob.mockReset();
+    getJob
+      .mockRejectedValueOnce(new ApiError(0, 'NETWORK_ERROR', 'Network request failed'))
+      .mockResolvedValueOnce(job('running') as never)
+      .mockResolvedValue(job('succeeded') as never);
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useJob('j'), { wrapper });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(getJob).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(getJob).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(getJob).toHaveBeenCalledTimes(3);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(result.current.data?.status).toBe('succeeded');
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(getJob).toHaveBeenCalledTimes(3);
+  });
+
+  it('a 401 stops polling', async () => {
+    const getJob = vi.mocked(api.getJob);
+    getJob.mockReset();
+    getJob.mockRejectedValue(new ApiError(401, 'UNAUTHORIZED', 'Phiên đăng nhập đã hết hạn.'));
+    const { wrapper } = setup();
+    renderHook(() => useJob('j'), { wrapper });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(getJob).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(getJob).toHaveBeenCalledTimes(1);
+  });
+
   it('does not fetch without an id', () => {
     vi.mocked(api.getJob).mockClear();
     const { wrapper } = setup();
@@ -82,11 +115,23 @@ describe('useMapWrite', () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ['ws', 'maps'] });
 
     spy.mockClear();
-    const gone = vi.fn().mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'x'));
+    const gone = vi.fn().mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'Không tìm thấy bản đồ.'));
     const err2 = await result.current.run(gone).catch((e: unknown) => e);
     expect(err2).toBeInstanceOf(MapGoneError);
     expect((err2 as Error).message).toBe('Bản đồ này không còn được chia sẻ với anh/chị hoặc đã bị xoá.');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['ws', 'maps'] });
     expect(qc.getQueryData(['ws', 'map', 'm1'])).toBeUndefined();
+  });
+
+  it('a 404 for a missing layer or feature is rethrown unchanged and keeps the map', async () => {
+    const { qc, wrapper } = setup();
+    qc.setQueryData(['ws', 'map', 'm1'], { id: 'm1', revision: 7, layers: [] });
+    const { result } = renderHook(() => useMapWrite('m1'), { wrapper });
+    for (const message of ['Không tìm thấy lớp.', 'Không tìm thấy đối tượng.']) {
+      const original = new ApiError(404, 'NOT_FOUND', message);
+      const err = await result.current.run(vi.fn().mockRejectedValue(original)).catch((e: unknown) => e);
+      expect(err).toBe(original);
+      expect(qc.getQueryData(['ws', 'map', 'm1'])).toEqual({ id: 'm1', revision: 7, layers: [] });
+    }
   });
 });

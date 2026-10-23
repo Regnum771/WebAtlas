@@ -197,6 +197,21 @@ export function refreshPersonalLayer(map: Map, layerId: string): void {
   rec.layer.getSource()!.refresh();
 }
 
+/** Zoom cap of a fit: a single point or a tiny layer stays at street level, not zoomed to the maximum. */
+const FIT_MAX_ZOOM = 15;
+const MERCATOR_MAX_LAT = 85.0511;
+
+/** Flies the view to an EPSG:4326 extent [w, s, e, n] (after an import: the new layers' extent). */
+export function fitToExtent4326(map: Map, extent: [number, number, number, number]): void {
+  const view = map.getView();
+  // Web Mercator has no poles: clamp the latitudes so the transformed extent stays finite.
+  const lat = (v: number) => Math.max(-MERCATOR_MAX_LAT, Math.min(MERCATOR_MAX_LAT, v));
+  const [w, s, e, n] = extent;
+  const target = transformExtent([w, lat(s), e, lat(n)], 'EPSG:4326', view.getProjection());
+  if (!target.every(Number.isFinite)) return;
+  view.fit(target, { padding: [60, 60, 60, 60], maxZoom: FIT_MAX_ZOOM, duration: 400 });
+}
+
 /** The topmost personal feature under a pixel, as the API's GeoJSON (EPSG:4326), with its map and layer. */
 export function personalFeatureAt(
   map: Map, pixel: number[],

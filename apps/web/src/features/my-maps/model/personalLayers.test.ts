@@ -22,7 +22,7 @@ vi.mock('../api/workspace.api', () => ({
 import type { LayerSummary, PersonalFeature } from '../api/workspace.api';
 import { isPersonalLayer, PERSONAL_HIT_TOLERANCE } from '../../map/model/overlayLayers';
 import {
-  personalFeatureAt, refreshPersonalLayer, syncPersonalLayers, type PersonalLayerEntry,
+  fitToExtent4326, personalFeatureAt, refreshPersonalLayer, syncPersonalLayers, type PersonalLayerEntry,
 } from './personalLayers';
 import { CHANGED_OVERLAY } from './personalStyle';
 import { getMyMaps, resetMyMapsStore, setTruncated } from './myMaps.store';
@@ -262,5 +262,18 @@ describe('personalFeatureAt', () => {
     const map = makeMap();
     vi.spyOn(map, 'forEachFeatureAtPixel').mockReturnValue(undefined);
     expect(personalFeatureAt(map, [1, 1])).toBeNull();
+  });
+});
+
+describe('fitToExtent4326', () => {
+  it('fits the view to an EPSG:4326 extent, capped at a street-level zoom', () => {
+    const map = makeMap();
+    const fit = vi.spyOn(map.getView(), 'fit').mockImplementation(() => {});
+    fitToExtent4326(map, [107, 15, 108, 16]);
+    expect(fit).toHaveBeenCalledTimes(1);
+    const [extent, opts] = fit.mock.calls[0] as [number[], { maxZoom?: number }];
+    const expected = transformExtent([107, 15, 108, 16], 'EPSG:4326', 'EPSG:3857');
+    extent.forEach((v, i) => expect(v).toBeCloseTo(expected[i], 3));
+    expect(opts.maxZoom).toBeGreaterThan(0);
   });
 });

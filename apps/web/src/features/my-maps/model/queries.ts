@@ -13,6 +13,8 @@ export const keys = {
 
 export const MAP_CHANGED_COPY = 'Bản đồ đã thay đổi ở nơi khác. Đã tải lại bản mới nhất; hãy thử lại.';
 export const MAP_GONE_COPY = 'Bản đồ này không còn được chia sẻ với anh/chị hoặc đã bị xoá.';
+/** The API's 404 message for a map the user cannot read (apps/api workspace/access.ts). */
+export const MAP_NOT_FOUND = 'Không tìm thấy bản đồ.';
 
 export class MapChangedError extends Error {
   constructor() {
@@ -45,14 +47,19 @@ export function useUploads() {
   return useQuery({ queryKey: keys.uploads, queryFn: api.listUploads });
 }
 
-/** A job, polled every second while queued or running; polling stops on a final status or any error (a 401 included). */
+/**
+ * A job, polled every second while queued or running. Polling stops on a final status, on a 401
+ * (the session is over) or when the asking component unmounts; any other error (a network blip)
+ * keeps polling, so the dialog does not sit on "running" for good.
+ */
 export function useJob(id: string | null) {
   return useQuery({
     queryKey: keys.job(id ?? ''),
     queryFn: () => api.getJob(id as string),
     enabled: id !== null,
     refetchInterval: (query) => {
-      if (query.state.error) return false;
+      const error = query.state.error;
+      if (error instanceof ApiError && error.status === 401) return false;
       const status = query.state.data?.status;
       return status === 'succeeded' || status === 'failed' ? false : POLL_MS;
     },
@@ -65,7 +72,7 @@ export function useMapJobs(mapId: string) {
 
 /**
  * Runs a write on a map with the revision of the last read. A stale revision refetches the map
- * and throws MapChangedError; a 404 drops the map from the cache and throws MapGoneError.
+ * and throws MapChangedError; the map's 404 drops it from the cache and throws MapGoneError.
  */
 export function useMapWrite(mapId: string) {
   const qc = useQueryClient();
@@ -86,7 +93,8 @@ export function useMapWrite(mapId: string) {
         await refresh();
         throw new MapChangedError();
       }
-      if (e instanceof ApiError && e.status === 404) {
+      // Only the map's own 404 means the map is gone; a missing layer or feature is the caller's to handle.
+      if (e instanceof ApiError && e.status === 404 && e.message === MAP_NOT_FOUND) {
         qc.removeQueries({ queryKey: keys.map(mapId) });
         await qc.invalidateQueries({ queryKey: keys.maps });
         throw new MapGoneError();

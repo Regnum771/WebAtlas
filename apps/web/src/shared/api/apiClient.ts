@@ -27,6 +27,10 @@ export function getAuthToken(): string | null {
 export function onUnauthorized(cb: () => void): void {
   unauthorizedCb = cb;
 }
+/** Runs the app's 401 callback, for requests that cannot go through apiRequest (XHR upload, blob download). */
+export function notifyUnauthorized(): void {
+  unauthorizedCb?.();
+}
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) };
@@ -61,6 +65,6 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     // non-JSON error body; keep defaults
   }
 
-  if (res.status === 401 && unauthorizedCb) unauthorizedCb();
+  if (res.status === 401) notifyUnauthorized();
   throw new ApiError(res.status, code, message, details);
 }

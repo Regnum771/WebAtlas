@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { setAuthToken, ApiError } from '../../../shared/api/apiClient';
+import { setAuthToken, ApiError, onUnauthorized } from '../../../shared/api/apiClient';
 import { uploadFile, downloadJobFile } from './transfer';
 
 class FakeXhr {
@@ -58,6 +58,25 @@ describe('uploadFile', () => {
     await expect(p).rejects.toBeInstanceOf(ApiError);
     await expect(p).rejects.toMatchObject({ status: 413, code: 'QUOTA', message: 'Hết dung lượng.' });
   });
+
+  it('a 401 calls the app unauthorized callback, as apiRequest does', async () => {
+    const cb = vi.fn();
+    onUnauthorized(cb);
+    const p = uploadFile(new File(['a'], 'a.zip'), vi.fn(), new AbortController().signal);
+    const xhr = FakeXhr.last;
+    xhr.status = 401;
+    xhr.responseText = JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'Phiên đăng nhập đã hết hạn.' } });
+    xhr.onload?.();
+    await expect(p).rejects.toMatchObject({ status: 401 });
+    expect(cb).toHaveBeenCalledTimes(1);
+    // Any other refusal leaves the session alone.
+    cb.mockClear();
+    const p2 = uploadFile(new File(['a'], 'a.zip'), vi.fn(), new AbortController().signal);
+    FakeXhr.last.status = 413;
+    FakeXhr.last.onload?.();
+    await expect(p2).rejects.toMatchObject({ status: 413 });
+    expect(cb).not.toHaveBeenCalled();
+  });
 });
 
 describe('downloadJobFile', () => {
@@ -88,5 +107,16 @@ describe('downloadJobFile', () => {
     expect((await downloadJobFile('j')).filename).toBe('x.zip');
     vi.stubGlobal('fetch', mk(null));
     expect((await downloadJobFile('j')).filename).toBe('ban-do');
+  });
+
+  it('a 401 calls the app unauthorized callback, as apiRequest does', async () => {
+    const cb = vi.fn();
+    onUnauthorized(cb);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 401, headers: new Headers(),
+      text: async () => JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'Phiên đăng nhập đã hết hạn.' } }),
+    }));
+    await expect(downloadJobFile('j')).rejects.toMatchObject({ status: 401, message: 'Phiên đăng nhập đã hết hạn.' });
+    expect(cb).toHaveBeenCalledTimes(1);
   });
 });

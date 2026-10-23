@@ -9,12 +9,13 @@ interface Props {
   onToggle: () => void;
   onRename: () => void;
   onDelete: () => void;
+  onUpload: () => void;
   onLayerVisible: (layerId: string, visible: boolean) => void;
   onLayerOpacity: (layerId: string, opacity: number) => void;
 }
 
 /** A map in the list: its title, owner and layer count; expanded, its layers and (for the owner) the actions. */
-export function MapCardView({ card, onToggle, onRename, onDelete, onLayerVisible, onLayerOpacity }: Props) {
+export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onLayerVisible, onLayerOpacity }: Props) {
   const Chevron = card.expanded ? ChevronDown : ChevronRight;
   return (
     <li className="my-map-card">
@@ -37,6 +38,7 @@ export function MapCardView({ card, onToggle, onRename, onDelete, onLayerVisible
           ))}
           {card.canWrite && (
             <div className="my-map-actions">
+              <Button size="sm" onClick={onUpload}>Tải tệp lên vào bản đồ này</Button>
               <Button size="sm" onClick={onRename}>Đổi tên</Button>
               <Button size="sm" variant="danger" onClick={onDelete}>Xoá bản đồ</Button>
             </div>

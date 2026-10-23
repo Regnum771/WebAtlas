@@ -1,9 +1,10 @@
 import { API_BASE_URL } from '../../../shared/config';
-import { ApiError, getAuthToken } from '../../../shared/api/apiClient';
+import { ApiError, getAuthToken, notifyUnauthorized } from '../../../shared/api/apiClient';
 import type { Upload } from './workspace.api';
 
 const BASE = `${API_BASE_URL}/api/workspace`;
 
+/** The ApiError for a refused request; a 401 also runs the app's unauthorized callback. */
 function errorFrom(status: number, text: string): ApiError {
   let code = 'HTTP_ERROR';
   let message = `Request failed (${status})`;
@@ -18,6 +19,8 @@ function errorFrom(status: number, text: string): ApiError {
   } catch {
     // non-JSON error body; keep defaults
   }
+  // An expired session ends the same way as in apiRequest.
+  if (status === 401) notifyUnauthorized();
   return new ApiError(status, code, message, details);
 }
 

@@ -11,7 +11,7 @@ const base = {
   pendingDelete: false, deleteError: null, deleting: false,
   onToggleCollapsed: noop, onRetry: noop, onNewMap: noop, onToggleCard: noop, onRename: noop, onAskDelete: noop,
   onLayerVisible: noop, onLayerOpacity: noop, onDialogTitle: noop, onDialogSubmit: noop, onDialogClose: noop,
-  onConfirmDelete: noop, onCancelDelete: noop,
+  onConfirmDelete: noop, onCancelDelete: noop, onUpload: noop,
 };
 const card = (over: Partial<MapCardData> = {}): MapCardData => ({
   id: 'm1', title: 'Lũ Đà Nẵng', ownerLabel: null, layerCount: 3, expanded: false, canWrite: true, layers: null, ...over,
@@ -52,6 +52,17 @@ describe('MyMapsPanelView', () => {
     expect(screen.getByText('của Lan · 3 lớp')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Đổi tên' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Xoá bản đồ' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Tải tệp lên vào bản đồ này' })).toBeNull();
+  });
+
+  it('Tải tệp lên opens the upload into a new map; the owner card action into that map', async () => {
+    const onUpload = vi.fn();
+    const user = userEvent.setup();
+    render(<MyMapsPanelView {...base} onUpload={onUpload} own={[card({ expanded: true, layers: [] })]} />);
+    await user.click(screen.getByRole('button', { name: 'Tải tệp lên' }));
+    expect(onUpload).toHaveBeenLastCalledWith(null);
+    await user.click(screen.getByRole('button', { name: 'Tải tệp lên vào bản đồ này' }));
+    expect(onUpload).toHaveBeenLastCalledWith('m1');
   });
 
   it('the title collapses the section', async () => {
