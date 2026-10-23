@@ -9,6 +9,10 @@
   bottom: var(--toast-band-bottom);
   z-index: 10;
   max-width: 920px;
+  /* A personal-layer table docked under the map can leave the map shorter than the dock: it then
+     stays within the map, 12px below its top, and scrolls inside. */
+  max-height: calc(100% - var(--toast-band-bottom) - 12px);
+  overflow-y: auto;
   margin-inline: auto;
   display: flex;
   flex-direction: column;

@@ -12,9 +12,14 @@ vi.mock('../api/workspace.api', () => ({
 }));
 const MAP = { on: vi.fn(), un: vi.fn() };
 vi.mock('../../../app/providers/MapProvider', () => ({ useMapContext: () => ({ map: MAP }) }));
+/** The extent watcher's callback: a test plays moveend events through it. */
+const view = vi.hoisted(() => ({ onChange: null as null | ((extent: [number, number, number, number]) => void) }));
 vi.mock('./personalLayers', () => ({
   viewExtent4326: () => [100, 10, 101, 11],
-  watchViewExtent4326: () => () => {},
+  watchViewExtent4326: (_map: unknown, onChange: (extent: [number, number, number, number]) => void) => {
+    view.onChange = onChange;
+    return () => { view.onChange = null; };
+  },
 }));
 const symbolDataUrl = vi.fn(
   (layer: LayerSummary, properties: Record<string, unknown>, geometryType: string) =>
@@ -165,5 +170,25 @@ describe('useTablePresenter', () => {
     expect(queryLayer.mock.calls.at(-1)![2]).toMatchObject({ q: 'trạm', bbox: [100, 10, 101, 11] });
     act(() => result.current.close());
     expect(getTableState().open).toBeNull();
+  });
+
+  it('dragging the dock with in view on sends one query after the drag settles', async () => {
+    const { result } = setup();
+    await flush(10);
+    act(() => result.current.setInView(true));
+    await flush(10);
+    const before = queryLayer.mock.calls.length;
+    expect(queryLayer.mock.calls.at(-1)![2].bbox).toEqual([100, 10, 101, 11]);
+    // A drag resizes the map on every frame, and OpenLayers ends a move after each resize.
+    for (let i = 1; i <= 60; i += 1) {
+      act(() => view.onChange!([100, 10 - i * 0.01, 101, 11]));
+      await flush(16);
+    }
+    expect(queryLayer.mock.calls.length).toBe(before);
+    await flush(300);
+    expect(queryLayer.mock.calls.length).toBe(before + 1);
+    expect(queryLayer.mock.calls.at(-1)![2].bbox).toEqual([100, 9.4, 101, 11]);
+    await flush(1000);
+    expect(queryLayer.mock.calls.length).toBe(before + 1);
   });
 });

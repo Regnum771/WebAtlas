@@ -7,7 +7,7 @@ import { viewExtent4326, watchViewExtent4326 } from './personalLayers';
 import { editCopyKey, symbolDataUrl } from './personalStyle';
 import { useMapDetail } from './queries';
 import { closeTable, emptyFilter, setFilter, useTableStore, type TableFilter } from './table.store';
-import { TABLE_LOAD_ERROR, TABLE_PAGE_SIZE, useTableQuery } from './useTableQuery';
+import { DEBOUNCE_MS, TABLE_LOAD_ERROR, TABLE_PAGE_SIZE, useTableQuery } from './useTableQuery';
 
 export type ColumnType = TableColumn['type'];
 export type ConditionOp = 'contains' | 'eq' | 'neq' | 'empty' | 'notEmpty' | 'lt' | 'lte' | 'gt' | 'gte';
@@ -81,14 +81,26 @@ function cellText(value: unknown): string {
   return String(value);
 }
 
-/** The current view's bbox, refreshed after each pan, zoom or resize has ended. */
+/**
+ * The current view's bbox, once the view has stayed put for DEBOUNCE_MS. OpenLayers ends a move
+ * after every resize too, so dragging the dock's edge ends one on almost every frame; with "in
+ * view" on, each would be a query. Only the extent the view settles on reaches the query.
+ */
 function useViewExtent(): Extent | null {
   const { map } = useMapContext();
   const [extent, setExtent] = useState<Extent | null>(() => (map ? viewExtent4326(map) : null));
   useEffect(() => {
     if (!map) return undefined;
     setExtent(viewExtent4326(map));
-    return watchViewExtent4326(map, setExtent);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stop = watchViewExtent4326(map, (next) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => setExtent(next), DEBOUNCE_MS);
+    });
+    return () => {
+      clearTimeout(timer);
+      stop();
+    };
   }, [map]);
   return extent;
 }
