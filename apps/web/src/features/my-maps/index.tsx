@@ -1,11 +1,17 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { EDITABLE_LAYER_KEYS, LAYER_ATTRIBUTE_MAP } from '@webatlas/shared';
+import { LAYER_DISPLAY } from '../../entities/layer/layerDisplay';
 import { useSession } from '../../entities/session/model/session.store';
-import { useMyMapsPanelPresenter } from './model/useMyMapsPanelPresenter';
+import { useLayerEditorPresenter } from './model/useLayerEditorPresenter';
+import { useMyMapsPanelPresenter, type MapCardData } from './model/useMyMapsPanelPresenter';
 import { usePersonalLayersSync } from './model/usePersonalLayersSync';
 import { usePersonalPopupPresenter } from './model/usePersonalPopupPresenter';
 import { useUploadPresenter } from './model/useUploadPresenter';
+import { EditCopyDialogView } from './ui/EditCopyDialog.view';
+import { LayerSettingsView } from './ui/LayerSettings.view';
 import { MyMapsPanelView } from './ui/MyMapsPanel.view';
+import { NewLayerDialogView } from './ui/NewLayerDialog.view';
 import { PersonalFeatureCardView } from './ui/PersonalFeatureCard.view';
 import { UploadDialogView } from './ui/UploadDialog.view';
 
@@ -35,9 +41,44 @@ function UploadDialog({ targetMapId, onClose }: { targetMapId: string | null; on
   );
 }
 
+const OFFICIAL_OPTIONS = EDITABLE_LAYER_KEYS.map((key) => ({
+  key,
+  name: LAYER_DISPLAY[LAYER_ATTRIBUTE_MAP[key].layerStateId].name,
+}));
+
+type LayerDialog =
+  | { kind: 'drawn'; mapId: string }
+  | { kind: 'edit_copy'; mapId: string }
+  | { kind: 'settings'; mapId: string; layerId: string };
+
+/** The layer dialogs of one map; mounted only while one is open, so each opening starts fresh. */
+function LayerDialogs({ dialog, cards, onClose }: { dialog: LayerDialog; cards: MapCardData[]; onClose: () => void }) {
+  const editor = useLayerEditorPresenter(dialog.mapId);
+  if (dialog.kind === 'drawn') return <NewLayerDialogView onSubmit={editor.createDrawn} onClose={onClose} />;
+  if (dialog.kind === 'edit_copy') {
+    return <EditCopyDialogView options={OFFICIAL_OPTIONS} onSubmit={editor.createEditCopy} onClose={onClose} />;
+  }
+  const layer = cards.find((c) => c.id === dialog.mapId)?.layers?.find((l) => l.id === dialog.layerId);
+  // The layer left the map (deleted, or the map changed elsewhere): nothing left to set.
+  if (!layer) return null;
+  const { layerId } = dialog;
+  return (
+    <LayerSettingsView
+      layer={layer}
+      onRename={(title) => editor.rename(layerId, title)}
+      onStyle={(change) => editor.setStyle(layerId, change)}
+      onMove={(direction) => editor.move(layerId, direction)}
+      onSaveFields={(fields) => editor.saveFields(layerId, fields)}
+      onRemove={() => editor.remove(layerId)}
+      onClose={onClose}
+    />
+  );
+}
+
 function MyMapsPanel() {
   usePersonalLayersSync();
   const p = useMyMapsPanelPresenter();
+  const [layerDialog, setLayerDialog] = useState<LayerDialog | null>(null);
   const [upload, setUpload] = useState<{ targetMapId: string | null } | null>(null);
   return (
     <>
@@ -49,9 +90,12 @@ function MyMapsPanel() {
         onToggleCard={p.toggleExpanded} onRename={p.openRename} onAskDelete={p.askDelete}
         onUpload={(targetMapId) => setUpload({ targetMapId })}
         onLayerVisible={p.setLayerVisible} onLayerOpacity={p.setLayerOpacity}
+        onAddLayer={(mapId, kind) => setLayerDialog({ kind, mapId } as LayerDialog)}
+        onLayerSettings={(mapId, layerId) => setLayerDialog({ kind: 'settings', mapId, layerId })}
         onDialogTitle={p.setTitle} onDialogSubmit={() => { void p.submit(); }} onDialogClose={p.closeDialog}
         onConfirmDelete={() => { void p.confirmDelete(); }} onCancelDelete={p.cancelDelete}
       />
+      {layerDialog && <LayerDialogs dialog={layerDialog} cards={[...p.own, ...p.shared]} onClose={() => setLayerDialog(null)} />}
       {upload && <UploadDialog targetMapId={upload.targetMapId} onClose={() => setUpload(null)} />}
       <PersonalFeatureCard />
     </>

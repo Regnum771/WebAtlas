@@ -12,6 +12,11 @@ const base = {
   onToggleCollapsed: noop, onRetry: noop, onNewMap: noop, onToggleCard: noop, onRename: noop, onAskDelete: noop,
   onLayerVisible: noop, onLayerOpacity: noop, onDialogTitle: noop, onDialogSubmit: noop, onDialogClose: noop,
   onConfirmDelete: noop, onCancelDelete: noop, onUpload: noop,
+  onAddLayer: noop, onLayerSettings: noop,
+};
+const extra = {
+  style: { color: '#d9480f', width: 2, fillOpacity: 0.25, pointRadius: 6 },
+  geometryType: 'point' as const, fields: [], isFirst: false, isLast: false,
 };
 const card = (over: Partial<MapCardData> = {}): MapCardData => ({
   id: 'm1', title: 'Lũ Đà Nẵng', ownerLabel: null, layerCount: 3, expanded: false, canWrite: true, layers: null, ...over,
@@ -33,10 +38,10 @@ describe('MyMapsPanelView', () => {
 
   it('an expanded card lists its layers with their kind labels', () => {
     const layers = [
-      { id: 'a', kind: 'free' as const, title: 'Vẽ', kindLabel: 'Lớp vẽ', visible: true, opacity: 1, truncated: null },
-      { id: 'b', kind: 'free' as const, title: 'Nhập', kindLabel: 'Lớp từ tệp', visible: false, opacity: 1, truncated: null },
-      { id: 'c', kind: 'edit_copy' as const, title: 'Bản sao', kindLabel: 'Sửa lớp Sông', visible: true, opacity: 1, truncated: null },
-      { id: 'd', kind: 'raster' as const, title: 'Ảnh vệ tinh', kindLabel: 'Ảnh', visible: true, opacity: 1, truncated: null },
+      { id: 'a', kind: 'free' as const, title: 'Vẽ', kindLabel: 'Lớp vẽ', visible: true, opacity: 1, truncated: null, ...extra },
+      { id: 'b', kind: 'free' as const, title: 'Nhập', kindLabel: 'Lớp từ tệp', visible: false, opacity: 1, truncated: null, ...extra },
+      { id: 'c', kind: 'edit_copy' as const, title: 'Bản sao', kindLabel: 'Sửa lớp Sông', visible: true, opacity: 1, truncated: null, ...extra },
+      { id: 'd', kind: 'raster' as const, title: 'Ảnh vệ tinh', kindLabel: 'Ảnh', visible: true, opacity: 1, truncated: null, ...extra },
     ];
     render(<MyMapsPanelView {...base} own={[card({ expanded: true, layers })]} />);
     for (const k of ['Lớp vẽ', 'Lớp từ tệp', 'Sửa lớp Sông', 'Ảnh']) expect(screen.getByText(k)).toBeInTheDocument();
@@ -49,7 +54,7 @@ describe('MyMapsPanelView', () => {
 
   it('a raster row has its opacity slider only, never the truncation note', () => {
     const layers = [
-      { id: 'd', kind: 'raster' as const, title: 'Ảnh vệ tinh', kindLabel: 'Ảnh', visible: true, opacity: 0.4, truncated: 7 },
+      { id: 'd', kind: 'raster' as const, title: 'Ảnh vệ tinh', kindLabel: 'Ảnh', visible: true, opacity: 0.4, truncated: 7, ...extra },
     ];
     render(<MyMapsPanelView {...base} own={[card({ expanded: true, layers })]} />);
     expect(screen.getByRole('slider', { name: 'Độ mờ Ảnh vệ tinh' })).toHaveValue('0.4');

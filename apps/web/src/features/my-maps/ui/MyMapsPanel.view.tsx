@@ -30,6 +30,8 @@ interface Props {
   onUpload: (mapId: string | null) => void;
   onLayerVisible: (layerId: string, visible: boolean) => void;
   onLayerOpacity: (layerId: string, opacity: number) => void;
+  onAddLayer: (mapId: string, kind: 'drawn' | 'edit_copy') => void;
+  onLayerSettings: (mapId: string, layerId: string) => void;
   onDialogTitle: (title: string) => void;
   onDialogSubmit: () => void;
   onDialogClose: () => void;
@@ -54,6 +56,8 @@ export function MyMapsPanelView(p: Props) {
           onUpload={() => p.onUpload(card.id)}
           onLayerVisible={p.onLayerVisible}
           onLayerOpacity={p.onLayerOpacity}
+          onAddLayer={(kind) => p.onAddLayer(card.id, kind)}
+          onLayerSettings={(layerId) => p.onLayerSettings(card.id, layerId)}
         />
       ))}
     </ul>

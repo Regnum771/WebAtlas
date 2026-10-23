@@ -1004,6 +1004,11 @@ body {
 .my-map-body { padding-left: var(--space-4); }
 .my-map-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) 0; }
 .my-map-actions .btn { white-space: nowrap; }
+.my-maps-field-row { display: flex; gap: var(--space-2); margin-bottom: var(--space-2); }
+.my-maps-field-row .input:first-child { flex: 1; min-width: 0; }
+.my-maps-fields-title { display: block; margin-bottom: var(--space-2); font-weight: 600; }
+.my-maps-settings-row { display: flex; align-items: flex-end; gap: var(--space-2); margin-bottom: var(--space-3); }
+.my-maps-style { display: grid; gap: var(--space-2); margin-bottom: var(--space-3); }
 /* The truncation note: its own line under the row (flex-basis 100%, as .layer-suboptions). */
 .my-maps-truncated { flex-basis: 100%; margin: 0; font-size: var(--text-xs); color: var(--ink-2); }
 /* The personal feature card is portalled to <body> and placed in window coordinates. */

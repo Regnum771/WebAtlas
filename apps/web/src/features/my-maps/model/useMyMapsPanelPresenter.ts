@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/workspace.api';
-import type { LayerKind, MapSummary } from '../api/workspace.api';
+import type { FieldDef, GeometryType, LayerKind, MapSummary } from '../api/workspace.api';
 import { showToast } from '../../../shared/ui/toast.store';
 import { keys, MapGoneError, useMapWrite, useMyMaps, useUploads } from './queries';
 import { layerKindLabel } from './layerKindLabel';
+import { parseStyle, type PersonalLayerStyle } from './personalStyle';
 import {
   expandMap, forgetMap, layerView, setLayerOpacity, setLayerVisible, toggleCollapsed, toggleExpanded, useMyMapsStore,
 } from './myMaps.store';
@@ -18,6 +19,12 @@ export interface LayerRowData {
   opacity: number;
   /** The last viewport read was cut at this many features; null when it was complete. */
   truncated: number | null;
+  /** For the owner's settings: the stored style (defaults filled in), geometry, fields and place in the order. */
+  style: PersonalLayerStyle;
+  geometryType: GeometryType | null;
+  fields: FieldDef[];
+  isFirst: boolean;
+  isLast: boolean;
 }
 export interface MapCardData {
   id: string;
@@ -75,9 +82,11 @@ export function useMyMapsPanelPresenter() {
       expanded,
       canWrite: m.role === 'owner',
       layers: expanded && detail
-        ? [...detail.layers].sort((a, b) => a.position - b.position).map((l) => ({
+        ? [...detail.layers].sort((a, b) => a.position - b.position).map((l, i, all) => ({
           id: l.id, kind: l.kind, title: l.title, kindLabel: layerKindLabel(l), ...layerView(l.id),
           truncated: store.truncated[l.id] ?? null,
+          style: parseStyle(l.style), geometryType: l.geometryType, fields: l.fields,
+          isFirst: i === 0, isLast: i === all.length - 1,
         }))
         : null,
     };

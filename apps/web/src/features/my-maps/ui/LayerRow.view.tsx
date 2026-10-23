@@ -1,9 +1,12 @@
+import { Settings } from 'lucide-react';
 import type { LayerRowData } from '../model/useMyMapsPanelPresenter';
 
 interface Props {
-  layer: LayerRowData;
+  layer: Pick<LayerRowData, 'id' | 'kind' | 'title' | 'kindLabel' | 'visible' | 'opacity' | 'truncated'>;
   onVisible: (visible: boolean) => void;
   onOpacity: (opacity: number) => void;
+  /** Owner only: opens the layer's settings. Absent for a recipient, who gets no layer actions. */
+  onSettings?: () => void;
 }
 
 /**
@@ -11,7 +14,7 @@ interface Props {
  * a note when the last viewport read was cut short. A raster has the opacity slider only: it is
  * not read by viewport, so it has no note.
  */
-export function LayerRowView({ layer, onVisible, onOpacity }: Props) {
+export function LayerRowView({ layer, onVisible, onOpacity, onSettings }: Props) {
   return (
     <div className="layer-row my-maps-layer">
       <label className="layer-label">
@@ -19,6 +22,11 @@ export function LayerRowView({ layer, onVisible, onOpacity }: Props) {
         <span>{layer.title}</span>
       </label>
       <span className="layer-gate-hint">{layer.kindLabel}</span>
+      {onSettings && (
+        <button type="button" className="btn quiet sm" aria-label={`Thiết lập lớp ${layer.title}`} onClick={onSettings}>
+          <Settings size={14} aria-hidden="true" />
+        </button>
+      )}
       {layer.visible && (
         <input
           type="range"
