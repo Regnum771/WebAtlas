@@ -139,6 +139,18 @@ describe('usePersonalPopupPresenter', () => {
     expect(result.current.card).not.toBeNull();
   });
 
+  it("a map click on the table's layer closes an open feature card and selects the row", () => {
+    const { result } = setup();
+    // A card opened before the table: l1's feature, while no table is open.
+    click();
+    expect(result.current.card).not.toBeNull();
+    act(() => openTable('m1', 'l1'));
+    click();
+    expect(getTableState().selectedId).toBe('f1');
+    expect(result.current.card).toBeNull();
+    expect(result.current.anchor).toBeNull();
+  });
+
   it('a polygon feature becomes the drawn ROI', () => {
     const polygon = { type: 'Polygon', coordinates: [[[108, 16], [108.1, 16], [108.1, 16.1], [108, 16]]] };
     h.hit = { mapId: 'm1', layerId: 'l1', feature: { ...FEATURE, geometry: polygon } };

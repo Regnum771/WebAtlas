@@ -37,8 +37,8 @@ interface MapClick { pixel: number[]; coordinate: number[] }
  * The card of a clicked personal feature. A click that hits no personal feature closes it; a
  * click while a drawing or an edit mode (official or personal) holds the map opens nothing, as
  * DynamicPopup does for the official popup. While a layer's table is open, a click on that
- * layer's feature selects its row instead (useTablePresenter rings it and finds its page) and
- * leaves the card as it was.
+ * layer's feature selects its row instead (useTablePresenter rings it and finds its page): no
+ * card opens, and an open one closes.
  */
 export function usePersonalPopupPresenter() {
   const { map } = useMapContext();
@@ -66,6 +66,8 @@ export function usePersonalPopupPresenter() {
       const table = getTableState().open;
       if (table && table.mapId === hit.mapId && table.layerId === hit.layerId) {
         select(hit.feature.id);
+        // An open card would show another feature beside the new selection.
+        setOpen(null);
         return;
       }
       const detail = qc.getQueryData<MapDetail>(keys.map(hit.mapId));
