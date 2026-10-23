@@ -171,6 +171,8 @@ function OpenLayerTable({ layerId }: { layerId: string }) {
       onSearch={p.setSearch} onAddCondition={p.addCondition} onUpdateCondition={p.updateCondition}
       onRemoveCondition={p.removeCondition} onMatch={p.setMatch} onInView={p.setInView} onSort={p.toggleSort}
       onPrev={p.prev} onNext={p.next} onClose={p.close}
+      selectedId={p.selectedId} selectedOutsideFilter={p.selectedOutsideFilter} canZoom={p.canZoom}
+      onSelectRow={p.selectRow} onZoom={p.zoomToSelection}
     />
   );
 }

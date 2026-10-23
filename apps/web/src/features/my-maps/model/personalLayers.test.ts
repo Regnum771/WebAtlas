@@ -49,8 +49,10 @@ import { ApiError, setAuthToken } from '../../../shared/api/apiClient';
 import { API_BASE_URL } from '../../../shared/config';
 import { isPersonalLayer, PERSONAL_HIT_TOLERANCE } from '../../map/model/overlayLayers';
 import {
-  fitToExtent4326, personalFeatureAt, refreshPersonalLayer, syncPersonalLayers, type PersonalLayerEntry,
+  clearRing, fitToExtent4326, personalFeatureAt, refreshPersonalLayer, ringExtent4326, ringFeature,
+  syncPersonalLayers, type PersonalLayerEntry,
 } from './personalLayers';
+import type Point from 'ol/geom/Point';
 import { CHANGED_OVERLAY } from './personalStyle';
 import { getMyMaps, resetMyMapsStore, setTruncated } from './myMaps.store';
 import { LayerRowView } from '../ui/LayerRow.view';
@@ -458,6 +460,98 @@ describe('personalFeatureAt', () => {
     const map = makeMap();
     vi.spyOn(map, 'forEachFeatureAtPixel').mockReturnValue(undefined);
     expect(personalFeatureAt(map, [1, 1])).toBeNull();
+  });
+});
+
+describe('ringFeature', () => {
+  const ringLayer = (map: Map) =>
+    map.getLayers().getArray().find((l) => l.get('id') === 'ws-ring') as VectorLayer<VectorSource> | undefined;
+  /** The ring's one feature's point, in EPSG:4326 (rounded), or null when the ring is empty. */
+  const ringAt = (map: Map) => {
+    const features = ringLayer(map)?.getSource()!.getFeatures() ?? [];
+    if (features.length === 0) return null;
+    expect(features).toHaveLength(1);
+    const [x, y] = (features[0].getGeometry() as Point).getCoordinates();
+    const [w, s] = transformExtent([x, y, x, y], 'EPSG:3857', 'EPSG:4326');
+    return [Math.round(w * 1e4) / 1e4, Math.round(s * 1e4) / 1e4];
+  };
+  async function loaded(features: PersonalFeature[]) {
+    const map = makeMap();
+    listFeatures.mockResolvedValueOnce(fc(features, false));
+    syncPersonalLayers(map, [entry(FREE)]);
+    const source = byId(map, 'ws:l1').getSource()!;
+    source.loadFeatures(WIDE, 1000, EPSG3857);
+    await vi.waitFor(() => expect(source.getFeatures()).toHaveLength(features.length));
+    return { map, source };
+  }
+
+  it('rings the feature on its own layer above the personal layers; clearRing empties it', async () => {
+    const { map } = await loaded([point('a', 108, 16), point('b', 108.2, 16.1)]);
+    ringFeature(map, 'l1', 'b');
+    const ring = ringLayer(map)!;
+    expect(ring.get('personal')).toBe(true);
+    expect(ring.getZIndex()).toBe(996);
+    expect(ringAt(map)).toEqual([108.2, 16.1]);
+    // One ring at a time: ringing another feature moves it.
+    ringFeature(map, 'l1', 'a');
+    expect(ringAt(map)).toEqual([108, 16]);
+    expect(ringExtent4326(map)).toEqual([108, 16, 108, 16]);
+    clearRing(map);
+    expect(ringAt(map)).toBeNull();
+    expect(ringExtent4326(map)).toBeNull();
+    // The same layer is reused.
+    ringFeature(map, 'l1', 'b');
+    expect(map.getLayers().getArray().filter((l) => l.get('id') === 'ws-ring')).toHaveLength(1);
+  });
+
+  it('the ring survives a layer reload', async () => {
+    const { map, source } = await loaded([point('a', 108, 16)]);
+    ringFeature(map, 'l1', 'a');
+    expect(ringAt(map)).toEqual([108, 16]);
+
+    // A reload (after a write) drops the layer's features; the ring stays put meanwhile...
+    listFeatures.mockResolvedValueOnce(fc([point('a', 108.1, 16.05)], false));
+    refreshPersonalLayer(map, 'l1');
+    expect(source.getFeatures()).toHaveLength(0);
+    expect(ringAt(map)).toEqual([108, 16]);
+    // ...and is drawn again by id from what the reload read (the feature moved).
+    source.loadFeatures(WIDE, 1000, EPSG3857);
+    await vi.waitFor(() => expect(ringAt(map)).toEqual([108.1, 16.05]));
+
+    // A feature not read yet is ringed once a read brings it.
+    ringFeature(map, 'l1', 'c');
+    expect(ringAt(map)).toBeNull();
+    listFeatures.mockResolvedValueOnce(fc([point('a', 108.1, 16.05), point('c', 108.3, 16.2)], false));
+    refreshPersonalLayer(map, 'l1');
+    source.loadFeatures(WIDE, 1000, EPSG3857);
+    await vi.waitFor(() => expect(ringAt(map)).toEqual([108.3, 16.2]));
+
+    // Its layer hidden, the ring goes; shown and read again, it comes back.
+    syncPersonalLayers(map, [entry(FREE, { visible: false })]);
+    expect(ringAt(map)).toBeNull();
+    listFeatures.mockResolvedValueOnce(fc([point('c', 108.3, 16.2)], false));
+    syncPersonalLayers(map, [entry(FREE)]);
+    byId(map, 'ws:l1').getSource()!.loadFeatures(WIDE, 1000, EPSG3857);
+    await vi.waitFor(() => expect(ringAt(map)).toEqual([108.3, 16.2]));
+  });
+
+  it('the ring is never what a click hits', async () => {
+    const { map, source } = await loaded([point('a', 108, 16)]);
+    ringFeature(map, 'l1', 'a');
+    const ring = ringLayer(map)!;
+    vi.spyOn(map, 'forEachFeatureAtPixel').mockImplementation(((_px: unknown, cb: (f: FeatureLike, l: Layer) => unknown, opts?: { layerFilter?: (l: Layer) => boolean }) => {
+      const hits: Array<[FeatureLike, Layer]> = [
+        [ring.getSource()!.getFeatures()[0], ring as unknown as Layer],
+        [source.getFeatures()[0], byId(map, 'ws:l1') as unknown as Layer],
+      ];
+      for (const [f, l] of hits) {
+        if (opts?.layerFilter && !opts.layerFilter(l)) continue;
+        const r = cb(f, l);
+        if (r) return r;
+      }
+      return undefined;
+    }) as never);
+    expect(personalFeatureAt(map, [10, 10])).toMatchObject({ mapId: 'm1', layerId: 'l1', feature: { id: 'a' } });
   });
 });
 

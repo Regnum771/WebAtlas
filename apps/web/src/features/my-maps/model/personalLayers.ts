@@ -1,12 +1,13 @@
 import type Map from 'ol/Map';
-import type Feature from 'ol/Feature';
-import type { Extent } from 'ol/extent';
+import Feature from 'ol/Feature';
+import { isEmpty, type Extent } from 'ol/extent';
 import GeoJSON from 'ol/format/GeoJSON';
 import type Layer from 'ol/layer/Layer';
 import VectorLayer from 'ol/layer/Vector';
 import { bbox as bboxStrategy } from 'ol/loadingstrategy';
 import { transformExtent, type ProjectionLike } from 'ol/proj';
 import VectorSource from 'ol/source/Vector';
+import { Circle, Stroke, Style } from 'ol/style';
 import { isMapNotFound } from './queries';
 import { listFeatures, type GeoJsonGeometry, type LayerSummary, type PersonalFeature } from '../api/workspace.api';
 import { isPersonalLayer, PERSONAL_HIT_TOLERANCE, PERSONAL_LAYER_PROP } from '../../map/model/overlayLayers';
@@ -92,7 +93,7 @@ function bbox4326(extent: Extent, projection: ProjectionLike): [number, number, 
   return [fit(w, 180), fit(s, 90), fit(e, 180), fit(n, 90)];
 }
 
-function create(entry: PersonalLayerEntry): Drawn {
+function create(map: Map, entry: PersonalLayerEntry): Drawn {
   const source = new VectorSource({ strategy: bboxStrategy });
   const layer = new VectorLayer({
     source,
@@ -112,6 +113,8 @@ function create(entry: PersonalLayerEntry): Drawn {
           .filter((f) => f.getGeometry());
         // Features already read for an overlapping view keep their id and are not added twice.
         source.addFeatures(features);
+        // The selection ring follows the feature it marks, read again (after a write) or for the first time.
+        redrawRing(map, id);
         if (res.changed) {
           rec.changed = new Set(res.changed);
           layer.changed();
@@ -167,6 +170,95 @@ function remove(map: Map, drawn: globalThis.Map<string, Drawn>, layerId: string,
   map.removeLayer(rec.layer);
   drawn.delete(layerId);
   rec.entry.onTruncated(layerId, null);
+  // A ring over a layer that left the map would mark nothing; it comes back once the layer is read again.
+  const ring = rings.get(map);
+  if (ring?.target?.layerId === layerId) ring.layer.getSource()!.clear();
+}
+
+/**
+ * The selected feature's ring: its own layer, above the personal layers (800+) and under the ROI
+ * (997), the results (998) and the highlights (999). Marked personal, so the official popup and
+ * edit selection never take it for an official feature; personalFeatureAt skips it by id.
+ */
+export const RING_LAYER_ID = 'ws-ring';
+const RING_Z_INDEX = 996;
+const RING_YELLOW = '#FFD928';
+const RING_HALO = 'rgba(24, 33, 58, 0.75)';
+/** A dark halo under the yellow line keeps the ring visible on the light basemap. */
+const RING_STYLE: Style[] = [
+  new Style({
+    stroke: new Stroke({ color: RING_HALO, width: 7 }),
+    image: new Circle({ radius: 11, stroke: new Stroke({ color: RING_HALO, width: 6 }) }),
+  }),
+  new Style({
+    stroke: new Stroke({ color: RING_YELLOW, width: 3.5 }),
+    image: new Circle({ radius: 11, stroke: new Stroke({ color: RING_YELLOW, width: 3 }) }),
+  }),
+];
+
+interface Ring {
+  layer: VectorLayer<VectorSource>;
+  /** The feature marked; null once cleared. */
+  target: { layerId: string; featureId: string } | null;
+}
+const rings = new WeakMap<Map, Ring>();
+
+function ringOf(map: Map): Ring {
+  let ring = rings.get(map);
+  if (!ring) {
+    const layer = new VectorLayer({
+      source: new VectorSource(),
+      style: RING_STYLE,
+      zIndex: RING_Z_INDEX,
+      properties: { id: RING_LAYER_ID, [PERSONAL_LAYER_PROP]: true },
+    });
+    map.addLayer(layer);
+    ring = { layer, target: null };
+    rings.set(map, ring);
+  }
+  return ring;
+}
+
+/**
+ * Draws the ring from the marked feature as its layer holds it now. A feature not read (outside
+ * the views read so far, or its layer reloading) leaves the ring as it was: the next read of that
+ * layer draws it again.
+ */
+function redrawRing(map: Map, layerId: string): void {
+  const ring = rings.get(map);
+  if (!ring?.target || ring.target.layerId !== layerId) return;
+  const source = registries.get(map)?.drawn.get(layerId)?.layer.getSource();
+  const geometry = (source?.getFeatureById(ring.target.featureId) as Feature | null | undefined)?.getGeometry();
+  if (!geometry) return;
+  const ringSource = ring.layer.getSource()!;
+  ringSource.clear();
+  ringSource.addFeature(new Feature(geometry.clone()));
+}
+
+/**
+ * Rings one feature of a personal layer in yellow (the table's selection). The view does not
+ * move. One ring at a time: ringing another feature moves it.
+ */
+export function ringFeature(map: Map, layerId: string, featureId: string): void {
+  const ring = ringOf(map);
+  ring.target = { layerId, featureId };
+  ring.layer.getSource()!.clear();
+  redrawRing(map, layerId);
+}
+
+/** Takes the ring off; the (empty) layer stays for the next one. */
+export function clearRing(map: Map): void {
+  const ring = rings.get(map);
+  if (!ring) return;
+  ring.target = null;
+  ring.layer.getSource()!.clear();
+}
+
+/** The ringed feature's EPSG:4326 extent [w, s, e, n], or null while nothing is ringed. */
+export function ringExtent4326(map: Map): [number, number, number, number] | null {
+  const extent = rings.get(map)?.layer.getSource()!.getExtent();
+  if (!extent || isEmpty(extent) || !extent.every(Number.isFinite)) return null;
+  return bbox4326(extent, map.getView().getProjection());
 }
 
 /**
@@ -232,7 +324,7 @@ export function syncPersonalLayers(map: Map, entries: PersonalLayerEntry[]): voi
   for (const [layerId, entry] of wanted) {
     let rec = drawn.get(layerId);
     if (!rec) {
-      rec = create(entry);
+      rec = create(map, entry);
       map.addLayer(rec.layer);
       drawn.set(layerId, rec);
     }
@@ -307,7 +399,9 @@ export function personalFeatureAt(
     pixel,
     (feature, layer) => ({ feature: feature as Feature, layer: layer as Layer }),
     {
-      layerFilter: (layer) => isPersonalLayer(layer) && (mapId === undefined || layer.get('mapId') === mapId),
+      // The ring marks a feature that is itself on the map: the click goes to that feature.
+      layerFilter: (layer) => isPersonalLayer(layer) && layer.get('id') !== RING_LAYER_ID
+        && (mapId === undefined || layer.get('mapId') === mapId),
       hitTolerance: PERSONAL_HIT_TOLERANCE,
     },
   );

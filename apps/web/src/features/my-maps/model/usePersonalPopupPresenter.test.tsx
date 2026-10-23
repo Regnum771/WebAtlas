@@ -31,6 +31,7 @@ vi.mock('../../roi/model/roi.store', () => ({ setRoi }));
 import { usePersonalPopupPresenter } from './usePersonalPopupPresenter';
 import { keys } from './queries';
 import { expandMap, forgetMap, resetMyMapsStore, setPersonalEditing, toggleExpanded } from './myMaps.store';
+import { closeTable, getTableState, openTable, resetTableStore } from './table.store';
 
 const DETAIL = {
   id: 'm1', title: 'Lũ Đà Nẵng', description: '', ownerId: 'u1', ownerName: 'Tôi', revision: 3,
@@ -54,6 +55,7 @@ beforeEach(() => {
   h.hit = { mapId: 'm1', layerId: 'l1', feature: FEATURE };
   h.drawing = false; h.justEnded = false; h.editing = false;
   resetMyMapsStore();
+  resetTableStore();
   // A personal feature is on the map only while its map's card is open.
   expandMap('m1');
   setRoi.mockReset();
@@ -114,6 +116,27 @@ describe('usePersonalPopupPresenter', () => {
     expect(result.current.card).not.toBeNull();
     act(() => forgetMap('m1', ['l1']));
     expect(result.current.card).toBeNull();
+  });
+
+  it("a map click on the table's layer selects its row and opens no card", () => {
+    const { result } = setup();
+    act(() => openTable('m1', 'l1'));
+    click();
+    expect(getTableState().selectedId).toBe('f1');
+    expect(result.current.card).toBeNull();
+
+    // Another layer's table is open: a click on l1 opens the card as before and selects nothing.
+    act(() => openTable('m1', 'l2'));
+    click();
+    expect(getTableState().selectedId).toBeNull();
+    expect(result.current.card).not.toBeNull();
+    act(() => result.current.close());
+
+    // No table open: the card as before.
+    act(() => closeTable());
+    click();
+    expect(getTableState().selectedId).toBeNull();
+    expect(result.current.card).not.toBeNull();
   });
 
   it('a polygon feature becomes the drawn ROI', () => {

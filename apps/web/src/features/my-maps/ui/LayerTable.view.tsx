@@ -39,6 +39,14 @@ interface Props {
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
+  /** The selected feature's id; its row is marked when it is on the page. */
+  selectedId: string | null;
+  /** The selected feature does not match the filter: a note shows above the rows. */
+  selectedOutsideFilter: boolean;
+  canZoom: boolean;
+  onSelectRow: (id: string) => void;
+  /** Phóng tới: to the selection, or to the rows on the page. */
+  onZoom: () => void;
 }
 
 /** The dock's height as a share of the map stage, and the range its top edge can be dragged in. */
@@ -49,12 +57,18 @@ const DOCK_STEP = 5;
 const clampDock = (pct: number) => Math.round(Math.min(DOCK_MAX, Math.max(DOCK_MIN, pct)) * 10) / 10;
 
 const count = (n: number) => n.toLocaleString('vi-VN');
+/**
+ * The selected row scrolls into view inside the table (a feature clicked on the map, or found on
+ * another page); `nearest` leaves a row already in view where it is.
+ */
+const showSelected = (row: HTMLTableRowElement | null) => { row?.scrollIntoView?.({ block: 'nearest' }); };
 const chipText = (c: ConditionView) => (c.needsValue ? `${c.fieldLabel} ${c.opLabel} ${c.value}` : `${c.fieldLabel} ${c.opLabel}`);
 
 /**
  * The table of one personal layer, docked under the map: the toolbar (counts, search, condition
- * chips, match, in view, close), the rows with their symbols, and the paging line. Read-only.
- * Its top edge drags to resize it between 20 % and 70 % of the map stage.
+ * chips, match, in view, zoom, close), the rows with their symbols, and the paging line. A row
+ * click (or Enter on a focused row) selects it. Its top edge drags to resize it between 20 % and
+ * 70 % of the map stage.
  */
 export function LayerTableView(p: Props) {
   const [height, setHeight] = useState(DOCK_DEFAULT);
@@ -156,6 +170,7 @@ export function LayerTableView(p: Props) {
           Chỉ trong khung nhìn
         </label>
         <span className="layer-table-actions">
+          <Button size="sm" variant="quiet" disabled={!p.canZoom} onClick={p.onZoom}>Phóng tới</Button>
           <Button size="sm" onClick={p.onClose}>Đóng</Button>
         </span>
       </div>
@@ -179,6 +194,8 @@ export function LayerTableView(p: Props) {
           />
         </div>
       )}
+
+      {p.selectedOutsideFilter && <p className="layer-table-note" role="status">Đối tượng này không khớp bộ lọc</p>}
 
       <div className="layer-table-scroll">
         <table className={p.loading ? 'layer-table-grid loading' : 'layer-table-grid'} aria-label={p.title} aria-busy={p.loading}>
@@ -204,7 +221,19 @@ export function LayerTableView(p: Props) {
           </thead>
           <tbody>
             {p.rows.map((r) => (
-              <tr key={r.id}>
+              <tr
+                key={r.id}
+                ref={r.id === p.selectedId ? showSelected : undefined}
+                className={r.id === p.selectedId ? 'layer-table-row selected' : 'layer-table-row'}
+                aria-selected={r.id === p.selectedId}
+                tabIndex={0}
+                onClick={() => p.onSelectRow(r.id)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  e.preventDefault();
+                  p.onSelectRow(r.id);
+                }}
+              >
                 <td className="layer-table-symbol">
                   {r.symbol && <img src={r.symbol} alt="" width={20} height={16} />}
                 </td>

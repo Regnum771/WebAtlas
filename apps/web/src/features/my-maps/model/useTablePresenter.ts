@@ -3,10 +3,12 @@ import { LAYER_GEOMETRY, type OgcGeometryType } from '@webatlas/shared';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import type { GeometryType, LayerSummary, TableColumn, TableCondition, TableRow } from '../api/workspace.api';
 import { columnLabel } from './columnLabel';
-import { viewExtent4326, watchViewExtent4326 } from './personalLayers';
+import {
+  clearRing, fitToExtent4326, ringExtent4326, ringFeature, viewExtent4326, watchViewExtent4326,
+} from './personalLayers';
 import { editCopyKey, symbolDataUrl } from './personalStyle';
 import { useMapDetail } from './queries';
-import { closeTable, emptyFilter, setFilter, useTableStore, type TableFilter } from './table.store';
+import { closeTable, emptyFilter, select, setFilter, useTableStore, type TableFilter } from './table.store';
 import { DEBOUNCE_MS, TABLE_LOAD_ERROR, TABLE_PAGE_SIZE, useTableQuery } from './useTableQuery';
 
 export type ColumnType = TableColumn['type'];
@@ -105,20 +107,86 @@ function useViewExtent(): Extent | null {
   return extent;
 }
 
+/** The union of EPSG:4326 boxes, or null when there are none. */
+function unionOf(boxes: Extent[]): Extent | null {
+  if (boxes.length === 0) return null;
+  return boxes.reduce<Extent>(
+    (u, b) => [Math.min(u[0], b[0]), Math.min(u[1], b[1]), Math.max(u[2], b[2]), Math.max(u[3], b[3])],
+    [...boxes[0]],
+  );
+}
+
+/** What a filter selects (not which page): the hidden-by-filter note holds only while it stays the same. */
+const filterKey = (f: TableFilter) => JSON.stringify([f.q, f.conditions, f.match, f.inView, f.sort]);
+
+interface Target { layerId: string; id: string }
+
 /**
  * The docked table of one personal layer: its toolbar (search, conditions, match, in view), its
- * columns and rows with their symbols, sorting and paging. Filtering, sorting and paging run on
- * the server (useTableQuery); this shapes the answer for the view and turns clicks into store
- * changes.
+ * columns and rows with their symbols, sorting and paging, and the selected feature. Filtering,
+ * sorting and paging run on the server (useTableQuery); this shapes the answer for the view and
+ * turns clicks into store changes.
+ *
+ * Selection works both ways. A row click selects it; a click on the table's layer on the map
+ * selects that feature too (usePersonalPopupPresenter). Either way the feature is ringed on the
+ * map, which does not move. A feature selected off the current page is located: the table asks
+ * for its position and shows its page, or the note that the filter hides it.
  */
 export function useTablePresenter() {
-  const { open, byLayer } = useTableStore();
+  const { map } = useMapContext();
+  const { open, byLayer, selectedId } = useTableStore();
   const filter: TableFilter = open ? (byLayer[open.layerId] ?? emptyFilter()) : emptyFilter();
+  const layerId = open?.layerId ?? null;
   const detail = useMapDetail(open?.mapId ?? null);
   const layer = detail.data?.layers.find((l) => l.id === open?.layerId) ?? null;
   const extent = useViewExtent();
-  const query = useTableQuery(extent);
+
+  // The feature to locate: one newly selected that is not among the rows on screen. Decided when
+  // the selection changes, never when the rows do, so paging away from a selection stays put.
+  const [locating, setLocating] = useState<Target | null>(null);
+  const selection: Target | null = selectedId && layerId ? { layerId, id: selectedId } : null;
+  const [lastSelected, setLastSelected] = useState<Target | null>(null);
+  const [hidden, setHidden] = useState<(Target & { filter: string }) | null>(null);
+  const query = useTableQuery(extent, locating && locating.layerId === layerId ? locating.id : null);
   const data = query.data;
+  if (lastSelected?.id !== selection?.id || lastSelected?.layerId !== selection?.layerId) {
+    setLastSelected(selection);
+    const onScreen = data?.rows.some((r) => r.id === selection?.id) ?? false;
+    setLocating(selection && !onScreen ? selection : null);
+  }
+
+  // The located answer: show the feature's page, or note that the filter hides it.
+  const located = query.located;
+  const locatingId = locating?.id ?? null;
+  const pageNow = filter.page;
+  const key = filterKey(filter);
+  useEffect(() => {
+    if (!located || located.id !== locatingId || !layerId) return;
+    setLocating(null);
+    if (located.position === null) {
+      setHidden({ layerId, id: located.id, filter: key });
+      return;
+    }
+    setHidden(null);
+    const target = Math.floor(located.position / TABLE_PAGE_SIZE);
+    if (target !== pageNow) setFilter({ page: target });
+  }, [located, locatingId, layerId, pageNow, key]);
+  // A failed locate is not retried with every later query: the selection simply stays.
+  const failed = query.error !== null;
+  useEffect(() => {
+    if (failed) setLocating(null);
+  }, [failed]);
+
+  // The ring follows the selection; the table closing takes it off.
+  useEffect(() => {
+    if (!map) return undefined;
+    if (layerId && selectedId) ringFeature(map, layerId, selectedId);
+    else clearRing(map);
+    return () => clearRing(map);
+  }, [map, layerId, selectedId]);
+
+  const selectedOutsideFilter = hidden !== null && hidden.id === selectedId && hidden.layerId === layerId
+    && hidden.filter === key;
 
   const columns: TableColumnView[] = useMemo(
     () => (layer && data ? data.columns.map((c) => ({ name: c.name, label: columnLabel(layer, c.name), type: c.type })) : []),
@@ -162,6 +230,20 @@ export function useTablePresenter() {
 
   const setConditions = (next: TableCondition[]) => setFilter({ conditions: next });
 
+  // Phóng tới: the selected row's box; a selection without a row here (the filter hides it) is
+  // fitted from its ring; nothing selected, every row on the page.
+  const selectedRow = selectedId === null ? null : (data?.rows.find((r) => r.id === selectedId) ?? null);
+  const zoomExtent = (): Extent | null => {
+    if (!map) return null;
+    if (selectedRow?.bbox) return selectedRow.bbox;
+    if (selectedId !== null && !selectedRow) {
+      const ring = ringExtent4326(map);
+      if (ring) return ring;
+    }
+    return unionOf((data?.rows ?? []).flatMap((r) => (r.bbox ? [r.bbox] : [])));
+  };
+  const canZoom = map !== null && (selectedId !== null || (data?.rows ?? []).some((r) => r.bbox !== null));
+
   return {
     header: { title: layer?.title ?? '', total: data?.total ?? null, matched: data?.matched ?? null },
     columns,
@@ -177,6 +259,10 @@ export function useTablePresenter() {
     isOwner: detail.data?.role === 'owner',
     canAddCondition: columns.length > 0 && filter.conditions.length < MAX_CONDITIONS,
     operatorsFor,
+    selectedId,
+    /** The selected feature does not match the filter: the view notes it above the rows. */
+    selectedOutsideFilter,
+    canZoom,
 
     setSearch: (q: string) => setFilter({ q }),
     addCondition: () => {
@@ -207,6 +293,12 @@ export function useTablePresenter() {
     next: () => { if (page.canNext) setFilter({ page: index + 1 }); },
     retry: () => { void query.refetch(); },
     close: closeTable,
+    /** Selects a row; the effect above rings it. The map does not move. */
+    selectRow: (id: string) => select(id),
+    zoomToSelection: () => {
+      const target = zoomExtent();
+      if (map && target) fitToExtent4326(map, target);
+    },
   };
 }
 

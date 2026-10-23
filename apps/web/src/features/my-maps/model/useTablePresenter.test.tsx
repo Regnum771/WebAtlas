@@ -14,12 +14,22 @@ const MAP = { on: vi.fn(), un: vi.fn() };
 vi.mock('../../../app/providers/MapProvider', () => ({ useMapContext: () => ({ map: MAP }) }));
 /** The extent watcher's callback: a test plays moveend events through it. */
 const view = vi.hoisted(() => ({ onChange: null as null | ((extent: [number, number, number, number]) => void) }));
+const ol = vi.hoisted(() => ({
+  ringFeature: vi.fn(),
+  clearRing: vi.fn(),
+  fitToExtent4326: vi.fn(),
+  ringExtent4326: vi.fn((): [number, number, number, number] | null => null),
+}));
 vi.mock('./personalLayers', () => ({
   viewExtent4326: () => [100, 10, 101, 11],
   watchViewExtent4326: (_map: unknown, onChange: (extent: [number, number, number, number]) => void) => {
     view.onChange = onChange;
     return () => { view.onChange = null; };
   },
+  ringFeature: (...a: unknown[]) => ol.ringFeature(...a),
+  clearRing: (...a: unknown[]) => ol.clearRing(...a),
+  fitToExtent4326: (...a: unknown[]) => ol.fitToExtent4326(...a),
+  ringExtent4326: (...a: unknown[]) => ol.ringExtent4326(...(a as [])),
 }));
 const symbolDataUrl = vi.fn(
   (layer: LayerSummary, properties: Record<string, unknown>, geometryType: string) =>
@@ -31,7 +41,7 @@ vi.mock('./personalStyle', () => ({
 }));
 
 import { useTablePresenter } from './useTablePresenter';
-import { getTableState, openTable, resetTableStore } from './table.store';
+import { getTableState, openTable, resetTableStore, select } from './table.store';
 
 const LAYER: LayerSummary = {
   id: 'l1', kind: 'free', title: 'Điểm đo', position: 0, style: {}, geometryType: 'point', fields: [],
@@ -41,16 +51,19 @@ const DETAIL = {
   id: 'm1', title: 'Lũ', description: '', ownerId: 'u1', ownerName: 'Tôi', revision: 1,
   updatedAt: '2026-10-01T00:00:00Z', layerCount: 1, role: 'owner', layers: [LAYER],
 };
-const answer = (matched: number, offset = 0): LayerQueryResponse => ({
+/** Row n (1-based) sits at longitude 108 + n / 1000. */
+const bboxOf = (n: number): [number, number, number, number] => [108 + n / 1000, 16, 108 + n / 1000, 16];
+/** Ids 1..matched in order; `locate` finds an id among them (its position), else null. */
+const answer = (matched: number, offset = 0, locate?: string): LayerQueryResponse => ({
   columns: [{ name: 'ten', type: 'text' }, { name: 'cong_suat', type: 'number' }],
   total: 151,
   matched,
   rows: Array.from({ length: Math.min(100, matched - offset) }, (_, i) => ({
     id: String(offset + i + 1),
     properties: { ten: `Trạm ${offset + i + 1}`, cong_suat: i, ghi_chu: null },
-    bbox: [108, 16, 108, 16] as [number, number, number, number],
+    bbox: bboxOf(offset + i + 1),
   })),
-  position: null,
+  position: locate !== undefined && Number(locate) >= 1 && Number(locate) <= matched ? Number(locate) - 1 : null,
 });
 
 function setup() {
@@ -63,9 +76,13 @@ const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms
 beforeEach(() => {
   vi.useFakeTimers();
   getMap.mockReset().mockResolvedValue(DETAIL);
-  queryLayer.mockReset().mockImplementation((_m: string, _l: string, body: { offset: number }) =>
-    Promise.resolve(answer(250, body.offset)));
+  queryLayer.mockReset().mockImplementation((_m: string, _l: string, body: { offset: number; locate?: string }) =>
+    Promise.resolve(answer(250, body.offset, body.locate)));
   symbolDataUrl.mockClear();
+  ol.ringFeature.mockClear();
+  ol.clearRing.mockClear();
+  ol.fitToExtent4326.mockClear();
+  ol.ringExtent4326.mockReset().mockReturnValue(null);
   resetTableStore();
   openTable('m1', 'l1');
 });
@@ -190,5 +207,110 @@ describe('useTablePresenter', () => {
     expect(queryLayer.mock.calls.at(-1)![2].bbox).toEqual([100, 9.4, 101, 11]);
     await flush(1000);
     expect(queryLayer.mock.calls.length).toBe(before + 1);
+  });
+});
+
+describe('useTablePresenter: selection', () => {
+  const located = () => queryLayer.mock.calls.filter((c) => (c[2] as { locate?: string }).locate !== undefined);
+
+  it('a row click selects and rings without moving the map', async () => {
+    const { result, unmount } = setup();
+    await flush(10);
+    act(() => result.current.selectRow('5'));
+    expect(getTableState().selectedId).toBe('5');
+    expect(result.current.selectedId).toBe('5');
+    expect(ol.ringFeature).toHaveBeenLastCalledWith(MAP, 'l1', '5');
+    await flush(10);
+    expect(ol.fitToExtent4326).not.toHaveBeenCalled();
+    // The row is on the page: nothing to locate.
+    expect(located()).toEqual([]);
+    expect(result.current.selectedOutsideFilter).toBe(false);
+    // The table closing takes the ring off.
+    unmount();
+    expect(ol.clearRing).toHaveBeenCalledWith(MAP);
+  });
+
+  it("a map click on the table's layer rings its row; one on the page is not located", async () => {
+    const { result } = setup();
+    await flush(10);
+    // As usePersonalPopupPresenter does for a click on the table's layer.
+    act(() => select('42'));
+    await flush(10);
+    expect(ol.ringFeature).toHaveBeenLastCalledWith(MAP, 'l1', '42');
+    expect(result.current.selectedId).toBe('42');
+    expect(located()).toEqual([]);
+    expect(result.current.page.index).toBe(0);
+  });
+
+  it('a feature on another page is located and its page shown', async () => {
+    const { result } = setup();
+    await flush(10);
+    act(() => select('180'));
+    await flush(10);
+    expect(located()).toHaveLength(1);
+    expect(located()[0][2]).toMatchObject({ locate: '180', offset: 0 });
+    await flush(10);
+    // Position 179 is on the second page (floor(179 / 100) = 1).
+    expect(getTableState().byLayer.l1.page).toBe(1);
+    expect(result.current.page).toMatchObject({ index: 1, from: 101, to: 200 });
+    expect(queryLayer.mock.calls.at(-1)![2]).toMatchObject({ offset: 100 });
+    expect(queryLayer.mock.calls.at(-1)![2].locate).toBeUndefined();
+    expect(result.current.rows.some((r) => r.id === '180')).toBe(true);
+    expect(result.current.selectedOutsideFilter).toBe(false);
+    expect(ol.ringFeature).toHaveBeenLastCalledWith(MAP, 'l1', '180');
+
+    // Paging away keeps the selection and does not jump back to it.
+    act(() => result.current.next());
+    await flush(10);
+    expect(result.current.page.index).toBe(2);
+    expect(located()).toHaveLength(1);
+    expect(getTableState().selectedId).toBe('180');
+  });
+
+  it('a feature hidden by the filter shows the note', async () => {
+    const { result } = setup();
+    await flush(10);
+    act(() => select('999'));
+    await flush(10);
+    await flush(10);
+    expect(located()).toHaveLength(1);
+    expect(result.current.selectedOutsideFilter).toBe(true);
+    // The page stays where it was; the feature stays selected and ringed.
+    expect(result.current.page.index).toBe(0);
+    expect(getTableState().selectedId).toBe('999');
+    expect(ol.ringFeature).toHaveBeenLastCalledWith(MAP, 'l1', '999');
+    // Selecting a row on the page clears the note.
+    act(() => result.current.selectRow('3'));
+    expect(result.current.selectedOutsideFilter).toBe(false);
+  });
+
+  it("Phóng tới fits the selection's bbox", async () => {
+    const { result } = setup();
+    await flush(10);
+    // Nothing selected: every row on the page.
+    expect(result.current.canZoom).toBe(true);
+    act(() => result.current.zoomToSelection());
+    expect(ol.fitToExtent4326).toHaveBeenLastCalledWith(MAP, [108.001, 16, 108.1, 16]);
+
+    act(() => result.current.selectRow('5'));
+    act(() => result.current.zoomToSelection());
+    expect(ol.fitToExtent4326).toHaveBeenLastCalledWith(MAP, bboxOf(5));
+
+    // A selection the filter hides has no row: the ring on the map gives its extent.
+    ol.ringExtent4326.mockReturnValue([107, 15, 107.5, 15.5]);
+    act(() => select('999'));
+    await flush(10);
+    await flush(10);
+    act(() => result.current.zoomToSelection());
+    expect(ol.fitToExtent4326).toHaveBeenLastCalledWith(MAP, [107, 15, 107.5, 15.5]);
+  });
+
+  it('Phóng tới is off while there is nothing to fit', async () => {
+    queryLayer.mockImplementation(() => Promise.resolve(answer(0)));
+    const { result } = setup();
+    await flush(10);
+    expect(result.current.canZoom).toBe(false);
+    act(() => result.current.zoomToSelection());
+    expect(ol.fitToExtent4326).not.toHaveBeenCalled();
   });
 });

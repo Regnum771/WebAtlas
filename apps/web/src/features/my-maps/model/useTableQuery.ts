@@ -44,7 +44,11 @@ function useDebouncedFilter(layerId: string | null, filter: TableFilter): TableF
   return { ...filter, q, conditions, page: settled.page };
 }
 
-export function useTableQuery(viewExtent4326: Extent | null) {
+/**
+ * `locate`: a feature id whose position in the filtered, sorted list is wanted; the answer for it
+ * comes back as `located` (position null when the filter hides it).
+ */
+export function useTableQuery(viewExtent4326: Extent | null, locate: string | null = null) {
   const qc = useQueryClient();
   const { open, byLayer } = useTableStore();
   const mapId = open?.mapId ?? '';
@@ -62,6 +66,7 @@ export function useTableQuery(viewExtent4326: Extent | null) {
   if (debounced.q) body.q = debounced.q;
   if (extent) body.bbox = extent;
   if (debounced.sort) body.sort = debounced.sort;
+  if (locate !== null) body.locate = locate;
 
   // Keyed on the request itself: a change that sends nothing new (a condition still without its
   // value) asks nothing.
@@ -82,6 +87,10 @@ export function useTableQuery(viewExtent4326: Extent | null) {
 
   const err = query.error;
   const error = err === null ? null : err instanceof ApiError && err.status === 400 ? err.message : TABLE_LOAD_ERROR;
+  // Only this request's own answer locates: a placeholder is the previous request's.
+  const located = locate !== null && query.data && !query.isPlaceholderData
+    ? { id: locate, position: query.data.position }
+    : null;
   // page: the page the query asks for; while typing settles it stays the page on screen.
-  return { data: query.data, page: debounced.page, loading: query.isFetching, error, refetch: query.refetch };
+  return { data: query.data, page: debounced.page, loading: query.isFetching, error, refetch: query.refetch, located };
 }

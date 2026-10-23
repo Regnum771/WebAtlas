@@ -1082,6 +1082,16 @@ body {
 .layer-table-grid.loading tbody { opacity: 0.5; }
 .layer-table-sort { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; }
 .layer-table-grid .layer-table-symbol { width: 1%; padding: 2px var(--space-2); }
+/* Rows select on click; a row scrolled into view clears the sticky header. */
+.layer-table-row { cursor: pointer; scroll-margin-top: 32px; }
+.layer-table-row:hover td { background: var(--paper); }
+.layer-table-row:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+/* The selection matches its ring on the map: the same yellow. */
+.layer-table-row.selected td { background: var(--mark); }
+.layer-table-note {
+  margin: 0; padding: 6px var(--space-3); border-bottom: 1px solid var(--rule);
+  background: var(--paper); color: var(--ink); font-size: var(--text-xs); font-weight: 600;
+}
 .layer-table-symbol img { display: block; }
 .layer-table-paging {
   display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2);

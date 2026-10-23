@@ -55,6 +55,11 @@ function props(over: Partial<Props> = {}): Props {
     onPrev: vi.fn(),
     onNext: vi.fn(),
     onClose: vi.fn(),
+    selectedId: null,
+    selectedOutsideFilter: false,
+    canZoom: true,
+    onSelectRow: vi.fn(),
+    onZoom: vi.fn(),
     ...over,
   };
 }
@@ -117,6 +122,32 @@ describe('LayerTableView', () => {
     rerender(<LayerTableView {...p} conditions={[...p.conditions, { ...p.conditions[1], op: 'contains', opLabel: 'chứa', needsValue: true }]} />);
     // The new condition's editor is open, its value box ready.
     expect(within(screen.getByRole('group', { name: 'Điều kiện' })).getByRole('textbox', { name: 'Giá trị' })).toHaveValue('');
+  });
+
+  it('a row click selects it; the selected row is marked; Phóng tới zooms', async () => {
+    const p = props({ selectedId: '2' });
+    render(<LayerTableView {...p} />);
+    const rowOf = (name: string) => screen.getByRole('cell', { name }).closest('tr')!;
+    expect(rowOf('Đập B')).toHaveAttribute('aria-selected', 'true');
+    expect(rowOf('Đập A')).toHaveAttribute('aria-selected', 'false');
+    await userEvent.click(screen.getByRole('cell', { name: 'Đập A' }));
+    expect(p.onSelectRow).toHaveBeenCalledWith('1');
+    // From the keyboard too.
+    rowOf('Đập A').focus();
+    await userEvent.keyboard('{Enter}');
+    expect(p.onSelectRow).toHaveBeenCalledTimes(2);
+    await userEvent.click(screen.getByRole('button', { name: 'Phóng tới' }));
+    expect(p.onZoom).toHaveBeenCalled();
+    expect(screen.queryByText('Đối tượng này không khớp bộ lọc')).toBeNull();
+  });
+
+  it('a selection the filter hides shows the note above the rows; Phóng tới can be off', () => {
+    const { container } = render(<LayerTableView {...props({ selectedId: '9', selectedOutsideFilter: true, canZoom: false })} />);
+    const note = screen.getByText('Đối tượng này không khớp bộ lọc');
+    const table = container.querySelector('table')!;
+    // The note comes before the rows.
+    expect(note.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Phóng tới' })).toBeDisabled();
   });
 
   it('loading keeps the rows faded; a network error offers Thử lại', async () => {
