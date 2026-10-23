@@ -13,6 +13,7 @@ const QuanLyRoute = lazy(() => import('../pages/quan-ly'));
 const NhomQuyen = lazy(() => import('../pages/quan-ly/sections/NhomQuyen'));
 const NguoiDung = lazy(() => import('../pages/quan-ly/sections/NguoiDung'));
 const ChuaGan = lazy(() => import('../pages/quan-ly/sections/ChuaGan'));
+const BanDoCaNhan = lazy(() => import('../pages/quan-ly/sections/BanDoCaNhan'));
 
 const loading = (
   <div className="quan-ly-route"><Spinner label="Đang tải…" /></div>
@@ -40,6 +41,7 @@ function App() {
               <Route path="nhom-quyen" element={<Suspense fallback={loading}><NhomQuyen /></Suspense>} />
               <Route path="nguoi-dung" element={<Suspense fallback={loading}><NguoiDung /></Suspense>} />
               <Route path="chua-gan" element={<Suspense fallback={loading}><ChuaGan /></Suspense>} />
+              <Route path="ban-do-ca-nhan" element={<Suspense fallback={loading}><BanDoCaNhan /></Suspense>} />
             </Route>
           </Routes>
         </div>

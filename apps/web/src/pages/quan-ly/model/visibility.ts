@@ -23,5 +23,8 @@ export const canSeeUsers = (user: User, can: CanFn): boolean =>
 export const canSeeUnassigned = (user: User, can: CanFn): boolean =>
   user !== null && (user.isAdmin || (can('feature.update', COUNTRY_UNIT) && can('submission.review', COUNTRY_UNIT)));
 
+/** Bản đồ cá nhân: admin only (usage and quotas of every user). */
+export const canSeeBanDoCaNhan = (user: User, _can: CanFn): boolean => user?.isAdmin === true;
+
 export const canSeeQuanLy = (user: User, can: CanFn): boolean =>
   canSeeGroups(user, can) || canSeeUsers(user, can) || canSeeUnassigned(user, can);

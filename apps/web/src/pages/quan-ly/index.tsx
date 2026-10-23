@@ -5,7 +5,7 @@ import { useUnitTreeStatus } from '../../entities/session/model/useUnitTree';
 import { Button } from '../../shared/ui/Button';
 import { Message } from '../../shared/ui/Message';
 import { Spinner } from '../../shared/ui/Spinner';
-import { canSeeGroups, canSeeUnassigned, canSeeUsers } from './model/visibility';
+import { canSeeBanDoCaNhan, canSeeGroups, canSeeUnassigned, canSeeUsers } from './model/visibility';
 
 const UNASSIGNED = '/quan-ly/chua-gan';
 
@@ -13,6 +13,7 @@ const ITEMS = [
   { to: '/quan-ly/nhom-quyen', label: 'Nhóm quyền', visible: canSeeGroups },
   { to: '/quan-ly/nguoi-dung', label: 'Người dùng', visible: canSeeUsers },
   { to: UNASSIGNED, label: 'Đơn vị chưa gán', visible: canSeeUnassigned },
+  { to: '/quan-ly/ban-do-ca-nhan', label: 'Bản đồ cá nhân', visible: canSeeBanDoCaNhan },
 ] as const;
 
 // UX gate ONLY. A forced render still gets 401/403 from every API call behind it.

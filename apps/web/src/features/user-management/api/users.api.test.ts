@@ -51,3 +51,11 @@ describe('setUserGroups', () => {
     expect(JSON.parse(init.body)).toEqual({ groupIds: ['g1', 'g2'] });
   });
 });
+
+describe('updateUser quota', () => {
+  it('sends quotaBytes in the body', async () => {
+    mockApi.mockResolvedValue({ user: { id: 'u1' } });
+    await updateUser('u1', { quotaBytes: 2684354560 });
+    expect(JSON.parse(mockApi.mock.calls[0][1].body)).toEqual({ quotaBytes: 2684354560 });
+  });
+});

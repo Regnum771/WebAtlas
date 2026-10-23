@@ -13,7 +13,7 @@ export interface AdminUser {
 }
 
 export interface CreateUserInput { email: string; password: string; full_name?: string; role: Role; }
-export interface UpdateUserPatch { full_name?: string | null; role?: Role; is_active?: boolean; }
+export interface UpdateUserPatch { full_name?: string | null; role?: Role; is_active?: boolean; quotaBytes?: number; }
 
 export function listUsers(): Promise<AdminUser[]> {
   return apiRequest<{ users: AdminUser[] }>('/api/users').then((r) => r.users);

@@ -36,6 +36,7 @@ const renderAt = (path: string) =>
           <Route path="nhom-quyen" element={<div>SEC_NHOM</div>} />
           <Route path="nguoi-dung" element={<div>SEC_NGUOI</div>} />
           <Route path="chua-gan" element={<div>SEC_CHUA</div>} />
+          <Route path="ban-do-ca-nhan" element={<div>SEC_BDCN</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -72,10 +73,10 @@ describe('QuanLyRoute', () => {
     expect(screen.getByText('Không tải được danh sách đơn vị hành chính.')).toBeInTheDocument();
   });
 
-  it('shows all three sub-nav items to admin and lands on Nhóm quyền', () => {
+  it('shows all four sub-nav items to admin and lands on Nhóm quyền', () => {
     mock = signedIn(true);
     renderAt('/quan-ly');
-    expect(links()).toEqual(['Nhóm quyền', 'Người dùng', 'Đơn vị chưa gán']);
+    expect(links()).toEqual(['Nhóm quyền', 'Người dùng', 'Đơn vị chưa gán', 'Bản đồ cá nhân']);
     expect(screen.getByText('SEC_NHOM')).toBeInTheDocument();
   });
 
@@ -143,5 +144,18 @@ describe('QuanLyRoute', () => {
     mock = { status: 'authenticating', currentUser: null };
     renderAt('/quan-ly/nguoi-dung');
     expect(screen.queryByText('MAP_HOME')).toBeNull();
+  });
+
+  it('the nav entry and the route are admin-only', () => {
+    mock = signedIn(true);
+    const { unmount } = renderAt('/quan-ly/ban-do-ca-nhan');
+    expect(links()).toContain('Bản đồ cá nhân');
+    expect(screen.getByText('SEC_BDCN')).toBeInTheDocument();
+    unmount();
+    mock = signedIn(false, { permission: 'users.manage', unit: '48' });
+    renderAt('/quan-ly/ban-do-ca-nhan');
+    expect(links()).toEqual(['Người dùng']);
+    expect(screen.queryByText('SEC_BDCN')).toBeNull();
+    expect(screen.getByText('SEC_NGUOI')).toBeInTheDocument();
   });
 });
