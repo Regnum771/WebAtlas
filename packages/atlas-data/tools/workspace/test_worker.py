@@ -21,6 +21,10 @@ sys.path.insert(0, str(HERE))
 
 import jobs_db  # noqa: E402
 import worker  # noqa: E402
+import workspace_common  # noqa: E402
+
+import psycopg2  # noqa: E402
+import psycopg2.errors  # noqa: E402
 
 failures = []
 
@@ -256,6 +260,64 @@ try:
 
     err = worker.UserFacingError("Y")
     check("UserFacingError carries user_message", err.user_message == "Y" and str(err) == "Y")
+
+    # --- the quota check locks the owner's user row, as uploads do
+    locker = jobs_db.connect()
+    try:
+        with locker.cursor() as cur:
+            cur.execute("SELECT 1 FROM app.users WHERE id = %s FOR UPDATE", (user_id,))
+        waited = False
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET LOCAL lock_timeout = '300ms'")
+                workspace_common.finish_map_write(cur, map_id, user_id)
+        except psycopg2.errors.LockNotAvailable:
+            waited = True
+        check("finish_map_write waits for the owner's user row lock before checking the quota", waited)
+    finally:
+        conn.rollback()
+        locker.rollback()
+        locker.close()
+
+    # --- the store root: empty is unset, relative is refused
+    saved_root = os.environ.get("WORKSPACE_FILES_DIR")
+    try:
+        os.environ["WORKSPACE_FILES_DIR"] = ""
+        check("an empty WORKSPACE_FILES_DIR means the default, not the working directory",
+              str(workspace_common.store_root()) == workspace_common.DEFAULT_STORE_ROOT)
+        os.environ["WORKSPACE_FILES_DIR"] = "var/workspace-files"
+        try:
+            workspace_common.store_root()
+            refused = False
+        except RuntimeError as e:
+            refused = "absolute" in str(e)
+        check("a relative WORKSPACE_FILES_DIR is refused", refused)
+
+        # The worker refuses it at start, before it connects (connect is replaced so nothing is claimed).
+        real_connect = jobs_db.connect
+        connected = []
+
+        def no_connect(*args, **kwargs):
+            connected.append(1)
+            raise AssertionError("connected")
+
+        jobs_db.connect = no_connect
+        try:
+            worker.main(["--once"])
+            started = "returned"
+        except RuntimeError as e:
+            started = "refused" if "absolute" in str(e) else repr(e)
+        except AssertionError:
+            started = "connected"
+        finally:
+            jobs_db.connect = real_connect
+        check("the worker refuses a relative WORKSPACE_FILES_DIR before connecting",
+              started == "refused" and connected == [])
+    finally:
+        if saved_root is None:
+            os.environ.pop("WORKSPACE_FILES_DIR", None)
+        else:
+            os.environ["WORKSPACE_FILES_DIR"] = saved_root
 
     # --- worker.py loads however it is launched: no import cycle, one `worker` module
     # Compose runs `python3 packages/.../worker.py` from /repo, so sys.path[0] is the script's directory.

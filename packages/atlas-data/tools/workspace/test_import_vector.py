@@ -380,6 +380,30 @@ try:
     check("an import over the quota fails with the exact copy", row["status"] == "failed" and row["error"] == MSG_QUOTA)
     check("an import over the quota writes nothing", layers(map_id) == [] and revision(map_id) == rev0)
 
+    # --- an archived map's original imported again: only a successful import clears its date
+    def upload_row(owner):
+        """A workspace.files upload row expiring in 30 days (an archived map's original)."""
+        return q(
+            """INSERT INTO workspace.files (owner_id, kind, path, original_name, content_type, size_bytes, delete_after)
+               VALUES (%s, 'upload', %s, 'ho_chua.geojson', 'application/geo+json', 1, now() + interval '30 days')
+               RETURNING id::text""",
+            (owner, f"uploads/{owner}/{uuid.uuid4()}/original.geojson"),
+        )[0][0]
+
+    def delete_after(file_id):
+        return q("SELECT delete_after FROM workspace.files WHERE id = %s", (file_id,))[0][0]
+
+    # The quota check fails this one: the date is kept, so the sweep removes the file when due.
+    failed_file = upload_row(user_id)
+    row = run_import(user_id, map_id, "ho_chua.geojson", "ho_chua.geojson", fileId=failed_file)
+    check("a failed import keeps its upload's delete_after",
+          row["status"] == "failed" and delete_after(failed_file) is not None)
+    user_id, map_id = new_map("keep")
+    kept_file = upload_row(user_id)
+    row = run_import(user_id, map_id, "ho_chua.geojson", "ho_chua.geojson", fileId=kept_file)
+    check("a successful import clears its upload's delete_after (it feeds a live map again)",
+          row["status"] == "succeeded" and delete_after(kept_file) is None)
+
     # --- a zip is read in place; unsafe entries are ignored
     user_id, map_id = new_map("zip")
     files = shapefile("an_toan", gpd.GeoDataFrame({"ten": ["ok"]}, geometry=[Point(108, 16)], crs=4326))

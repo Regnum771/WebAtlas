@@ -64,9 +64,19 @@ configure_gdal()
 
 # --- the file store, errors and copy ---------------------------------------------------------
 
+DEFAULT_STORE_ROOT = "/repo/var/workspace-files"
+
+
 def store_root() -> pathlib.Path:
-    """The file store root, shared with the API (WORKSPACE_FILES_DIR)."""
-    return pathlib.Path(os.environ.get("WORKSPACE_FILES_DIR", "/repo/var/workspace-files"))
+    """
+    The file store root, shared with the API (WORKSPACE_FILES_DIR). As in the API (config/env.ts),
+    an empty value counts as unset (pathlib.Path("") would be the working directory, the mounted
+    repository) and a relative one is refused: it would follow the working directory.
+    """
+    root = os.environ.get("WORKSPACE_FILES_DIR") or DEFAULT_STORE_ROOT
+    if not os.path.isabs(root):
+        raise RuntimeError(f"WORKSPACE_FILES_DIR must be an absolute path, not {root!r}")
+    return pathlib.Path(root)
 
 
 class UserFacingError(Exception):
@@ -163,8 +173,11 @@ def lock_owned_map(cur, map_id, owner_id) -> int:
 
 def finish_map_write(cur, map_id, owner_id):
     """Bump the map's revision once, then fail with OVER_QUOTA if the owner's usage, with
-    everything this job wrote, is over their quota."""
+    everything this job wrote, is over their quota. The owner's user row is locked first, as
+    uploads (uploads.ts) and map copies do, so concurrent writers for one owner check the quota one
+    at a time; the map is already locked (lock_owned_map), so the order is map, then user."""
     cur.execute("SELECT workspace.bump_map(%s)", (map_id,))
+    cur.execute("SELECT 1 FROM app.users WHERE id = %s FOR UPDATE", (owner_id,))
     cur.execute(
         "SELECT workspace.usage_bytes(id) > quota_bytes FROM app.users WHERE id = %s",
         (owner_id,),

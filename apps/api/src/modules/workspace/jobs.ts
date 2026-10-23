@@ -312,9 +312,15 @@ export function jobsService(pg: Pool) {
       if (role === null) throw new NotFoundError(MAP_NOT_FOUND);
       if (role !== 'owner') throw new ForbiddenError(OWNER_ONLY);
       return inTransaction(pg, async (client) => {
+        // Lock order map, user, file, as a running import takes them (worker.py: lock_owned_map,
+        // the quota check, then keep_imported_original). The job's foreign keys would otherwise
+        // take these KEY SHARE locks only after the file's, and deadlock with such an import.
+        await client.query(`SELECT 1 FROM workspace.maps WHERE id = $1 FOR KEY SHARE`, [mapId]);
+        await client.query(`SELECT 1 FROM app.users WHERE id = $1 FOR KEY SHARE`, [user.id]);
         // An upload whose delete_after has passed is gone, whether or not the sweep has removed
-        // it yet. The row lock keeps the sweep (cleanup.ts deleteExpiredFiles) from removing it
-        // while the job is queued.
+        // it yet. The row is locked until the job below is committed: the sweep
+        // (cleanup.ts deleteExpiredFiles) takes the same lock, then leaves alone an upload that a
+        // queued or running import reads.
         const { rows } = await client.query<{ path: string; original_name: string }>(
           `SELECT path, original_name FROM workspace.files
             WHERE id = $1 AND owner_id = $2 AND kind = 'upload'
@@ -324,11 +330,8 @@ export function jobsService(pg: Pool) {
         );
         if (!rows[0]) throw new NotFoundError(FILE_NOT_FOUND);
         // An original kept for 90 days after its map was archived (cleanup.ts
-        // markArchivedOriginals) is imported into a live map again: it no longer expires.
-        await client.query(
-          `UPDATE workspace.files SET delete_after = NULL WHERE id = $1 AND delete_after IS NOT NULL`,
-          [input.fileId]
-        );
+        // markArchivedOriginals) keeps its date here: the worker clears it only when this import
+        // succeeds (worker.py run_import), so a failed import does not keep the file for good.
         const params: ImportParams = {
           fileId: input.fileId,
           path: rows[0].path,

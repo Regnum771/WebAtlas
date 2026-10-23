@@ -124,13 +124,34 @@ RASTER_EXTENSIONS = (".tif", ".tiff")
 
 def run_import(conn: connection, job: dict, steps: Steps) -> dict:
     """The one `import` handler: dispatches on the upload's extension."""
-    ext = import_extension(job.get("params") or {})
+    params = job.get("params") or {}
+    ext = import_extension(params)
     if ext in VECTOR_EXTENSIONS:
-        return import_vector.run_import_vector(conn, job, steps)
-    if ext in RASTER_EXTENSIONS:
-        return import_raster.run_import_raster(conn, job, steps)
-    steps.start("read")
-    raise UserFacingError(UNSUPPORTED_FORMAT_MESSAGE)
+        result = import_vector.run_import_vector(conn, job, steps)
+    elif ext in RASTER_EXTENSIONS:
+        result = import_raster.run_import_raster(conn, job, steps)
+    else:
+        steps.start("read")
+        raise UserFacingError(UNSUPPORTED_FORMAT_MESSAGE)
+    keep_imported_original(conn, params.get("fileId"))
+    return result
+
+
+def keep_imported_original(conn: connection, file_id):
+    """
+    The upload now feeds a live map (the handler locked the map and found it not archived), so it
+    no longer expires: clear a delete_after that archiving another map set (cleanup.ts
+    markArchivedOriginals). In the job's transaction, so only a committed, successful import
+    clears it; a failed one leaves the date and the sweep removes the file when it is due.
+    """
+    if not isinstance(file_id, str):
+        return
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE workspace.files SET delete_after = NULL "
+            "WHERE id::text = %s AND kind = 'upload' AND delete_after IS NOT NULL",
+            (file_id,),
+        )
 
 
 def _beat(steps: Steps, stop: threading.Event):
@@ -199,6 +220,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="WebAtlas workspace import/export worker")
     parser.add_argument("--once", action="store_true", help="run at most one job, then exit")
     args = parser.parse_args(argv)
+    # Refuses a relative WORKSPACE_FILES_DIR before any job is claimed.
+    root = store_root()
     signal.signal(signal.SIGTERM, _on_sigterm)
 
     if args.once:
@@ -211,7 +234,7 @@ def main(argv=None) -> int:
             conn.close()
         return 0
 
-    print(f"worker started; store root {store_root()}", flush=True)
+    print(f"worker started; store root {root}", flush=True)
     conn = None
     last_stale_check = None
     while True:

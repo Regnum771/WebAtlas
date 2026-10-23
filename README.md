@@ -142,6 +142,20 @@ WORKER_E2E=1 npm run test -w @webatlas/api -- workerE2E            # bash
 $env:WORKER_E2E='1'; npm run test -w @webatlas/api -- workerE2E     # PowerShell
 ```
 
+### Workspace cleanup
+
+`npm run workspace:cleanup -w @webatlas/api` must be scheduled (daily is enough): nothing else removes expired
+files, so without it exports are never deleted after their 7 days. Each run notices inactive maps, discards orphan
+drafts and removes the files whose `delete_after` has passed (exports, an archived map's originals after 90 days,
+the COGs of deleted raster layers); it only ever deletes files that a `workspace.files` row names. `--archive` also
+archives noticed maps (not before P4 delivers the notices). Orphan files in the store (no row, older than 24 h: what a
+crash leaves) are handled only on request: `--reconcile` lists them (path, size, age) and deletes nothing;
+`--reconcile --apply` deletes them. Reconciliation refuses, deletes nothing and exits 1 when `WORKSPACE_FILES_DIR` is
+relative, when `workspace.files` has no rows at all, or when the orphans are more than 50 files or 20 % of the store's
+files; that usually means `DATABASE_URL` and `WORKSPACE_FILES_DIR` point at a database and a store that do not belong
+together. Check that first; `--force` lifts only the 50-file / 20 % guard. The API and the worker both refuse a
+relative `WORKSPACE_FILES_DIR` at start.
+
 ## API surface
 
 ```

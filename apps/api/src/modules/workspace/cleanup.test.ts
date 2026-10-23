@@ -14,7 +14,9 @@ import {
   adminSummary, archiveNoticed, ARCHIVE_AFTER_NOTICE_DAYS, deleteExpiredFiles, discardOrphanDrafts, INACTIVE_NOTICE_DAYS,
   markInactive, ORIGINALS_KEEP_DAYS, ORPHAN_DRAFT_GRACE_HOURS, reconcileStore,
 } from './cleanup';
-import { unlinkInStore } from './fileStore';
+import { parseCleanupArgs, runReconcile } from './cleanupCli';
+import { storeRoot, unlinkInStore } from './fileStore';
+import { workspaceFilesDir } from '../../config/env';
 
 // A fresh store under the OS temp directory for this file; the previous value is restored after.
 const previousStoreDir = process.env.WORKSPACE_FILES_DIR;
@@ -173,12 +175,14 @@ async function deleteAfterOf(fileId: string): Promise<Date | null | undefined> {
   );
   return rows[0]?.delete_after; // undefined: the row is gone
 }
-/** A finished import job of `owner` that read `fileId` into `mapId` (params as jobs.ts writes them). */
-async function addImportJob(owner: string, mapId: string, fileId: string) {
+/** An import job of `owner` that read `fileId` into `mapId` (params as jobs.ts writes them); succeeded by default. */
+async function addImportJob(
+  owner: string, mapId: string, fileId: string, status: 'queued' | 'running' | 'succeeded' | 'failed' = 'succeeded'
+) {
   await getPool().query(
     `INSERT INTO workspace.jobs (owner_id, map_id, kind, status, params)
-     VALUES ($1, $2, 'import', 'succeeded', $3)`,
-    [owner, mapId, JSON.stringify({ fileId, mapId, ownerId: owner })]
+     VALUES ($1, $2, 'import', $4, $3)`,
+    [owner, mapId, JSON.stringify({ fileId, mapId, ownerId: owner }), status]
   );
 }
 async function makeOwnedMap(owner: string, title: string, opts: { notice?: Date; archived?: Date } = {}): Promise<string> {
@@ -373,10 +377,18 @@ describe('file lifecycle', () => {
     const liveOnly = await addFile(owner(), 'upload'); // imported into the live map only
     const neverImported = await addFile(owner(), 'upload');
     const reimported = await addFile(owner(), 'upload'); // imported into the due map, imported again below
-    for (const f of [onlyDue, alsoLive, alsoArchived, reimported]) await addImportJob(owner(), due, f.id);
+    const failedLive = await addFile(owner(), 'upload'); // its import into the live map failed: marked
+    const queuedLive = await addFile(owner(), 'upload'); // an import into the live map is queued: kept
+    const failedDueOnly = await addFile(owner(), 'upload'); // only a failed import into the due map: not an original
+    for (const f of [onlyDue, alsoLive, alsoArchived, reimported, failedLive, queuedLive]) {
+      await addImportJob(owner(), due, f.id);
+    }
     await addImportJob(owner(), live, alsoLive.id);
     await addImportJob(owner(), archivedBefore, alsoArchived.id);
     await addImportJob(owner(), live, liveOnly.id);
+    await addImportJob(owner(), live, failedLive.id, 'failed');
+    await addImportJob(owner(), live, queuedLive.id, 'queued');
+    await addImportJob(owner(), due, failedDueOnly.id, 'failed');
 
     expect(await archiveNoticed(getPool(), NOW, lifecycleScope())).toBe(1);
     expect((await mapState(due)).archived_at).toEqual(NOW);
@@ -385,16 +397,29 @@ describe('file lifecycle', () => {
     expect(await deleteAfterOf(onlyDue.id)).toEqual(keepUntil);
     expect(await deleteAfterOf(alsoArchived.id)).toEqual(keepUntil);
     expect(await deleteAfterOf(reimported.id)).toEqual(keepUntil);
+    expect(await deleteAfterOf(failedLive.id)).toEqual(keepUntil);
     expect(await deleteAfterOf(alsoLive.id)).toBeNull();
+    expect(await deleteAfterOf(queuedLive.id)).toBeNull();
     expect(await deleteAfterOf(liveOnly.id)).toBeNull();
     expect(await deleteAfterOf(neverImported.id)).toBeNull();
+    expect(await deleteAfterOf(failedDueOnly.id)).toBeNull();
     // Marked, not removed: the originals stay on disk for the 90 days.
     expect(onDisk(onlyDue.rel)).toBe(true);
 
-    // Imported again into a live map, an original is in use once more and no longer expires.
+    // Queued again into a live map, an original keeps its date: only a successful import clears
+    // it (the worker, test_import_vector.py). While the import is queued the sweep leaves the
+    // file alone, even past its date; once the import has failed, the sweep removes it.
     const res = await ownerCall('POST', `/maps/${live}/imports`, { fileId: reimported.id });
     expect(res.statusCode).toBe(201);
-    expect(await deleteAfterOf(reimported.id)).toBeNull();
+    expect(await deleteAfterOf(reimported.id)).toEqual(keepUntil);
+    await getPool().query(`UPDATE workspace.files SET delete_after = $2 WHERE id = $1`, [reimported.id, ago(HOUR)]);
+    expect(await deleteExpiredFiles(getPool(), NOW, lifecycleScope())).toBe(0);
+    expect(await deleteAfterOf(reimported.id)).toEqual(ago(HOUR));
+    expect(onDisk(reimported.rel)).toBe(true);
+    await getPool().query(`UPDATE workspace.jobs SET status = 'failed' WHERE id = $1`, [res.json().job.id]);
+    expect(await deleteExpiredFiles(getPool(), NOW, lifecycleScope())).toBe(1);
+    expect(await deleteAfterOf(reimported.id)).toBeUndefined();
+    expect(onDisk(reimported.rel)).toBe(false);
     // One whose time has run out is gone, whether or not the sweep has removed it yet.
     await getPool().query(`UPDATE workspace.files SET delete_after = now() - interval '1 second' WHERE id = $1`, [onlyDue.id]);
     const expired = await ownerCall('POST', `/maps/${live}/imports`, { fileId: onlyDue.id });
@@ -524,7 +549,18 @@ describe('file lifecycle', () => {
     }
     extraPaths.push(target);
 
-    expect(await reconcileStore(getPool(), later)).toEqual({ removed: 3 });
+    // A dry run by default: the candidates are listed and nothing is deleted.
+    const dry = await reconcileStore(getPool(), later, { force: true });
+    expect(dry).toMatchObject({ root: path.resolve(STORE), refused: null, removed: 0 });
+    expect(dry.candidates.map((c) => c.path).sort()).toEqual([oldOrphan, partLeftover, workLeftover].sort());
+    for (const c of dry.candidates) {
+      expect(c.sizeBytes).toBe(1);
+      expect(c.ageMs).toBeGreaterThan(DAY);
+    }
+    expect(onDisk(oldOrphan)).toBe(true);
+
+    // Forced: the store's other files are few, so 3 orphans are over the 20 % guard (tested below).
+    expect(await reconcileStore(getPool(), later, { apply: true, force: true })).toMatchObject({ removed: 3, refused: null });
 
     expect(onDisk(oldOrphan)).toBe(false);
     expect(onDisk(workLeftover)).toBe(false);
@@ -539,7 +575,9 @@ describe('file lifecycle', () => {
     expect(existsSync(path.join(STORE, ...path.posix.dirname(oldOrphan).split('/')))).toBe(true);
 
     // A shorter age reaches the young orphan.
-    expect(await reconcileStore(getPool(), new Date(later.getTime() + 1000), { olderThanMs: 0 })).toEqual({ removed: 1 });
+    expect(
+      await reconcileStore(getPool(), new Date(later.getTime() + 1000), { olderThanMs: 0, apply: true, force: true })
+    ).toMatchObject({ removed: 1 });
     expect(onDisk(youngOrphan)).toBe(false);
     expect(onDisk(withRow.rel)).toBe(true);
   });
@@ -560,10 +598,162 @@ describe('file lifecycle', () => {
     // Pinned on every platform: the copy's mtime is two days old, whatever copyFile kept.
     utimesSync(abs, old, old);
 
-    expect(await reconcileStore(getPool(), new Date())).toEqual({ removed: 0 });
+    const apply = { apply: true, force: true };
+    expect(await reconcileStore(getPool(), new Date(), apply)).toMatchObject({ candidates: [], removed: 0 });
     expect(onDisk(copied)).toBe(true);
     // An orphan in every other respect: two days on, with still no row, it goes.
-    expect(await reconcileStore(getPool(), new Date(Date.now() + 2 * DAY))).toEqual({ removed: 1 });
+    expect(await reconcileStore(getPool(), new Date(Date.now() + 2 * DAY), apply)).toMatchObject({ removed: 1 });
     expect(onDisk(copied)).toBe(false);
+  });
+});
+
+describe('store reconciliation guards', () => {
+  // Each test uses a store of its own under the OS temp directory, so the counts are exact;
+  // WORKSPACE_FILES_DIR is set back to this file's STORE after each one.
+  const later = () => new Date(Date.now() + 2 * DAY);
+
+  /** A fresh store; returns a writer that records each file for afterAll to unlink on its own. */
+  function freshStore(prefix: string) {
+    const root = mkdtempSync(path.join(os.tmpdir(), prefix));
+    process.env.WORKSPACE_FILES_DIR = root;
+    const put = (rel: string) => {
+      const abs = path.join(root, ...rel.split('/'));
+      mkdirSync(path.dirname(abs), { recursive: true });
+      writeFileSync(abs, 'x');
+      extraPaths.push(abs);
+      return rel;
+    };
+    const there = (rel: string) => existsSync(path.join(root, ...rel.split('/')));
+    return { root, put, there };
+  }
+  /** `n` files written to the store with a workspace.files row each (one INSERT). */
+  async function filesWithRows(put: (rel: string) => string, n: number) {
+    const owner = ids.get(LO)!;
+    const rels = Array.from({ length: n }, () => put(`uploads/${owner}/${randomUUID()}/original.geojson`));
+    await getPool().query(
+      `INSERT INTO workspace.files (owner_id, kind, path, original_name, content_type, size_bytes)
+       SELECT $1, 'upload', p, 'tep', 'application/octet-stream', 1 FROM unnest($2::text[]) AS p`,
+      [owner, rels]
+    );
+    return rels;
+  }
+  const orphans = (put: (rel: string) => string, n: number) =>
+    Array.from({ length: n }, () => put(`exports/${ids.get(LO)}/${randomUUID()}/.work-x/ban-do.gpkg`));
+  const restoreStore = () => { process.env.WORKSPACE_FILES_DIR = STORE; };
+
+  it('a relative WORKSPACE_FILES_DIR is refused, by reconciliation and by the config', async () => {
+    process.env.WORKSPACE_FILES_DIR = path.join('var', 'workspace-files');
+    try {
+      const result = await reconcileStore(getPool(), later(), { apply: true, force: true });
+      expect(result).toMatchObject({ root: '', filesSeen: 0, candidates: [], removed: 0 });
+      expect(result.refused).toContain('WORKSPACE_FILES_DIR is relative');
+      expect(() => workspaceFilesDir()).toThrow(/absolute/);
+      expect(() => storeRoot()).toThrow(/absolute/);
+    } finally {
+      restoreStore();
+    }
+    // Empty still means unset (the default, absolute).
+    process.env.WORKSPACE_FILES_DIR = '';
+    try {
+      expect(path.isAbsolute(workspaceFilesDir())).toBe(true);
+    } finally {
+      restoreStore();
+    }
+  });
+
+  it('a dry run lists the candidates; apply deletes them; over 20 % of the store is refused unless forced', async () => {
+    const { put, there } = freshStore('p3b-reconcile-share-');
+    try {
+      const kept = await filesWithRows(put, 10);
+      const [one] = orphans(put, 1); // 1 of 11: under the guard
+
+      const dry = await reconcileStore(getPool(), later());
+      expect(dry).toMatchObject({ filesSeen: 11, refused: null, removed: 0 });
+      expect(dry.candidates.map((c) => c.path)).toEqual([one]);
+      expect(there(one)).toBe(true);
+      expect(await reconcileStore(getPool(), later(), { apply: true })).toMatchObject({ removed: 1, refused: null });
+      expect(there(one)).toBe(false);
+
+      const three = orphans(put, 3); // 3 of 13: over 20 %
+      const refused = await reconcileStore(getPool(), later(), { apply: true });
+      expect(refused).toMatchObject({ filesSeen: 13, removed: 0 });
+      expect(refused.candidates).toHaveLength(3);
+      expect(refused.refused).toContain('--force');
+      for (const rel of three) expect(there(rel)).toBe(true);
+
+      expect(await reconcileStore(getPool(), later(), { apply: true, force: true })).toMatchObject({ removed: 3 });
+      for (const rel of three) expect(there(rel)).toBe(false);
+      for (const rel of kept) expect(there(rel)).toBe(true);
+    } finally {
+      restoreStore();
+    }
+  });
+
+  it('more than 50 orphans are refused unless forced, even under 20 % of the store', async () => {
+    const { put, there } = freshStore('p3b-reconcile-count-');
+    try {
+      await filesWithRows(put, 250);
+      const many = orphans(put, 51); // 51 of 301: under 20 %, over 50 files
+      const refused = await reconcileStore(getPool(), later(), { apply: true });
+      expect(refused).toMatchObject({ filesSeen: 301, removed: 0 });
+      expect(refused.candidates).toHaveLength(51);
+      expect(refused.refused).toContain('more than 50 files');
+      for (const rel of many) expect(there(rel)).toBe(true);
+      expect(await reconcileStore(getPool(), later(), { apply: true, force: true })).toMatchObject({ removed: 51 });
+      for (const rel of many) expect(there(rel)).toBe(false);
+    } finally {
+      restoreStore();
+    }
+  });
+
+  it('a database with no workspace.files rows is refused, even when forced', async () => {
+    const { put, there } = freshStore('p3b-reconcile-empty-');
+    try {
+      const [orphan] = orphans(put, 1);
+      // Stands in for a fresh or restored database: no file is named, and the table is empty.
+      const emptyDb = {
+        query: async (sql: string) => (sql.includes('EXISTS') ? { rows: [{ has_rows: false }] } : { rows: [] }),
+      } as unknown as pg.Pool;
+      const result = await reconcileStore(emptyDb, later(), { apply: true, force: true });
+      expect(result).toMatchObject({ filesSeen: 1, removed: 0 });
+      expect(result.refused).toContain('workspace.files has no rows');
+      expect(there(orphan)).toBe(true);
+    } finally {
+      restoreStore();
+    }
+  });
+
+  it('the CLI reconciles only when asked, lists by default and deletes only with --apply', async () => {
+    expect(parseCleanupArgs([])).toEqual({ archive: false, reconcile: false, apply: false, force: false });
+    expect(parseCleanupArgs(['--reconcile'])).toEqual({ archive: false, reconcile: true, apply: false, force: false });
+    expect(parseCleanupArgs(['--archive', '--reconcile', '--apply', '--force']))
+      .toEqual({ archive: true, reconcile: true, apply: true, force: true });
+    expect(() => parseCleanupArgs(['--apply'])).toThrow(/only go with --reconcile/);
+    expect(() => parseCleanupArgs(['--force'])).toThrow(/only go with --reconcile/);
+    expect(() => parseCleanupArgs(['--reconcile', '--aply'])).toThrow(/unknown argument/);
+
+    const { put, there } = freshStore('p3b-reconcile-cli-');
+    try {
+      await filesWithRows(put, 10);
+      const [orphan] = orphans(put, 1);
+      const lines: string[] = [];
+      expect(await runReconcile(getPool(), later(), { apply: false, force: false }, (l) => lines.push(l))).toBe(0);
+      expect(lines.some((l) => l.includes(orphan) && l.includes('1 bytes'))).toBe(true);
+      expect(lines.at(-1)).toContain('dry run, nothing deleted');
+      expect(there(orphan)).toBe(true);
+
+      const more = orphans(put, 3);
+      lines.length = 0;
+      expect(await runReconcile(getPool(), later(), { apply: true, force: false }, (l) => lines.push(l))).toBe(1);
+      expect(lines.at(-1)).toContain('REFUSED, nothing deleted');
+      for (const rel of [orphan, ...more]) expect(there(rel)).toBe(true);
+
+      lines.length = 0;
+      expect(await runReconcile(getPool(), later(), { apply: true, force: true }, (l) => lines.push(l))).toBe(0);
+      expect(lines.at(-1)).toContain('removed 4 of 4');
+      for (const rel of [orphan, ...more]) expect(there(rel)).toBe(false);
+    } finally {
+      restoreStore();
+    }
   });
 });

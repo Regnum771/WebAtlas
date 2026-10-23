@@ -27,8 +27,15 @@ const EnvSchema = z.object({
   ASSISTANT_DATABASE_URL: z.string().url().optional(),
   /** Where build_scenarios.py wrote the flood frames; defaults to the repo cache path. */
   FLOOD_FRAMES_DIR: z.string().optional(),
-  /** Root of the workspace file store (uploads, COGs, exports); see workspaceFilesDir(). */
-  WORKSPACE_FILES_DIR: z.string().optional(),
+  /**
+   * Root of the workspace file store (uploads, COGs, exports); see workspaceFilesDir(). Absolute
+   * or empty (unset): a relative root would follow the working directory, and the cleanup that
+   * removes files from the store must never be pointed somewhere else by where it was started.
+   */
+  WORKSPACE_FILES_DIR: z
+    .string()
+    .optional()
+    .refine((v) => !v || path.isAbsolute(v), 'WORKSPACE_FILES_DIR must be an absolute path'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 });
 
