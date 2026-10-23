@@ -142,6 +142,22 @@ WORKER_E2E=1 npm run test -w @webatlas/api -- workerE2E            # bash
 $env:WORKER_E2E='1'; npm run test -w @webatlas/api -- workerE2E     # PowerShell
 ```
 
+The personal-maps flow is checked in a real browser by `apps/web/scripts/verify-personal-maps.mjs`, at 1440×900 and
+768×900. With the `worker` profile up, the API and `npm run dev:web` running, it signs in as an owner and a recipient
+(two existing accounts, from the environment only: `VERIFY_OWNER_EMAIL` / `VERIFY_OWNER_PASSWORD`,
+`VERIFY_RECIPIENT_EMAIL` / `VERIFY_RECIPIENT_PASSWORD`), creates the map `Kiểm thử P3c`, uploads a GeoJSON and a
+GeoTIFF it writes into `--out` and checks that both draw, draws a polygon, exports a zipped Shapefile in VN-2000 /
+Đà Nẵng and opens the zip, shares the map, lets the recipient copy it, revokes the share and checks that the recipient
+loses the map. It prints one `PASS` / `FAIL` line per step, saves screenshots and the download in `--out`, and exits 1
+on any `FAIL`. At the end it deletes through the API what it made (the export jobs, the maps, the copy, the uploads);
+the exported zips and the rasters' COGs are left to `workspace:cleanup`, like any deleted export. A run takes about
+four minutes, a minute of it waiting between the two widths for the API's rate limit (100 requests a minute per address).
+
+```bash
+npm run verify:personal-maps -w @webatlas/web -- --out <dir>              # both widths
+npm run verify:personal-maps -w @webatlas/web -- --out <dir> --only 768   # one width
+```
+
 ### Workspace cleanup
 
 `npm run workspace:cleanup -w @webatlas/api` must be scheduled (daily is enough): nothing else removes expired
