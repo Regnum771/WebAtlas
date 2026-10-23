@@ -12,9 +12,12 @@ import { ExportDialogView } from './ui/ExportDialog.view';
 import { useSharePresenter } from './model/useSharePresenter';
 import { ShareDialogView } from './ui/ShareDialog.view';
 import { useUploadPresenter } from './model/useUploadPresenter';
+import { useTableStore } from './model/table.store';
+import { useTablePresenter } from './model/useTablePresenter';
 import { usePendingImports, type PendingImport } from './model/pendingImports.store';
 import { usePendingImportPresenter } from './model/usePendingImportPresenter';
 import { EditCopyDialogView } from './ui/EditCopyDialog.view';
+import { LayerTableView } from './ui/LayerTable.view';
 import { LayerSettingsView } from './ui/LayerSettings.view';
 import { MyMapsPanelView } from './ui/MyMapsPanel.view';
 import { NewLayerDialogView } from './ui/NewLayerDialog.view';
@@ -154,6 +157,32 @@ function MyMapsPanel() {
       {pendingImports.map((entry) => <PendingImportWatch key={entry.jobId} entry={entry} />)}
     </>
   );
+}
+
+/** The open layer's table; mounted only while one is open. */
+function OpenLayerTable({ layerId }: { layerId: string }) {
+  const p = useTablePresenter();
+  return (
+    <LayerTableView
+      layerId={layerId} title={p.header.title} total={p.header.total} matched={p.header.matched}
+      q={p.filter.q} conditions={p.conditions} fields={p.columns} canAddCondition={p.canAddCondition}
+      match={p.filter.match} inView={p.filter.inView} columns={p.columns} rows={p.rows} sort={p.sort}
+      page={p.page} loading={p.loading} error={p.error} onRetry={p.canRetry ? p.retry : undefined}
+      onSearch={p.setSearch} onAddCondition={p.addCondition} onUpdateCondition={p.updateCondition}
+      onRemoveCondition={p.removeCondition} onMatch={p.setMatch} onInView={p.setInView} onSort={p.toggleSort}
+      onPrev={p.prev} onNext={p.next} onClose={p.close}
+    />
+  );
+}
+
+/**
+ * The table of one personal layer, docked along the bottom of the map stage (MapScreen). Renders
+ * nothing while no table is open, so it needs no map or session until one is.
+ */
+export function PersonalTable() {
+  const { open } = useTableStore();
+  if (!open) return null;
+  return <OpenLayerTable layerId={open.layerId} />;
 }
 
 /**

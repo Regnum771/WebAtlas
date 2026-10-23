@@ -57,6 +57,47 @@ describe('useTableQuery', () => {
     expect(result.current.data?.total).toBe(2);
   });
 
+  it('typing on page 3 sends one query, for the new text on page 0, after 300 ms', async () => {
+    queryMock().mockResolvedValue(answer(500));
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useTableQuery(null), { wrapper });
+    await flush();
+    act(() => setFilter({ page: 3 }));
+    await flush(10);
+    expect(queryMock()).toHaveBeenCalledTimes(2);
+    expect(queryMock().mock.calls[1][2]).toMatchObject({ offset: 300 });
+    expect(result.current.page).toBe(3);
+
+    act(() => setFilter({ q: 's' }));
+    await flush(100);
+    act(() => setFilter({ q: 'so' }));
+    await flush(299);
+    expect(queryMock()).toHaveBeenCalledTimes(2);
+    // While the text settles the table still shows page 3.
+    expect(result.current.page).toBe(3);
+    await flush(1);
+    expect(queryMock()).toHaveBeenCalledTimes(3);
+    expect(queryMock().mock.calls[2][2]).toMatchObject({ q: 'so', offset: 0 });
+    expect(result.current.page).toBe(0);
+    await flush(10);
+    expect(queryMock()).toHaveBeenCalledTimes(3);
+  });
+
+  it('a condition still waiting for its value is not sent', async () => {
+    queryMock().mockResolvedValue(answer(5));
+    const { wrapper } = setup();
+    renderHook(() => useTableQuery(null), { wrapper });
+    await flush();
+    act(() => setFilter({ conditions: [{ field: 'ten', op: 'contains', value: '' }, { field: 'x', op: 'empty' }] }));
+    await flush(310);
+    expect(queryMock()).toHaveBeenCalledTimes(2);
+    expect(queryMock().mock.calls[1][2].conditions).toEqual([{ field: 'x', op: 'empty' }]);
+    // Only the value-less condition changing sends nothing new.
+    act(() => setFilter({ conditions: [{ field: 'ten', op: 'eq', value: ' ' }, { field: 'x', op: 'empty' }] }));
+    await flush(310);
+    expect(queryMock()).toHaveBeenCalledTimes(2);
+  });
+
   it('in view sends the extent; off sends none', async () => {
     queryMock().mockResolvedValue(answer(1));
     const { wrapper } = setup();

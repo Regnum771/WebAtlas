@@ -1031,6 +1031,63 @@ body {
 .personal-feature-card { position: fixed; }
 .personal-feature-card .info-row { margin: 0; overflow-wrap: anywhere; }
 
+/* A personal layer's table, docked under the map in the stage's column (shell.css .map-stage):
+   its height is a share of the stage, set inline and changed by dragging its top edge. */
+.layer-table {
+  /* z-index 10 as the map's floats (shell.css): later in the page, the dock covers a float that a
+     short map lets overflow (the scale slider), so its toolbar stays usable. */
+  position: relative; z-index: 10; flex: none; display: flex; flex-direction: column; min-height: 0;
+  background: var(--sheet); color: var(--ink); border-top: 2px solid var(--ink); font-size: var(--text-sm);
+}
+/* The drag handle straddles the top edge, over the map's last pixels, so it is easy to catch. */
+.layer-table-resize {
+  position: absolute; top: -6px; left: 0; right: 0; height: 10px; z-index: 10;
+  cursor: ns-resize; touch-action: none;
+}
+.layer-table-resize:hover, .layer-table-resize:focus-visible { background: var(--mark); outline: none; box-shadow: none; }
+.layer-table-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--space-2);
+  padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--rule);
+}
+.layer-table-title { margin: 0; font-size: var(--text-md); font-weight: 650; }
+.layer-table-count { color: var(--ink-2); font-size: var(--text-xs); white-space: nowrap; }
+.layer-table-toolbar .input, .layer-table-editor .input { width: auto; height: 28px; font-size: var(--text-sm); }
+.layer-table-search { min-width: 180px; }
+.layer-table-chip {
+  display: inline-flex; align-items: stretch; height: 28px;
+  border: 1px solid var(--ink); border-radius: var(--radius); background: var(--paper);
+}
+.layer-table-chip.on { background: var(--mark); }
+.layer-table-chip button {
+  display: inline-flex; align-items: center; background: none; border: 0; padding: 0 var(--space-2);
+  font: inherit; color: inherit; white-space: nowrap; cursor: pointer;
+}
+.layer-table-chip .layer-table-chip-remove { padding: 0 6px; border-left: 1px solid var(--rule); }
+.layer-table-inview { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
+.layer-table-actions { display: flex; gap: 6px; margin-left: auto; }
+.layer-table-editor {
+  display: flex; flex-wrap: wrap; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--rule); background: var(--paper);
+}
+.layer-table-editor-value { min-width: 180px; }
+.layer-table-error { padding: var(--space-2) var(--space-3) 0; }
+.layer-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+.layer-table-grid { border-collapse: collapse; width: max-content; min-width: 100%; }
+.layer-table-grid th, .layer-table-grid td {
+  max-width: 280px; padding: 4px 10px; border-bottom: 1px solid var(--rule);
+  text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.layer-table-grid thead th { position: sticky; top: 0; z-index: 1; background: var(--sheet); border-bottom-color: var(--ink); }
+/* Loading keeps the previous page on screen, faded, until the answer comes. */
+.layer-table-grid.loading tbody { opacity: 0.5; }
+.layer-table-sort { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; }
+.layer-table-grid .layer-table-symbol { width: 1%; padding: 2px var(--space-2); }
+.layer-table-symbol img { display: block; }
+.layer-table-paging {
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2);
+  padding: 6px var(--space-3); border-top: 1px solid var(--rule); font-variant-numeric: tabular-nums;
+}
+
 /* Upload dialog and a worker job's progress. */
 .upload-form progress, .job-progress-bar { width: 100%; height: 8px; accent-color: var(--ink); }
 .upload-progress p { margin: 4px 0 0; font-size: var(--text-sm); }

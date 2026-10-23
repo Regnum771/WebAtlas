@@ -7,11 +7,10 @@ import VectorLayer from 'ol/layer/Vector';
 import { bbox as bboxStrategy } from 'ol/loadingstrategy';
 import { transformExtent, type ProjectionLike } from 'ol/proj';
 import VectorSource from 'ol/source/Vector';
-import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import { isMapNotFound } from './queries';
 import { listFeatures, type GeoJsonGeometry, type LayerSummary, type PersonalFeature } from '../api/workspace.api';
 import { isPersonalLayer, PERSONAL_HIT_TOLERANCE, PERSONAL_LAYER_PROP } from '../../map/model/overlayLayers';
-import { editCopyStyle, olStyleFor, parseStyle } from './personalStyle';
+import { editCopyKey, editCopyStyle, olStyleFor, parseStyle } from './personalStyle';
 
 /**
  * Personal-map layers on the OpenLayers map, owned here as flood-scenario/model/floodLayers.ts
@@ -72,13 +71,7 @@ const registries = new WeakMap<Map, Registry>();
 const format = new GeoJSON();
 
 const isVector = (layer: LayerSummary) => layer.kind === 'free' || layer.kind === 'edit_copy';
-
-function editableKey(layer: LayerSummary): EditableLayerKey | null {
-  const key = layer.layerKey;
-  return layer.kind === 'edit_copy' && (EDITABLE_LAYER_KEYS as readonly string[]).includes(key ?? '')
-    ? (key as EditableLayerKey)
-    : null;
-}
+const editableKey = editCopyKey;
 
 function styleKeyOf(layer: LayerSummary): string {
   const key = editableKey(layer);
@@ -265,6 +258,27 @@ export function refreshPersonalLayer(map: Map, layerId: string): void {
   rec.generation++;
   rec.stale = [];
   rec.layer.getSource()!.refresh();
+}
+
+/** The map's view as an EPSG:4326 bbox [w, s, e, n], or null before the map has a size. */
+export function viewExtent4326(map: Map): [number, number, number, number] | null {
+  const size = map.getSize();
+  if (!size || size[0] === 0 || size[1] === 0) return null;
+  const view = map.getView();
+  return bbox4326(view.calculateExtent(size), view.getProjection());
+}
+
+/**
+ * Calls `onChange` with the view's EPSG:4326 bbox after each pan, zoom or resize has ended (never
+ * during the movement). Returns the unsubscribe.
+ */
+export function watchViewExtent4326(map: Map, onChange: (extent: [number, number, number, number]) => void): () => void {
+  const listener = () => {
+    const extent = viewExtent4326(map);
+    if (extent) onChange(extent);
+  };
+  map.on('moveend', listener);
+  return () => map.un('moveend', listener);
 }
 
 /** Zoom cap of a fit: a single point or a tiny layer stays at street level, not zoomed to the maximum. */

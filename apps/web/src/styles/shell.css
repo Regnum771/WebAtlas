@@ -2,7 +2,8 @@
    assistant column.
 
    z-index scale, shared by every layer of the interface:
-     10   floats in the map stage (tool group, loading bar, scale slider)
+     10   floats in the map stage (tool group, loading bar, scale slider) and the docked
+          personal-layer table under them
      20   open tool menu
      30   toast host
      40   feature popup
@@ -11,7 +12,7 @@
      100  top bar
      110  search results
      200  dialog
-   .app-shell and .map-stage must NOT create a stacking context (no z-index,
+   .app-shell, .map-stage and .map-stage-map must NOT create a stacking context (no z-index,
    transform, filter, isolation or contain): routed pages and the feature popup
    are their siblings and stack against their children by this scale. */
 
@@ -77,6 +78,17 @@
   /* A two-line toast: two lines of 13px text at 1.35 (35.1px), 18px padding and
      a 2px border on each side = 57.1px, rounded up. */
   --toast-band-height: 58px;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  /* A column: the map (.map-stage-map) takes what a docked personal-layer table leaves. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* The map and everything floating on it; the floats are placed against this box, so they stay
+   above a docked table. */
+.map-stage-map {
   position: relative;
   flex: 1;
   min-height: 0;

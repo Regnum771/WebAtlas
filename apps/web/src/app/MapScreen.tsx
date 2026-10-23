@@ -9,7 +9,7 @@ import MeasureTool from '../features/map/ui/MeasureTool';
 import BasemapTool from '../features/map/ui/BasemapTool';
 import AddData from '../features/add-data';
 import FeatureEditing from '../features/feature-editing';
-import MyMaps from '../features/my-maps';
+import MyMaps, { PersonalTable } from '../features/my-maps';
 import LayersPanel from '../features/layers-panel';
 import Legend from '../features/legend';
 import Assistant from '../features/assistant';
@@ -131,19 +131,24 @@ export default function MapScreen() {
       strip={<ConnectionStrip />}
       stage={(
         <>
-          {/* MapView lives here, never inside a <Route>: navigating to
-              /quan-ly overlays a live map instead of unmounting it. */}
-          <MapView />
-          <MapLoadingBar />
-          <ToolGroupView
-            tools={tools}
-            open={tool}
-            onToggle={(id) => toggleTool(id as ToolId)}
-            onClose={closeTool}
-          />
-          <ScaleSlider />
-          <FloodScenario />
-          <ToastHost />
+          {/* The map and everything floating on it; a personal layer's table docks under it
+              and the map shrinks to the space left (MapView follows its box's size). */}
+          <div className="map-stage-map">
+            {/* MapView lives here, never inside a <Route>: navigating to
+                /quan-ly overlays a live map instead of unmounting it. */}
+            <MapView />
+            <MapLoadingBar />
+            <ToolGroupView
+              tools={tools}
+              open={tool}
+              onToggle={(id) => toggleTool(id as ToolId)}
+              onClose={closeTool}
+            />
+            <ScaleSlider />
+            <FloodScenario />
+            <ToastHost />
+          </div>
+          <PersonalTable />
         </>
       )}
       assistant={dockOpen ? <AssistantDockView onClose={closeAssistant}><Assistant /></AssistantDockView> : null}
