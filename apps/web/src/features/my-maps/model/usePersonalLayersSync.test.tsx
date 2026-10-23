@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
+import { ApiError } from '../../../shared/api/apiClient';
+import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
+import { keys } from './queries';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
@@ -24,13 +27,14 @@ const layer = (id: string, position: number) => ({
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-  return renderHook(() => usePersonalLayersSync(), { wrapper });
+  return { client, ...renderHook(() => usePersonalLayersSync(), { wrapper }) };
 }
 const lastEntries = () => h.sync.mock.calls[h.sync.mock.calls.length - 1][1] as PersonalLayerEntry[];
 
 beforeEach(() => {
   h.sync.mockReset();
   resetMyMapsStore();
+  resetToasts();
   listMaps.mockResolvedValue({ mine: [summary('m1', 'owner'), summary('m3', 'owner')], sharedWithMe: [summary('m2', 'recipient')] });
   getMap.mockImplementation(async (id: string) => ({
     ...summary(id, id === 'm2' ? 'recipient' : 'owner'),
@@ -60,5 +64,44 @@ describe('usePersonalLayersSync', () => {
     // Signing out (the section unmounts) takes every personal layer off the map.
     unmount();
     expect(lastEntries()).toEqual([]);
+  });
+
+  it('a 404 on a shared map removes it and its layers', async () => {
+    expandMap('m1');
+    expandMap('m2');
+    const { client } = setup();
+    await waitFor(() => expect(lastEntries().map((e) => e.layer.id)).toEqual(['a', 'b', 'c']));
+    // The owner revokes the share; the recipient's next read answers the map's own 404.
+    getMap.mockImplementation(async (id: string) => {
+      if (id === 'm2') throw new ApiError(404, 'NOT_FOUND', 'Không tìm thấy bản đồ.');
+      return { ...summary(id, 'owner'), layers: id === 'm1' ? [layer('b', 1), layer('a', 0)] : [layer('z', 0)] };
+    });
+    listMaps.mockResolvedValue({ mine: [summary('m1', 'owner'), summary('m3', 'owner')], sharedWithMe: [] });
+    await act(async () => { await client.invalidateQueries({ queryKey: keys.map('m2') }); });
+    await waitFor(() => expect(lastEntries().map((e) => e.layer.id)).toEqual(['a', 'b']));
+    expect(getMyMaps().expanded.has('m2')).toBe(false);
+    expect(getMyMaps().expanded.has('m1')).toBe(true);
+    expect(getToasts().map((t) => t.title)).toEqual(['Bản đồ này không còn được chia sẻ với anh/chị hoặc đã bị xoá.']);
+    await waitFor(() => expect(client.getQueryData<{ sharedWithMe: unknown[] }>(keys.maps)?.sharedWithMe).toEqual([]));
+  });
+
+  it("another 404 (not the map's own) does not drop the map", async () => {
+    expandMap('m2');
+    const { client } = setup();
+    await waitFor(() => expect(lastEntries().map((e) => e.layer.id)).toEqual(['c']));
+    getMap.mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'Không tìm thấy lớp.'));
+    await act(async () => { await client.invalidateQueries({ queryKey: keys.map('m2') }); });
+    expect(getMyMaps().expanded.has('m2')).toBe(true);
+    expect(getToasts()).toEqual([]);
+  });
+
+  it('a 404 from a layer read (onMapGone) drops the map the same way', async () => {
+    expandMap('m2');
+    setup();
+    await waitFor(() => expect(lastEntries().map((e) => e.layer.id)).toEqual(['c']));
+    listMaps.mockResolvedValue({ mine: [summary('m1', 'owner'), summary('m3', 'owner')], sharedWithMe: [] });
+    act(() => lastEntries()[0].onMapGone!('m2'));
+    expect(getMyMaps().expanded.has('m2')).toBe(false);
+    expect(getToasts().map((t) => t.title)).toEqual(['Bản đồ này không còn được chia sẻ với anh/chị hoặc đã bị xoá.']);
   });
 });

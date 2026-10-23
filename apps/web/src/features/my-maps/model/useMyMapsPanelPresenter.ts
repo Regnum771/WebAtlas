@@ -3,7 +3,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/workspace.api';
 import type { FieldDef, GeometryType, LayerKind, MapSummary } from '../api/workspace.api';
 import { showToast } from '../../../shared/ui/toast.store';
-import { keys, MapGoneError, useMapWrite, useMyMaps, useUploads } from './queries';
+import { dropGoneMap, isMapNotFound, keys, MapGoneError, useMapWrite, useMyMaps, useUploads } from './queries';
 import { layerKindLabel } from './layerKindLabel';
 import { parseStyle, type PersonalLayerStyle } from './personalStyle';
 import {
@@ -35,6 +35,8 @@ export interface MapCardData {
   expanded: boolean;
   /** Only the owner may rename or delete. */
   canWrite: boolean;
+  /** Tạo bản sao is running for this map. */
+  copying?: boolean;
   /** Null until the map's detail has loaded. */
   layers: LayerRowData[] | null;
 }
@@ -66,6 +68,7 @@ export function useMyMapsPanelPresenter() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [copyingId, setCopyingId] = useState<string | null>(null);
 
   // Writes go through useMapWrite, which sends the revision of the last read of the map.
   const renameWrite = useMapWrite(dialog.mapId ?? '');
@@ -81,6 +84,7 @@ export function useMyMapsPanelPresenter() {
       layerCount: m.layerCount,
       expanded,
       canWrite: m.role === 'owner',
+      copying: copyingId === m.id,
       layers: expanded && detail
         ? [...detail.layers].sort((a, b) => a.position - b.position).map((l, i, all) => ({
           id: l.id, kind: l.kind, title: l.title, kindLabel: layerKindLabel(l), ...layerView(l.id),
@@ -160,6 +164,26 @@ export function useMyMapsPanelPresenter() {
     }
   }
 
+  /** Tạo bản sao: the copy joins Của tôi, expanded, and a toast says so. */
+  async function copy(mapId: string): Promise<void> {
+    if (copyingId !== null) return;
+    setCopyingId(mapId);
+    try {
+      const created = await api.copyMap(mapId);
+      await refreshMaps();
+      expandMap(created.id);
+      showToast({ tone: 'success', title: `Đã tạo bản sao “${created.title}”.` });
+    } catch (e) {
+      if (isMapNotFound(e)) {
+        dropGoneMap(qc, mapId, detailOf.get(mapId)?.layers.map((l) => l.id) ?? []);
+      } else {
+        showToast({ tone: 'error', title: messageOf(e) });
+      }
+    } finally {
+      setCopyingId(null);
+    }
+  }
+
   return {
     loading: maps.isLoading,
     error: maps.error ? messageOf(maps.error) : null,
@@ -184,5 +208,6 @@ export function useMyMapsPanelPresenter() {
     askDelete,
     cancelDelete,
     confirmDelete,
+    copy,
   };
 }

@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react';
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import * as api from '../api/workspace.api';
 import { layerView, setTruncated, useMyMapsStore } from './myMaps.store';
 import { PERSONAL_Z_BASE, syncPersonalLayers, type PersonalLayerEntry } from './personalLayers';
-import { keys, useMyMaps } from './queries';
+import { dropGoneMap, isMapNotFound, keys, useMyMaps } from './queries';
 
 /**
  * Keeps the map's personal layers in step with the panel: the layers of every expanded map,
@@ -15,6 +15,7 @@ import { keys, useMyMaps } from './queries';
 export function usePersonalLayersSync(): void {
   const { map } = useMapContext();
   const store = useMyMapsStore();
+  const qc = useQueryClient();
   const maps = useMyMaps();
   const expanded = [...(maps.data?.mine ?? []), ...(maps.data?.sharedWithMe ?? [])].filter((m) => store.expanded.has(m.id));
   const details = useQueries({
@@ -31,6 +32,7 @@ export function usePersonalLayersSync(): void {
     ...layerView(layer.id),
     zIndex: PERSONAL_Z_BASE + rows.length - 1 - i,
     onTruncated: setTruncated,
+    onMapGone: (id: string) => dropGoneMap(qc, id, latest.current.filter((x) => x.mapId === id).map((x) => x.layer.id)),
   }));
   // Syncs only when something drawn changed, not on every render of the panel.
   const signature = JSON.stringify(entries.map((e) => [
@@ -39,6 +41,16 @@ export function usePersonalLayersSync(): void {
 
   const latest = useRef(entries);
   useEffect(() => { latest.current = entries; });
+  // A map read that answers the map's own 404 (unshared or deleted): drop it and its layers.
+  useEffect(() => {
+    expanded.forEach((m, i) => {
+      if (isMapNotFound(details[i].error)) {
+        dropGoneMap(qc, m.id, latest.current.filter((x) => x.mapId === m.id).map((x) => x.layer.id));
+      }
+    });
+    // `expanded` and `details` are rebuilt every render; the errors are what matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qc, details.map((d) => d.error).join('|')]);
   useEffect(() => {
     if (map) syncPersonalLayers(map, latest.current);
   }, [map, signature]);

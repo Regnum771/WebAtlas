@@ -9,6 +9,7 @@ const createMap = vi.fn();
 const updateMap = vi.fn();
 const deleteMap = vi.fn();
 const listUploads = vi.fn();
+const copyMap = vi.fn();
 vi.mock('../api/workspace.api', () => ({
   listMaps: () => listMaps(),
   getMap: (id: string) => getMap(id),
@@ -16,6 +17,7 @@ vi.mock('../api/workspace.api', () => ({
   updateMap: (id: string, i: unknown) => updateMap(id, i),
   deleteMap: (id: string, r: number) => deleteMap(id, r),
   listUploads: () => listUploads(),
+  copyMap: (id: string) => copyMap(id),
 }));
 
 import { useMyMapsPanelPresenter } from './useMyMapsPanelPresenter';
@@ -34,7 +36,7 @@ function setup() {
 }
 
 beforeEach(() => {
-  [listMaps, getMap, createMap, updateMap, deleteMap, listUploads].forEach((m) => m.mockReset());
+  [listMaps, getMap, createMap, updateMap, deleteMap, listUploads, copyMap].forEach((m) => m.mockReset());
   resetMyMapsStore();
   resetToasts();
   listMaps.mockResolvedValue({ mine: [MINE], sharedWithMe: [SHARED] });
@@ -142,5 +144,27 @@ describe('useMyMapsPanelPresenter', () => {
     expect(result.current.pendingDelete).toBe(false);
     await waitFor(() => expect(result.current.own).toEqual([]));
     expect(getToasts().map((t) => t.title)).toContain('Bản đồ này không còn được chia sẻ với anh/chị hoặc đã bị xoá.');
+  });
+
+  it('Tạo bản sao adds the copy to Của tôi, expanded, with a toast', async () => {
+    const copy = { ...MINE, id: 'm9', title: 'Sông Hàn (bản sao)', revision: 1 };
+    copyMap.mockResolvedValue({ ...copy, layers: [] });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    listMaps.mockResolvedValue({ mine: [MINE, copy], sharedWithMe: [SHARED] });
+    await act(async () => { await result.current.copy('m2'); });
+    expect(copyMap).toHaveBeenCalledWith('m2');
+    await waitFor(() => expect(result.current.own.map((c) => c.id)).toEqual(['m1', 'm9']));
+    expect(getMyMaps().expanded.has('m9')).toBe(true);
+    expect(getToasts().map((t) => t.title)).toContain('Đã tạo bản sao “Sông Hàn (bản sao)”.');
+  });
+
+  it('a failed copy shows the API message and adds nothing', async () => {
+    copyMap.mockRejectedValue(new ApiError(413, 'QUOTA', 'Hết dung lượng.'));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => { await result.current.copy('m2'); });
+    expect(getToasts().map((t) => t.title)).toContain('Hết dung lượng.');
+    expect(result.current.own.map((c) => c.id)).toEqual(['m1']);
   });
 });

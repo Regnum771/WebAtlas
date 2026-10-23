@@ -1,7 +1,10 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../../shared/api/apiClient';
 import * as api from '../api/workspace.api';
-import type { MapDetail } from '../api/workspace.api';
+import { showToast } from '../../../shared/ui/toast.store';
+import type { MapDetail, MapSummary } from '../api/workspace.api';
+import { forgetMap } from './myMaps.store';
 
 export const keys = {
   maps: ['ws', 'maps'] as const,
@@ -9,6 +12,7 @@ export const keys = {
   uploads: ['ws', 'uploads'] as const,
   job: (id: string) => ['ws', 'job', id] as const,
   jobs: (mapId: string) => ['ws', 'jobs', mapId] as const,
+  shares: (mapId: string) => ['ws', 'shares', mapId] as const,
 };
 
 export const MAP_CHANGED_COPY = 'Bản đồ đã thay đổi ở nơi khác. Đã tải lại bản mới nhất; hãy thử lại.';
@@ -29,6 +33,33 @@ export class MapGoneError extends Error {
   }
 }
 
+/** True for the map's own 404; a missing layer or feature answers 404 too and is not a lost map. */
+export function isMapNotFound(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 404 && e.message === MAP_NOT_FOUND;
+}
+
+/**
+ * A map the user can no longer read (revoked or deleted): it leaves the lists, its layers leave the
+ * map and a toast says so. Runs once per map: once the cached list no longer holds it, a second
+ * call (another layer's read, another observer) does nothing.
+ */
+export function dropGoneMap(qc: QueryClient, mapId: string, layerIds: string[] = []): void {
+  const lists = qc.getQueryData<{ mine: MapSummary[]; sharedWithMe: MapSummary[] }>(keys.maps);
+  if (lists && ![...lists.mine, ...lists.sharedWithMe].some((m) => m.id === mapId)) return;
+  const known = qc.getQueryData<MapDetail>(keys.map(mapId))?.layers.map((l) => l.id) ?? [];
+  forgetMap(mapId, [...new Set([...layerIds, ...known])]);
+  if (lists) {
+    qc.setQueryData(keys.maps, {
+      ...lists,
+      mine: lists.mine.filter((m) => m.id !== mapId),
+      sharedWithMe: lists.sharedWithMe.filter((m) => m.id !== mapId),
+    });
+  }
+  qc.removeQueries({ queryKey: keys.map(mapId) });
+  void qc.invalidateQueries({ queryKey: keys.maps });
+  showToast({ tone: 'warning', title: MAP_GONE_COPY });
+}
+
 const POLL_MS = 1000;
 
 export function useMyMaps() {
@@ -36,11 +67,17 @@ export function useMyMaps() {
 }
 
 export function useMapDetail(id: string | null) {
-  return useQuery({
+  const qc = useQueryClient();
+  const query = useQuery({
     queryKey: keys.map(id ?? ''),
     queryFn: () => api.getMap(id as string),
     enabled: id !== null,
   });
+  // The map's own 404 on a read: it was unshared or deleted.
+  useEffect(() => {
+    if (id !== null && isMapNotFound(query.error)) dropGoneMap(qc, id);
+  }, [id, query.error, qc]);
+  return query;
 }
 
 export function useUploads() {
@@ -113,7 +150,7 @@ export function useMapWrite(mapId: string) {
         throw new MapChangedError();
       }
       // Only the map's own 404 means the map is gone; a missing layer or feature is the caller's to handle.
-      if (e instanceof ApiError && e.status === 404 && e.message === MAP_NOT_FOUND) {
+      if (isMapNotFound(e)) {
         qc.removeQueries({ queryKey: keys.map(mapId) });
         await qc.invalidateQueries({ queryKey: keys.maps });
         throw new MapGoneError();

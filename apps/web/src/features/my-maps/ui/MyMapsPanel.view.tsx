@@ -31,6 +31,10 @@ interface Props {
   onUpload: (mapId: string | null) => void;
   /** Opens the Tải xuống dialog of a map (owner or recipient). */
   onExport: (mapId: string) => void;
+  /** Opens the Chia sẻ dialog of an owned map. */
+  onShare: (mapId: string) => void;
+  /** Tạo bản sao of a map shared with the user. */
+  onCopy: (mapId: string) => void;
   onLayerVisible: (layerId: string, visible: boolean) => void;
   onLayerOpacity: (layerId: string, opacity: number) => void;
   onAddLayer: (mapId: string, kind: 'drawn' | 'edit_copy') => void;
@@ -60,6 +64,8 @@ export function MyMapsPanelView(p: Props) {
           onDelete={() => p.onAskDelete(card.id)}
           onUpload={() => p.onUpload(card.id)}
           onExport={() => p.onExport(card.id)}
+          onShare={() => p.onShare(card.id)}
+          onCopy={() => p.onCopy(card.id)}
           onLayerVisible={p.onLayerVisible}
           onLayerOpacity={p.onLayerOpacity}
           onAddLayer={(kind) => p.onAddLayer(card.id, kind)}

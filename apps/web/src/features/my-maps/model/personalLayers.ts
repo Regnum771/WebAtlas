@@ -8,6 +8,7 @@ import { bbox as bboxStrategy } from 'ol/loadingstrategy';
 import { transformExtent, type ProjectionLike } from 'ol/proj';
 import VectorSource from 'ol/source/Vector';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
+import { isMapNotFound } from './queries';
 import { listFeatures, type GeoJsonGeometry, type LayerSummary, type PersonalFeature } from '../api/workspace.api';
 import { isPersonalLayer, PERSONAL_HIT_TOLERANCE, PERSONAL_LAYER_PROP } from '../../map/model/overlayLayers';
 import { editCopyStyle, olStyleFor, parseStyle } from './personalStyle';
@@ -29,6 +30,8 @@ export interface PersonalLayerEntry {
   zIndex: number;
   /** `n`: the last read was cut at n features; `null`: it was complete (or the layer left the map). */
   onTruncated: (layerId: string, n: number | null) => void;
+  /** A read answered the map's own 404: the map was unshared or deleted. */
+  onMapGone?: (mapId: string) => void;
 }
 
 interface Drawn {
@@ -125,9 +128,10 @@ function create(entry: PersonalLayerEntry): Drawn {
         rec.entry.onTruncated(id, res.truncated ? res.features.length : null);
         success?.(features);
       })
-      .catch(() => {
+      .catch((e: unknown) => {
         // Retried once the view moves, not on every redraw.
         if (!rec.removed && generation === rec.generation) rec.stale.push(extent);
+        if (!rec.removed && isMapNotFound(e)) rec.entry.onMapGone?.(mapId);
         failure?.();
       });
   });

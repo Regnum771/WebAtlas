@@ -45,7 +45,7 @@ vi.mock('ol/layer/WebGLTile', async (importOriginal) => {
 import WebGLTileLayer, { type Style as TileStyle } from 'ol/layer/WebGLTile';
 import GeoTIFF, { type Options as GeoTIFFOptions } from 'ol/source/GeoTIFF';
 import type { LayerSummary, PersonalFeature } from '../api/workspace.api';
-import { setAuthToken } from '../../../shared/api/apiClient';
+import { ApiError, setAuthToken } from '../../../shared/api/apiClient';
 import { API_BASE_URL } from '../../../shared/config';
 import { isPersonalLayer, PERSONAL_HIT_TOLERANCE } from '../../map/model/overlayLayers';
 import {
@@ -219,6 +219,25 @@ describe('syncPersonalLayers', () => {
     source.loadFeatures(WIDE, 1000, EPSG3857);
     await vi.waitFor(() => expect(source.getFeatures()).toHaveLength(1));
     expect(listFeatures).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a lost map', () => {
+  it("the map's own 404 on a layer read tells the owner of the entry; another 404 does not", async () => {
+    const map = makeMap();
+    const onMapGone = vi.fn();
+    listFeatures
+      .mockRejectedValueOnce(new ApiError(404, 'NOT_FOUND', 'Không tìm thấy lớp.'))
+      .mockRejectedValueOnce(new ApiError(404, 'NOT_FOUND', 'Không tìm thấy bản đồ.'));
+    syncPersonalLayers(map, [entry(FREE, { onMapGone })]);
+    const source = byId(map, 'ws:l1').getSource()!;
+    source.loadFeatures(WIDE, 1000, EPSG3857);
+    await vi.waitFor(() => expect(listFeatures).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onMapGone).not.toHaveBeenCalled();
+    map.dispatchEvent('moveend');
+    source.loadFeatures(WIDE, 1000, EPSG3857);
+    await vi.waitFor(() => expect(onMapGone).toHaveBeenCalledWith('m1'));
   });
 });
 

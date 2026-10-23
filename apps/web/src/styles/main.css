@@ -1029,3 +1029,8 @@ body {
 .job-step-state { color: var(--ink-2); }
 .job-step.failed .job-step-state { color: var(--alert); font-weight: 600; }
 .job-step-message { flex-basis: 100%; margin: 0; font-size: var(--text-xs); color: var(--ink-2); }
+
+/* Chia sẻ dialog: result and share rows, the name left and the action right. */
+.share-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.share-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.share-row .hint { margin-left: var(--space-1); }

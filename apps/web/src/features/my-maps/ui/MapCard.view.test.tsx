@@ -15,7 +15,7 @@ const card = (over: Partial<MapCardData> = {}): MapCardData => ({
 const noop = vi.fn();
 const props = {
   onToggle: noop, onRename: noop, onDelete: noop, onUpload: noop, onLayerVisible: noop, onLayerOpacity: noop,
-  onAddLayer: noop, onLayerSettings: noop, onExport: noop,
+  onAddLayer: noop, onLayerSettings: noop, onExport: noop, onShare: noop, onCopy: noop,
 };
 
 describe('MapCardView export', () => {
@@ -62,5 +62,23 @@ describe('MapCardView layer actions', () => {
     expect(screen.queryByRole('button', { name: 'Thêm lớp' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Thiết lập lớp/ })).toBeNull();
     expect(screen.getByRole('checkbox', { name: /Vẽ/ })).toBeInTheDocument();
+  });
+});
+
+describe('MapCardView sharing', () => {
+  it('the owner can share, and has no copy button', async () => {
+    const onShare = vi.fn();
+    render(<ul><MapCardView card={card()} {...props} onShare={onShare} /></ul>);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Chia sẻ' }));
+    expect(onShare).toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Tạo bản sao' })).toBeNull();
+  });
+
+  it('a recipient can copy, and cannot share', async () => {
+    const onCopy = vi.fn();
+    render(<ul><MapCardView card={card({ canWrite: false, ownerLabel: 'của Lan' })} {...props} onCopy={onCopy} /></ul>);
+    expect(screen.queryByRole('button', { name: 'Chia sẻ' })).toBeNull();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Tạo bản sao' }));
+    expect(onCopy).toHaveBeenCalled();
   });
 });

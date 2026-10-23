@@ -9,6 +9,8 @@ import { usePersonalLayersSync } from './model/usePersonalLayersSync';
 import { usePersonalPopupPresenter } from './model/usePersonalPopupPresenter';
 import { useExportPresenter } from './model/useExportPresenter';
 import { ExportDialogView } from './ui/ExportDialog.view';
+import { useSharePresenter } from './model/useSharePresenter';
+import { ShareDialogView } from './ui/ShareDialog.view';
 import { useUploadPresenter } from './model/useUploadPresenter';
 import { usePersonalEditingPresenter } from './model/usePersonalEditingPresenter';
 import { useAttributeFormPresenter } from '../feature-editing/model/useAttributeFormPresenter';
@@ -60,6 +62,20 @@ function ExportDialog({ mapId, onClose }: { mapId: string; onClose: () => void }
       onFormat={p.setFormat} onCrs={p.setCrs} onLayer={p.toggleLayer}
       onSubmit={() => { void p.submit(); }} onDownload={(id) => { void p.download(id); }}
       onDelete={(id) => { void p.remove(id); }} onClose={onClose}
+    />
+  );
+}
+
+/** The Chia sẻ dialog of one owned map; mounted only while open, so each opening starts fresh. */
+function ShareDialog({ mapId, onClose }: { mapId: string; onClose: () => void }) {
+  const p = useSharePresenter({ mapId, onGone: onClose });
+  return (
+    <ShareDialogView
+      query={p.query} results={p.results} searching={p.searching} searchError={p.searchError}
+      shares={p.shares} loadError={p.loadError} error={p.error} busy={p.busy}
+      pendingRevoke={p.pendingRevoke} revoking={p.revoking}
+      onQuery={p.setQuery} onShare={(target) => { void p.share(target); }} onAskRevoke={p.askRevoke}
+      onConfirmRevoke={() => { void p.confirmRevoke(); }} onCancelRevoke={p.cancelRevoke} onClose={onClose}
     />
   );
 }
@@ -159,6 +175,7 @@ function MyMapsPanel() {
   const [layerDialog, setLayerDialog] = useState<LayerDialog | null>(null);
   const [upload, setUpload] = useState<{ targetMapId: string | null } | null>(null);
   const [exportMapId, setExportMapId] = useState<string | null>(null);
+  const [shareMapId, setShareMapId] = useState<string | null>(null);
   return (
     <>
       <MyMapsPanelView
@@ -169,6 +186,8 @@ function MyMapsPanel() {
         onToggleCard={p.toggleExpanded} onRename={p.openRename} onAskDelete={p.askDelete}
         onUpload={(targetMapId) => setUpload({ targetMapId })}
         onExport={setExportMapId}
+        onShare={setShareMapId}
+        onCopy={(mapId) => { void p.copy(mapId); }}
         onLayerVisible={p.setLayerVisible} onLayerOpacity={p.setLayerOpacity}
         onAddLayer={(mapId, kind) => setLayerDialog({ kind, mapId } as LayerDialog)}
         onLayerSettings={(mapId, layerId) => setLayerDialog({ kind: 'settings', mapId, layerId })}
@@ -179,6 +198,7 @@ function MyMapsPanel() {
       {layerDialog && <LayerDialogs dialog={layerDialog} cards={[...p.own, ...p.shared]} onClose={() => setLayerDialog(null)} />}
       {upload && <UploadDialog targetMapId={upload.targetMapId} onClose={() => setUpload(null)} />}
       {exportMapId && <ExportDialog mapId={exportMapId} onClose={() => setExportMapId(null)} />}
+      {shareMapId && <ShareDialog mapId={shareMapId} onClose={() => setShareMapId(null)} />}
       <PersonalFeatureCard />
     </>
   );
