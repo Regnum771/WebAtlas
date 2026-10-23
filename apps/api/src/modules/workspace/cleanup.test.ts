@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { discardDraft } from '@webatlas/versioning';
@@ -486,21 +486,24 @@ describe('file lifecycle', () => {
   });
 
   it('the store sweep removes old orphan files only: young ones, files with a row and links are kept', async () => {
-    const now = new Date();
-    const old = new Date(now.getTime() - 2 * DAY);
+    // Age is taken from the newest of mtime, ctime and birthtime, and a file just written cannot
+    // be made older than now (backdating its mtime changes its ctime). So the sweep's clock runs
+    // two days ahead instead: every file written here is two days old to it.
+    const later = new Date(Date.now() + 2 * DAY);
+    const old = new Date(Date.now() - 2 * DAY);
     const me = owner();
     const oldOrphan = `uploads/${me}/${randomUUID()}/original.kml`;
     const youngOrphan = `cog/${me}/${randomUUID()}.tif`;
     const workLeftover = `exports/${me}/${randomUUID()}/.work-abc123/ban-do.gpkg`;
     const partLeftover = `cog/${me}/${randomUUID()}.tif.part`;
     const outsideTrees = 'ghi-chu.txt'; // at the root, in none of the three trees: not walked
-    writeInStore(oldOrphan, 'x', old);
-    writeInStore(youngOrphan, 'x');
-    writeInStore(workLeftover, 'x', old);
-    writeInStore(partLeftover, 'x', old);
-    writeInStore(outsideTrees, 'x', old);
+    writeInStore(oldOrphan);
+    // Written an hour before the sweep's clock: young to it.
+    writeInStore(youngOrphan, 'x', new Date(later.getTime() - HOUR));
+    writeInStore(workLeftover);
+    writeInStore(partLeftover);
+    writeInStore(outsideTrees);
     const withRow = await addFile(me, 'upload');
-    utimesSync(path.join(STORE, ...withRow.rel.split('/')), old, old);
 
     // A directory link (a junction on Windows) inside the store, to an old file outside it.
     const target = path.join(OUTSIDE, 'khong-dung.txt');
@@ -521,7 +524,7 @@ describe('file lifecycle', () => {
     }
     extraPaths.push(target);
 
-    expect(await reconcileStore(getPool(), now)).toEqual({ removed: 3 });
+    expect(await reconcileStore(getPool(), later)).toEqual({ removed: 3 });
 
     expect(onDisk(oldOrphan)).toBe(false);
     expect(onDisk(workLeftover)).toBe(false);
@@ -536,8 +539,31 @@ describe('file lifecycle', () => {
     expect(existsSync(path.join(STORE, ...path.posix.dirname(oldOrphan).split('/')))).toBe(true);
 
     // A shorter age reaches the young orphan.
-    expect(await reconcileStore(getPool(), new Date(now.getTime() + 1000), { olderThanMs: 0 })).toEqual({ removed: 1 });
+    expect(await reconcileStore(getPool(), new Date(later.getTime() + 1000), { olderThanMs: 0 })).toEqual({ removed: 1 });
     expect(onDisk(youngOrphan)).toBe(false);
     expect(onDisk(withRow.rel)).toBe(true);
+  });
+
+  it('the store sweep keeps a file copied a moment ago, even when the copy kept an old mtime', async () => {
+    // As sharing.ts copyCog does: fs.copyFile from a COG last written two days ago. On Windows
+    // and macOS the copy keeps the source's mtime; the row only commits with the whole map copy.
+    const old = new Date(Date.now() - 2 * DAY);
+    const source = path.join(OUTSIDE, 'anh-goc.tif');
+    writeFileSync(source, 'x');
+    utimesSync(source, old, old);
+    extraPaths.push(source);
+    const copied = `cog/${owner()}/${randomUUID()}.tif`;
+    const abs = path.join(STORE, ...copied.split('/'));
+    mkdirSync(path.dirname(abs), { recursive: true });
+    copyFileSync(source, abs);
+    written.add(copied);
+    // Pinned on every platform: the copy's mtime is two days old, whatever copyFile kept.
+    utimesSync(abs, old, old);
+
+    expect(await reconcileStore(getPool(), new Date())).toEqual({ removed: 0 });
+    expect(onDisk(copied)).toBe(true);
+    // An orphan in every other respect: two days on, with still no row, it goes.
+    expect(await reconcileStore(getPool(), new Date(Date.now() + 2 * DAY))).toEqual({ removed: 1 });
+    expect(onDisk(copied)).toBe(false);
   });
 });

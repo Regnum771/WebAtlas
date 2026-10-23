@@ -157,7 +157,8 @@ export async function deleteExpiredFiles(
 
 /**
  * Remove orphan files from the store: regular files under uploads/, cog/ and exports/ that are
- * older than `olderThanMs` (by mtime; ORPHAN_FILE_GRACE_MS by default) and that no workspace.files
+ * older than `olderThanMs` (by the newest of mtime, ctime and birthtime; ORPHAN_FILE_GRACE_MS by
+ * default) and that no workspace.files
  * row names. They are what a crash or an interrupted job leaves: an export's .work-* files, a
  * COG's .part temporaries, a file written before its row was committed. The grace period keeps
  * clear of a job that is still writing.
@@ -190,7 +191,11 @@ export async function reconcileStore(
         await walk(abs, childRel);
       } else if (entry.isFile()) {
         const info = await lstat(abs);
-        if (info.isFile() && info.mtimeMs < cutoff) candidates.push(childRel);
+        // Age from the newest of the three times: a copy (fs.copyFile, as sharing.ts copyCog
+        // does) keeps the source's mtime on Windows and macOS, so a COG copied a moment ago,
+        // whose row commits only with the whole map copy, would otherwise look a day old.
+        const touched = Math.max(info.mtimeMs, info.ctimeMs, info.birthtimeMs);
+        if (info.isFile() && touched < cutoff) candidates.push(childRel);
       }
     }
   }
