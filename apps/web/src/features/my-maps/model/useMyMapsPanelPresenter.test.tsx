@@ -19,6 +19,9 @@ vi.mock('../api/workspace.api', () => ({
 }));
 
 import { useMyMapsPanelPresenter } from './useMyMapsPanelPresenter';
+import { ApiError } from '../../../shared/api/apiClient';
+import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
+import { MAP_CHANGED_COPY } from './queries';
 import { resetMyMapsStore, getMyMaps } from './myMaps.store';
 
 const MINE = { id: 'm1', title: 'Lũ Đà Nẵng', description: '', ownerId: 'u1', ownerName: 'Tôi', revision: 3, updatedAt: '2026-10-01T00:00:00Z', layerCount: 2, role: 'owner' as const };
@@ -33,6 +36,7 @@ function setup() {
 beforeEach(() => {
   [listMaps, getMap, createMap, updateMap, deleteMap, listUploads].forEach((m) => m.mockReset());
   resetMyMapsStore();
+  resetToasts();
   listMaps.mockResolvedValue({ mine: [MINE], sharedWithMe: [SHARED] });
   listUploads.mockResolvedValue({ uploads: [], usageBytes: 2048, quotaBytes: 1073741824 });
   getMap.mockImplementation(async (id: string) => ({ ...(id === 'm1' ? MINE : SHARED), layers: [] }));
@@ -81,5 +85,51 @@ describe('useMyMapsPanelPresenter', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.own[0].canWrite).toBe(true);
     expect(result.current.shared[0].canWrite).toBe(false);
+  });
+
+  it('rename sends the detail revision, not the list revision', async () => {
+    getMap.mockImplementation(async (id: string) => ({ ...(id === 'm1' ? MINE : SHARED), revision: id === 'm1' ? 7 : 5, layers: [] }));
+    updateMap.mockResolvedValue({ ...MINE, title: 'Mới', revision: 8, layers: [] });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.openRename('m1'));
+    act(() => result.current.setTitle('Mới'));
+    await act(async () => { await result.current.submit(); });
+    expect(updateMap).toHaveBeenCalledWith('m1', { title: 'Mới', expectedRevision: 7 });
+    expect(result.current.dialog.open).toBe(false);
+  });
+
+  it('MAP_CHANGED on rename keeps the typed title and shows the copy', async () => {
+    updateMap.mockRejectedValue(new ApiError(409, 'MAP_CHANGED', 'x'));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.openRename('m1'));
+    act(() => result.current.setTitle('Tên gõ dở'));
+    await act(async () => { await result.current.submit(); });
+    expect(result.current.dialog.open).toBe(true);
+    expect(result.current.dialog.title).toBe('Tên gõ dở');
+    expect(result.current.dialog.error).toBe(MAP_CHANGED_COPY);
+  });
+
+  it('MAP_CHANGED on delete shows the copy', async () => {
+    deleteMap.mockRejectedValue(new ApiError(409, 'MAP_CHANGED', 'x'));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.askDelete('m1'));
+    await act(async () => { await result.current.confirmDelete(); });
+    expect(result.current.pendingDelete).toBe(true);
+    expect(result.current.deleteError).toBe(MAP_CHANGED_COPY);
+  });
+
+  it('a map gone on delete leaves the list', async () => {
+    deleteMap.mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'x'));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    listMaps.mockResolvedValue({ mine: [], sharedWithMe: [SHARED] });
+    act(() => result.current.askDelete('m1'));
+    await act(async () => { await result.current.confirmDelete(); });
+    expect(result.current.pendingDelete).toBe(false);
+    await waitFor(() => expect(result.current.own).toEqual([]));
+    expect(getToasts().map((t) => t.title)).toContain('Bản đồ này không còn được chia sẻ với anh/chị hoặc đã bị xoá.');
   });
 });

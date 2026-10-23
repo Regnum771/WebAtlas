@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { ApiError } from '../../../shared/api/apiClient';
 import * as api from '../api/workspace.api';
 import type { MapSummary } from '../api/workspace.api';
-import { keys, MAP_CHANGED_COPY, useMyMaps, useUploads } from './queries';
+import { showToast } from '../../../shared/ui/toast.store';
+import { keys, MapGoneError, useMapWrite, useMyMaps, useUploads } from './queries';
 import { layerKindLabel } from './layerKindLabel';
 import {
   expandMap, forgetMap, layerView, setLayerOpacity, setLayerVisible, toggleCollapsed, toggleExpanded, useMyMapsStore,
@@ -34,7 +34,6 @@ export interface DialogState { open: boolean; mode: DialogMode; mapId: string | 
 const CLOSED: DialogState = { open: false, mode: 'create', mapId: null, title: '', error: null, busy: false };
 
 function messageOf(e: unknown): string {
-  if (e instanceof ApiError && e.code === 'MAP_CHANGED') return MAP_CHANGED_COPY;
   return e instanceof Error ? e.message : 'Chưa lưu được. Thử lại.';
 }
 
@@ -57,6 +56,10 @@ export function useMyMapsPanelPresenter() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Writes go through useMapWrite, which sends the revision of the last read of the map.
+  const renameWrite = useMapWrite(dialog.mapId ?? '');
+  const deleteWrite = useMapWrite(deleteId ?? '');
 
   const card = (m: MapSummary): MapCardData => {
     const expanded = store.expanded.has(m.id);
@@ -99,35 +102,46 @@ export function useMyMapsPanelPresenter() {
         await refreshMaps();
         expandMap(created.id);
       } else {
-        const target = all.find((m) => m.id === dialog.mapId);
-        if (!target) throw new Error('Bản đồ không còn trong danh sách.');
-        await api.updateMap(target.id, { title, expectedRevision: target.revision });
-        await Promise.all([refreshMaps(), qc.invalidateQueries({ queryKey: keys.map(target.id) })]);
+        const mapId = dialog.mapId as string;
+        await renameWrite.run((expectedRevision) => api.updateMap(mapId, { title, expectedRevision }));
       }
       setDialog(CLOSED);
     } catch (e) {
-      // A stale revision reloads the list; the typed title stays for a retry.
-      if (e instanceof ApiError && e.code === 'MAP_CHANGED') await refreshMaps();
+      if (e instanceof MapGoneError) {
+        // The map was deleted or unshared elsewhere: drop it and close the dialog.
+        goneCleanup(dialog.mapId, e);
+        setDialog(CLOSED);
+        return;
+      }
+      // MapChangedError already refetched the map; the typed title stays for a retry.
       setDialog((d) => ({ ...d, busy: false, error: messageOf(e) }));
     }
+  }
+
+  function goneCleanup(mapId: string | null, e: MapGoneError) {
+    if (mapId) forgetMap(mapId, detailOf.get(mapId)?.layers.map((l) => l.id) ?? []);
+    showToast({ tone: 'warning', title: e.message });
   }
 
   const askDelete = (mapId: string) => { setDeleteError(null); setDeleteId(mapId); };
   const cancelDelete = () => { setDeleteId(null); setDeleteError(null); };
   async function confirmDelete(): Promise<void> {
-    const target = all.find((m) => m.id === deleteId);
-    if (!target) return;
+    if (deleteId === null) return;
+    const mapId = deleteId;
     setDeleting(true);
     setDeleteError(null);
     try {
-      await api.deleteMap(target.id, target.revision);
-      forgetMap(target.id, detailOf.get(target.id)?.layers.map((l) => l.id) ?? []);
-      qc.removeQueries({ queryKey: keys.map(target.id) });
-      await refreshMaps();
+      await deleteWrite.run((expectedRevision) => api.deleteMap(mapId, expectedRevision));
+      forgetMap(mapId, detailOf.get(mapId)?.layers.map((l) => l.id) ?? []);
+      qc.removeQueries({ queryKey: keys.map(mapId) });
       setDeleteId(null);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'MAP_CHANGED') await refreshMaps();
-      setDeleteError(messageOf(e));
+      if (e instanceof MapGoneError) {
+        goneCleanup(mapId, e);
+        setDeleteId(null);
+      } else {
+        setDeleteError(messageOf(e));
+      }
     } finally {
       setDeleting(false);
     }
