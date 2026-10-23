@@ -48,3 +48,15 @@ describe('apiClient', () => {
     await expect(apiRequest('/x')).rejects.toMatchObject({ status: 0, code: 'NETWORK_ERROR' });
   });
 });
+
+describe('apiClient FormData', () => {
+  it('a FormData body is sent without a JSON content type', async () => {
+    const fetchMock = mockFetchOnce(200, {});
+    vi.stubGlobal('fetch', fetchMock);
+    const body = new FormData();
+    body.append('file', new Blob(['x']), 'a.txt');
+    await apiRequest('/x', { method: 'POST', body });
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+  });
+});

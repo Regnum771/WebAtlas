@@ -20,13 +20,19 @@ let unauthorizedCb: (() => void) | null = null;
 export function setAuthToken(token: string | null): void {
   authToken = token;
 }
+/** The current bearer token, for requests that cannot go through apiRequest (XHR upload, blob download). */
+export function getAuthToken(): string | null {
+  return authToken;
+}
 export function onUnauthorized(cb: () => void): void {
   unauthorizedCb = cb;
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) };
-  if (!headers['Content-Type'] && init.body) headers['Content-Type'] = 'application/json';
+  // A FormData body needs the browser's own multipart Content-Type (with its boundary).
+  const isForm = typeof FormData !== 'undefined' && init.body instanceof FormData;
+  if (!headers['Content-Type'] && init.body && !isForm) headers['Content-Type'] = 'application/json';
   if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
   let res: Response;

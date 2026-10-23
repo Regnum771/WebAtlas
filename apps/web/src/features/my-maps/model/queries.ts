@@ -1,0 +1,94 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ApiError } from '../../../shared/api/apiClient';
+import * as api from '../api/workspace.api';
+import type { MapDetail } from '../api/workspace.api';
+
+export const keys = {
+  maps: ['ws', 'maps'] as const,
+  map: (id: string) => ['ws', 'map', id] as const,
+  uploads: ['ws', 'uploads'] as const,
+  job: (id: string) => ['ws', 'job', id] as const,
+  jobs: (mapId: string) => ['ws', 'jobs', mapId] as const,
+};
+
+export const MAP_CHANGED_COPY = 'Bản đồ đã thay đổi ở nơi khác. Đã tải lại bản mới nhất; hãy thử lại.';
+export const MAP_GONE_COPY = 'Bản đồ này không còn được chia sẻ với anh/chị hoặc đã bị xoá.';
+
+export class MapChangedError extends Error {
+  constructor() {
+    super(MAP_CHANGED_COPY);
+    this.name = 'MapChangedError';
+  }
+}
+export class MapGoneError extends Error {
+  constructor() {
+    super(MAP_GONE_COPY);
+    this.name = 'MapGoneError';
+  }
+}
+
+const POLL_MS = 1000;
+
+export function useMyMaps() {
+  return useQuery({ queryKey: keys.maps, queryFn: api.listMaps });
+}
+
+export function useMapDetail(id: string | null) {
+  return useQuery({
+    queryKey: keys.map(id ?? ''),
+    queryFn: () => api.getMap(id as string),
+    enabled: id !== null,
+  });
+}
+
+export function useUploads() {
+  return useQuery({ queryKey: keys.uploads, queryFn: api.listUploads });
+}
+
+/** A job, polled every second while queued or running; polling stops on a final status or any error (a 401 included). */
+export function useJob(id: string | null) {
+  return useQuery({
+    queryKey: keys.job(id ?? ''),
+    queryFn: () => api.getJob(id as string),
+    enabled: id !== null,
+    refetchInterval: (query) => {
+      if (query.state.error) return false;
+      const status = query.state.data?.status;
+      return status === 'succeeded' || status === 'failed' ? false : POLL_MS;
+    },
+  });
+}
+
+export function useMapJobs(mapId: string) {
+  return useQuery({ queryKey: keys.jobs(mapId), queryFn: () => api.listJobs({ mapId }) });
+}
+
+/**
+ * Runs a write on a map with the revision of the last read. A stale revision refetches the map
+ * and throws MapChangedError; a 404 drops the map from the cache and throws MapGoneError.
+ */
+export function useMapWrite(mapId: string) {
+  const qc = useQueryClient();
+  async function run<T>(write: (expectedRevision: number) => Promise<T>): Promise<T> {
+    const revision = qc.getQueryData<MapDetail>(keys.map(mapId))?.revision ?? 0;
+    const refresh = () =>
+      Promise.all([qc.invalidateQueries({ queryKey: keys.map(mapId) }), qc.invalidateQueries({ queryKey: keys.maps })]);
+    try {
+      const result = await write(revision);
+      await refresh();
+      return result;
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'MAP_CHANGED') {
+        await refresh();
+        throw new MapChangedError();
+      }
+      if (e instanceof ApiError && e.status === 404) {
+        qc.removeQueries({ queryKey: keys.map(mapId) });
+        await qc.invalidateQueries({ queryKey: keys.maps });
+        throw new MapGoneError();
+      }
+      throw e;
+    }
+  }
+  return { run };
+}
