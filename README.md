@@ -111,6 +111,37 @@ To stop the stack: `docker compose -f infra/docker-compose.yml --env-file infra/
 > `CORS_ORIGIN` in `apps/api/.env` if you change the Vite port). `npm run build:web` type-checks and builds the
 > frontend; `npm run lint:web` runs oxlint.
 
+### Workspace worker (personal-map import/export)
+
+Imports and exports of personal maps are jobs the API queues in `workspace.jobs`; a Python worker
+(`packages/atlas-data/tools/workspace/worker.py`, in the `atlas-tools` image) runs them. The API and the worker share
+one file store, the git-ignored `var/workspace-files` (the API's default `WORKSPACE_FILES_DIR`; the worker sees it as
+`/repo/var/workspace-files`). Without a running worker, jobs stay `queued`.
+
+```bash
+docker compose -f infra/docker-compose.yml --profile worker up -d worker    # start it (restarts with Docker)
+docker compose -f infra/docker-compose.yml --profile worker logs -f worker  # follow it
+docker compose -f infra/docker-compose.yml --profile worker stop worker     # stop it
+# Run at most one queued job, then exit:
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools python3 packages/atlas-data/tools/workspace/worker.py --once
+```
+
+Its tests are plain scripts that print `ok` / `FAIL`; run each `packages/atlas-data/tools/workspace/test_*.py` in the
+image (the DB stack must be up):
+
+```bash
+docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps tools python3 packages/atlas-data/tools/workspace/test_worker.py
+```
+
+The end-to-end test through the API and the real worker is opt-in (it is skipped in `npm run test:api`). It needs the
+DB stack up and the `atlas-tools` image built, and no other job queued; stop the `worker` service first so it does not
+take the test's jobs. It writes to `var/workspace-files` and removes only its own files.
+
+```bash
+WORKER_E2E=1 npm run test -w @webatlas/api -- workerE2E            # bash
+$env:WORKER_E2E='1'; npm run test -w @webatlas/api -- workerE2E     # PowerShell
+```
+
 ## API surface
 
 ```
