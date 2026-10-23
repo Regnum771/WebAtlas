@@ -9,6 +9,7 @@ import { parseStyle, type PersonalLayerStyle } from './personalStyle';
 import {
   expandMap, forgetMap, layerView, setLayerOpacity, setLayerVisible, toggleCollapsed, toggleExpanded, useMyMapsStore,
 } from './myMaps.store';
+import { openTable } from './table.store';
 
 export interface LayerRowData {
   id: string;
@@ -185,6 +186,12 @@ export function useMyMapsPanelPresenter() {
     }
   }
 
+  /** Bảng: opens the table of a layer; the map is expanded so its rows stay in view. */
+  const openLayerTable = (mapId: string, layerId: string) => {
+    expandMap(mapId);
+    openTable(mapId, layerId);
+  };
+
   return {
     loading: maps.isLoading,
     error: maps.error ? messageOf(maps.error) : null,
@@ -210,5 +217,6 @@ export function useMyMapsPanelPresenter() {
     cancelDelete,
     confirmDelete,
     copy,
+    openLayerTable,
   };
 }

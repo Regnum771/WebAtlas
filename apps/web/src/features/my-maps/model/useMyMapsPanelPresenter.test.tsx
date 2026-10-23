@@ -25,6 +25,7 @@ import { ApiError } from '../../../shared/api/apiClient';
 import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
 import { keys, MAP_CHANGED_COPY } from './queries';
 import { resetMyMapsStore, getMyMaps, expandMap, setTruncated } from './myMaps.store';
+import { getTableState, resetTableStore } from './table.store';
 
 const MINE = { id: 'm1', title: 'Lũ Đà Nẵng', description: '', ownerId: 'u1', ownerName: 'Tôi', revision: 3, updatedAt: '2026-10-01T00:00:00Z', layerCount: 2, role: 'owner' as const };
 const SHARED = { ...MINE, id: 'm2', title: 'Sông Hàn', ownerId: 'u2', ownerName: 'Lan', revision: 5, role: 'recipient' as const };
@@ -38,6 +39,7 @@ function setup() {
 beforeEach(() => {
   [listMaps, getMap, createMap, updateMap, deleteMap, listUploads, copyMap].forEach((m) => m.mockReset());
   resetMyMapsStore();
+  resetTableStore();
   resetToasts();
   listMaps.mockResolvedValue({ mine: [MINE], sharedWithMe: [SHARED] });
   listUploads.mockResolvedValue({ uploads: [], usageBytes: 2048, quotaBytes: 1073741824 });
@@ -190,5 +192,13 @@ describe('useMyMapsPanelPresenter', () => {
     await act(async () => { await result.current.copy('m2'); });
     expect(getToasts().map((t) => t.title)).toContain('Hết dung lượng.');
     expect(result.current.own.map((c) => c.id)).toEqual(['m1']);
+  });
+
+  it('openLayerTable expands the map and opens the table of that layer', async () => {
+    const { result } = setup();
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => { result.current.openLayerTable('m1', 'l7'); });
+    expect(getMyMaps().expanded.has('m1')).toBe(true);
+    expect(getTableState().open).toEqual({ mapId: 'm1', layerId: 'l7' });
   });
 });

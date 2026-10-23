@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '../../../shared/ui/Button';
 import { Spinner } from '../../../shared/ui/Spinner';
 import type { MapCardData } from '../model/useMyMapsPanelPresenter';
+import { CardMenuView, type CardMenuItem } from './CardMenu.view';
 import { LayerRowView } from './LayerRow.view';
 
 interface Props {
@@ -18,20 +19,38 @@ interface Props {
   onLayerOpacity: (layerId: string, opacity: number) => void;
   onAddLayer: (kind: 'drawn' | 'edit_copy') => void;
   onLayerSettings: (layerId: string) => void;
-  /** Owner only: the feature drawing and editing controls (PersonalEditingView), shown when expanded. */
-  editor?: ReactNode;
+  /** Opens a layer's table (and expands the map). */
+  onLayerTable: (layerId: string) => void;
 }
 
-/** A map in the list: its title, owner and layer count; expanded, its layers and (for the owner) the actions. */
-export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onExport, onShare, onCopy, onLayerVisible, onLayerOpacity, onAddLayer, onLayerSettings, editor }: Props) {
+/**
+ * A map in the list. The header holds the title, the layer count and the ⋯ menu (the map-level
+ * actions); expanded, the card shows its layers and, for the owner, Tải tệp lên and Thêm lớp.
+ */
+export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onExport, onShare, onCopy, onLayerVisible, onLayerOpacity, onAddLayer, onLayerSettings, onLayerTable }: Props) {
   const [adding, setAdding] = useState(false);
   const Chevron = card.expanded ? ChevronDown : ChevronRight;
+  // The owner and the people it is shared with may all download.
+  const menu: CardMenuItem[] = card.canWrite
+    ? [
+      { label: 'Tải xuống', onSelect: onExport },
+      { label: 'Chia sẻ', onSelect: onShare },
+      { label: 'Đổi tên', onSelect: onRename },
+      { label: 'Xoá bản đồ', onSelect: onDelete, danger: true },
+    ]
+    : [
+      { label: 'Tải xuống', onSelect: onExport },
+      { label: 'Tạo bản sao', onSelect: onCopy },
+    ];
   return (
     <li className="my-map-card">
-      <button type="button" className="my-map-head" aria-expanded={card.expanded} onClick={onToggle}>
-        <Chevron size={16} aria-hidden="true" />
-        <span className="my-map-title">{card.title}</span>
-      </button>
+      <div className="my-map-top">
+        <button type="button" className="my-map-head" aria-expanded={card.expanded} onClick={onToggle}>
+          <Chevron size={16} aria-hidden="true" />
+          <span className="my-map-title">{card.title}</span>
+        </button>
+        <CardMenuView items={menu} />
+      </div>
       <p className="my-map-meta">
         {card.ownerLabel ? `${card.ownerLabel} · ` : ''}{card.layerCount} lớp
       </p>
@@ -44,20 +63,13 @@ export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onEx
               onVisible={(v) => onLayerVisible(layer.id, v)}
               onOpacity={(o) => onLayerOpacity(layer.id, o)}
               onSettings={card.canWrite ? () => onLayerSettings(layer.id) : undefined}
+              onTable={layer.kind === 'raster' ? undefined : () => onLayerTable(layer.id)}
             />
           ))}
-          {/* The owner and the people it is shared with may all download. */}
-          <div className="my-map-actions">
-            <Button size="sm" onClick={onExport}>Tải xuống</Button>
-            {!card.canWrite && <Button size="sm" busy={card.copying} onClick={onCopy}>Tạo bản sao</Button>}
-          </div>
           {card.canWrite && (
             <div className="my-map-actions">
+              <Button size="sm" onClick={onUpload}>Tải tệp lên</Button>
               <Button size="sm" aria-expanded={adding} onClick={() => setAdding((v) => !v)}>Thêm lớp</Button>
-              <Button size="sm" onClick={onUpload}>Tải tệp lên vào bản đồ này</Button>
-              <Button size="sm" onClick={onShare}>Chia sẻ</Button>
-              <Button size="sm" onClick={onRename}>Đổi tên</Button>
-              <Button size="sm" variant="danger" onClick={onDelete}>Xoá bản đồ</Button>
             </div>
           )}
           {card.canWrite && adding && (
@@ -66,7 +78,6 @@ export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onEx
               <Button size="sm" onClick={() => { setAdding(false); onAddLayer('edit_copy'); }}>Sửa một lớp chính thức</Button>
             </div>
           )}
-          {card.canWrite && editor}
         </div>
       )}
     </li>

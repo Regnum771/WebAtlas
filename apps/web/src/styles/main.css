@@ -1004,6 +1004,22 @@ body {
 .my-map-body { padding-left: var(--space-4); }
 .my-map-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) 0; }
 .my-map-actions .btn { white-space: nowrap; }
+.my-map-top { display: flex; align-items: center; gap: var(--space-1); }
+.my-map-top .my-map-head { flex: 1; min-width: 0; width: auto; }
+.card-menu { position: relative; flex: none; }
+.card-menu-button { font-size: var(--text-md); line-height: 1; padding-inline: var(--space-2); }
+.card-menu-list {
+  position: absolute; top: 100%; right: 0; z-index: 20; min-width: 9rem;
+  display: flex; flex-direction: column; padding: var(--space-1) 0;
+  background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.card-menu-item {
+  background: none; border: 0; padding: var(--space-2) var(--space-3); font: inherit;
+  font-size: var(--text-sm); color: var(--ink); text-align: left; white-space: nowrap; cursor: pointer;
+}
+.card-menu-item:hover, .card-menu-item:focus-visible { background: var(--rule); }
+.card-menu-item.danger { color: var(--alert); }
 .my-maps-field-row { display: flex; gap: var(--space-2); margin-bottom: var(--space-2); }
 .my-maps-field-row .input:first-child { flex: 1; min-width: 0; }
 .my-maps-fields-title { display: block; margin-bottom: var(--space-2); font-weight: 600; }

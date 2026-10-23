@@ -12,7 +12,7 @@ const base = {
   onToggleCollapsed: noop, onRetry: noop, onNewMap: noop, onToggleCard: noop, onRename: noop, onAskDelete: noop,
   onLayerVisible: noop, onLayerOpacity: noop, onDialogTitle: noop, onDialogSubmit: noop, onDialogClose: noop,
   onConfirmDelete: noop, onCancelDelete: noop, onUpload: noop, onExport: noop, onShare: noop, onCopy: noop,
-  onAddLayer: noop, onLayerSettings: noop,
+  onAddLayer: noop, onLayerSettings: noop, onLayerTable: noop,
 };
 const extra = {
   style: { color: '#d9480f', width: 2, fillOpacity: 0.25, pointRadius: 6 },
@@ -49,7 +49,7 @@ describe('MyMapsPanelView', () => {
     // A hidden layer has no opacity slider.
     expect(screen.queryByRole('slider', { name: 'Độ mờ Nhập' })).toBeNull();
     expect(screen.getByRole('slider', { name: 'Độ mờ Vẽ' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Đổi tên' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Thao tác khác' })).toBeInTheDocument();
   });
 
   it('a raster row has its opacity slider only, never the truncation note', () => {
@@ -61,21 +61,24 @@ describe('MyMapsPanelView', () => {
     expect(screen.queryByText(/Chỉ hiện/)).toBeNull();
   });
 
-  it('a shared card names its owner and offers no owner actions', () => {
+  it('a shared card names its owner and offers no owner actions', async () => {
     render(<MyMapsPanelView {...base} shared={[card({ ownerLabel: 'của Lan', canWrite: false, expanded: true, layers: [] })]} />);
     expect(screen.getByText('của Lan · 3 lớp')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Đổi tên' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Xoá bản đồ' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Tải tệp lên vào bản đồ này' })).toBeNull();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Thao tác khác' }));
+    expect(screen.queryByRole('menuitem', { name: 'Đổi tên' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Xoá bản đồ' })).toBeNull();
+    // Only the section's own Tải tệp lên remains; the card has none.
+    expect(screen.getAllByRole('button', { name: 'Tải tệp lên' })).toHaveLength(1);
   });
 
   it('Tải tệp lên opens the upload into a new map; the owner card action into that map', async () => {
     const onUpload = vi.fn();
     const user = userEvent.setup();
     render(<MyMapsPanelView {...base} onUpload={onUpload} own={[card({ expanded: true, layers: [] })]} />);
-    await user.click(screen.getByRole('button', { name: 'Tải tệp lên' }));
+    const [section, inCard] = screen.getAllByRole('button', { name: 'Tải tệp lên' });
+    await user.click(section);
     expect(onUpload).toHaveBeenLastCalledWith(null);
-    await user.click(screen.getByRole('button', { name: 'Tải tệp lên vào bản đồ này' }));
+    await user.click(inCard);
     expect(onUpload).toHaveBeenLastCalledWith('m1');
   });
 

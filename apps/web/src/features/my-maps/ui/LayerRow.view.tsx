@@ -7,6 +7,8 @@ interface Props {
   onOpacity: (opacity: number) => void;
   /** Owner only: opens the layer's settings. Absent for a recipient, who gets no layer actions. */
   onSettings?: () => void;
+  /** Opens the layer's table; absent for a raster, which has no features. */
+  onTable?: () => void;
 }
 
 /**
@@ -14,7 +16,7 @@ interface Props {
  * a note when the last viewport read was cut short. A raster has the opacity slider only: it is
  * not read by viewport, so it has no note.
  */
-export function LayerRowView({ layer, onVisible, onOpacity, onSettings }: Props) {
+export function LayerRowView({ layer, onVisible, onOpacity, onSettings, onTable }: Props) {
   return (
     <div className="layer-row my-maps-layer">
       <label className="layer-label">
@@ -22,6 +24,11 @@ export function LayerRowView({ layer, onVisible, onOpacity, onSettings }: Props)
         <span>{layer.title}</span>
       </label>
       <span className="layer-gate-hint">{layer.kindLabel}</span>
+      {onTable && (
+        <button type="button" className="btn quiet sm" aria-label={`Bảng ${layer.title}`} onClick={onTable}>
+          Bảng
+        </button>
+      )}
       {onSettings && (
         <button type="button" className="btn quiet sm" aria-label={`Thiết lập lớp ${layer.title}`} onClick={onSettings}>
           <Settings size={14} aria-hidden="true" />
