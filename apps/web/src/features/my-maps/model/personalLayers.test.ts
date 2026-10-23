@@ -20,7 +20,7 @@ vi.mock('../api/workspace.api', () => ({
 }));
 
 import type { LayerSummary, PersonalFeature } from '../api/workspace.api';
-import { isPersonalLayer } from '../../map/model/overlayLayers';
+import { isPersonalLayer, PERSONAL_HIT_TOLERANCE } from '../../map/model/overlayLayers';
 import {
   personalFeatureAt, refreshPersonalLayer, syncPersonalLayers, type PersonalLayerEntry,
 } from './personalLayers';
@@ -242,6 +242,20 @@ describe('personalFeatureAt', () => {
     const [lon, lat] = hit.feature.geometry!.coordinates as number[];
     expect(lon).toBeCloseTo(108.25, 6);
     expect(lat).toBeCloseTo(16.05, 6);
+  });
+
+  it('a click 2 px off a personal line hits it, with the tolerance the official popup also uses', async () => {
+    const map = makeMap();
+    listFeatures.mockResolvedValueOnce(fc([point('a', 108.25, 16.05)], false));
+    syncPersonalLayers(map, [entry(FREE)]);
+    const free = byId(map, 'ws:l1');
+    free.getSource()!.loadFeatures(WIDE, 1000, EPSG3857);
+    await vi.waitFor(() => expect(free.getSource()!.getFeatures()).toHaveLength(1));
+    // The feature is 2 px from the click: only a hit test with a tolerance of 2 px or more finds it.
+    const spy = vi.spyOn(map, 'forEachFeatureAtPixel').mockImplementation(((_px: unknown, cb: (f: FeatureLike, l: Layer) => unknown, opts?: { hitTolerance?: number }) =>
+      ((opts?.hitTolerance ?? 0) >= 2 ? cb(free.getSource()!.getFeatures()[0], free as unknown as Layer) : undefined)) as never);
+    expect(personalFeatureAt(map, [10, 10])?.feature.id).toBe('a');
+    expect((spy.mock.calls[0][2] as { hitTolerance?: number }).hitTolerance).toBe(PERSONAL_HIT_TOLERANCE);
   });
 
   it('returns null when no personal feature is under the pixel', () => {

@@ -8,6 +8,12 @@ export const OVERLAY_LAYER_IDS: ReadonlySet<string> = new Set([ROI_LAYER_ID, RES
 export const PERSONAL_LAYER_PROP = 'personal';
 
 /**
+ * Pixels around a click within which a personal feature counts as clicked. The personal card and
+ * the official popup both decide "a personal feature was clicked" with it, so they never both open.
+ */
+export const PERSONAL_HIT_TOLERANCE = 3;
+
+/**
  * A layer of a personal map: never a target of the official popup or the official edit
  * selection, whatever its id. Typed structurally so a hit-test callback's layer fits as is.
  */

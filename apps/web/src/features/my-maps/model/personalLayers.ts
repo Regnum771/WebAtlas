@@ -9,7 +9,7 @@ import { transformExtent, type ProjectionLike } from 'ol/proj';
 import VectorSource from 'ol/source/Vector';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import { listFeatures, type GeoJsonGeometry, type LayerSummary, type PersonalFeature } from '../api/workspace.api';
-import { isPersonalLayer, PERSONAL_LAYER_PROP } from '../../map/model/overlayLayers';
+import { isPersonalLayer, PERSONAL_HIT_TOLERANCE, PERSONAL_LAYER_PROP } from '../../map/model/overlayLayers';
 import { editCopyStyle, olStyleFor, parseStyle } from './personalStyle';
 
 /**
@@ -204,7 +204,7 @@ export function personalFeatureAt(
   const hit = map.forEachFeatureAtPixel(
     pixel,
     (feature, layer) => ({ feature: feature as Feature, layer: layer as Layer }),
-    { layerFilter: (layer) => isPersonalLayer(layer), hitTolerance: 3 },
+    { layerFilter: (layer) => isPersonalLayer(layer), hitTolerance: PERSONAL_HIT_TOLERANCE },
   );
   if (!hit) return null;
   const geo = format.writeFeatureObject(hit.feature, {

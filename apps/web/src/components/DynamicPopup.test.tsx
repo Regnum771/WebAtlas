@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
   labelOnTop: false,
   thematic: null as null | Record<string, unknown>,
   personalOnTop: false,
+  /** A personal line 2 px from the click: hit only by a hit test with a tolerance of 2 px or more. */
+  personalNear: false,
 }));
 
 vi.mock('../entities/session/model/useUnitTree', async () => {
@@ -51,7 +53,11 @@ vi.mock('../app/providers/MapProvider', () => {
     getView: () => ({ calculateExtent: () => [0, 0, 1, 1], getZoom: () => 12, animate: () => {} }),
     getPixelFromCoordinate: () => [10, 10],
     getTargetElement: () => (h.target ??= document.createElement('div')),
-    hasFeatureAtPixel: () => false,
+    hasFeatureAtPixel: (_px: unknown, opts?: { layerFilter?: (l: unknown) => boolean; hitTolerance?: number }) => {
+      const personalLayer = { get: (k: string) => (k === 'personal' ? true : k === 'id' ? 'ws:l1' : undefined) };
+      const near = h.personalNear && (opts?.hitTolerance ?? 0) >= 2;
+      return (h.personalOnTop || near) && (!opts?.layerFilter || opts.layerFilter(personalLayer));
+    },
   };
   return { useMapContext: () => ({ map, reservoirFilter: 'all', setReservoirFilter: () => {} }) };
 });
@@ -171,6 +177,19 @@ describe('DynamicPopup over a personal layer', () => {
     h.personalOnTop = false;
     // The personal feature card answers this click; the official popup stays shut and asks
     // GeoServer nothing.
+    expect(container.querySelector('.dynamic-popup')).toBeNull();
+    expect(h.info).toHaveLength(0);
+  });
+});
+
+describe('DynamicPopup beside a personal line', () => {
+  beforeEach(() => { h.handler = null; h.info.length = 0; h.members.length = 0; h.thematic = null; h.personalOnTop = false; h.personalNear = true; });
+  it("a click 2 px off a personal line opens no official popup: the card's tolerance decides", async () => {
+    const { container } = render(<DynamicPopup />);
+    await click(1);
+    h.personalNear = false;
+    // forEachFeatureAtPixel (no tolerance) misses the line and sees only the province; the
+    // personal card hits it with PERSONAL_HIT_TOLERANCE, so the click is the card's.
     expect(container.querySelector('.dynamic-popup')).toBeNull();
     expect(h.info).toHaveLength(0);
   });

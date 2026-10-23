@@ -8,7 +8,7 @@ import { adminCandidates, entityCandidates, referenceLayerOfTable, thematicCandi
 import { fetchEntitiesByMember } from '../features/roi/api/roi.api';
 import { RoiCandidatesView } from '../features/roi/ui/RoiCandidates.view';
 import { setRoi } from '../features/roi/model/roi.store';
-import { isPersonalLayer, OVERLAY_LAYER_IDS } from '../features/map/model/overlayLayers';
+import { isPersonalLayer, OVERLAY_LAYER_IDS, PERSONAL_HIT_TOLERANCE } from '../features/map/model/overlayLayers';
 import { getMyMaps } from '../features/my-maps/model/myMaps.store';
 import { useMapEditing } from '../features/map/model/mapEditing';
 import { isBoundaryLabel } from '../features/map/model/waterTiles';
@@ -130,6 +130,13 @@ const DynamicPopup: React.FC = () => {
     const clickHandler = (e: any) => {
       // Editing or drawing owns clicks, official or in a personal map: no popup.
       if (editing || getMyMaps().personalEditing || isDrawing() || drawingJustEnded()) return;
+      // A personal feature near the click answers with its own card (features/my-maps), found
+      // with the card's own tolerance: a stricter test here would open both for a thin line.
+      if (map.hasFeatureAtPixel(e.pixel, { layerFilter: isPersonalLayer, hitTolerance: PERSONAL_HIT_TOLERANCE })) {
+        setPopupData(null);
+        setCandidates([]);
+        return;
+      }
       const seq = ++clickSeq.current;
       const isCurrent = () => clickSeq.current === seq;
       // Every feature under the click, not just the first: the thematic feature, and the
@@ -138,10 +145,9 @@ const DynamicPopup: React.FC = () => {
       let thematic: any = null;
       let province: any = null;
       let ward: any = null;
-      let personal = false;
       map.forEachFeatureAtPixel(e.pixel, (f, layer) => {
-        // A personal map's feature answers with its own card (features/my-maps).
-        if (isPersonalLayer(layer)) { personal = true; return undefined; }
+        // Never official data, even if the check above let it through.
+        if (isPersonalLayer(layer)) return undefined;
         // Overlays (ROI outline, results, highlight) sit above the data and are filled: they
         // must not shadow the ward/province/thematic feature underneath.
         if (OVERLAY_LAYER_IDS.has(layer?.get('id'))) return undefined;
@@ -156,12 +162,6 @@ const DynamicPopup: React.FC = () => {
         if (!ward && layerId === 'layer_wards_2026' && !isBoundaryLabel(p)) ward = p;
         return undefined; // keep iterating
       });
-      if (personal) {
-        // The click belongs to the personal feature card: no official popup, no GeoServer lookup.
-        setPopupData(null);
-        setCandidates([]);
-        return;
-      }
       const zoom = map.getView().getZoom() ?? 0;
       const base = [
         ...(thematic ? [thematicCandidate(thematic)].filter((c): c is RoiCandidate => c !== null) : []),
