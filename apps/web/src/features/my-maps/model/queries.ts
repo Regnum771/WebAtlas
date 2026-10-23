@@ -12,6 +12,8 @@ export const keys = {
   uploads: ['ws', 'uploads'] as const,
   job: (id: string) => ['ws', 'job', id] as const,
   jobs: (mapId: string) => ['ws', 'jobs', mapId] as const,
+  table: (mapId: string, layerId: string) => ['ws', 'table', mapId, layerId] as const,
+  tables: (mapId: string) => ['ws', 'table', mapId] as const,
   shares: (mapId: string) => ['ws', 'shares', mapId] as const,
 };
 
@@ -148,7 +150,11 @@ export function useMapWrite(mapId: string) {
   const qc = useQueryClient();
   async function runNow<T>(write: (expectedRevision: number) => Promise<T>, options: MapWriteOptions<T>): Promise<T> {
     const refresh = () =>
-      Promise.all([qc.invalidateQueries({ queryKey: keys.map(mapId) }), qc.invalidateQueries({ queryKey: keys.maps })]);
+      Promise.all([
+        qc.invalidateQueries({ queryKey: keys.map(mapId) }),
+        qc.invalidateQueries({ queryKey: keys.maps }),
+        qc.invalidateQueries({ queryKey: keys.tables(mapId) }),
+      ]);
     try {
       // An uncached map is read first, so a cold start does not send a made-up revision.
       const map =
@@ -160,7 +166,9 @@ export function useMapWrite(mapId: string) {
       if (typeof answered === 'number') {
         qc.setQueryData<MapDetail>(keys.map(mapId), (d) => (d ? { ...d, revision: answered } : d));
       }
-      if (options.refetch === false) await qc.invalidateQueries({ queryKey: keys.maps });
+      if (options.refetch === false) {
+        await Promise.all([qc.invalidateQueries({ queryKey: keys.maps }), qc.invalidateQueries({ queryKey: keys.tables(mapId) })]);
+      }
       else await refresh();
       options.after?.(result);
       return result;

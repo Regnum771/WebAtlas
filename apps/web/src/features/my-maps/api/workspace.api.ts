@@ -126,6 +126,42 @@ export interface OwnerSummary {
   quotaBytes: number;
 }
 
+// --- Layer table query (mirrors apps/api workspace/layerTable.ts) -------------------------
+
+export interface TableColumn {
+  name: string;
+  type: 'text' | 'number' | 'date';
+}
+export interface TableCondition {
+  field: string;
+  op: string;
+  value?: string | number;
+}
+export interface TableRow {
+  id: string;
+  properties: Record<string, unknown>;
+  /** [minX, minY, maxX, maxY] in EPSG:4326, or null for a feature without geometry. */
+  bbox: [number, number, number, number] | null;
+}
+export interface LayerQueryRequest {
+  q?: string;
+  conditions: TableCondition[];
+  match: 'all' | 'any';
+  bbox?: [number, number, number, number];
+  sort?: { field: string; dir: 'asc' | 'desc' };
+  offset: number;
+  limit: number;
+  /** A feature id whose position in the sorted, filtered result is wanted. */
+  locate?: string;
+}
+export interface LayerQueryResponse {
+  columns: TableColumn[];
+  total: number;
+  matched: number;
+  rows: TableRow[];
+  position: number | null;
+}
+
 const BASE = '/api/workspace';
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) });
 
@@ -211,6 +247,10 @@ export function removeFeature(
   expectedRevision: number
 ): Promise<{ revision: number }> {
   return apiRequest(`${BASE}/maps/${mapId}/layers/${layerId}/features/${featureId}`, json('DELETE', { expectedRevision }));
+}
+
+export function queryLayer(mapId: string, layerId: string, body: LayerQueryRequest): Promise<LayerQueryResponse> {
+  return apiRequest(`${BASE}/maps/${mapId}/layers/${layerId}/query`, json('POST', body));
 }
 
 // --- Shares -------------------------------------------------------------------------------

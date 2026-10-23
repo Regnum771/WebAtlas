@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ApiError } from '../../../shared/api/apiClient';
 import * as api from '../api/workspace.api';
-import { dropGoneMap, useJob, useMapWrite, MapChangedError, MapGoneError } from './queries';
+import { dropGoneMap, keys, useJob, useMapWrite, MapChangedError, MapGoneError } from './queries';
 import { expandMap, getMyMaps, resetMyMapsStore, setLayerVisible } from './myMaps.store';
 import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
 
@@ -229,5 +229,19 @@ describe('useMapWrite', () => {
     expect(spy).not.toHaveBeenCalledWith({ queryKey: ['ws', 'map', 'm1'] });
     expect(qc.getQueryData(['ws', 'map', 'm1'])).toEqual({ id: 'm1', revision: 2, layers: [] });
     expect(after).toHaveBeenCalled();
+  });
+});
+
+describe('useMapWrite and tables', () => {
+  it('a map write invalidates its tables', async () => {
+    vi.mocked(api.getMap).mockResolvedValue({ id: 'm1', revision: 1, layers: [] } as never);
+    const { qc, wrapper } = setup();
+    qc.setQueryData(keys.map('m1'), { id: 'm1', revision: 1, layers: [] });
+    qc.setQueryData(keys.table('m1', 'l1'), { total: 1 });
+    qc.setQueryData(keys.table('m2', 'l9'), { total: 1 });
+    const { result } = renderHook(() => useMapWrite('m1'), { wrapper });
+    await act(async () => { await result.current.run(async () => ({ revision: 2 })); });
+    expect(qc.getQueryState(keys.table('m1', 'l1'))?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(keys.table('m2', 'l9'))?.isInvalidated).toBe(false);
   });
 });
