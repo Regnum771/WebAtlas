@@ -9,6 +9,7 @@ import MeasureTool from '../features/map/ui/MeasureTool';
 import BasemapTool from '../features/map/ui/BasemapTool';
 import AddData from '../features/add-data';
 import FeatureEditing from '../features/feature-editing';
+import MyMaps from '../features/my-maps';
 import LayersPanel from '../features/layers-panel';
 import Legend from '../features/legend';
 import Assistant from '../features/assistant';
@@ -119,6 +120,8 @@ export default function MapScreen() {
       topBar={<TopBar />}
       panel={(
         <SidePanelView footer={<Link to="/print" className="link">In và xuất</Link>}>
+          <MyMaps />
+          {status === 'authenticated' && <hr className="side-panel-rule" />}
           <LayersPanel />
           <hr className="side-panel-rule" />
           <Legend />

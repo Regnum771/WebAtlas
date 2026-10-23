@@ -18,6 +18,16 @@ vi.mock('../features/feature-editing', () => ({
   },
 }));
 vi.mock('../features/layers-panel', () => ({ default: () => <div>LAYERS</div> }));
+// The section's own gate (session status) stays real; only its data hook is replaced.
+vi.mock('../features/my-maps/model/useMyMapsPanelPresenter', () => ({
+  useMyMapsPanelPresenter: () => ({
+    loading: false, error: null, retry: () => {}, collapsed: false, toggleCollapsed: () => {},
+    own: [], shared: [], usage: null, toggleExpanded: () => {}, setLayerVisible: () => {}, setLayerOpacity: () => {},
+    dialog: { open: false, mode: 'create', mapId: null, title: '', error: null, busy: false },
+    openCreate: () => {}, openRename: () => {}, closeDialog: () => {}, setTitle: () => {}, submit: async () => {},
+    pendingDelete: false, deleteError: null, deleting: false, askDelete: () => {}, cancelDelete: () => {}, confirmDelete: async () => {},
+  }),
+}));
 vi.mock('../features/legend', () => ({ default: () => <div>LEGEND</div> }));
 vi.mock('../features/assistant', () => ({ default: () => <div>ASSISTANT</div> }));
 vi.mock('../features/flood-scenario', () => ({
@@ -87,6 +97,19 @@ describe('MapScreen', () => {
     expect(within(panel).getByText('LAYERS')).toBeInTheDocument();
     expect(within(panel).getByText('LEGEND')).toBeInTheDocument();
     expect(within(panel).getByRole('link', { name: 'In và xuất' })).toHaveAttribute('href', '/print');
+  });
+
+  it('Bản của tôi shows only when signed in', () => {
+    const { unmount } = renderScreen();
+    expect(screen.queryByRole('button', { name: 'Bản của tôi' })).toBeNull();
+    unmount();
+    signIn('viewer');
+    renderScreen();
+    const panel = screen.getByRole('complementary', { name: 'Bảng bản đồ' });
+    expect(within(panel).getByRole('button', { name: 'Bản của tôi' })).toBeInTheDocument();
+    // It comes before the layer list.
+    const mine = within(panel).getByRole('button', { name: 'Bản của tôi' });
+    expect(mine.compareDocumentPosition(within(panel).getByText('LAYERS')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('puts the map and its floats in the stage, and the top bar in its slot', () => {

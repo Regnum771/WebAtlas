@@ -3,7 +3,8 @@ export function formatBytes(n: number): string {
   const units = ['KB', 'MB', 'GB'];
   let value = n / 1024;
   let i = 0;
-  while (value >= 1024 && i < units.length - 1) {
+  // Compare after rounding, so 1048575 B reads "1 MB" rather than "1024 KB".
+  while (Math.round(value * 10) / 10 >= 1024 && i < units.length - 1) {
     value /= 1024;
     i += 1;
   }
