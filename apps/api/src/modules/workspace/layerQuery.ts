@@ -51,10 +51,13 @@ const COMPARE: Record<'eq' | 'neq' | 'lt' | 'lte' | 'gt' | 'gte', string> = {
 /*
  * The number pattern ^-?\d+(\.\d+)?$, spelt with [0-9] and [.]: Postgres's \d is [[:digit:]],
  * which under some collations also takes non-ASCII digits that ::numeric refuses, and with no
- * backslash the literal reads the same whatever standard_conforming_strings says.
+ * backslash the literal reads the same whatever standard_conforming_strings says. At most 30
+ * digits on each side of the point, so no accepted value can overflow the cast.
  */
-const NUMBER_RE = /^-?\d+(\.\d+)?$/;
-const NUMBER_SQL = "'^-?[0-9]+([.][0-9]+)?$'";
+const NUMBER_RE = /^-?\d{1,30}(\.\d{1,30})?$/;
+const NUMBER_SQL = "'^-?[0-9]{1,30}([.][0-9]{1,30})?$'";
+/** The same cap for a value sent as a JSON number: under 10^30 in magnitude. */
+const NUMBER_MAX = 1e30;
 /** A date value is compared on its first ten characters, YYYY-MM-DD. */
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_SQL = "'^[0-9]{4}-[0-9]{2}-[0-9]{2}'";
@@ -128,7 +131,9 @@ export function compileQuery(columns: Column[], body: LayerQueryBody, firstParam
   function condition(c: Condition): string {
     const col = column(c.field);
     if (!OPS_BY_TYPE[col.type].includes(c.op)) {
-      throw badCondition(`Operator "${c.op}" does not apply to the ${col.type} field "${col.name}"`);
+      throw new ValidationError(`Phép so sánh "${c.op}" không dùng được với trường "${col.name}".`, {
+        field: col.name,
+      });
     }
     if (c.op === 'empty' || c.op === 'notEmpty') {
       const v = `(${textOf(col.name)})`;
@@ -147,7 +152,14 @@ export function compileQuery(columns: Column[], body: LayerQueryBody, firstParam
       case 'number': {
         // A value that is not a number matches nothing, on either side. CASE (unlike AND) fixes
         // the order: the cast runs only on a value the pattern has accepted.
-        const value = typeof c.value === 'number' ? c.value : NUMBER_RE.test(c.value.trim()) ? c.value.trim() : null;
+        const value =
+          typeof c.value === 'number'
+            ? Math.abs(c.value) < NUMBER_MAX
+              ? c.value
+              : null
+            : NUMBER_RE.test(c.value.trim())
+              ? c.value.trim()
+              : null;
         if (value === null) return 'false';
         const v = `(${textOf(col.name)})`;
         return `CASE WHEN ${v} ~ ${NUMBER_SQL} THEN ${v}::numeric ${cmp} ${bind(value)}::numeric ELSE false END`;

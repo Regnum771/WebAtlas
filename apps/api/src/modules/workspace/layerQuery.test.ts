@@ -14,7 +14,7 @@ const COLUMNS: Column[] = [
 ];
 
 /** The number guard: only an ASCII decimal is ever cast to numeric. */
-const NUM = "'^-?[0-9]+([.][0-9]+)?$'";
+const NUM = "'^-?[0-9]{1,30}([.][0-9]{1,30})?$'";
 
 const body = (input: unknown) => LayerQueryBody.parse(input);
 
@@ -33,9 +33,9 @@ describe('compileQuery', () => {
   });
 
   it('a number operator on a text column is refused', () => {
-    expect(() => compileQuery(COLUMNS, body({ conditions: [{ field: 'ten', op: 'gt', value: 5 }] }), 1)).toThrow(
-      ValidationError
-    );
+    const run = () => compileQuery(COLUMNS, body({ conditions: [{ field: 'ten', op: 'gt', value: 5 }] }), 1);
+    expect(run).toThrow(ValidationError);
+    expect(run).toThrow('Phép so sánh "gt" không dùng được với trường "ten".');
     // ... and a text operator on a number or date column likewise.
     expect(() =>
       compileQuery(COLUMNS, body({ conditions: [{ field: 'cong_suat', op: 'contains', value: '5' }] }), 1)
@@ -90,6 +90,22 @@ describe('compileQuery', () => {
     // A numeric string is accepted as the number it spells.
     const ok = compileQuery(COLUMNS, body({ conditions: [{ field: 'cong_suat', op: 'eq', value: '12.5' }] }), 1);
     expect(ok.params).toEqual(['cong_suat', '12.5']);
+  });
+
+  it('the number guard caps digits at 30 on each side, for stored and sent values', () => {
+    const cond = (value: string | number) =>
+      compileQuery(COLUMNS, body({ conditions: [{ field: 'cong_suat', op: 'gt', value }] }), 1);
+    // Stored values: the guard's pattern caps the digit count, so a huge one is never cast.
+    expect(cond(1).where).toContain("~ '^-?[0-9]{1,30}([.][0-9]{1,30})?$' THEN");
+    // Sent values: 30 digits on each side pass; 31 on either side compile to false.
+    const d30 = '9'.repeat(30);
+    expect(cond(`-${d30}.${d30}`).params).toEqual(['cong_suat', `-${d30}.${d30}`]);
+    expect(cond(`${d30}9`)).toEqual({ where: '(false)', orderBy: 'r.id', params: [] });
+    expect(cond(`1.${d30}9`)).toEqual({ where: '(false)', orderBy: 'r.id', params: [] });
+    // A JSON number: under 10^30 in magnitude is bound; 10^30 and beyond is false.
+    expect(cond(1e29).params).toEqual(['cong_suat', 1e29]);
+    expect(cond(-1e30).where).toBe('(false)');
+    expect(cond(1e300).where).toBe('(false)');
   });
 
   it('match any joins with OR; search and bbox still AND', () => {
