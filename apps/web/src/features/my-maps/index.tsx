@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { EDITABLE_LAYER_KEYS, LAYER_ATTRIBUTE_MAP } from '@webatlas/shared';
+import { MANAGING_UNIT_COLUMN, useAttributeFormPresenter } from '../feature-editing/model/useAttributeFormPresenter';
+import { AttributeFormView } from '../feature-editing/ui/AttributeForm.view';
+import { MANAGING_UNIT_LABEL } from '../feature-editing/ui/ManagingUnitField.view';
 import { LAYER_DISPLAY } from '../../entities/layer/layerDisplay';
 import { useSession } from '../../entities/session/model/session.store';
 import { useLayerEditorPresenter } from './model/useLayerEditorPresenter';
@@ -13,10 +16,13 @@ import { useSharePresenter } from './model/useSharePresenter';
 import { ShareDialogView } from './ui/ShareDialog.view';
 import { useUploadPresenter } from './model/useUploadPresenter';
 import { useTableStore } from './model/table.store';
-import { useTablePresenter } from './model/useTablePresenter';
+import { useResetTableOnSignOut, useTablePresenter } from './model/useTablePresenter';
+import { canDrawInto, usePersonalEditingPresenter, type EditCopyFormData } from './model/usePersonalEditingPresenter';
 import { usePendingImports, type PendingImport } from './model/pendingImports.store';
 import { usePendingImportPresenter } from './model/usePendingImportPresenter';
 import { EditCopyDialogView } from './ui/EditCopyDialog.view';
+import { FreeFeatureFormView } from './ui/FreeFeatureForm.view';
+import { PersonalEditingView } from './ui/PersonalEditing.view';
 import { LayerTableView } from './ui/LayerTable.view';
 import { LayerSettingsView } from './ui/LayerSettings.view';
 import { MyMapsPanelView } from './ui/MyMapsPanel.view';
@@ -159,9 +165,65 @@ function MyMapsPanel() {
   );
 }
 
-/** The open layer's table; mounted only while one is open. */
+type Editing = ReturnType<typeof usePersonalEditingPresenter>;
+
+/**
+ * An edit copy's feature in the official attribute form, saved through the workspace route; the
+ * managing unit may be any unit (the jurisdiction check comes when the draft is submitted).
+ */
+function EditCopyForm({ editing, copy }: { editing: Editing; copy: EditCopyFormData }) {
+  const form = useAttributeFormPresenter({
+    layerKey: copy.layerKey, attributes: copy.attributes, geometry: editing.geometryToSave,
+    mode: copy.featureId ? 'edit' : 'create', featureId: copy.featureId, initialValues: copy.initialValues,
+    onSaved: editing.onSaved, save: editing.saveEditCopy, anyUnit: true,
+  });
+  return (
+    <AttributeFormView
+      attributes={copy.attributes} labels={form.labels} values={form.values} fieldErrors={form.fieldErrors}
+      error={form.error} errorDetail={form.errorDetail} canSave={form.canSave} saving={form.saving}
+      managingUnit={form.managingUnit} onField={form.setField} onSubmit={() => { void form.submit(); }} onCancel={editing.leave}
+    />
+  );
+}
+
+const ignore = () => undefined;
+
+/** A recipient's view of an edit copy's feature: the official form, read-only (no unit picker, no saving). */
+function EditCopyReadOnly({ copy }: { copy: EditCopyFormData }) {
+  const names = LAYER_ATTRIBUTE_MAP[copy.layerKey].attributes;
+  const labels = Object.fromEntries(copy.attributes.map((c) => [
+    c, c === MANAGING_UNIT_COLUMN ? MANAGING_UNIT_LABEL : (names[c] ?? c),
+  ]));
+  return (
+    <AttributeFormView
+      readOnly attributes={copy.attributes} labels={labels} values={copy.initialValues} fieldErrors={{}}
+      error={null} canSave={false} saving={false} onField={ignore} onSubmit={ignore} onCancel={ignore}
+    />
+  );
+}
+
+/** The open feature's form: a free layer's own fields, or an edit copy's official attributes. */
+function FeatureForm({ editing }: { editing: Editing }) {
+  if (editing.targetKind === 'free') {
+    return (
+      <FreeFeatureFormView
+        fields={editing.freeFields} values={editing.freeValues} error={editing.freeError} saving={editing.saving}
+        readOnly={editing.readOnly}
+        onField={editing.setFreeValue} onSubmit={() => { void editing.submitFree(); }} onCancel={editing.leave}
+      />
+    );
+  }
+  if (!editing.editCopy) return null;
+  if (editing.readOnly) return <EditCopyReadOnly key={editing.targetKey} copy={editing.editCopy} />;
+  // Keyed per feature (and per reading of it): the form seeds its values once.
+  return <EditCopyForm key={editing.targetKey} editing={editing} copy={editing.editCopy} />;
+}
+
+/** The open layer's table and its editing; mounted only while one is open. */
 function OpenLayerTable({ layerId }: { layerId: string }) {
   const p = useTablePresenter();
+  const editing = usePersonalEditingPresenter(p.selected);
+  const { layer } = p;
   return (
     <LayerTableView
       layerId={layerId} title={p.header.title} total={p.header.total} matched={p.header.matched}
@@ -173,15 +235,28 @@ function OpenLayerTable({ layerId }: { layerId: string }) {
       onPrev={p.prev} onNext={p.next} onClose={p.close}
       selectedId={p.selectedId} selectedOutsideFilter={p.selectedOutsideFilter} canZoom={p.canZoom}
       onSelectRow={p.selectRow} onZoom={p.zoomToSelection}
-    />
+      onDraw={p.isOwner && layer ? () => editing.startDrawInto(layer) : undefined}
+      canDraw={layer ? canDrawInto(layer) : false}
+    >
+      <PersonalEditingView
+        step={editing.step} drawShape={editing.drawShape} readOnly={editing.readOnly} isNew={editing.isNew}
+        reshaping={editing.reshaping} confirmOpen={editing.confirmOpen} deleting={editing.deleting} error={editing.error}
+        onLeave={editing.leave} onReshape={() => { void editing.reshape(); }} onAskDelete={editing.requestDelete}
+        onConfirmDelete={() => { void editing.confirmDelete(); }} onCancelDelete={editing.cancelDelete}
+      >
+        {editing.step === 'form' && <FeatureForm editing={editing} />}
+      </PersonalEditingView>
+    </LayerTableView>
   );
 }
 
 /**
  * The table of one personal layer, docked along the bottom of the map stage (MapScreen). Renders
- * nothing while no table is open, so it needs no map or session until one is.
+ * nothing while no table is open, so it needs no map or session until one is. Signing out resets
+ * the table's store, which closes it.
  */
 export function PersonalTable() {
+  useResetTableOnSignOut();
   const { open } = useTableStore();
   if (!open) return null;
   return <OpenLayerTable layerId={open.layerId} />;

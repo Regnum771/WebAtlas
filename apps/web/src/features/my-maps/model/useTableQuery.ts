@@ -87,8 +87,9 @@ export function useTableQuery(viewExtent4326: Extent | null, locate: string | nu
 
   const err = query.error;
   const error = err === null ? null : err instanceof ApiError && err.status === 400 ? err.message : TABLE_LOAD_ERROR;
-  // Only this request's own answer locates: a placeholder is the previous request's.
-  const located = locate !== null && query.data && !query.isPlaceholderData
+  // Only this request's own, fresh answer locates: a placeholder is the previous request's, and a
+  // cached answer being read again may predate a save (whether the feature still matches).
+  const located = locate !== null && query.data && !query.isPlaceholderData && !query.isFetching
     ? { id: locate, position: query.data.position }
     : null;
   // page: the page the query asks for; while typing settles it stays the page on screen.

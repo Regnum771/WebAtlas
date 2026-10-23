@@ -5,43 +5,30 @@ import userEvent from '@testing-library/user-event';
 import { PersonalEditingView } from './PersonalEditing.view';
 
 const base: ComponentProps<typeof PersonalEditingView> = {
-  active: false, kind: null, step: null, layers: [], drawShape: null, isNew: false, reshaping: false,
+  step: null, drawShape: null, readOnly: false, isNew: false, reshaping: false,
   confirmOpen: false, deleting: false, error: null,
-  onDraw: vi.fn(), onEdit: vi.fn(), onPick: vi.fn(), onLeave: vi.fn(), onReshape: vi.fn(), onAskDelete: vi.fn(),
-  onConfirmDelete: vi.fn(), onCancelDelete: vi.fn(),
+  onLeave: vi.fn(), onReshape: vi.fn(), onAskDelete: vi.fn(), onConfirmDelete: vi.fn(), onCancelDelete: vi.fn(),
 };
 
 describe('PersonalEditingView', () => {
-  it('offers Vẽ thêm and Sửa đối tượng while no mode is on', async () => {
-    const onDraw = vi.fn();
-    const onEdit = vi.fn();
-    const user = userEvent.setup();
-    render(<PersonalEditingView {...base} onDraw={onDraw} onEdit={onEdit} />);
-    await user.click(screen.getByRole('button', { name: 'Vẽ thêm' }));
-    await user.click(screen.getByRole('button', { name: 'Sửa đối tượng' }));
-    expect(onDraw).toHaveBeenCalled();
-    expect(onEdit).toHaveBeenCalled();
+  it('shows nothing while no feature is open or drawn', () => {
+    const { container } = render(<PersonalEditingView {...base} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it('Vẽ thêm lists the layers to draw into', async () => {
-    const onPick = vi.fn();
-    render(<PersonalEditingView {...base} active kind="draw" step="pick"
-      layers={[{ id: 'l1', title: 'Điểm ngập' }, { id: 'c1', title: 'Sửa lớp Đập' }]} onPick={onPick} />);
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Sửa lớp Đập' }));
-    expect(onPick).toHaveBeenCalledWith('c1');
-    expect(screen.getByRole('button', { name: 'Huỷ' })).toBeInTheDocument();
+  it('while drawing, says what to draw and offers Huỷ', async () => {
+    const onLeave = vi.fn();
+    render(<PersonalEditingView {...base} step="drawing" drawShape="vùng" onLeave={onLeave} />);
+    expect(screen.getByText('Vẽ vùng lên bản đồ để tiếp tục.')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Huỷ' }));
+    expect(onLeave).toHaveBeenCalled();
   });
 
-  it('Sửa đối tượng shows its hint', () => {
-    render(<PersonalEditingView {...base} active kind="edit" step="select" />);
-    expect(screen.getByText('Bấm một đối tượng của bản đồ này để sửa.')).toBeInTheDocument();
-  });
-
-  it('the form step shows the form with Sửa hình and, for a stored feature, Xoá đối tượng', async () => {
+  it('the form shows Sửa hình and, for a stored feature, Xoá đối tượng', async () => {
     const onAskDelete = vi.fn();
     const onReshape = vi.fn();
     const { rerender } = render(
-      <PersonalEditingView {...base} active kind="edit" step="form" onAskDelete={onAskDelete} onReshape={onReshape}>
+      <PersonalEditingView {...base} step="form" onAskDelete={onAskDelete} onReshape={onReshape}>
         <p>biểu mẫu</p>
       </PersonalEditingView>,
     );
@@ -51,16 +38,28 @@ describe('PersonalEditingView', () => {
     await user.click(screen.getByRole('button', { name: 'Xoá đối tượng' }));
     expect(onReshape).toHaveBeenCalled();
     expect(onAskDelete).toHaveBeenCalled();
-    rerender(<PersonalEditingView {...base} active kind="draw" step="form" isNew><p>biểu mẫu</p></PersonalEditingView>);
+    rerender(<PersonalEditingView {...base} step="form" isNew><p>biểu mẫu</p></PersonalEditingView>);
     expect(screen.queryByRole('button', { name: 'Xoá đối tượng' })).toBeNull();
+  });
+
+  it('a recipient sees the form read-only: no buttons', () => {
+    render(<PersonalEditingView {...base} step="form" readOnly><p>biểu mẫu</p></PersonalEditingView>);
+    expect(screen.getByText('biểu mẫu')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
   it('deleting asks first', async () => {
     const onConfirmDelete = vi.fn();
-    render(<PersonalEditingView {...base} active kind="edit" step="form" confirmOpen onConfirmDelete={onConfirmDelete} />);
+    render(<PersonalEditingView {...base} step="form" confirmOpen onConfirmDelete={onConfirmDelete} />);
     const dialog = screen.getByRole('dialog', { name: 'Xoá đối tượng này?' });
     expect(dialog).toHaveTextContent('Không khôi phục được.');
     await userEvent.setup().click(screen.getByRole('button', { name: 'Xoá' }));
     expect(onConfirmDelete).toHaveBeenCalled();
+  });
+
+  it('Sửa đối tượng no longer exists', () => {
+    render(<PersonalEditingView {...base} step="form"><p>biểu mẫu</p></PersonalEditingView>);
+    expect(screen.queryByText('Sửa đối tượng')).toBeNull();
+    expect(screen.queryByText('Bấm một đối tượng của bản đồ này để sửa.')).toBeNull();
   });
 });

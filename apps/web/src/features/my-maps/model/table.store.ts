@@ -14,10 +14,12 @@ export interface TableState {
   /** Each layer's filter, kept for the session. */
   byLayer: Record<string, TableFilter>;
   selectedId: string | null;
+  /** Bumped by relocate(): the table asks again where the selected feature is. */
+  locateSeq: number;
 }
 
 export const emptyFilter = (): TableFilter => ({ q: '', conditions: [], match: 'all', inView: false, sort: null, page: 0 });
-const initial = (): TableState => ({ open: null, byLayer: {}, selectedId: null });
+const initial = (): TableState => ({ open: null, byLayer: {}, selectedId: null, locateSeq: 0 });
 
 /** Which layer's table is open, each layer's filter and the selected feature. A module store, like myMaps.store.ts. */
 let state: TableState = initial();
@@ -38,6 +40,7 @@ export function useTableStore(): TableState { return useSyncExternalStore(subscr
 export function openTable(mapId: string, layerId: string): void {
   if (state.open?.mapId === mapId && state.open.layerId === layerId) return;
   publish({
+    ...state,
     open: { mapId, layerId },
     byLayer: state.byLayer[layerId] ? state.byLayer : { ...state.byLayer, [layerId]: emptyFilter() },
     selectedId: null,
@@ -59,6 +62,14 @@ export function select(id: string | null): void {
   if (state.selectedId === id) return;
   publish({ ...state, selectedId: id });
 }
+/**
+ * Locates the selected feature again, even when its row is on the page: a map click on the
+ * feature already selected (back to its page), or a save (does it still match the filter?).
+ */
+export function relocate(): void {
+  if (state.selectedId === null) return;
+  publish({ ...state, locateSeq: state.locateSeq + 1 });
+}
 
-/** Tests only. */
+/** Signing out (nothing of the table outlives the session), and tests. */
 export function resetTableStore(): void { publish(initial()); }

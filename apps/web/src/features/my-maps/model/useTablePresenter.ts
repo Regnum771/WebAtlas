@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LAYER_GEOMETRY, type OgcGeometryType } from '@webatlas/shared';
 import { useMapContext } from '../../../app/providers/MapProvider';
+import { useSession } from '../../../entities/session/model/session.store';
 import type { GeometryType, LayerSummary, TableColumn, TableCondition, TableRow } from '../api/workspace.api';
 import { columnLabel } from './columnLabel';
 import {
-  clearRing, fitToExtent4326, ringExtent4326, ringFeature, viewExtent4326, watchViewExtent4326,
+  clearRing, fitToExtent4326, personalFeature, ringExtent4326, ringFeature, viewExtent4326, watchViewExtent4326,
 } from './personalLayers';
 import { editCopyKey, symbolDataUrl } from './personalStyle';
-import { useMapDetail } from './queries';
-import { closeTable, emptyFilter, select, setFilter, useTableStore, type TableFilter } from './table.store';
+import { isMapNotFound, useMapDetail, useMyMaps } from './queries';
+import {
+  closeTable, emptyFilter, resetTableStore, select, setFilter, useTableStore, type TableFilter,
+} from './table.store';
+import type { TableSelection } from './usePersonalEditingPresenter';
 import { DEBOUNCE_MS, TABLE_LOAD_ERROR, TABLE_PAGE_SIZE, useTableQuery } from './useTableQuery';
 
 export type ColumnType = TableColumn['type'];
@@ -134,25 +138,40 @@ interface Target { layerId: string; id: string }
  */
 export function useTablePresenter() {
   const { map } = useMapContext();
-  const { open, byLayer, selectedId } = useTableStore();
+  const { open, byLayer, selectedId, locateSeq } = useTableStore();
   const filter: TableFilter = open ? (byLayer[open.layerId] ?? emptyFilter()) : emptyFilter();
   const layerId = open?.layerId ?? null;
   const detail = useMapDetail(open?.mapId ?? null);
   const layer = detail.data?.layers.find((l) => l.id === open?.layerId) ?? null;
   const extent = useViewExtent();
 
-  // The feature to locate: one newly selected that is not among the rows on screen. Decided when
-  // the selection changes, never when the rows do, so paging away from a selection stays put.
+  // The table closes when its map is gone (revoked or deleted: it left the lists, or its read
+  // answered the map's 404; whoever found out showed the message) or its layer was deleted (the
+  // map's detail no longer lists it; no message). Closing unmounts the table, its ring and its form.
+  const lists = useMyMaps().data;
+  const mapGone = open !== null && (isMapNotFound(detail.error)
+    || (lists !== undefined && ![...lists.mine, ...lists.sharedWithMe].some((m) => m.id === open.mapId)));
+  const layerGone = open !== null && detail.data !== undefined && layer === null;
+  useEffect(() => {
+    if (mapGone || layerGone) closeTable();
+  }, [mapGone, layerGone]);
+
+  // The feature to locate: one newly selected that is not among the rows on screen, or the
+  // selection once more on relocate() (a repeat map click, a save). Decided when the selection
+  // changes, never when the rows do, so paging away from a selection stays put.
   const [locating, setLocating] = useState<Target | null>(null);
   const selection: Target | null = selectedId && layerId ? { layerId, id: selectedId } : null;
-  const [lastSelected, setLastSelected] = useState<Target | null>(null);
+  const [lastSelected, setLastSelected] = useState<{ target: Target | null; seq: number }>({ target: null, seq: locateSeq });
   const [hidden, setHidden] = useState<(Target & { filter: string }) | null>(null);
   const query = useTableQuery(extent, locating && locating.layerId === layerId ? locating.id : null);
   const data = query.data;
-  if (lastSelected?.id !== selection?.id || lastSelected?.layerId !== selection?.layerId) {
-    setLastSelected(selection);
+  const last = lastSelected.target;
+  const changed = last?.id !== selection?.id || last?.layerId !== selection?.layerId;
+  if (changed || lastSelected.seq !== locateSeq) {
+    setLastSelected({ target: selection, seq: locateSeq });
     const onScreen = data?.rows.some((r) => r.id === selection?.id) ?? false;
-    setLocating(selection && !onScreen ? selection : null);
+    const again = !changed;
+    setLocating(selection && (again || !onScreen) ? selection : null);
   }
 
   // The located answer: show the feature's page, or note that the filter hides it.
@@ -233,6 +252,12 @@ export function useTablePresenter() {
   // Phóng tới: the selected row's box; a selection without a row here (the filter hides it) is
   // fitted from its ring; nothing selected, every row on the page.
   const selectedRow = selectedId === null ? null : (data?.rows.find((r) => r.id === selectedId) ?? null);
+  // The selection as the form beside the table needs it: its row, or (hidden by the filter, or on a
+  // page not read yet) the feature as the map holds it; null properties until either is known.
+  const loaded = map && layerId && selectedId !== null && !selectedRow ? personalFeature(map, layerId, selectedId) : null;
+  const selected: TableSelection | null = layer && selectedId !== null
+    ? { layer, id: selectedId, properties: selectedRow?.properties ?? loaded?.properties ?? null, bbox: selectedRow?.bbox ?? null }
+    : null;
   const zoomExtent = (): Extent | null => {
     if (!map) return null;
     if (selectedRow?.bbox) return selectedRow.bbox;
@@ -246,6 +271,10 @@ export function useTablePresenter() {
 
   return {
     header: { title: layer?.title ?? '', total: data?.total ?? null, matched: data?.matched ?? null },
+    /** The open layer, once its map is read. */
+    layer,
+    /** The selected feature for the editing form (usePersonalEditingPresenter). */
+    selected,
     columns,
     rows,
     page,
@@ -303,3 +332,11 @@ export function useTablePresenter() {
 }
 
 export type TablePresenter = ReturnType<typeof useTablePresenter>;
+
+/** Signing out resets the table store: no table, filter or selection outlives the session. */
+export function useResetTableOnSignOut(): void {
+  const { status } = useSession();
+  useEffect(() => {
+    if (status !== 'authenticated') resetTableStore();
+  }, [status]);
+}

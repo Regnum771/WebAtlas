@@ -16,6 +16,8 @@ export interface AttributeFormViewProps {
   saving: boolean;
   /** The managing_unit attribute renders as this field instead of a text input. */
   managingUnit?: ManagingUnitFieldState;
+  /** Shown for reading only: inputs disabled, no buttons (a shared personal map's recipient). */
+  readOnly?: boolean;
   onField: (column: string, v: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
@@ -23,11 +25,13 @@ export interface AttributeFormViewProps {
 
 // Passive: maps a layer's attributes to a list of AttributeFieldView.
 export function AttributeFormView(props: AttributeFormViewProps) {
-  const { attributes, labels, values, fieldErrors, error, errorDetail, canSave, saving, managingUnit, onField, onSubmit, onCancel } = props;
+  const {
+    attributes, labels, values, fieldErrors, error, errorDetail, canSave, saving, managingUnit, readOnly, onField, onSubmit, onCancel,
+  } = props;
   return (
     <form className="edit-attr-form" onSubmit={(e) => { e.preventDefault(); onSubmit(); }}>
       {attributes.map((col) => (
-        col === 'managing_unit' && managingUnit ? (
+        col === 'managing_unit' && managingUnit && !readOnly ? (
           <ManagingUnitFieldView key={col} field={managingUnit} error={fieldErrors[col]} />
         ) : (
           <AttributeFieldView
@@ -36,16 +40,19 @@ export function AttributeFormView(props: AttributeFormViewProps) {
             label={labels[col] ?? col}
             value={values[col] ?? ''}
             error={fieldErrors[col]}
+            disabled={readOnly}
             onChange={(v) => onField(col, v)}
           />
         )
       ))}
       {error && <Message tone="error" title={error}>{errorDetail}</Message>}
-      <div className="edit-form-actions">
-        {/* A saving button stays enabled so it keeps focus; Button swallows the second press. */}
-        <Button type="submit" variant="solid" busy={saving} busyLabel="Đang lưu" disabled={!canSave && !saving}>Lưu</Button>
-        <Button onClick={onCancel}>Huỷ</Button>
-      </div>
+      {!readOnly && (
+        <div className="edit-form-actions">
+          {/* A saving button stays enabled so it keeps focus; Button swallows the second press. */}
+          <Button type="submit" variant="solid" busy={saving} busyLabel="Đang lưu" disabled={!canSave && !saving}>Lưu</Button>
+          <Button onClick={onCancel}>Huỷ</Button>
+        </div>
+      )}
     </form>
   );
 }

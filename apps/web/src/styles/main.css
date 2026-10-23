@@ -1071,7 +1071,14 @@ body {
 }
 .layer-table-editor-value { min-width: 180px; }
 .layer-table-error { padding: var(--space-2) var(--space-3) 0; }
-.layer-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+/* The rows and, at their right, the selected feature's form: each scrolls on its own. */
+.layer-table-body { flex: 1; min-height: 0; display: flex; }
+.layer-table-scroll { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+.layer-table-form {
+  flex: none; width: 320px; overflow: auto; display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); border-left: 1px solid var(--ink); background: var(--sheet);
+}
+.layer-table-form .my-map-actions { padding: 0; }
 .layer-table-grid { border-collapse: collapse; width: max-content; min-width: 100%; }
 .layer-table-grid th, .layer-table-grid td {
   max-width: 280px; padding: 4px 10px; border-bottom: 1px solid var(--rule);

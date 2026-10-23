@@ -163,4 +163,31 @@ describe('LayerTableView', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Trường "x" không có trong lớp này.');
     expect(screen.queryByRole('button', { name: 'Thử lại' })).toBeNull();
   });
+
+  it('selecting a row opens its form beside the table', () => {
+    render(<LayerTableView {...props({ selectedId: '2' })}><form aria-label="biểu mẫu" /></LayerTableView>);
+    const form = screen.getByRole('form', { name: 'biểu mẫu' });
+    // Inside the dock, beside the rows (not above or below them).
+    const body = form.closest('.layer-table-body');
+    expect(body).not.toBeNull();
+    expect(body!.querySelector('.layer-table-scroll table')).not.toBeNull();
+  });
+
+  it('Vẽ thêm: for the owner only; disabled with its reason on a mixed import', async () => {
+    const onDraw = vi.fn();
+    const { rerender } = render(<LayerTableView {...props()} />);
+    expect(screen.queryByRole('button', { name: 'Vẽ thêm' })).toBeNull();
+    rerender(<LayerTableView {...props({ onDraw, canDraw: true })} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Vẽ thêm' }));
+    expect(onDraw).toHaveBeenCalled();
+    rerender(<LayerTableView {...props({ onDraw, canDraw: false })} />);
+    const draw = screen.getByRole('button', { name: 'Vẽ thêm' });
+    expect(draw).toBeDisabled();
+    expect(draw).toHaveAttribute('title', 'Lớp này không vẽ thêm được');
+  });
+
+  it('Sửa đối tượng no longer exists', () => {
+    render(<LayerTableView {...props({ onDraw: vi.fn(), canDraw: true, selectedId: '1' })} />);
+    expect(screen.queryByText('Sửa đối tượng')).toBeNull();
+  });
 });

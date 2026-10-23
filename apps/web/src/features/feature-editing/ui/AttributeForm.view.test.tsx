@@ -46,4 +46,11 @@ describe('AttributeFormView', () => {
     render(<AttributeFormView {...baseProps} error="Hình vẽ không hợp lệ. Vẽ lại." />);
     expect(screen.getByText('Hình vẽ không hợp lệ. Vẽ lại.')).toBeInTheDocument();
   });
+
+  it('read-only: inputs disabled, no buttons', () => {
+    render(<AttributeFormView {...baseProps} values={{ name: 'Hoà Bình', status: '' }} readOnly />);
+    expect(screen.getByLabelText('geographicalName')).toBeDisabled();
+    expect(screen.getByLabelText('geographicalName')).toHaveValue('Hoà Bình');
+    expect(screen.queryByRole('button')).toBeNull();
+  });
 });

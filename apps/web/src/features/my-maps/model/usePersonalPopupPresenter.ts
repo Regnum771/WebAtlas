@@ -9,7 +9,7 @@ import type { MapDetail, PersonalFeature } from '../api/workspace.api';
 import { getMyMaps, useMyMapsStore } from './myMaps.store';
 import { personalFeatureAt } from './personalLayers';
 import { keys } from './queries';
-import { getTableState, select } from './table.store';
+import { getTableState, relocate, select } from './table.store';
 
 export interface PersonalCardRow { key: string; value: string }
 export interface PersonalCardData {
@@ -65,7 +65,9 @@ export function usePersonalPopupPresenter() {
       }
       const table = getTableState().open;
       if (table && table.mapId === hit.mapId && table.layerId === hit.layerId) {
-        select(hit.feature.id);
+        // The feature already selected is located again: back to its page, or the note.
+        if (getTableState().selectedId === hit.feature.id) relocate();
+        else select(hit.feature.id);
         // An open card would show another feature beside the new selection.
         setOpen(null);
         return;

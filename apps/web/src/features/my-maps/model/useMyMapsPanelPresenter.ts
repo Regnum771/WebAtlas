@@ -10,6 +10,7 @@ import {
   expandMap, forgetMap, layerView, setLayerOpacity, setLayerVisible, toggleCollapsed, toggleExpanded, useMyMapsStore,
 } from './myMaps.store';
 import { openTable } from './table.store';
+import { closeTool, getShell } from '../../shell/model/shell.store';
 
 export interface LayerRowData {
   id: string;
@@ -186,8 +187,12 @@ export function useMyMapsPanelPresenter() {
     }
   }
 
-  /** Bảng: opens the table of a layer; the map is expanded so its rows stay in view. */
+  /**
+   * Bảng: opens the table of a layer; the map is expanded so its rows stay in view. The table
+   * edits personal features, so the official Biên tập tool closes: one editor at a time.
+   */
   const openLayerTable = (mapId: string, layerId: string) => {
+    if (getShell().tool === 'edit') closeTool();
     expandMap(mapId);
     openTable(mapId, layerId);
   };

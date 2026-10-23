@@ -39,4 +39,12 @@ describe('FreeFeatureFormView', () => {
     render(<FreeFeatureFormView {...base} error="Bản đồ đã thay đổi ở nơi khác. Đã tải lại bản mới nhất; hãy thử lại." />);
     expect(screen.getByText('Bản đồ đã thay đổi ở nơi khác. Đã tải lại bản mới nhất; hãy thử lại.')).toBeInTheDocument();
   });
+
+  it('a recipient sees the form read-only: inputs disabled, no buttons', () => {
+    render(<FreeFeatureFormView {...base} readOnly />);
+    expect(screen.getByLabelText('Tên')).toBeDisabled();
+    expect(screen.getByLabelText('Tên')).toHaveValue('A');
+    expect(screen.getByLabelText('Độ sâu')).toBeDisabled();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
 });

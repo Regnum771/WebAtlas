@@ -151,6 +151,17 @@ describe('usePersonalPopupPresenter', () => {
     expect(result.current.anchor).toBeNull();
   });
 
+  it('a map click on the already-selected feature locates it again', () => {
+    setup();
+    act(() => openTable('m1', 'l1'));
+    click();
+    expect(getTableState().selectedId).toBe('f1');
+    const seq = getTableState().locateSeq;
+    click();
+    expect(getTableState().selectedId).toBe('f1');
+    expect(getTableState().locateSeq).toBe(seq + 1);
+  });
+
   it('a polygon feature becomes the drawn ROI', () => {
     const polygon = { type: 'Polygon', coordinates: [[[108, 16], [108.1, 16], [108.1, 16.1], [108, 16]]] };
     h.hit = { mapId: 'm1', layerId: 'l1', feature: { ...FEATURE, geometry: polygon } };

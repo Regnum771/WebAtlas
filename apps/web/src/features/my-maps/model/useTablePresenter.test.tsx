@@ -6,10 +6,14 @@ import type { LayerQueryResponse, LayerSummary } from '../api/workspace.api';
 
 const getMap = vi.fn();
 const queryLayer = vi.fn();
+const listMaps = vi.fn();
 vi.mock('../api/workspace.api', () => ({
   getMap: (id: string) => getMap(id),
+  listMaps: () => listMaps(),
   queryLayer: (...a: unknown[]) => queryLayer(...a),
 }));
+const session = vi.hoisted(() => ({ status: 'authenticated' as string }));
+vi.mock('../../../entities/session/model/session.store', () => ({ useSession: () => ({ status: session.status }) }));
 const MAP = { on: vi.fn(), un: vi.fn() };
 vi.mock('../../../app/providers/MapProvider', () => ({ useMapContext: () => ({ map: MAP }) }));
 /** The extent watcher's callback: a test plays moveend events through it. */
@@ -30,6 +34,7 @@ vi.mock('./personalLayers', () => ({
   clearRing: (...a: unknown[]) => ol.clearRing(...a),
   fitToExtent4326: (...a: unknown[]) => ol.fitToExtent4326(...a),
   ringExtent4326: (...a: unknown[]) => ol.ringExtent4326(...(a as [])),
+  personalFeature: () => null,
 }));
 const symbolDataUrl = vi.fn(
   (layer: LayerSummary, properties: Record<string, unknown>, geometryType: string) =>
@@ -40,8 +45,8 @@ vi.mock('./personalStyle', () => ({
     symbolDataUrl(layer, properties, geometryType),
 }));
 
-import { useTablePresenter } from './useTablePresenter';
-import { getTableState, openTable, resetTableStore, select } from './table.store';
+import { useResetTableOnSignOut, useTablePresenter } from './useTablePresenter';
+import { getTableState, openTable, relocate, resetTableStore, select, setFilter } from './table.store';
 
 const LAYER: LayerSummary = {
   id: 'l1', kind: 'free', title: 'Điểm đo', position: 0, style: {}, geometryType: 'point', fields: [],
@@ -76,6 +81,8 @@ const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms
 beforeEach(() => {
   vi.useFakeTimers();
   getMap.mockReset().mockResolvedValue(DETAIL);
+  listMaps.mockReset().mockResolvedValue({ mine: [DETAIL], sharedWithMe: [] });
+  session.status = 'authenticated';
   queryLayer.mockReset().mockImplementation((_m: string, _l: string, body: { offset: number; locate?: string }) =>
     Promise.resolve(answer(250, body.offset, body.locate)));
   symbolDataUrl.mockClear();
@@ -312,5 +319,63 @@ describe('useTablePresenter: selection', () => {
     expect(result.current.canZoom).toBe(false);
     act(() => result.current.zoomToSelection());
     expect(ol.fitToExtent4326).not.toHaveBeenCalled();
+  });
+
+  it('a click on the selected feature locates it again, even on its page', async () => {
+    const { result } = setup();
+    await flush(10);
+    act(() => select('42'));
+    await flush(10);
+    expect(located()).toEqual([]);
+    // Paged away, then the same feature clicked again on the map: back to its page.
+    act(() => result.current.next());
+    await flush(10);
+    expect(result.current.page.index).toBe(1);
+    act(() => relocate());
+    await flush(10);
+    await flush(10);
+    expect(located()).toHaveLength(1);
+    expect(located()[0][2]).toMatchObject({ locate: '42' });
+    expect(result.current.page.index).toBe(0);
+    // On its page already: located again all the same (a save re-checks the filter this way).
+    act(() => relocate());
+    await flush(10);
+    expect(located()).toHaveLength(2);
+  });
+
+  it('the selection is handed to the form with its row, or null properties until read', async () => {
+    const { result } = setup();
+    await flush(10);
+    expect(result.current.selected).toBeNull();
+    act(() => result.current.selectRow('5'));
+    expect(result.current.selected).toEqual({
+      layer: LAYER, id: '5', properties: { ten: 'Trạm 5', cong_suat: 4, ghi_chu: null }, bbox: bboxOf(5),
+    });
+    // Hidden by the filter and not on the map's loaded source: not known yet.
+    act(() => select('999'));
+    expect(result.current.selected).toEqual({ layer: LAYER, id: '999', properties: null, bbox: null });
+  });
+
+  it('a filter change after the note keeps the selection but drops the note', async () => {
+    const { result } = setup();
+    await flush(10);
+    act(() => select('999'));
+    await flush(10);
+    await flush(10);
+    expect(result.current.selectedOutsideFilter).toBe(true);
+    act(() => setFilter({ q: 'x' }));
+    expect(result.current.selectedOutsideFilter).toBe(false);
+    expect(getTableState().selectedId).toBe('999');
+  });
+});
+
+describe('useResetTableOnSignOut', () => {
+  it('signing out resets the table store: no table, filter or selection outlives the session', () => {
+    act(() => { setFilter({ q: 'trạm' }); select('5'); });
+    const { rerender } = renderHook(() => useResetTableOnSignOut());
+    expect(getTableState().open).not.toBeNull();
+    session.status = 'anonymous';
+    rerender();
+    expect(getTableState()).toMatchObject({ open: null, byLayer: {}, selectedId: null });
   });
 });

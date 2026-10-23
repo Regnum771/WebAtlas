@@ -389,6 +389,26 @@ export function fitToExtent4326(map: Map, extent: [number, number, number, numbe
 }
 
 /**
+ * One feature of a personal layer as its layer on the map holds it now (EPSG:4326 GeoJSON), or
+ * null when it is not read (outside the views read so far, its layer hidden or reloading).
+ */
+export function personalFeature(map: Map, layerId: string, featureId: string): PersonalFeature | null {
+  const source = registries.get(map)?.drawn.get(layerId)?.layer.getSource();
+  const feature = source?.getFeatureById(featureId) as Feature | null | undefined;
+  if (!feature?.getGeometry()) return null;
+  const geo = format.writeFeatureObject(feature, {
+    dataProjection: 'EPSG:4326',
+    featureProjection: map.getView().getProjection(),
+  });
+  return {
+    type: 'Feature',
+    id: featureId,
+    geometry: (geo.geometry as GeoJsonGeometry | null) ?? null,
+    properties: (geo.properties as Record<string, unknown> | null) ?? {},
+  };
+}
+
+/**
  * The topmost personal feature under a pixel, as the API's GeoJSON (EPSG:4326), with its map and
  * layer. With `mapId`, only that map's layers are hit (a feature-edit mode on one map).
  */

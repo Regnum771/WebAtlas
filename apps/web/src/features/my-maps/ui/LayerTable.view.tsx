@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../../../shared/ui/Button';
 import { Message } from '../../../shared/ui/Message';
@@ -47,6 +47,12 @@ interface Props {
   onSelectRow: (id: string) => void;
   /** Phóng tới: to the selection, or to the rows on the page. */
   onZoom: () => void;
+  /** Vẽ thêm into this layer; absent for a recipient. */
+  onDraw?: () => void;
+  /** False for a layer nothing can be drawn into (a mixed-geometry import): Vẽ thêm is disabled. */
+  canDraw?: boolean;
+  /** The selected feature's form (or Vẽ thêm's hint), beside the rows. */
+  children?: ReactNode;
 }
 
 /** The dock's height as a share of the map stage, and the range its top edge can be dragged in. */
@@ -66,8 +72,8 @@ const chipText = (c: ConditionView) => (c.needsValue ? `${c.fieldLabel} ${c.opLa
 
 /**
  * The table of one personal layer, docked under the map: the toolbar (counts, search, condition
- * chips, match, in view, zoom, close), the rows with their symbols, and the paging line. A row
- * click (or Enter on a focused row) selects it. Its top edge drags to resize it between 20 % and
+ * chips, match, in view, Vẽ thêm, zoom, close), the rows with their symbols, the selected
+ * feature's form beside them, and the paging line. A row click (or Enter on a focused row) selects it. Its top edge drags to resize it between 20 % and
  * 70 % of the map stage.
  */
 export function LayerTableView(p: Props) {
@@ -170,6 +176,17 @@ export function LayerTableView(p: Props) {
           Chỉ trong khung nhìn
         </label>
         <span className="layer-table-actions">
+          {p.onDraw && (
+            <Button
+              size="sm"
+              variant="quiet"
+              disabled={!p.canDraw}
+              title={p.canDraw ? undefined : 'Lớp này không vẽ thêm được'}
+              onClick={p.onDraw}
+            >
+              Vẽ thêm
+            </Button>
+          )}
           <Button size="sm" variant="quiet" disabled={!p.canZoom} onClick={p.onZoom}>Phóng tới</Button>
           <Button size="sm" onClick={p.onClose}>Đóng</Button>
         </span>
@@ -197,51 +214,55 @@ export function LayerTableView(p: Props) {
 
       {p.selectedOutsideFilter && <p className="layer-table-note" role="status">Đối tượng này không khớp bộ lọc</p>}
 
-      <div className="layer-table-scroll">
-        <table className={p.loading ? 'layer-table-grid loading' : 'layer-table-grid'} aria-label={p.title} aria-busy={p.loading}>
-          <thead>
-            <tr>
-              <th scope="col" className="layer-table-symbol">Ký hiệu</th>
-              {p.columns.map((c) => {
-                const dir = p.sort?.field === c.name ? p.sort.dir : null;
-                return (
-                  <th
-                    key={c.name}
-                    scope="col"
-                    aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : undefined}
-                  >
-                    <button type="button" className="layer-table-sort" onClick={() => p.onSort(c.name)}>
-                      {c.label}
-                      {dir && <span aria-hidden="true">{dir === 'asc' ? ' ▲' : ' ▼'}</span>}
-                    </button>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {p.rows.map((r) => (
-              <tr
-                key={r.id}
-                ref={r.id === p.selectedId ? showSelected : undefined}
-                className={r.id === p.selectedId ? 'layer-table-row selected' : 'layer-table-row'}
-                aria-selected={r.id === p.selectedId}
-                tabIndex={0}
-                onClick={() => p.onSelectRow(r.id)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter' && e.key !== ' ') return;
-                  e.preventDefault();
-                  p.onSelectRow(r.id);
-                }}
-              >
-                <td className="layer-table-symbol">
-                  {r.symbol && <img src={r.symbol} alt="" width={20} height={16} />}
-                </td>
-                {r.cells.map((text, i) => <td key={p.columns[i]?.name ?? i}>{text}</td>)}
+      <div className="layer-table-body">
+        {/* The rows scroll; the form keeps its own column at the right. */}
+        <div className="layer-table-scroll">
+          <table className={p.loading ? 'layer-table-grid loading' : 'layer-table-grid'} aria-label={p.title} aria-busy={p.loading}>
+            <thead>
+              <tr>
+                <th scope="col" className="layer-table-symbol">Ký hiệu</th>
+                {p.columns.map((c) => {
+                  const dir = p.sort?.field === c.name ? p.sort.dir : null;
+                  return (
+                    <th
+                      key={c.name}
+                      scope="col"
+                      aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : undefined}
+                    >
+                      <button type="button" className="layer-table-sort" onClick={() => p.onSort(c.name)}>
+                        {c.label}
+                        {dir && <span aria-hidden="true">{dir === 'asc' ? ' ▲' : ' ▼'}</span>}
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {p.rows.map((r) => (
+                <tr
+                  key={r.id}
+                  ref={r.id === p.selectedId ? showSelected : undefined}
+                  className={r.id === p.selectedId ? 'layer-table-row selected' : 'layer-table-row'}
+                  aria-selected={r.id === p.selectedId}
+                  tabIndex={0}
+                  onClick={() => p.onSelectRow(r.id)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    p.onSelectRow(r.id);
+                  }}
+                >
+                  <td className="layer-table-symbol">
+                    {r.symbol && <img src={r.symbol} alt="" width={20} height={16} />}
+                  </td>
+                  {r.cells.map((text, i) => <td key={p.columns[i]?.name ?? i}>{text}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {p.children}
       </div>
 
       <div className="layer-table-paging">
