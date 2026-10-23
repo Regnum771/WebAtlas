@@ -7,6 +7,7 @@ import {
   MAP_NOT_FOUND, assertCanRead, bumpMap, lockMapForWrite, sharedWithUserSql,
   type MapRole, type Queryable,
 } from './access';
+import { scheduleCogRemoval } from './rasters';
 
 export type LayerKind = 'free' | 'edit_copy' | 'raster' | 'annotation';
 
@@ -140,12 +141,18 @@ export function mapsService(pg: Pool) {
     /**
      * Delete the map with its layers, features and shares. The drafts behind its edit-copy
      * layers live in app.dataset_versions / water.*, which no cascade reaches, so they are
-     * discarded first in the same transaction: a failed delete leaves both in place.
+     * discarded first in the same transaction: a failed delete leaves both in place. The COGs
+     * of its raster layers are scheduled for the cleanup sweep in the same transaction, as a
+     * raster layer delete does (rasters.ts scheduleCogRemoval).
      */
     async remove(user: CurrentUser, mapId: string, input: { expectedRevision: number }): Promise<void> {
       await inTransaction(pg, async (client) => {
         await lockMapForWrite(client, mapId, user, input.expectedRevision);
         await discardEditCopyDrafts(client, mapId);
+        const { rows: rasters } = await client.query<{ id: string }>(
+          `SELECT id FROM workspace.map_layers WHERE map_id = $1 AND kind = 'raster' ORDER BY id FOR UPDATE`, [mapId]
+        );
+        await scheduleCogRemoval(client, rasters.map((r) => r.id));
         await client.query(`DELETE FROM workspace.maps WHERE id = $1`, [mapId]);
       });
     },

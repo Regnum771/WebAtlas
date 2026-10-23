@@ -1,13 +1,13 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { NotFoundError } from '../../errors';
 import { inTransaction } from '../../lib/transaction';
 import type { CurrentUser } from '../../types/fastify';
 import { assertCanRead, bumpMap, lockMapForWrite } from './access';
 import { resolveInStore } from './fileStore';
-import { LAYER_NOT_FOUND, loadSummary, patchLayerRow } from './freeLayers';
+import { LAYER_NOT_FOUND, deleteLayerRow, loadSummary, patchLayerRow } from './freeLayers';
 import type { LayerSummary } from './maps';
 import { FILE_NOT_FOUND } from './uploads';
 
@@ -16,8 +16,29 @@ import { FILE_NOT_FOUND } from './uploads';
  * (import_raster.py), served by byte range so a map client reads only the tiles and overviews it
  * shows. Whoever may read the map (its owner and its recipients) may read its rasters; anyone
  * else gets the map's 404 (access.ts), before the layer is even looked up. The owner may rename,
- * restyle and move a raster layer; deleting one, and the COG's lifecycle, come with Task 9.
+ * restyle, move and delete a raster layer. Deleting one (or its map) schedules its COG for
+ * removal (scheduleCogRemoval); the cleanup sweep removes the file (cleanup.ts deleteExpiredFiles).
  */
+
+/**
+ * In the caller's transaction, before the layer rows go: give the COGs of these raster layers a
+ * delete_after of now(), so the next cleanup sweep removes them and they stop counting toward
+ * the quota at once. A COG that a layer outside this set still shows is left alone, and an earlier
+ * date already set is kept. The API never unlinks a file inside a request.
+ */
+export async function scheduleCogRemoval(client: PoolClient, layerIds: string[]): Promise<void> {
+  if (layerIds.length === 0) return;
+  await client.query(
+    `UPDATE workspace.files f
+        SET delete_after = LEAST(f.delete_after, now())
+      WHERE f.kind = 'cog'
+        AND f.id IN (SELECT l.file_id FROM workspace.map_layers l
+                      WHERE l.id = ANY($1::uuid[]) AND l.kind = 'raster')
+        AND NOT EXISTS (SELECT 1 FROM workspace.map_layers o
+                         WHERE o.file_id = f.id AND NOT (o.id = ANY($1::uuid[])))`,
+    [layerIds]
+  );
+}
 
 /** What a Range header asks for, against a file of a known size. */
 export type ByteRange =
@@ -77,6 +98,26 @@ export function rastersService(pg: Pool) {
         await patchLayerRow(client, mapId, layerId, input);
         const revision = await bumpMap(client, mapId);
         return { layer: await loadSummary(client, layerId), revision };
+      });
+    },
+
+    /**
+     * Delete a raster layer: the map row is locked first, then the layer row; its COG is
+     * scheduled for removal and the row deleted, in one transaction.
+     */
+    async removeLayer(
+      user: CurrentUser, mapId: string, layerId: string, input: { expectedRevision: number }
+    ): Promise<{ revision: number }> {
+      return inTransaction(pg, async (client) => {
+        await lockMapForWrite(client, mapId, user, input.expectedRevision);
+        const { rows } = await client.query(
+          `SELECT 1 FROM workspace.map_layers WHERE id = $1 AND map_id = $2 AND kind = 'raster' FOR UPDATE`,
+          [layerId, mapId]
+        );
+        if (!rows[0]) throw new NotFoundError(LAYER_NOT_FOUND);
+        await scheduleCogRemoval(client, [layerId]);
+        await deleteLayerRow(client, mapId, layerId);
+        return { revision: await bumpMap(client, mapId) };
       });
     },
 

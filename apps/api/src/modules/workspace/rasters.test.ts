@@ -250,7 +250,7 @@ describe('raster layers', () => {
     expect(JSON.stringify(layers)).not.toMatch(/file_?id/i);
   });
 
-  it('a raster layer is renamed, restyled and moved, but not deleted yet', async () => {
+  it('a raster layer is renamed, restyled and moved; only the owner may delete it', async () => {
     const forbidden = await send(R, 'PATCH', `/maps/${mapId}/layers/${raster}`, { title: 'Không được', expectedRevision: 0 });
     expect(forbidden.statusCode).toBe(403);
 
@@ -265,9 +265,12 @@ describe('raster layers', () => {
     const order = (await get(O, `/maps/${mapId}`)).json().map.layers.map((l: { id: string }) => l.id);
     expect(order).toEqual([noFile, lostFile, raster, free]);
 
-    const removed = await send(O, 'DELETE', `/maps/${mapId}/layers/${raster}`, { expectedRevision: 1 });
-    expect(removed.statusCode).toBe(400);
-    expect(removed.json()).toEqual(UNSUPPORTED_KIND);
+    // The delete itself, and its COG's schedule, are in cleanup.test.ts; the layer is kept here for the copy tests.
+    const refused = await send(R, 'DELETE', `/maps/${mapId}/layers/${raster}`, { expectedRevision: 1 });
+    expect(refused.statusCode).toBe(403);
+    const stale = await send(O, 'DELETE', `/maps/${mapId}/layers/${raster}`, { expectedRevision: 0 });
+    expect(stale.statusCode).toBe(409);
+    expect((await get(O, `/maps/${mapId}`)).json().map.layers).toHaveLength(4);
   });
 
   it('a copier over the quota gets 413 and nothing is created', async () => {

@@ -311,21 +311,35 @@ export function jobsService(pg: Pool) {
       const role = await mapRole(pg, mapId, user.id);
       if (role === null) throw new NotFoundError(MAP_NOT_FOUND);
       if (role !== 'owner') throw new ForbiddenError(OWNER_ONLY);
-      const { rows } = await pg.query<{ path: string; original_name: string }>(
-        `SELECT path, original_name FROM workspace.files WHERE id = $1 AND owner_id = $2 AND kind = 'upload'`,
-        [input.fileId, user.id]
-      );
-      if (!rows[0]) throw new NotFoundError(FILE_NOT_FOUND);
-      const params: ImportParams = {
-        fileId: input.fileId,
-        path: rows[0].path,
-        originalName: rows[0].original_name,
-        mapId,
-        ownerId: user.id,
-        maxRows: IMPORT_MAX_ROWS,
-        sourceCrs,
-      };
-      return { job: await insertJob(pg, user.id, mapId, 'import', params, IMPORT_STEPS) };
+      return inTransaction(pg, async (client) => {
+        // An upload whose delete_after has passed is gone, whether or not the sweep has removed
+        // it yet. The row lock keeps the sweep (cleanup.ts deleteExpiredFiles) from removing it
+        // while the job is queued.
+        const { rows } = await client.query<{ path: string; original_name: string }>(
+          `SELECT path, original_name FROM workspace.files
+            WHERE id = $1 AND owner_id = $2 AND kind = 'upload'
+              AND (delete_after IS NULL OR delete_after > now())
+            FOR UPDATE`,
+          [input.fileId, user.id]
+        );
+        if (!rows[0]) throw new NotFoundError(FILE_NOT_FOUND);
+        // An original kept for 90 days after its map was archived (cleanup.ts
+        // markArchivedOriginals) is imported into a live map again: it no longer expires.
+        await client.query(
+          `UPDATE workspace.files SET delete_after = NULL WHERE id = $1 AND delete_after IS NOT NULL`,
+          [input.fileId]
+        );
+        const params: ImportParams = {
+          fileId: input.fileId,
+          path: rows[0].path,
+          originalName: rows[0].original_name,
+          mapId,
+          ownerId: user.id,
+          maxRows: IMPORT_MAX_ROWS,
+          sourceCrs,
+        };
+        return { job: await insertJob(client, user.id, mapId, 'import', params, IMPORT_STEPS) };
+      });
     },
 
     /**

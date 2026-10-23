@@ -186,15 +186,27 @@ const MAP_ROUTES: Case[] = [
   { method: 'POST', pattern: '/maps/:mapId/exports', body: () => ({ format: 'gpkg', crs: 'wgs84-dd' }) },
   { method: 'GET', pattern: '/maps/:mapId/exports/preview', query: 'format=shp&crs=wgs84-dd' },
 ];
+// The layer routes a raster layer answers (the others refuse its kind after the map's check);
+// the sweep also runs them with a raster layer id.
+const RASTER_ROUTES = new Set([
+  'PATCH /maps/:mapId/layers/:layerId', 'DELETE /maps/:mapId/layers/:layerId', 'GET /maps/:mapId/layers/:layerId/raster',
+]);
 // Routes that are not map-scoped; each has its own check below.
 const OTHER_ROUTES = ['GET /api/workspace/maps', 'POST /api/workspace/maps', 'GET /api/workspace/share-targets', 'GET /api/workspace/admin/summary'];
-// Owner-scoped, not map-scoped: a stranger's 404 on each is checked in uploads.test.ts ('uploads are private').
-const UPLOAD_ROUTES = [
-  'POST /api/workspace/uploads', 'GET /api/workspace/uploads',
-  'GET /api/workspace/uploads/:fileId', 'DELETE /api/workspace/uploads/:fileId',
+
+type OwnerCase = { method: Method; pattern: string; notFound: string };
+// Owner-scoped, not map-scoped: an upload or a job belongs to its owner alone. Each is swept with
+// a real id of the owner's, and must answer as for an id that does not exist.
+const OWNER_ROUTES: OwnerCase[] = [
+  { method: 'GET', pattern: '/uploads/:fileId', notFound: 'Không tìm thấy tệp.' },
+  { method: 'DELETE', pattern: '/uploads/:fileId', notFound: 'Không tìm thấy tệp.' },
+  { method: 'GET', pattern: '/jobs/:jobId', notFound: 'Không tìm thấy công việc.' },
+  { method: 'GET', pattern: '/jobs/:jobId/download', notFound: 'Không tìm thấy công việc.' },
 ];
-// Owner-scoped, not map-scoped: a stranger's 404 on each is checked in jobs.test.ts ('jobs are private').
-const JOB_ROUTES = ['GET /api/workspace/jobs', 'GET /api/workspace/jobs/:jobId', 'GET /api/workspace/jobs/:jobId/download'];
+// Owner-scoped lists: checked below to leave out the owner's ids. POST /uploads stores the
+// caller's own file and reads no one else's (uploads.test.ts).
+const OWNER_LISTS = ['GET /api/workspace/uploads', 'GET /api/workspace/jobs'];
+const OWN_UPLOAD = 'POST /api/workspace/uploads';
 
 function fill(route: Case, c: Ctx, withBbox: boolean): string {
   const url = route.pattern.replace(':mapId', c.m).replace(':layerId', c.l).replace(':featureId', c.f).replace(':shareId', c.s);
@@ -207,8 +219,9 @@ describe('workspace isolation', () => {
     const covered = new Set([
       ...MAP_ROUTES.map((r) => `${r.method} /api/workspace${r.pattern}`),
       ...OTHER_ROUTES,
-      ...UPLOAD_ROUTES,
-      ...JOB_ROUTES,
+      ...OWNER_ROUTES.map((r) => `${r.method} /api/workspace${r.pattern}`),
+      ...OWNER_LISTS,
+      OWN_UPLOAD,
     ]);
     expect([...registered].sort()).toEqual([...covered].sort());
     for (const key of covered) {
@@ -233,18 +246,34 @@ describe('workspace isolation', () => {
     // An edit-copy feature id, from the draft's bbox read.
     const ecFeat = (await call(O, 'GET', `/maps/${map.id}/layers/${ecLayer.id}/features?bbox=${ALL}`)).json().features[0] as { id: string };
     expect(ecFeat).toBeTruthy();
+    // A raster layer, as the worker's raster import leaves it: a cog files row and the layer row.
+    // The file itself is never read: every request below stops at the map's 404.
+    const owner = ids.get(O)!;
+    const cogId = randomUUID();
+    await getPool().query(
+      `INSERT INTO workspace.files (id, owner_id, kind, path, original_name, content_type, size_bytes)
+       VALUES ($1, $2, 'cog', $3, 'anh.tif', 'image/tiff', 1)`,
+      [cogId, owner, `cog/${owner}/${cogId}.tif`]
+    );
+    const rasterLayer = (await getPool().query<{ id: string }>(
+      `INSERT INTO workspace.map_layers (map_id, kind, title, position, file_id, raster)
+       VALUES ($1, 'raster', 'Ảnh', 2, $2, '{}'::jsonb) RETURNING id`,
+      [map.id, cogId]
+    )).rows[0].id;
 
     const before = (await call(O, 'GET', `/maps/${map.id}`)).json().map;
     const real = { m: map.id, s: share.id, rev: before.revision };
-    const layers: Array<{ name: string; l: string; f: string }> = [
+    const layers: Array<{ name: string; l: string; f: string; only?: Set<string> }> = [
       { name: 'free', l: free.id, f: feat.id },
       { name: 'edit_copy', l: ecLayer.id, f: ecFeat.id },
+      { name: 'raster', l: rasterLayer, f: randomUUID(), only: RASTER_ROUTES },
     ];
 
     let sweeps = 0;
     for (const who of [S, A]) {
       for (const route of MAP_ROUTES) {
-        for (const layer of route.pattern.includes(':layerId') ? layers : [layers[0]]) {
+        const forRoute = layers.filter((l) => !l.only || l.only.has(`${route.method} ${route.pattern}`));
+        for (const layer of route.pattern.includes(':layerId') ? forRoute : [layers[0]]) {
           const label = `${who} ${route.method} ${route.pattern} (${layer.name})`;
           const real_ = { ...real, l: layer.l, f: layer.f };
           // The "missing" twin: the same shape with random uuids and a plausible revision.
@@ -259,9 +288,11 @@ describe('workspace isolation', () => {
         }
       }
     }
-    // Per user: the routes without a layer id (one run) plus the layer routes (two runs).
+    // Per user: the routes without a layer id (one run), the layer routes (free and edit copy) and
+    // the routes a raster layer answers (one more run each).
     expect(sweeps).toBe(2 * (MAP_ROUTES.filter((r) => !r.pattern.includes(':layerId')).length
-      + 2 * MAP_ROUTES.filter((r) => r.pattern.includes(':layerId')).length));
+      + 2 * MAP_ROUTES.filter((r) => r.pattern.includes(':layerId')).length + RASTER_ROUTES.size));
+    expect(MAP_ROUTES.filter((r) => RASTER_ROUTES.has(`${r.method} ${r.pattern}`))).toHaveLength(RASTER_ROUTES.size);
 
     // The routes that are not map-scoped leak nothing either.
     for (const who of [S, A]) {
@@ -277,12 +308,65 @@ describe('workspace isolation', () => {
     // Nothing the strangers sent changed anything.
     const after = (await call(O, 'GET', `/maps/${map.id}`)).json().map;
     expect(after).toEqual(before);
-    expect(after.layers).toHaveLength(2);
+    expect(after.layers).toHaveLength(3);
+    const { rows: cog } = await getPool().query(`SELECT delete_after FROM workspace.files WHERE id = $1`, [cogId]);
+    expect(cog).toEqual([{ delete_after: null }]);
     const feats = (await call(O, 'GET', `/maps/${map.id}/layers/${free.id}/features`)).json().features;
     expect(feats).toHaveLength(1);
     expect(feats[0].properties).toEqual({ ten: 'bí mật' });
     expect((await call(O, 'GET', `/maps/${map.id}/shares`)).json().shares).toHaveLength(1);
   }, 120_000);
+
+  it("every upload and job route answers someone else's id as a missing one", async () => {
+    const owner = ids.get(O)!;
+    // The owner's upload, a finished export and its file: rows only, nothing on disk is read.
+    const fileId = randomUUID();
+    await getPool().query(
+      `INSERT INTO workspace.files (id, owner_id, kind, path, original_name, content_type, size_bytes)
+       VALUES ($1, $2, 'upload', $3, 'bi-mat.geojson', 'application/geo+json', 1)`,
+      [fileId, owner, `uploads/${owner}/${fileId}/original.geojson`]
+    );
+    const exportId = randomUUID();
+    const jobId = randomUUID();
+    await getPool().query(
+      `INSERT INTO workspace.files (id, owner_id, kind, path, original_name, content_type, size_bytes, delete_after)
+       VALUES ($1, $2, 'export', $3, 'bi-mat.gpkg', 'application/geopackage+sqlite3', 1, now() + interval '7 days')`,
+      [exportId, owner, `exports/${owner}/${jobId}/bi-mat.gpkg`]
+    );
+    await getPool().query(
+      `INSERT INTO workspace.jobs (id, owner_id, kind, status, params, result)
+       VALUES ($1, $2, 'export', 'succeeded', $3, $4)`,
+      [jobId, owner, JSON.stringify({ downloadName: 'bi-mat.gpkg' }), JSON.stringify({ fileId: exportId })]
+    );
+    const fillOwner = (pattern: string, file: string, job: string) => pattern.replace(':fileId', file).replace(':jobId', job);
+
+    let sweeps = 0;
+    for (const who of [S, A]) {
+      for (const route of OWNER_ROUTES) {
+        const label = `${who} ${route.method} ${route.pattern}`;
+        const theirs = await call(who, route.method, fillOwner(route.pattern, fileId, jobId));
+        const missing = await call(who, route.method, fillOwner(route.pattern, randomUUID(), randomUUID()));
+        expect(theirs.statusCode, label).toBe(404);
+        expect(theirs.json(), label).toEqual({ error: { code: 'NOT_FOUND', message: route.notFound } });
+        expect(theirs.json(), label).toEqual(missing.json());
+        sweeps++;
+      }
+      for (const list of ['/uploads', '/jobs']) {
+        const res = await call(who, 'GET', list);
+        expect(res.statusCode).toBe(200);
+        for (const id of [fileId, exportId, jobId]) expect(res.body).not.toContain(id);
+      }
+    }
+    expect(sweeps).toBe(2 * OWNER_ROUTES.length);
+
+    // Nothing was removed: the owner still has the upload, the job and its file.
+    const { rows } = await getPool().query(
+      `SELECT (SELECT count(*)::int FROM workspace.files WHERE id = ANY($1::uuid[])) AS files,
+              (SELECT count(*)::int FROM workspace.jobs WHERE id = $2) AS jobs`,
+      [[fileId, exportId], jobId]
+    );
+    expect(rows[0]).toEqual({ files: 2, jobs: 1 });
+  });
 
   it('the assistant role reads nothing in workspace', async () => {
     const c = await getPool().connect();
