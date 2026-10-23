@@ -51,6 +51,16 @@ describe('useJob', () => {
 });
 
 describe('useMapWrite', () => {
+  it('an uncached map is read first and its revision sent', async () => {
+    const { wrapper } = setup();
+    vi.mocked(api.getMap).mockResolvedValue({ id: 'm2', revision: 4, layers: [] } as never);
+    const { result } = renderHook(() => useMapWrite('m2'), { wrapper });
+    const write = vi.fn().mockResolvedValue('ok');
+    await expect(result.current.run(write)).resolves.toBe('ok');
+    expect(api.getMap).toHaveBeenCalledWith('m2');
+    expect(write).toHaveBeenCalledWith(4);
+  });
+
   it('sends the cached revision; MAP_CHANGED invalidates and throws MapChangedError; 404 throws MapGoneError', async () => {
     const { qc, wrapper } = setup();
     qc.setQueryData(['ws', 'map', 'm1'], { id: 'm1', revision: 7, layers: [] });

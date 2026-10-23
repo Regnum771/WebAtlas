@@ -70,10 +70,14 @@ export function useMapJobs(mapId: string) {
 export function useMapWrite(mapId: string) {
   const qc = useQueryClient();
   async function run<T>(write: (expectedRevision: number) => Promise<T>): Promise<T> {
-    const revision = qc.getQueryData<MapDetail>(keys.map(mapId))?.revision ?? 0;
     const refresh = () =>
       Promise.all([qc.invalidateQueries({ queryKey: keys.map(mapId) }), qc.invalidateQueries({ queryKey: keys.maps })]);
     try {
+      // An uncached map is read first, so a cold start does not send a made-up revision.
+      const map =
+        qc.getQueryData<MapDetail>(keys.map(mapId)) ??
+        (await qc.fetchQuery<MapDetail>({ queryKey: keys.map(mapId), queryFn: () => api.getMap(mapId) }));
+      const revision = map.revision;
       const result = await write(revision);
       await refresh();
       return result;
