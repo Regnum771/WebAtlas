@@ -6,7 +6,7 @@ import type { LayerQueryRequest } from '../api/workspace.api';
 import { dropGoneMap, isMapNotFound, keys } from './queries';
 import { closeTable, emptyFilter, useTableStore, type TableFilter } from './table.store';
 
-export const TABLE_PAGE_SIZE = 50;
+export const TABLE_PAGE_SIZE = 100;
 export const DEBOUNCE_MS = 300;
 export const TABLE_LOAD_ERROR = 'Không tải được bảng. Thử lại.';
 

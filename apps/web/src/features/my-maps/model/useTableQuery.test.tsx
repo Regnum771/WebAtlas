@@ -6,7 +6,9 @@ import { ApiError } from '../../../shared/api/apiClient';
 import * as api from '../api/workspace.api';
 import type { LayerQueryResponse } from '../api/workspace.api';
 import { useTableQuery } from './useTableQuery';
-import { openTable, resetTableStore, setFilter } from './table.store';
+import { getTableState, openTable, resetTableStore, setFilter } from './table.store';
+import { keys } from './queries';
+import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
 
 vi.mock('../api/workspace.api');
 
@@ -79,5 +81,40 @@ describe('useTableQuery', () => {
     queryMock().mockRejectedValueOnce(new ApiError(0, 'NETWORK_ERROR', 'Network request failed'));
     await act(async () => { result.current.refetch(); await vi.advanceTimersByTimeAsync(10); });
     expect(result.current.error).toBe('Không tải được bảng. Thử lại.');
+  });
+
+  it('pages of 100: offset is page times 100 and limit is 100', async () => {
+    queryMock().mockResolvedValue(answer(1));
+    const { wrapper } = setup();
+    renderHook(() => useTableQuery(null), { wrapper });
+    await flush();
+    expect(queryMock().mock.calls[0][2]).toMatchObject({ offset: 0, limit: 100 });
+    act(() => setFilter({ page: 2 }));
+    await flush(10);
+    expect(queryMock().mock.calls[1][2]).toMatchObject({ offset: 200, limit: 100 });
+  });
+
+  it("the map's own 404 drops the map and closes the table; another 404 does not", async () => {
+    resetToasts();
+    queryMock().mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'Không tìm thấy lớp.'));
+    const first = setup();
+    first.qc.setQueryData(keys.map('m1'), { id: 'm1', revision: 1, layers: [] });
+    const r1 = renderHook(() => useTableQuery(null), { wrapper: first.wrapper });
+    await flush(10);
+    expect(r1.result.current.error).toBe('Không tải được bảng. Thử lại.');
+    expect(first.qc.getQueryData(keys.map('m1'))).toBeDefined();
+    expect(getTableState().open).not.toBeNull();
+    expect(getToasts()).toHaveLength(0);
+    r1.unmount();
+
+    queryMock().mockReset();
+    queryMock().mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'Không tìm thấy bản đồ.'));
+    const second = setup();
+    second.qc.setQueryData(keys.map('m1'), { id: 'm1', revision: 1, layers: [] });
+    renderHook(() => useTableQuery(null), { wrapper: second.wrapper });
+    await flush(10);
+    expect(second.qc.getQueryData(keys.map('m1'))).toBeUndefined();
+    expect(getTableState().open).toBeNull();
+    expect(getToasts()).toHaveLength(1);
   });
 });
