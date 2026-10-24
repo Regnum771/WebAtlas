@@ -24,7 +24,11 @@ export function managingUnitAttribute() {
         validFrom: VALID_FROM,
     };
 }
-/** Open list: the codes are the Vietnamese words stored today (Ruling 1). */
+/**
+ * Closed list: the popup (DynamicPopup.tsx) picks the risk badge class by branching on
+ * 'Cao' and 'Trung bình', which is application code depending on the codes (spec §2.2).
+ * The codes are the Vietnamese words stored today in all four layers (Ruling 1).
+ */
 export function riskLevelAttribute(definition) {
     return {
         name: 'risk_level',
@@ -32,7 +36,7 @@ export function riskLevelAttribute(definition) {
         valueType: 'code',
         label: 'Mức rủi ro',
         definition,
-        codeList: 'open',
+        codeList: 'closed',
         values: [
             { code: 'Trung bình', name: 'Trung bình', order: 1 },
             { code: 'Cao', name: 'Cao', order: 2 },

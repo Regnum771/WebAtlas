@@ -32,6 +32,18 @@ describe('dictionary entries', () => {
     }
   });
 
+  it('risk_level is closed on every layer that has it', () => {
+    const layers = Object.values(DICTIONARY).filter((ft) => ft.attributes.some((a) => a.name === 'risk_level'));
+    expect(layers.map((ft) => ft.key).sort()).toEqual(
+      ['drought_points', 'flood_generation', 'flood_zones', 'saltwater_intrusion'],
+    );
+    for (const ft of layers) {
+      const risk = attributeOf(DICTIONARY, ft.key, 'risk_level')!;
+      expect(risk.codeList, ft.key).toBe('closed');
+      expect(risk.values?.map((v) => v.code).sort(), ft.key).toEqual(['Cao', 'Trung bình']);
+    }
+  });
+
   it('volume is stored in million m³ and shown in triệu m³', () => {
     expect(formatValue(attributeOf(DICTIONARY, 'lakes', 'volume_mcm')!, 1250.5)).toBe('1.250,5 triệu m³');
   });

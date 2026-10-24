@@ -5,7 +5,7 @@ import { VALID_FROM, externalIdAttribute, managingUnitAttribute, nameAttribute }
 
 const STATUS_DEFINITIONS: Record<(typeof DAM_STATUS_SLUGS)[number], string> = {
   binh_thuong: 'Hồ chứa vận hành bình thường.',
-  xa_lu: 'Hồ chứa đang xả lũ qua tràn.',
+  xa_lu: 'Hồ chứa đang xả lũ.',
   nguy_hiem: 'Công trình đang ở tình trạng nguy hiểm, cần theo dõi đặc biệt.',
 };
 

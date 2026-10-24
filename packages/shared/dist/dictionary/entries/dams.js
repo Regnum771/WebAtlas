@@ -3,7 +3,7 @@ import { DAM_STATUS_DISPLAY, DAM_STATUS_SLUGS } from '../../dam-status.js';
 import { VALID_FROM, externalIdAttribute, managingUnitAttribute, nameAttribute } from './common.js';
 const STATUS_DEFINITIONS = {
     binh_thuong: 'Hồ chứa vận hành bình thường.',
-    xa_lu: 'Hồ chứa đang xả lũ qua tràn.',
+    xa_lu: 'Hồ chứa đang xả lũ.',
     nguy_hiem: 'Công trình đang ở tình trạng nguy hiểm, cần theo dõi đặc biệt.',
 };
 export const dams = {

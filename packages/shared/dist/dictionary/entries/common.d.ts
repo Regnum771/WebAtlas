@@ -4,7 +4,11 @@ export declare const VALID_FROM = "2026-10-24";
 export declare function nameAttribute(definition: string): DictAttribute;
 export declare function externalIdAttribute(definition?: string): DictAttribute;
 export declare function managingUnitAttribute(): DictAttribute;
-/** Open list: the codes are the Vietnamese words stored today (Ruling 1). */
+/**
+ * Closed list: the popup (DynamicPopup.tsx) picks the risk badge class by branching on
+ * 'Cao' and 'Trung bình', which is application code depending on the codes (spec §2.2).
+ * The codes are the Vietnamese words stored today in all four layers (Ruling 1).
+ */
 export declare function riskLevelAttribute(definition: string): DictAttribute;
 /** Listed values whose name equals the stored code, in the given order (Ruling 1). */
 export declare function storedValues(codes: readonly string[]): DictValue[];
