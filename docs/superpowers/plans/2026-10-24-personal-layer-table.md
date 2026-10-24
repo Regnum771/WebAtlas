@@ -53,7 +53,7 @@
    - They filter and sort correctly.
    - Nothing reaches SQL text.
    - → Task 1 test `keys with quotes and SQL text are bound, never interpolated`; Task 2 test `a column named with quotes and spaces filters and sorts`.
-3. **A big edit copy:** rivers, about 23,000 rows, sorted on a text column with no "in view" box.
+3. **A big edit copy:** rivers, about 9,500 rows (it reads `rivers_detail`, 9,486 rows), sorted on a text column with no "in view" box.
    - A page returns within 1.5 s.
    - → Task 2 test `a filtered, sorted page of a rivers edit copy returns within 1.5 s`.
 4. **Editing a feature so it stops matching the filter** (changing `loai` while filtering on it).

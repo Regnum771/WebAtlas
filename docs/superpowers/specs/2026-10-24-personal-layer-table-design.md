@@ -128,7 +128,7 @@ The query wraps either source as `(id, properties, geom)` and filters, sorts and
 
 ### Speed
 
-Target: under 1.5 s for a filtered page of an edit copy of rivers (about 23,000 rows), measured by a test. If that target fails, the fallback is a per-draft snapshot table refreshed after each write. The fallback is not built unless the test fails.
+Target: under 1.5 s for a filtered page of an edit copy of rivers (about 9,500 rows: it reads `rivers_detail`, 9,486 rows), measured by a test. If that target fails, the fallback is a per-draft snapshot table refreshed after each write. The fallback is not built unless the test fails.
 
 ## 3. Selection, editing and keeping things in step
 
