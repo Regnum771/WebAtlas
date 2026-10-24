@@ -1,0 +1,12 @@
+import type { DictAttribute, Dictionary } from './types.js';
+export declare function attributeOf(dictionary: Dictionary, layer: string, name: string): DictAttribute | undefined;
+export declare function labelFor(dictionary: Dictionary, layer: string, name: string): string;
+export declare function valueName(attribute: DictAttribute, code: string): string;
+export declare function formatValue(attribute: DictAttribute, stored: unknown): string;
+export declare function parseDisplay(attribute: DictAttribute, text: string): {
+    ok: true;
+    value: number;
+} | {
+    ok: false;
+    message: string;
+};
