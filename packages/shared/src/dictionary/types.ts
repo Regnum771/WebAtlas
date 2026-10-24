@@ -1,4 +1,4 @@
-import type { OgcGeometryType } from '../layer-geometry.js';
+import type { StoredGeometryType } from '../layer-geometry.js';
 
 export type ValueType = 'text' | 'number' | 'date' | 'code';
 export type AttributeSource = 'column' | 'extra' | 'band';
@@ -41,7 +41,7 @@ export interface DictFeatureType {
   /** `schema.table`; for rasters it is the raster table. */
   table?: string;
   crs: number;
-  geometryType?: OgcGeometryType;
+  geometryType?: StoredGeometryType;
   geometryMeaning: GeometryMeaning;
   validFrom: string;
   validTo?: string;

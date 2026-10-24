@@ -1,0 +1,2 @@
+import type { DictFeatureType } from '../types.js';
+export declare const flood_wards: DictFeatureType;

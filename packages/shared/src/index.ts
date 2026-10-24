@@ -19,7 +19,7 @@ export type EditableLayerKey = (typeof EDITABLE_LAYER_KEYS)[number];
 // Đuôi .js bắt buộc cho ESM thuần: package này là "type": "module" và resolve qua
 // dist/, nên `node` từ chối import không có đuôi (Vite/Vitest thì tự suy ra được).
 // Không có đuôi thì script .mjs chạy bằng node sẽ vỡ với ERR_MODULE_NOT_FOUND.
-export { LAYER_GEOMETRY, type OgcGeometryType } from './layer-geometry.js';
+export { LAYER_GEOMETRY, type OgcGeometryType, type StoredGeometryType } from './layer-geometry.js';
 export * from './layer-attributes.js';
 export * from './feature-properties.js';
 export * from './dam-status.js';

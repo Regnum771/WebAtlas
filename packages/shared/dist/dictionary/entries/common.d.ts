@@ -10,5 +10,13 @@ export declare function managingUnitAttribute(): DictAttribute;
  * The codes are the Vietnamese words stored today in all four layers (Ruling 1).
  */
 export declare function riskLevelAttribute(definition: string): DictAttribute;
+export declare function nameEnAttribute(definition: string): DictAttribute;
+export declare function osmIdAttribute(): DictAttribute;
+export declare function areaKm2Attribute(definition: string): DictAttribute;
+/** The flood scenario tables hold one row per scenario; scenario_id names it (an identifier, so text). */
+export declare function scenarioIdAttribute(): DictAttribute;
+export declare function floodMaxDepthAttribute(definition: string): DictAttribute;
+/** Hours counted from the start of a flood scenario (hour 0). */
+export declare function scenarioHourAttribute(name: string, label: string, definition: string): DictAttribute;
 /** Listed values whose name equals the stored code, in the given order (Ruling 1). */
 export declare function storedValues(codes: readonly string[]): DictValue[];

@@ -1,0 +1,72 @@
+import { VALID_FROM } from './common.js';
+// The table is empty today (the build creates it for a later step); the wording follows the
+// flood scenario spec (docs/superpowers/specs/2026-10-15-flood-scenario-demo-design.md).
+export const flood_history = {
+    key: 'flood_history',
+    kind: 'vector',
+    name: 'Lũ lịch sử từ ảnh vệ tinh',
+    definition: 'Vùng ngập của các trận lũ đã xảy ra, xác định từ ảnh vệ tinh và cắt theo vùng mô phỏng.',
+    table: 'scenario.flood_history',
+    crs: 4326,
+    geometryType: 'MultiPolygon',
+    geometryMeaning: 'exact',
+    validFrom: VALID_FROM,
+    attributes: [
+        {
+            name: 'event_id',
+            source: 'column',
+            valueType: 'text',
+            label: 'Mã sự kiện',
+            definition: 'Mã của sản phẩm bản đồ ngập do nơi phát hành đặt.',
+            validFrom: VALID_FROM,
+        },
+        {
+            name: 'event_name',
+            source: 'column',
+            valueType: 'text',
+            label: 'Tên sự kiện',
+            definition: 'Tên trận lũ hoặc cơn bão gây ngập.',
+            validFrom: VALID_FROM,
+        },
+        {
+            name: 'observed_on',
+            source: 'column',
+            valueType: 'date',
+            label: 'Ngày quan sát',
+            definition: 'Ngày chụp ảnh vệ tinh dùng để xác định vùng ngập.',
+            validFrom: VALID_FROM,
+        },
+        {
+            name: 'source',
+            source: 'column',
+            valueType: 'text',
+            label: 'Nguồn',
+            definition: 'Tổ chức phát hành bản đồ ngập, ví dụ UNOSAT hoặc EOS-RS.',
+            validFrom: VALID_FROM,
+        },
+        {
+            name: 'sensor',
+            source: 'column',
+            valueType: 'text',
+            label: 'Vệ tinh',
+            definition: 'Vệ tinh hoặc bộ cảm biến đã chụp ảnh, ví dụ Sentinel-1.',
+            validFrom: VALID_FROM,
+        },
+        {
+            name: 'licence',
+            source: 'column',
+            valueType: 'text',
+            label: 'Giấy phép',
+            definition: 'Giấy phép sử dụng dữ liệu, ví dụ CC BY-SA.',
+            validFrom: VALID_FROM,
+        },
+        {
+            name: 'url',
+            source: 'column',
+            valueType: 'text',
+            label: 'Đường dẫn',
+            definition: 'Địa chỉ trang web của sản phẩm dữ liệu gốc.',
+            validFrom: VALID_FROM,
+        },
+    ],
+};

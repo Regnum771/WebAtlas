@@ -44,6 +44,58 @@ describe('dictionary entries', () => {
     }
   });
 
+  it('read-only layers and rasters are present', () => {
+    const tables: Record<string, string | undefined> = {
+      provinces: 'admin.provinces',
+      wards: 'admin.wards',
+      contours: 'basemap.contours',
+      osm_water: 'basemap.water_region',
+      flood_stations: 'scenario.flood_station',
+      flood_wards: 'scenario.flood_ward',
+      flood_roads: 'scenario.flood_road',
+      shelters: 'scenario.shelter',
+      flood_history: 'scenario.flood_history',
+      dem: 'basemap.dem_region',
+      // Flood depth is PNG frames, not a table (Ruling 3).
+      flood_depth: undefined,
+    };
+    for (const [key, table] of Object.entries(tables)) {
+      const ft = DICTIONARY[key];
+      expect(ft, key).toBeDefined();
+      expect(ft.table, key).toBe(table);
+      expect(ft.validFrom, key).toBe('2026-10-24');
+      expect(ft.kind, key).toBe(key === 'dem' || key === 'flood_depth' ? 'raster' : 'vector');
+    }
+    expect(DICTIONARY.flood_depth.crs).toBe(3857);
+  });
+
+  it('the dem band is in metres with surface_altitude', () => {
+    const dem = DICTIONARY.dem;
+    expect(dem.crs).toBe(4326);
+    expect(dem.attributes.map((a) => a.name)).toEqual(['1']);
+    const band = attributeOf(DICTIONARY, 'dem', '1')!;
+    expect(band.source).toBe('band');
+    expect(band.valueType).toBe('number');
+    expect(band.label).toBe('Độ cao');
+    expect(band.storedUnit).toBe('m');
+    expect(band.cfStandardName).toBe('surface_altitude');
+    expect(band.nodata).toBe(-9999);
+  });
+
+  it('raster entries have only band attributes', () => {
+    const rasters = Object.values(DICTIONARY).filter((ft) => ft.kind === 'raster');
+    expect(rasters.map((ft) => ft.key).sort()).toEqual(['dem', 'flood_depth']);
+    for (const ft of rasters) {
+      expect(ft.geometryType, ft.key).toBeUndefined();
+      expect(ft.attributes.length, ft.key).toBeGreaterThan(0);
+      expect(ft.attributes.every((a) => a.source === 'band'), ft.key).toBe(true);
+    }
+    const depth = attributeOf(DICTIONARY, 'flood_depth', '1')!;
+    expect(depth.storedUnit).toBe('m');
+    expect(depth.displayUnits).toEqual(['m', 'cm']);
+    expect(depth.cfStandardName).toBeUndefined();
+  });
+
   it('volume is stored in million m³ and shown in triệu m³', () => {
     expect(formatValue(attributeOf(DICTIONARY, 'lakes', 'volume_mcm')!, 1250.5)).toBe('1.250,5 triệu m³');
   });

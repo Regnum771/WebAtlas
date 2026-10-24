@@ -55,6 +55,79 @@ export function riskLevelAttribute(definition: string): DictAttribute {
   };
 }
 
+export function nameEnAttribute(definition: string): DictAttribute {
+  return { name: 'name_en', source: 'column', valueType: 'text', label: 'Tên tiếng Anh', definition, validFrom: VALID_FROM };
+}
+
+export function osmIdAttribute(): DictAttribute {
+  return {
+    name: 'osm_id',
+    source: 'column',
+    valueType: 'text',
+    label: 'Mã OpenStreetMap',
+    definition: 'Mã định danh của đối tượng trong OpenStreetMap, nguồn của dữ liệu.',
+    validFrom: VALID_FROM,
+  };
+}
+
+export function areaKm2Attribute(definition: string): DictAttribute {
+  return {
+    name: 'area_km2',
+    source: 'column',
+    valueType: 'number',
+    label: 'Diện tích',
+    definition,
+    storedUnit: 'km2',
+    displayUnits: ['km2', 'ha'],
+    displayUnit: 'km2',
+    precision: 2,
+    validFrom: VALID_FROM,
+  };
+}
+
+/** The flood scenario tables hold one row per scenario; scenario_id names it (an identifier, so text). */
+export function scenarioIdAttribute(): DictAttribute {
+  return {
+    name: 'scenario_id',
+    source: 'column',
+    valueType: 'text',
+    label: 'Kịch bản',
+    definition: 'Mã kịch bản lũ mà dòng dữ liệu thuộc về, ví dụ kttv-2025-10 là trận lũ tháng 10/2025 tái hiện từ số liệu thực đo.',
+    validFrom: VALID_FROM,
+  };
+}
+
+export function floodMaxDepthAttribute(definition: string): DictAttribute {
+  return {
+    name: 'max_depth',
+    source: 'column',
+    valueType: 'number',
+    label: 'Độ sâu ngập lớn nhất',
+    definition,
+    storedUnit: 'm',
+    displayUnits: ['m', 'cm'],
+    displayUnit: 'm',
+    precision: 2,
+    validFrom: VALID_FROM,
+  };
+}
+
+/** Hours counted from the start of a flood scenario (hour 0). */
+export function scenarioHourAttribute(name: string, label: string, definition: string): DictAttribute {
+  return {
+    name,
+    source: 'column',
+    valueType: 'number',
+    label,
+    definition,
+    storedUnit: 'h',
+    displayUnits: ['h'],
+    displayUnit: 'h',
+    precision: 0,
+    validFrom: VALID_FROM,
+  };
+}
+
 /** Listed values whose name equals the stored code, in the given order (Ruling 1). */
 export function storedValues(codes: readonly string[]): DictValue[] {
   return codes.map((code, i) => ({ code, name: code, order: i + 1 }));
