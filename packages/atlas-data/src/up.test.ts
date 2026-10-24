@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  assertOwnStack, buildTools, closingLines, ENV_FILES, migrate, preflight, startStack, UpError, waitReady,
+  assertOwnStack, buildTools, closingLines, ENV_FILES, migrate, preflight, startStack, syncDictionary, UpError, waitReady,
   type UpConfig, type UpSystem,
 } from './up';
 
@@ -193,6 +194,26 @@ describe('startStack / buildTools / migrate', () => {
     const f = fakeSystem({ exec: () => 1 });
     await expect(startStack(f.sys, cfg)).rejects.toThrow(/last line/);
     await expect(migrate(f.sys, cfg)).rejects.toBeInstanceOf(UpError);
+  });
+
+  it('atlas:up runs the dictionary sync after migrations', async () => {
+    const f = fakeSystem();
+    await migrate(f.sys, cfg);
+    await syncDictionary(f.sys, cfg);
+    expect(f.calls).toEqual([
+      '/usr/bin/node /npm/bin/npm-cli.js run migrate:up -w @webatlas/api',
+      '/usr/bin/node /npm/bin/npm-cli.js run dictionary:sync -w @webatlas/api',
+    ]);
+    const failing = fakeSystem({ exec: () => 1 });
+    await expect(syncDictionary(failing.sys, cfg)).rejects.toThrow(
+      /^dictionary sync failed \(npm run dictionary:sync -w @webatlas\/api\):\n  \| last line/,
+    );
+    // The command itself calls the sync right after the migrations.
+    const cli = readFileSync(new URL('./cli/up.ts', import.meta.url), 'utf8');
+    const migrated = cli.indexOf('await migrate(sys, cfg);');
+    expect(migrated).toBeGreaterThan(-1);
+    expect(cli.indexOf('await syncDictionary(sys, cfg);', migrated)).toBeGreaterThan(migrated);
+    expect(cli.slice(migrated, cli.indexOf('await syncDictionary(sys, cfg);'))).not.toMatch(/runBuild/);
   });
 });
 

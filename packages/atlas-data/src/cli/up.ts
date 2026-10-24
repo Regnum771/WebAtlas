@@ -13,7 +13,9 @@ import { geoserverEnv } from '../geoserver';
 import { composeArgs, composeEnv, composeFile } from '../compose';
 import { BuildLockedError, withBuildLock } from '../buildLock';
 import { npmCli } from '../stages/run';
-import { assertOwnStack, buildTools, closingLines, migrate, preflight, startStack, UpError, waitReady, type UpConfig } from '../up';
+import {
+  assertOwnStack, buildTools, closingLines, migrate, preflight, startStack, syncDictionary, UpError, waitReady, type UpConfig,
+} from '../up';
 import { DATA_CACHE, REPO_ROOT } from '../paths';
 
 async function main(): Promise<void> {
@@ -89,6 +91,8 @@ async function main(): Promise<void> {
       await buildTools(sys, cfg);
       console.log('== migrations');
       await migrate(sys, cfg);
+      console.log('== dictionary sync');
+      await syncDictionary(sys, cfg);
       console.log('== build');
       printBuildReport(await runBuild(pool, datasets, { universe: ALL_DATASETS, force, supersedeEdits }));
       console.log('== verify');

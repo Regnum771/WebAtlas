@@ -205,3 +205,9 @@ export async function migrate(sys: UpSystem, cfg: UpConfig): Promise<void> {
   const r = await sys.exec(cfg.npm.file, [...cfg.npm.args, 'run', 'migrate:up', '-w', '@webatlas/api']);
   if (r.code !== 0) throw failed('migrations failed (npm run migrate:up -w @webatlas/api):', r);
 }
+
+/** Right after migrate: fills the data dictionary tables from the code copy (dictionary spec §2.1). */
+export async function syncDictionary(sys: UpSystem, cfg: UpConfig): Promise<void> {
+  const r = await sys.exec(cfg.npm.file, [...cfg.npm.args, 'run', 'dictionary:sync', '-w', '@webatlas/api']);
+  if (r.code !== 0) throw failed('dictionary sync failed (npm run dictionary:sync -w @webatlas/api):', r);
+}
