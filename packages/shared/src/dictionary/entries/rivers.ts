@@ -1,0 +1,123 @@
+import { LAYER_GEOMETRY } from '../../layer-geometry.js';
+import type { DictFeatureType } from '../types.js';
+import { VALID_FROM, externalIdAttribute, managingUnitAttribute, nameAttribute } from './common.js';
+
+export const rivers: DictFeatureType = {
+  key: 'rivers',
+  kind: 'vector',
+  name: 'Mạng lưới sông ngòi',
+  definition:
+    'Mạng lưới sông, kênh, suối theo ba cấp: sông có tên, đoạn sông HydroRIVERS và tuyến dòng chảy OpenStreetMap.',
+  table: 'water.rivers',
+  crs: 4326,
+  geometryType: LAYER_GEOMETRY.rivers,
+  geometryMeaning: 'exact',
+  validFrom: VALID_FROM,
+  attributes: [
+    nameAttribute('Tên sông, kênh hoặc suối; để trống với dòng chảy không có tên.'),
+    externalIdAttribute(
+      'Mã định danh của đối tượng, có tiền tố theo cấp: river: cho sông, hyriv: cho đoạn sông HydroRIVERS, osm: cho tuyến OpenStreetMap.',
+    ),
+    managingUnitAttribute(),
+    {
+      // Closed: application code branches on the level (only level 3 is hand-editable,
+      // level 1 is what the assistant and ROI treat as a river) (Ruling 7).
+      name: 'feature_level',
+      source: 'column',
+      valueType: 'code',
+      label: 'Cấp đối tượng',
+      definition:
+        'Cấp của đối tượng trong phân cấp ba bậc của mạng sông: 1 là sông có tên, 2 là đoạn sông HydroRIVERS, 3 là tuyến dòng chảy OpenStreetMap.',
+      codeList: 'closed',
+      values: [
+        {
+          code: '1',
+          name: 'Sông',
+          definition: 'Một con sông có tên, dựng từ các tuyến OpenStreetMap được ghép vào nó.',
+          order: 1,
+        },
+        {
+          code: '2',
+          name: 'Đoạn sông',
+          definition: 'Một đoạn sông của bộ dữ liệu HydroRIVERS, nối với đoạn hạ lưu qua quan hệ chảy vào.',
+          order: 2,
+        },
+        {
+          code: '3',
+          name: 'Tuyến dòng chảy',
+          definition: 'Một tuyến waterway của OpenStreetMap; chỉ cấp này được biên tập trực tiếp.',
+          order: 3,
+        },
+      ],
+      validFrom: VALID_FROM,
+    },
+    {
+      // Open: the OSM waterway tag of a level-3 way; null on levels 1 and 2.
+      name: 'code',
+      source: 'column',
+      valueType: 'code',
+      label: 'Loại dòng chảy OSM',
+      definition: 'Giá trị thẻ waterway của OpenStreetMap, chỉ có ở tuyến dòng chảy cấp 3.',
+      codeList: 'open',
+      values: [
+        { code: 'river', name: 'Sông', order: 1 },
+        { code: 'canal', name: 'Kênh đào', order: 2 },
+        { code: 'stream', name: 'Suối', order: 3 },
+        { code: 'ditch', name: 'Mương dẫn', order: 4 },
+        { code: 'drain', name: 'Mương tiêu', order: 5 },
+      ],
+      validFrom: VALID_FROM,
+    },
+    {
+      name: 'stream_order',
+      source: 'column',
+      valueType: 'number',
+      label: 'Bậc dòng chảy',
+      definition:
+        'Bậc Strahler với sông và đoạn sông, hoặc hạng theo loại dòng chảy với tuyến OpenStreetMap (5 sông, 4 kênh đào, 2 suối, 1 mương).',
+      precision: 0,
+      validFrom: VALID_FROM,
+    },
+    {
+      name: 'length_m',
+      source: 'column',
+      valueType: 'number',
+      label: 'Chiều dài',
+      definition: 'Chiều dài của đối tượng đo dọc theo dòng chảy.',
+      storedUnit: 'm',
+      displayUnits: ['km', 'm'],
+      displayUnit: 'km',
+      precision: 1,
+      validFrom: VALID_FROM,
+    },
+    {
+      name: 'parent_external_id',
+      source: 'column',
+      valueType: 'text',
+      label: 'Thuộc sông',
+      definition: 'Mã định danh của sông (cấp 1) mà đoạn sông hoặc tuyến dòng chảy này thuộc về.',
+      validFrom: VALID_FROM,
+    },
+    {
+      name: 'flows_into_external_id',
+      source: 'column',
+      valueType: 'text',
+      label: 'Chảy vào',
+      definition: 'Mã định danh của đối tượng cùng cấp nằm ngay phía hạ lưu, nơi dòng nước chảy tới.',
+      validFrom: VALID_FROM,
+    },
+    {
+      name: 'match_confidence',
+      source: 'column',
+      valueType: 'number',
+      label: 'Độ tin cậy ghép nối',
+      definition:
+        'Độ tin cậy từ 0 đến 1 của liên kết giữa đoạn sông và sông, tính từ biểu quyết các điểm mẫu; để trống khi không ghép được.',
+      storedUnit: '1',
+      displayUnits: ['1', '%'],
+      displayUnit: '1',
+      precision: 2,
+      validFrom: VALID_FROM,
+    },
+  ],
+};
