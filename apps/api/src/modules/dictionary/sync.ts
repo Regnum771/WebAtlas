@@ -99,16 +99,16 @@ function locate(t: SyncTarget, firstParam: number) {
 const toColumn = (field: string, value: unknown) => (value === undefined ? (field === 'displayUnits' ? [] : null) : value);
 
 /**
- * Sets fields of one row, optionally removing an origin entry, and bumps the revision a stale
- * editor form checks (for a listed value, its attribute's).
+ * Sets fields of one row, removes origin entries, and bumps the revision a stale editor form
+ * checks (for a listed value, its attribute's).
  */
-async function updateRow(q: Queryable, t: SyncTarget, set: Record<string, unknown>, dropOrigin?: string): Promise<void> {
+async function updateRow(q: Queryable, t: SyncTarget, set: Record<string, unknown>, dropOrigin: string[] = []): Promise<void> {
   const fields = Object.keys(set);
-  const where = locate(t, fields.length + (dropOrigin ? 2 : 1));
+  const where = locate(t, fields.length + (dropOrigin.length > 0 ? 2 : 1));
   const assignments = fields.map((f, i) => `${where.columns[f]} = $${i + 1}`);
   const params: unknown[] = fields.map((f) => toColumn(f, set[f]));
-  if (dropOrigin) {
-    assignments.push(`origin = origin - $${fields.length + 1}`);
+  if (dropOrigin.length > 0) {
+    assignments.push(`origin = origin - $${fields.length + 1}::text[]`);
     params.push(dropOrigin);
   }
   if (where.revision) assignments.push('revision = revision + 1');
@@ -151,13 +151,14 @@ export async function applyPlan(q: Queryable, plan: SyncPlan): Promise<void> {
     await insertRow(q, 'app.dictionary_values', { feature_type: v.featureType, attribute: v.attribute, code: v.code },
       v as unknown as Record<string, unknown>, VALUE_COLUMNS);
   }
-  for (const u of plan.updates) await updateRow(q, u, u.set);
+  for (const u of plan.updates) await updateRow(q, u, u.set, u.clearOrigin);
   for (const r of plan.reverts) {
-    await updateRow(q, r, { [r.field]: r.newValue }, r.field);
+    await updateRow(q, r, { [r.field]: r.newValue }, [r.field]);
     await writeHistory(q, r, r.field, r.oldValue, r.newValue, 'sync_revert');
   }
   for (const r of plan.retires) {
-    await updateRow(q, r, { [r.field]: r.newValue });
+    // A stale edit of the same field (a staff un-retire) must not outlive the retire.
+    await updateRow(q, r, { [r.field]: r.newValue }, [r.field]);
     await writeHistory(q, r, r.field, r.field === 'retired' ? false : null, r.newValue, 'sync_retire');
   }
 }

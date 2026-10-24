@@ -60,9 +60,18 @@ export interface SyncTarget {
 /** Fields that follow the code (no staff edit in the way), with their new values. */
 export interface SyncUpdate extends SyncTarget {
   set: Record<string, unknown>;
+  /**
+   * Origin entries to remove with no change of value: a locked field whose stored value already
+   * equals the code's. No history, not a revert.
+   */
+  clearOrigin?: string[];
 }
 
-/** A row gone from code: `validTo` = today (feature types, attributes) or `retired` (values). */
+/**
+ * A row gone from code: `validTo` = today (feature types, attributes) or `retired` (values). The
+ * applier also removes that field's origin entry, so a stale staff edit (an un-retire) cannot keep
+ * the row retired once it returns to code.
+ */
 export interface SyncRetire extends SyncTarget {
   field: 'validTo' | 'retired';
   newValue: string | true;
@@ -71,7 +80,6 @@ export interface SyncRetire extends SyncTarget {
 /** A staff edit that the code no longer allows; it falls back to the code default. */
 export interface SyncRevert extends SyncTarget {
   field: string;
-  reason: string;
   oldValue: unknown;
   newValue: unknown;
 }
@@ -83,28 +91,37 @@ export interface SyncPlan {
   reverts: SyncRevert[];
 }
 
-// Spec §2.2: locked fields are overwritten from code at every sync, edited or not.
-export const LOCKED_FEATURE_TYPE_FIELDS = ['kind', 'table', 'crs', 'geometryType'] as const;
+// Spec §2.2: locked fields are overwritten from code at every sync, edited or not. `validFrom` is
+// the lifetime the code gives an entry; staff retire only through `validTo` (spec DD8).
+export const LOCKED_FEATURE_TYPE_FIELDS = ['kind', 'table', 'crs', 'geometryType', 'validFrom'] as const;
 /**
- * `source` always, `storedUnit` (Plan C adds its guarded correction), and `ord`, the sync's own
- * bookkeeping. `valueType` is locked too unless the attribute is an `extra` key (see
- * lockedAttributeFields). The codes of a `closed` list are locked as well: values are added and
- * retired to match the code, and a staff-added code in a closed list is reverted.
+ * `source` always, `storedUnit` (Plan C adds its guarded correction), the band packing `nodata`,
+ * `scale` and `offset` (they define what stored numbers mean, spec DD8), `validFrom`, and `ord`,
+ * the sync's own bookkeeping. `valueType` is locked too unless the attribute is an `extra` key
+ * (see lockedAttributeFields). The codes of a `closed` list are locked as well (see
+ * lockedValueFields): values are added and retired to match the code, and a staff-added code in a
+ * closed list is reverted.
  */
-export const LOCKED_ATTRIBUTE_FIELDS = ['source', 'storedUnit', 'ord'] as const;
+export const LOCKED_ATTRIBUTE_FIELDS = ['source', 'storedUnit', 'nodata', 'scale', 'offset', 'validFrom', 'ord'] as const;
 export const LOCKED_VALUE_FIELDS = ['ord'] as const;
+/** In a closed list, whether a code is in use is set by the code too. */
+export const CLOSED_LIST_LOCKED_VALUE_FIELDS = ['ord', 'retired'] as const;
 
 // Everything else is editable: it follows the code until staff edit it.
-export const EDITABLE_FEATURE_TYPE_FIELDS = ['name', 'definition', 'geometryMeaning', 'validFrom', 'validTo'] as const;
+export const EDITABLE_FEATURE_TYPE_FIELDS = ['name', 'definition', 'geometryMeaning', 'validTo'] as const;
 export const EDITABLE_ATTRIBUTE_FIELDS = [
-  'valueType', 'label', 'definition', 'displayUnits', 'displayUnit', 'precision', 'cfStandardName', 'codeList',
-  'nodata', 'scale', 'offset', 'validFrom', 'validTo',
+  'valueType', 'label', 'definition', 'displayUnits', 'displayUnit', 'precision', 'cfStandardName', 'codeList', 'validTo',
 ] as const;
 export const EDITABLE_VALUE_FIELDS = ['name', 'definition', 'retired', 'colorHint'] as const;
 
 /** The locked fields of an attribute whose code entry has this source. */
 export function lockedAttributeFields(source: DictAttribute['source']): readonly string[] {
   return source === 'extra' ? LOCKED_ATTRIBUTE_FIELDS : [...LOCKED_ATTRIBUTE_FIELDS, 'valueType'];
+}
+
+/** The locked fields of the listed values of an attribute whose code entry has this code list. */
+export function lockedValueFields(codeList: DictAttribute['codeList']): readonly string[] {
+  return codeList === 'closed' ? CLOSED_LIST_LOCKED_VALUE_FIELDS : LOCKED_VALUE_FIELDS;
 }
 
 const GEOMETRY_MEANINGS: readonly string[] = ['exact', 'approximate', 'representativePoint'];
@@ -131,11 +148,12 @@ function valueRow(featureType: string, attribute: string, v: DictValue, ord: num
 
 type Row = Record<string, unknown> & { origin: Origin };
 /** The first edited field the code no longer allows, given the row as resolved so far. */
-type Check = (resolved: Row, edited: ReadonlySet<string>) => { field: string; reason: string } | undefined;
+type Check = (resolved: Row, edited: ReadonlySet<string>) => string | undefined;
 
 /**
  * Compares one stored row with its code default:
- * - a locked field takes the code value; a staff edit on it is reverted (with history);
+ * - a locked field takes the code value; a staff edit on it is reverted (with history), or only
+ *   has its origin entry cleared when its value already equals the code's;
  * - an editable field without an edit takes the code value;
  * - an edited field is kept, unless `check` finds it invalid under the new code: then reverted.
  */
@@ -149,13 +167,16 @@ function reconcile(
   plan: SyncPlan,
 ): void {
   const set: Record<string, unknown> = {};
+  const clearOrigin: string[] = [];
   const reverts: SyncRevert[] = [];
-  const revert = (field: string, reason: string) =>
-    reverts.push({ ...target, field, oldValue: stored[field], newValue: code[field], reason });
+  const revert = (field: string) => reverts.push({ ...target, field, oldValue: stored[field], newValue: code[field] });
 
   for (const field of locked) {
-    if (Object.hasOwn(stored.origin, field)) revert(field, `${field} is set by the data structure`);
-    else if (!same(stored[field], code[field])) set[field] = code[field];
+    const differs = !same(stored[field], code[field]);
+    if (Object.hasOwn(stored.origin, field)) {
+      if (differs) revert(field);
+      else clearOrigin.push(field);
+    } else if (differs) set[field] = code[field];
   }
 
   const edited = new Set(editable.filter((field) => Object.hasOwn(stored.origin, field)));
@@ -167,20 +188,20 @@ function reconcile(
   // One invalid edit at a time: reverting one can make another invalid (a display unit checked
   // against a display-unit list that was itself reverted).
   for (let problem = check?.(resolved, edited); problem; problem = check?.(resolved, edited)) {
-    revert(problem.field, problem.reason);
-    edited.delete(problem.field);
-    resolved[problem.field] = code[problem.field];
+    revert(problem);
+    edited.delete(problem);
+    resolved[problem] = code[problem];
   }
 
-  if (Object.keys(set).length > 0) plan.updates.push({ ...target, set });
+  if (clearOrigin.length > 0) plan.updates.push({ ...target, set, clearOrigin });
+  else if (Object.keys(set).length > 0) plan.updates.push({ ...target, set });
   plan.reverts.push(...reverts);
 }
 
 function checkFeatureType(resolved: Row, edited: ReadonlySet<string>) {
-  if (edited.has('geometryMeaning') && !GEOMETRY_MEANINGS.includes(resolved.geometryMeaning as string)) {
-    return { field: 'geometryMeaning', reason: `geometry meaning ${String(resolved.geometryMeaning)} is not one of ${GEOMETRY_MEANINGS.join(', ')}` };
-  }
-  return undefined;
+  return edited.has('geometryMeaning') && !GEOMETRY_MEANINGS.includes(resolved.geometryMeaning as string)
+    ? 'geometryMeaning'
+    : undefined;
 }
 
 /** The validity rules for edited attribute fields under the new code entry `code`. */
@@ -190,37 +211,27 @@ function attributeCheck(code: StoredAttribute): Check {
     const units = resolved.displayUnits as string[];
     const shown = resolved.displayUnit as string | undefined;
 
-    if (edited.has('valueType') && !VALUE_TYPES.includes(resolved.valueType as string)) {
-      return { field: 'valueType', reason: `value type ${String(resolved.valueType)} is not one of ${VALUE_TYPES.join(', ')}` };
-    }
+    if (edited.has('valueType') && !VALUE_TYPES.includes(resolved.valueType as string)) return 'valueType';
+    // Permitted display units: none without a stored unit; otherwise known units of its dimension.
     if (edited.has('displayUnits')) {
-      if (code.storedUnit === undefined) {
-        if (units.length > 0) return { field: 'displayUnits', reason: 'the attribute no longer has a stored unit' };
-      } else {
-        if (units.length === 0) return { field: 'displayUnits', reason: `no display unit is permitted for ${code.storedUnit}` };
-        const bad = units.find((u) => !known(u) || !sameDimension(u, code.storedUnit!));
-        if (bad !== undefined) {
-          return { field: 'displayUnits', reason: `display unit ${bad} is not permitted: not of the same dimension as ${code.storedUnit}` };
-        }
-      }
+      const storedUnit = code.storedUnit;
+      const permitted = storedUnit === undefined
+        ? units.length === 0
+        : units.length > 0 && units.every((u) => known(u) && sameDimension(u, storedUnit));
+      if (!permitted) return 'displayUnits';
     }
-    if (edited.has('displayUnit') && shown !== undefined && !units.includes(shown)) {
-      return { field: 'displayUnit', reason: `display unit ${shown} is not permitted (permitted: ${units.join(', ') || 'none'})` };
-    }
+    // The display unit shown must be a permitted one.
+    if (edited.has('displayUnit') && shown !== undefined && !units.includes(shown)) return 'displayUnit';
     // An edited list must still contain the unit shown (the code default when that is not edited).
-    if (edited.has('displayUnits') && shown !== undefined && !units.includes(shown)) {
-      return { field: 'displayUnits', reason: `the permitted display units no longer include the display unit ${shown}` };
-    }
+    if (edited.has('displayUnits') && shown !== undefined && !units.includes(shown)) return 'displayUnits';
     if (edited.has('precision') && resolved.precision !== undefined) {
       const p = resolved.precision as number;
-      if (!Number.isInteger(p) || p < 0 || p > 6) return { field: 'precision', reason: `precision ${p} is outside 0-6` };
+      if (!Number.isInteger(p) || p < 0 || p > 6) return 'precision';
     }
+    // An edit cannot open a closed list, nor give a code list to an attribute that has none.
     if (edited.has('codeList')) {
-      if (code.codeList === undefined && resolved.codeList !== undefined) {
-        return { field: 'codeList', reason: 'the attribute is no longer a code list' };
-      }
-      if (code.codeList === 'closed' && resolved.codeList !== 'closed') {
-        return { field: 'codeList', reason: 'the code list is closed by the data structure' };
+      if (code.codeList === undefined ? resolved.codeList !== undefined : code.codeList === 'closed' && resolved.codeList !== 'closed') {
+        return 'codeList';
       }
     }
     return undefined;
@@ -269,6 +280,7 @@ export function planSync(defaults: Dictionary, stored: StoredState, today: strin
           locked, EDITABLE_ATTRIBUTE_FIELDS.filter((f) => !locked.includes(f)), attributeCheck(codeAttr), plan);
       }
 
+      const lockedValues = lockedValueFields(a.codeList);
       const valuesOfAttr = new Map((storedValues.get(keyOf(ft.key, a.name)) ?? []).map((v) => [v.code, v]));
       (a.values ?? []).forEach((v, vOrd) => {
         const codeValue = valueRow(ft.key, a.name, v, vOrd);
@@ -277,7 +289,8 @@ export function planSync(defaults: Dictionary, stored: StoredState, today: strin
         if (!storedValue) plan.inserts.values.push(codeValue);
         else {
           reconcile({ featureType: ft.key, attribute: a.name, code: v.code }, storedValue as unknown as Row,
-            codeValue as unknown as Row, LOCKED_VALUE_FIELDS, EDITABLE_VALUE_FIELDS, undefined, plan);
+            codeValue as unknown as Row, lockedValues, EDITABLE_VALUE_FIELDS.filter((f) => !lockedValues.includes(f)),
+            undefined, plan);
         }
       });
       // Stored values the code no longer lists.
@@ -287,7 +300,8 @@ export function planSync(defaults: Dictionary, stored: StoredState, today: strin
         const staffAdded = Object.hasOwn(v.origin, 'code');
         if (!staffAdded) plan.retires.push({ ...target, field: 'retired', newValue: true });
         else if (a.codeList !== 'open') {
-          plan.reverts.push({ ...target, field: 'retired', oldValue: false, newValue: true, reason: 'a code added by staff is not allowed in a closed list' });
+          // A code added by staff is not allowed in a closed list.
+          plan.reverts.push({ ...target, field: 'retired', oldValue: false, newValue: true });
         }
       }
     });

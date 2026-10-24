@@ -46,6 +46,17 @@ function riversEntry(): DictFeatureType {
   };
 }
 
+function demEntry(): DictFeatureType {
+  return {
+    key: 'dem', kind: 'raster', name: 'Độ cao', definition: 'Mô hình số độ cao.', table: 'raster.dem', crs: 3857,
+    geometryMeaning: 'exact', validFrom: VF,
+    attributes: [{
+      name: '1', source: 'band', valueType: 'number', label: 'Độ cao', definition: 'Độ cao so với mực nước biển.',
+      storedUnit: 'm', displayUnits: ['m'], displayUnit: 'm', precision: 0, nodata: -9999, scale: 1, offset: 0, validFrom: VF,
+    }],
+  };
+}
+
 const dictionary = (...entries: DictFeatureType[]): Dictionary => Object.fromEntries(entries.map((e) => [e.key, e]));
 
 /** The store as a first sync of `defaults` leaves it. */
@@ -158,9 +169,9 @@ describe('planSync (spec §2.1)', () => {
     const plan = planSync(dictionary(next), stored, TODAY);
 
     expect(plan.reverts).toEqual([
-      { featureType: 'dams', attribute: 'wattage_mw', field: 'displayUnit', oldValue: 'kW', newValue: 'MW', reason: expect.stringMatching(/not permitted/) },
-      { featureType: 'dams', attribute: 'wattage_mw', field: 'precision', oldValue: 7, newValue: 1, reason: expect.stringMatching(/0-6/) },
-      { featureType: 'dams', attribute: 'lake_type', code: 'Đầm', field: 'retired', oldValue: false, newValue: true, reason: expect.stringMatching(/closed/) },
+      { featureType: 'dams', attribute: 'wattage_mw', field: 'displayUnit', oldValue: 'kW', newValue: 'MW' },
+      { featureType: 'dams', attribute: 'wattage_mw', field: 'precision', oldValue: 7, newValue: 1 },
+      { featureType: 'dams', attribute: 'lake_type', code: 'Đầm', field: 'retired', oldValue: false, newValue: true },
     ]);
     expect(plan.updates).toEqual([
       { featureType: 'dams', attribute: 'wattage_mw', set: { displayUnits: ['MW'] } },
@@ -209,6 +220,64 @@ describe('planSync (spec §2.1)', () => {
       { featureType: 'dams', attribute: 'status', code: 'xa_lu', set: { retired: false } },
       { featureType: 'dams', attribute: 'note', set: { validTo: undefined } },
       { featureType: 'rivers', set: { validTo: undefined } },
+    ]);
+  });
+
+  it('a staff retire on a closed-list code is reverted', () => {
+    const stored = synced(dictionary(damsEntry()));
+    const closed = stored.values.find((v) => v.attribute === 'status' && v.code === 'binh_thuong')!;
+    closed.retired = true;
+    closed.origin = { retired: EDIT };
+    const open = stored.values.find((v) => v.attribute === 'lake_type' && v.code === 'Ao')!;
+    open.retired = true;
+    open.origin = { retired: EDIT };
+    const plan = planSync(dictionary(damsEntry()), stored, TODAY);
+    // Closed: the code decides which codes are in use. Open: staff may retire a code.
+    expect(plan.reverts).toEqual([
+      { featureType: 'dams', attribute: 'status', code: 'binh_thuong', field: 'retired', oldValue: true, newValue: false },
+    ]);
+    expect(plan.updates).toEqual([]);
+  });
+
+  it('nodata, scale, offset and validFrom are locked', () => {
+    const stored = synced(dictionary(demEntry()));
+    const ft = stored.featureTypes[0];
+    ft.validFrom = '2025-01-01';
+    ft.origin = { validFrom: EDIT };
+    const band = stored.attributes[0];
+    Object.assign(band, { nodata: 0, scale: 0.1, offset: 5, validFrom: '2025-06-01' });
+    band.origin = { nodata: EDIT, scale: EDIT, offset: EDIT, validFrom: EDIT };
+    const plan = planSync(dictionary(demEntry()), stored, TODAY);
+    expect(plan.reverts).toEqual([
+      { featureType: 'dem', field: 'validFrom', oldValue: '2025-01-01', newValue: VF },
+      { featureType: 'dem', attribute: '1', field: 'nodata', oldValue: 0, newValue: -9999 },
+      { featureType: 'dem', attribute: '1', field: 'scale', oldValue: 0.1, newValue: 1 },
+      { featureType: 'dem', attribute: '1', field: 'offset', oldValue: 5, newValue: 0 },
+      { featureType: 'dem', attribute: '1', field: 'validFrom', oldValue: '2025-06-01', newValue: VF },
+    ]);
+
+    // Without an edit, a changed code value is simply taken.
+    const next = demEntry();
+    next.validFrom = '2026-02-01';
+    Object.assign(next.attributes[0], { nodata: -32768, scale: 0.5 });
+    expect(planSync(dictionary(next), synced(dictionary(demEntry())), TODAY)).toMatchObject({
+      updates: [
+        { featureType: 'dem', set: { validFrom: '2026-02-01' } },
+        { featureType: 'dem', attribute: '1', set: { nodata: -32768, scale: 0.5 } },
+      ],
+      reverts: [],
+    });
+  });
+
+  it('a locked field edited back to the code value only clears its origin', () => {
+    const stored = synced(dictionary(damsEntry()));
+    stored.featureTypes[0].origin = { table: EDIT };
+    attribute(stored, 'wattage_mw').origin = { storedUnit: EDIT };
+    const plan = planSync(dictionary(damsEntry()), stored, TODAY);
+    expect(plan.reverts).toEqual([]);
+    expect(plan.updates).toEqual([
+      { featureType: 'dams', set: {}, clearOrigin: ['table'] },
+      { featureType: 'dams', attribute: 'wattage_mw', set: {}, clearOrigin: ['storedUnit'] },
     ]);
   });
 });

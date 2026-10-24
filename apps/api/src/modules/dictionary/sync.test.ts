@@ -160,4 +160,45 @@ describe('runSync (spec §2.1)', () => {
       expect(retired.valid_to).toBe(TODAY);
     });
   });
+
+  it('an entry that returns to code after being retired is live again', async () => {
+    // The last attribute of dams, and the last code of the first open list: removing either moves
+    // nothing else.
+    const attr = DICTIONARY.dams.attributes.at(-1)!.name;
+    const openFt = Object.values(DICTIONARY).find((ft) => ft.attributes.some((a) => a.codeList === 'open'))!;
+    const openAttr = openFt.attributes.find((a) => a.codeList === 'open')!;
+    const code = openAttr.values!.at(-1)!.code;
+
+    await rolledBack(async (client) => {
+      await syncInTransaction(client, DICTIONARY, TODAY);
+      // Staff un-retire edits, written the way the editor will: the value plus its origin entry.
+      const edit = `jsonb_build_object('by', '00000000-0000-4000-8000-0000000000e6', 'at', now())`;
+      await client.query(
+        `UPDATE app.dictionary_attributes SET valid_to = NULL, origin = origin || jsonb_build_object('validTo', ${edit})
+          WHERE feature_type = 'dams' AND name = $1`, [attr]);
+      await client.query(
+        `UPDATE app.dictionary_values SET retired = false, origin = origin || jsonb_build_object('retired', ${edit})
+          WHERE feature_type = $1 AND attribute = $2 AND code = $3`, [openFt.key, openAttr.name, code]);
+
+      const without = structuredClone(DICTIONARY) as Record<string, DictFeatureType>;
+      without.dams.attributes = without.dams.attributes.filter((a) => a.name !== attr);
+      const shrunk = without[openFt.key].attributes.find((a) => a.name === openAttr.name)!;
+      shrunk.values = shrunk.values!.filter((v) => v.code !== code);
+      expect(await syncInTransaction(client, without, TODAY)).toEqual({ added: 0, updated: 0, retired: 2, reverted: 0 });
+
+      const state = async () => ({
+        attr: (await client.query(
+          `SELECT valid_to::text AS valid_to, origin FROM app.dictionary_attributes WHERE feature_type = 'dams' AND name = $1`,
+          [attr])).rows[0],
+        value: (await client.query(
+          `SELECT retired, origin FROM app.dictionary_values WHERE feature_type = $1 AND attribute = $2 AND code = $3`,
+          [openFt.key, openAttr.name, code])).rows[0],
+      });
+      // The retire removed the stale edits along with retiring.
+      expect(await state()).toEqual({ attr: { valid_to: TODAY, origin: {} }, value: { retired: true, origin: {} } });
+
+      expect(await syncInTransaction(client, DICTIONARY, TODAY)).toEqual({ added: 0, updated: 2, retired: 0, reverted: 0 });
+      expect(await state()).toEqual({ attr: { valid_to: null, origin: {} }, value: { retired: false, origin: {} } });
+    });
+  });
 });
