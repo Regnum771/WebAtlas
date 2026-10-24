@@ -1058,6 +1058,10 @@ body {
   border: 1px solid var(--ink); border-radius: var(--radius); background: var(--paper);
 }
 .layer-table-chip.on { background: var(--mark); }
+/* A condition whose value cannot be read filters nothing: marked in the error tone until fixed. */
+.layer-table-chip.bad { border-color: var(--alert); background: var(--alert-soft); }
+.layer-table-chip.bad .layer-table-chip-text { gap: 4px; }
+.layer-table-chip.bad .layer-table-chip-text svg { color: var(--alert); }
 .layer-table-chip button {
   display: inline-flex; align-items: center; background: none; border: 0; padding: 0 var(--space-2);
   font: inherit; color: inherit; white-space: nowrap; cursor: pointer;

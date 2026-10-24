@@ -127,9 +127,13 @@ function storedCondition(
   return read.ok ? { ok: true, condition: { ...c, value: read.value } } : read;
 }
 
-/** A code column's values in their declared order; a stored code the dictionary lacks is offered as itself. */
+/**
+ * A code column's values in their declared order, without retired ones unless it is the current
+ * value; a stored code the dictionary lacks is offered as itself.
+ */
 function valueOptions(attribute: DictAttribute, current: string): ValueOption[] {
-  const options = [...(attribute.values ?? [])]
+  const options = (attribute.values ?? [])
+    .filter((v) => !v.retired || v.code === current)
     .sort((a, b) => a.order - b.order)
     .map((v) => ({ value: v.code, label: valueName(attribute, v.code) }));
   if (current !== '' && !options.some((o) => o.value === current)) options.push({ value: current, label: current });
@@ -397,6 +401,11 @@ export function useTablePresenter() {
       const next: TableCondition = { ...current, ...patch };
       // A field of another type keeps the operator only when that type offers it.
       if (!(OPERATORS[typeOf(next.field)] as readonly string[]).includes(next.op)) next.op = OPERATORS[typeOf(next.field)][0];
+      // A field switched to a code column keeps the value only when it is one of that column's codes.
+      if (next.field !== current.field && typeOf(next.field) === 'code' && next.value !== undefined && next.value !== '') {
+        const attribute = layer ? columnAttribute(layer, next.field, dictionary) : undefined;
+        if (!attribute?.values?.some((v) => v.code === String(next.value))) next.value = '';
+      }
       if (needsValue(next.op)) next.value = next.value ?? '';
       else delete next.value;
       setConditions(filter.conditions.map((c, j) => (j === i ? next : c)));

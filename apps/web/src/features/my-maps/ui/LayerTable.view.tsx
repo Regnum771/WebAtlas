@@ -1,5 +1,5 @@
-import { useRef, useState, type ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { useId, useRef, useState, type ReactNode } from 'react';
+import { CircleAlert, X } from 'lucide-react';
 import { Button } from '../../../shared/ui/Button';
 import { Message } from '../../../shared/ui/Message';
 import type {
@@ -71,6 +71,9 @@ const showSelected = (row: HTMLTableRowElement | null) => { row?.scrollIntoView?
 /** A code column's chip names its value; any other shows the value as typed. */
 const chipValue = (c: ConditionView) => c.options?.find((o) => o.value === c.value)?.label ?? c.value;
 const chipText = (c: ConditionView) => (c.needsValue ? `${c.fieldLabel} ${c.opLabel} ${chipValue(c)}` : `${c.fieldLabel} ${c.opLabel}`);
+/** The chip's class: open in the editor, and marked while its value cannot be read (it filters nothing). */
+const chipClass = (c: ConditionView, open: boolean) =>
+  ['layer-table-chip', open ? 'on' : '', c.error ? 'bad' : ''].filter(Boolean).join(' ');
 
 /**
  * The table of one personal layer, docked under the map: the toolbar (counts, search, condition
@@ -82,6 +85,7 @@ export function LayerTableView(p: Props) {
   const [height, setHeight] = useState(DOCK_DEFAULT);
   const [editing, setEditing] = useState<{ layerId?: string; index: number } | null>(null);
   const section = useRef<HTMLElement>(null);
+  const uid = useId();
   const drag = useRef<{ y: number; start: number; stage: number } | null>(null);
 
   const editingIndex = editing && editing.layerId === p.layerId ? editing.index : null;
@@ -131,15 +135,19 @@ export function LayerTableView(p: Props) {
           onChange={(e) => p.onSearch(e.target.value)}
         />
         {p.conditions.map((c, i) => (
-          <span key={i} className={editingIndex === i ? 'layer-table-chip on' : 'layer-table-chip'}>
+          <span key={i} className={chipClass(c, editingIndex === i)}>
             <button
               type="button"
               className="layer-table-chip-text"
               aria-expanded={editingIndex === i}
+              aria-describedby={c.error ? `${uid}-chip-error-${i}` : undefined}
+              title={c.error}
               onClick={() => setEditing(editingIndex === i ? null : { layerId: p.layerId, index: i })}
             >
+              {c.error && <CircleAlert size={12} aria-hidden="true" />}
               {chipText(c)}
             </button>
+            {c.error && <span id={`${uid}-chip-error-${i}`} className="visually-hidden">{c.error}</span>}
             <button
               type="button"
               className="layer-table-chip-remove"

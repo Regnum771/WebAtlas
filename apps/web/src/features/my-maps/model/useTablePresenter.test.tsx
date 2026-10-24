@@ -44,10 +44,11 @@ vi.mock('./personalStyle', () => ({
   symbolDataUrl: (layer: LayerSummary, properties: Record<string, unknown>, geometryType: string) =>
     symbolDataUrl(layer, properties, geometryType),
 }));
-// The code defaults, without the served copy's fetch.
+// The code defaults, without the served copy's fetch; a test can serve another copy.
+const served = vi.hoisted(() => ({ dictionary: null as null | import('@webatlas/shared').Dictionary }));
 vi.mock('../../dictionary', async () => {
   const shared = await vi.importActual<typeof import('@webatlas/shared')>('@webatlas/shared');
-  return { useDictionary: () => shared.DICTIONARY };
+  return { useDictionary: () => served.dictionary ?? shared.DICTIONARY };
 });
 
 import { DICTIONARY, attributeOf, parseDisplay, valueName } from '@webatlas/shared';
@@ -439,6 +440,7 @@ describe('useTablePresenter: the data dictionary', () => {
   const lastConditions = () => queryLayer.mock.calls.at(-1)![2].conditions;
 
   beforeEach(() => {
+    served.dictionary = null;
     getMap.mockResolvedValue({ ...DETAIL, layerCount: 3, layers: [LAYER, RIVERS, DAMS] });
     queryLayer.mockImplementation((_m: string, l: string) => Promise.resolve(ANSWERS[l]));
   });
@@ -512,6 +514,48 @@ describe('useTablePresenter: the data dictionary', () => {
     // A stored code the dictionary does not know keeps its option, shown as the code.
     act(() => result.current.updateCondition(0, { value: 'moi' }));
     expect(result.current.conditions[0].options).toContainEqual({ value: 'moi', label: 'moi' });
+  });
+
+  it('the code picker hides retired codes but keeps a retired current value', async () => {
+    // A served copy in which a dam status has been retired.
+    const dams = DICTIONARY.dams;
+    const retired = { code: 'cu', name: 'Trạng thái cũ', order: 9, retired: true };
+    served.dictionary = {
+      ...DICTIONARY,
+      dams: {
+        ...dams,
+        attributes: dams.attributes.map((a) => (a.name === 'status' ? { ...a, values: [...(a.values ?? []), retired] } : a)),
+      },
+    };
+    openTable('m1', 'l3');
+    const { result } = setup();
+    await flush(10);
+    act(() => result.current.addCondition());
+    act(() => result.current.updateCondition(0, { field: 'status' }));
+    const codes = () => result.current.conditions[0].options!.map((o) => o.value);
+    expect(codes()).toEqual([...damStatus.values!].sort((a, b) => a.order - b.order).map((v) => v.code));
+    expect(codes()).not.toContain('cu');
+    // The retired code as the condition's value keeps its option, under its name.
+    act(() => result.current.updateCondition(0, { value: 'cu' }));
+    expect(result.current.conditions[0].options).toContainEqual({ value: 'cu', label: 'Trạng thái cũ' });
+    expect(codes().filter((c) => c === 'cu')).toHaveLength(1);
+  });
+
+  it('switching a condition to a code column clears a value that is not a code', async () => {
+    openTable('m1', 'l3');
+    const { result } = setup();
+    await flush(10);
+    act(() => result.current.addCondition());
+    act(() => result.current.updateCondition(0, { field: 'wattage_mw', op: 'eq', value: '12,5' }));
+    act(() => result.current.updateCondition(0, { field: 'status' }));
+    expect(result.current.filter.conditions[0]).toEqual({ field: 'status', op: 'eq', value: '' });
+    expect(result.current.conditions[0].options!.map((o) => o.value)).not.toContain('12,5');
+    await flush(310);
+    expect(lastConditions()).toEqual([]);
+    // A value that is one of the column's codes stays.
+    act(() => result.current.updateCondition(0, { field: 'wattage_mw' }));
+    act(() => result.current.updateCondition(0, { field: 'status', value: 'xa_lu' }));
+    expect(result.current.filter.conditions[0]).toEqual({ field: 'status', op: 'eq', value: 'xa_lu' });
   });
 
   it('a free layer keeps raw names and values', async () => {

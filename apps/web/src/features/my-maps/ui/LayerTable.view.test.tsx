@@ -233,6 +233,26 @@ describe('LayerTableView', () => {
     expect(alert.compareDocumentPosition(container.querySelector('table')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('a chip whose value is unreadable stays marked after the editor closes', async () => {
+    const message = 'Không đọc được số "1.5". Dùng dấu phẩy cho phần thập phân, ví dụ 1.250,5.';
+    const p = props();
+    const conditions = [{ ...p.conditions[0], value: '1.5', error: message }, p.conditions[1]];
+    render(<LayerTableView {...p} conditions={conditions} />);
+    const chip = () => screen.getByRole('button', { name: 'cong_suat > 1.5' });
+    const marked = () => {
+      expect(chip().closest('.layer-table-chip')).toHaveClass('bad');
+      expect(chip()).toHaveAccessibleDescription(message);
+    };
+    marked();
+    // A readable condition is not marked.
+    expect(screen.getByRole('button', { name: 'ten trống' }).closest('.layer-table-chip')).not.toHaveClass('bad');
+    expect(screen.getByRole('button', { name: 'ten trống' })).not.toHaveAccessibleDescription();
+    await userEvent.click(chip());
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('group', { name: 'Điều kiện' })).toBeNull();
+    marked();
+  });
+
   it('Sửa đối tượng no longer exists', () => {
     render(<LayerTableView {...props({ onDraw: vi.fn(), canDraw: true, selectedId: '1' })} />);
     expect(screen.queryByText('Sửa đối tượng')).toBeNull();
