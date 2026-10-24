@@ -60,6 +60,13 @@ describe('format', () => {
     }
   });
 
+  it('formatValue accepts numeric strings from the database', () => {
+    expect(formatValue(volume, '1250500000')).toBe('1.250,5 triệu m³');
+    for (const v of ['  ', '', 'Infinity', 'NaN', '-Infinity']) {
+      expect(formatValue(volume, v)).toBe('—');
+    }
+  });
+
   it('parseDisplay reads vi-VN numbers and converts back', () => {
     for (const text of ['1.250,5', '1.250,5 triệu m³']) {
       const r = parseDisplay(volume, text);

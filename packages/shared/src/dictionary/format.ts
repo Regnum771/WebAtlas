@@ -25,10 +25,15 @@ export function formatValue(attribute: DictAttribute, stored: unknown): string {
   if (typeof stored === 'number' && !Number.isFinite(stored)) return DASH;
 
   if (attribute.valueType === 'number') {
-    if (typeof stored !== 'number') return DASH;
+    // node-postgres returns numeric columns as strings, so accept a finite numeric string.
+    let n: number;
+    if (typeof stored === 'number') n = stored;
+    else if (typeof stored === 'string' && stored.trim() !== '') n = Number(stored);
+    else return DASH;
+    if (!Number.isFinite(n)) return DASH;
     const from = attribute.storedUnit;
     const to = attribute.displayUnit ?? from;
-    const value = from && to ? convert(stored, from, to) : stored;
+    const value = from && to ? convert(n, from, to) : n;
     const text = value.toLocaleString('vi-VN', {
       minimumFractionDigits: 0,
       maximumFractionDigits: attribute.precision ?? 2,
