@@ -1,3 +1,4 @@
+import type { Dictionary } from './dictionary/index.js';
 export interface LegendEntry {
     swatch: string;
     shape: 'dot' | 'line' | 'box';
@@ -23,4 +24,4 @@ export declare const FABDEM_ATTRIBUTION = "FABDEM is produced using Copernicus W
 export declare const LEGEND_ATTRIBUTION: Record<string, string>;
 /** Legend sections for a layer. Adding a layer means adding a case here —
  *  no JSX branches, no inline styles. */
-export declare function legendFor(layerStateId: string): LegendSection[];
+export declare function legendFor(layerStateId: string, dictionary?: Dictionary): LegendSection[];

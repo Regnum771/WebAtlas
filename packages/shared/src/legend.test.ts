@@ -5,6 +5,7 @@ import { legendFor, LEGEND_ATTRIBUTION } from './legend.js';
 import { DAM_STATUS_SLUGS } from './dam-status.js';
 import { LAYER_PALETTE } from './layer-palette.js';
 import { BASEMAP_CONTEXT_LAYER_STATE_IDS } from './map-commands.js';
+import { DICTIONARY, attributeOf } from './dictionary/index.js';
 
 describe('legendFor', () => {
   it('returns a status section and a capacity section for dams', () => {
@@ -111,5 +112,41 @@ describe('legendFor', () => {
     const runbookSentence = match![1];
 
     expect(LEGEND_ATTRIBUTION.layer_contours).toBe(runbookSentence);
+  });
+});
+
+describe('legendFor with a dictionary', () => {
+  function variant(edit: (attr: (name: string) => any) => void) {
+    const dict = structuredClone(DICTIONARY);
+    edit((name) => attributeOf(dict, 'dams', name)!);
+    return dict;
+  }
+
+  it('the default dictionary keeps the current labels', () => {
+    const [status, capacity] = legendFor('layer_dams');
+    expect(capacity.entries.map((e) => e.label)).toEqual([
+      'Nhỏ (< 200 MW)',
+      'Vừa (200 – 1000 MW)',
+      'Lớn (> 1000 MW)',
+    ]);
+    expect(status.entries.map((e) => e.label)).toEqual(['Bình thường', 'Xả lũ', 'Nguy hiểm']);
+  });
+
+  it('dam size classes follow the wattage display unit', () => {
+    const dict = variant((attr) => {
+      attr('wattage_mw').displayUnit = 'kW';
+    });
+    const [, capacity] = legendFor('layer_dams', dict);
+    expect(capacity.entries[0].label).toBe('Nhỏ (< 200.000 kW)');
+    expect(capacity.entries[1].label).toBe('Vừa (200.000 – 1.000.000 kW)');
+    expect(capacity.entries[2].label).toBe('Lớn (> 1.000.000 kW)');
+  });
+
+  it('dam status entries use the dictionary value names', () => {
+    const dict = variant((attr) => {
+      attr('status').values.find((v: any) => v.code === 'xa_lu').name = 'Đang xả';
+    });
+    const [status] = legendFor('layer_dams', dict);
+    expect(status.entries.map((e) => e.label)).toContain('Đang xả');
   });
 });

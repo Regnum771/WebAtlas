@@ -9,7 +9,13 @@ vi.mock('../../app/providers/MapProvider', () => ({
   useMapContext: () => ({ layersState: mockLayersState }),
 }));
 
+let mockDictionary: unknown;
+vi.mock('../dictionary', () => ({ useDictionary: () => mockDictionary }));
+
+import { DICTIONARY, attributeOf } from '@webatlas/shared';
 import Legend from './index';
+
+mockDictionary = DICTIONARY;
 
 const OSM_ATTRIBUTION = '© OpenStreetMap contributors (ODbL)';
 // FABDEM_ATTRIBUTION nhập từ @webatlas/shared (nguồn duy nhất) thay vì chép tay —
@@ -68,5 +74,17 @@ describe('Legend composition — FABDEM attribution (C1: the licence obligation,
     mockLayersState = [{ id: 'layer_contours', visible: false, opacity: 1 }];
     render(<Legend />);
     expect(screen.queryByText(FABDEM_ATTRIBUTION)).not.toBeInTheDocument();
+  });
+});
+
+describe('Legend dictionary', () => {
+  it('the legend uses the served dictionary', () => {
+    const dict = structuredClone(DICTIONARY);
+    attributeOf(dict, 'dams', 'wattage_mw')!.displayUnit = 'kW';
+    mockDictionary = dict;
+    mockLayersState = [{ id: 'layer_dams', visible: true, opacity: 1 }];
+    render(<Legend />);
+    expect(screen.getByText(/Nhỏ \(< 200\.000 kW\)/)).toBeInTheDocument();
+    mockDictionary = DICTIONARY;
   });
 });

@@ -1,5 +1,7 @@
 import { DAM_STATUS_SLUGS, DAM_STATUS_DISPLAY } from './dam-status.js';
 import { LAYER_PALETTE } from './layer-palette.js';
+import { DICTIONARY, attributeOf, formatValue, valueName } from './dictionary/index.js';
+import type { Dictionary } from './dictionary/index.js';
 
 export interface LegendEntry {
   swatch: string;
@@ -62,28 +64,45 @@ export const LEGEND_ATTRIBUTION: Record<string, string> = {
   layer_dams: ODV_CC_BY_SA,
 };
 
-const CAPACITY_ENTRIES: LegendEntry[] = [
-  { swatch: '#6b7280', shape: 'dot', size: 6, label: 'Nhỏ (< 200 MW)' },
-  { swatch: '#6b7280', shape: 'dot', size: 11, label: 'Vừa (200 – 1000 MW)' },
-  { swatch: '#6b7280', shape: 'dot', size: 16, label: 'Lớn (> 1000 MW)' },
-];
+/** Size-class thresholds in the stored unit (MW); marker diameters stay fixed. */
+const CAPACITY_SMALL_MAX_MW = 200;
+const CAPACITY_LARGE_MIN_MW = 1000;
+
+/** Dam size classes, with thresholds formatted in the wattage display unit. */
+function capacityEntries(dictionary: Dictionary): LegendEntry[] {
+  const wattage = attributeOf(dictionary, 'dams', 'wattage_mw');
+  // In the stored unit the thresholds keep today's plain wording ("1000 MW", no thousands
+  // separator); in any other display unit they go through the shared formatter.
+  const plain = !wattage || (wattage.displayUnit ?? wattage.storedUnit) === wattage.storedUnit;
+  const fmt = (mw: number) => (plain ? `${mw} MW` : formatValue(wattage, mw));
+  // The range shows the unit once, after the upper bound: "200 – 1000 MW".
+  const bare = (text: string) => text.replace(/\s\S+$/, '');
+  const swatch = '#6b7280';
+  return [
+    { swatch, shape: 'dot', size: 6, label: `Nhỏ (< ${fmt(CAPACITY_SMALL_MAX_MW)})` },
+    { swatch, shape: 'dot', size: 11, label: `Vừa (${bare(fmt(CAPACITY_SMALL_MAX_MW))} – ${fmt(CAPACITY_LARGE_MIN_MW)})` },
+    { swatch, shape: 'dot', size: 16, label: `Lớn (> ${fmt(CAPACITY_LARGE_MIN_MW)})` },
+  ];
+}
 
 /** Legend sections for a layer. Adding a layer means adding a case here —
  *  no JSX branches, no inline styles. */
-export function legendFor(layerStateId: string): LegendSection[] {
+export function legendFor(layerStateId: string, dictionary: Dictionary = DICTIONARY): LegendSection[] {
   switch (layerStateId) {
-    case 'layer_dams':
+    case 'layer_dams': {
+      const status = attributeOf(dictionary, 'dams', 'status');
       return [
         {
           title: 'Theo Trạng thái',
           entries: DAM_STATUS_SLUGS.map((slug) => ({
             swatch: DAM_STATUS_DISPLAY[slug].color,
             shape: 'dot' as const,
-            label: DAM_STATUS_DISPLAY[slug].label,
+            label: status ? valueName(status, slug) : DAM_STATUS_DISPLAY[slug].label,
           })),
         },
-        { title: 'Theo Công suất', entries: CAPACITY_ENTRIES },
+        { title: 'Theo Công suất', entries: capacityEntries(dictionary) },
       ];
+    }
     case 'layer_rivers':
       return [{ title: 'Sông ngòi', entries: [{ swatch: LAYER_PALETTE.layer_rivers.color, shape: 'line', label: 'Dòng chảy' }] }];
     case 'layer_lakes':
