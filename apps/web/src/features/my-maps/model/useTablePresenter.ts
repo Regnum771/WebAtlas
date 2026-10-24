@@ -174,10 +174,22 @@ export function useTablePresenter() {
     setLocating(selection && (again || !onScreen) ? selection : null);
   }
 
+  const pageNow = filter.page;
+  // A page past the end (in view on and the map zoomed in, the last page's only row deleted, rows
+  // removed elsewhere): move to the last page that exists rather than show an empty page. Only on
+  // the live page's own fresh answer: while typing settles, the page asked for is not the store's.
+  // Declared before the locate effect, so a located page set in the same commit wins.
+  const answeredPage = query.page;
+  const answeredMatched = query.fresh ? (data?.matched ?? null) : null;
+  useEffect(() => {
+    if (answeredMatched === null || answeredPage !== pageNow || answeredPage === 0) return;
+    if (answeredPage * TABLE_PAGE_SIZE < answeredMatched) return;
+    setFilter({ page: Math.max(0, Math.ceil(answeredMatched / TABLE_PAGE_SIZE) - 1) });
+  }, [answeredMatched, answeredPage, pageNow]);
+
   // The located answer: show the feature's page, or note that the filter hides it.
   const located = query.located;
   const locatingId = locating?.id ?? null;
-  const pageNow = filter.page;
   const key = filterKey(filter);
   useEffect(() => {
     if (!located || located.id !== locatingId || !layerId) return;

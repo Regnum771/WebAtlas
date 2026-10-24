@@ -74,7 +74,7 @@ const answer = (matched: number, offset = 0, locate?: string): LayerQueryRespons
 function setup() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
-  return renderHook(() => useTablePresenter(), { wrapper });
+  return Object.assign(renderHook(() => useTablePresenter(), { wrapper }), { qc });
 }
 const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
@@ -214,6 +214,50 @@ describe('useTablePresenter', () => {
     expect(queryLayer.mock.calls.at(-1)![2].bbox).toEqual([100, 9.4, 101, 11]);
     await flush(1000);
     expect(queryLayer.mock.calls.length).toBe(before + 1);
+  });
+
+  it('zooming in with in view on past the last page moves to the last page that exists', async () => {
+    const SMALL: [number, number, number, number] = [100.4, 10.4, 100.6, 10.6];
+    queryLayer.mockImplementation((_m: string, _l: string, body: { offset: number; bbox?: number[] }) =>
+      Promise.resolve(answer(JSON.stringify(body.bbox) === JSON.stringify(SMALL) ? 150 : 250, body.offset)));
+    const { result } = setup();
+    await flush(10);
+    act(() => result.current.setInView(true));
+    await flush(10);
+    act(() => result.current.next());
+    await flush(10);
+    act(() => result.current.next());
+    await flush(10);
+    expect(result.current.page).toMatchObject({ index: 2, from: 201, to: 250 });
+    // Zoomed in: 150 features remain in view, so page 3 no longer exists.
+    act(() => view.onChange!(SMALL));
+    await flush(310);
+    await flush(10);
+    expect(getTableState().byLayer.l1.page).toBe(1);
+    expect(result.current.page).toEqual({ index: 1, size: 100, from: 101, to: 150, canPrev: true, canNext: false });
+    expect(queryLayer.mock.calls.at(-1)![2]).toMatchObject({ offset: 100, bbox: SMALL });
+    expect(result.current.rows).toHaveLength(50);
+  });
+
+  it('deleting the only row on the last page moves to the page before', async () => {
+    let count = 201;
+    queryLayer.mockImplementation((_m: string, _l: string, body: { offset: number }) =>
+      Promise.resolve(answer(count, body.offset)));
+    const { result, qc } = setup();
+    await flush(10);
+    act(() => result.current.next());
+    await flush(10);
+    act(() => result.current.next());
+    await flush(10);
+    expect(result.current.page).toMatchObject({ index: 2, from: 201, to: 201 });
+    // A delete: the write invalidates the map's tables (useMapWrite) and the row is gone.
+    count = 200;
+    await act(async () => { await qc.invalidateQueries({ queryKey: ['ws', 'table', 'm1'] }); });
+    await flush(10);
+    await flush(10);
+    expect(getTableState().byLayer.l1.page).toBe(1);
+    expect(result.current.page).toEqual({ index: 1, size: 100, from: 101, to: 200, canPrev: true, canNext: false });
+    expect(result.current.rows).toHaveLength(100);
   });
 });
 

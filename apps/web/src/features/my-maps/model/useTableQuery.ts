@@ -92,6 +92,9 @@ export function useTableQuery(viewExtent4326: Extent | null, locate: string | nu
   const located = locate !== null && query.data && !query.isPlaceholderData && !query.isFetching
     ? { id: locate, position: query.data.position }
     : null;
+  // fresh: the data is this very request's own answer, fetched just now (not a placeholder, not a
+  // cached answer being read again).
+  const fresh = query.data !== undefined && !query.isPlaceholderData && !query.isFetching;
   // page: the page the query asks for; while typing settles it stays the page on screen.
-  return { data: query.data, page: debounced.page, loading: query.isFetching, error, refetch: query.refetch, located };
+  return { data: query.data, page: debounced.page, loading: query.isFetching, error, refetch: query.refetch, located, fresh };
 }
