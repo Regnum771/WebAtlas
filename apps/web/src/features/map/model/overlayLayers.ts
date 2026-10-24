@@ -14,6 +14,17 @@ export const PERSONAL_LAYER_PROP = 'personal';
 export const PERSONAL_HIT_TOLERANCE = 3;
 
 /**
+ * The selected feature's ring (features/my-maps/model/personalLayers.ts). Marked personal, so it is
+ * never official data, but it is no personal feature: a click on its halo alone is nobody's card.
+ */
+export const RING_LAYER_ID = 'ws-ring';
+
+/** A layer holding personal features a click can open: a personal layer, not the selection ring. */
+export function isPersonalFeatureLayer(layer: { get(key: string): unknown } | null | undefined): boolean {
+  return isPersonalLayer(layer) && layer?.get('id') !== RING_LAYER_ID;
+}
+
+/**
  * A layer of a personal map: never a target of the official popup or the official edit
  * selection, whatever its id. Typed structurally so a hit-test callback's layer fits as is.
  */

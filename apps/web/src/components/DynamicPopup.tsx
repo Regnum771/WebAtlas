@@ -8,7 +8,7 @@ import { adminCandidates, entityCandidates, referenceLayerOfTable, thematicCandi
 import { fetchEntitiesByMember } from '../features/roi/api/roi.api';
 import { RoiCandidatesView } from '../features/roi/ui/RoiCandidates.view';
 import { setRoi } from '../features/roi/model/roi.store';
-import { isPersonalLayer, OVERLAY_LAYER_IDS, PERSONAL_HIT_TOLERANCE } from '../features/map/model/overlayLayers';
+import { isPersonalFeatureLayer, isPersonalLayer, OVERLAY_LAYER_IDS, PERSONAL_HIT_TOLERANCE } from '../features/map/model/overlayLayers';
 import { getMyMaps } from '../features/my-maps/model/myMaps.store';
 import { useMapEditing } from '../features/map/model/mapEditing';
 import { isBoundaryLabel } from '../features/map/model/waterTiles';
@@ -131,8 +131,9 @@ const DynamicPopup: React.FC = () => {
       // Editing or drawing owns clicks, official or in a personal map: no popup.
       if (editing || getMyMaps().personalEditing || isDrawing() || drawingJustEnded()) return;
       // A personal feature near the click answers with its own card (features/my-maps), found
-      // with the card's own tolerance: a stricter test here would open both for a thin line.
-      if (map.hasFeatureAtPixel(e.pixel, { layerFilter: isPersonalLayer, hitTolerance: PERSONAL_HIT_TOLERANCE })) {
+      // with the card's own tolerance: a stricter test here would open both for a thin line. The
+      // selection ring is no personal feature: a click on its halo alone falls through to here.
+      if (map.hasFeatureAtPixel(e.pixel, { layerFilter: isPersonalFeatureLayer, hitTolerance: PERSONAL_HIT_TOLERANCE })) {
         clickSeq.current++; // an earlier click's lookup still in flight must not open a popup now
         setPopupData(null);
         setCandidates([]);

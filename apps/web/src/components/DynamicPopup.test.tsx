@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({
   personalOnTop: false,
   /** A personal line 2 px from the click: hit only by a hit test with a tolerance of 2 px or more. */
   personalNear: false,
+  /** Only the selection ring's halo (a personal-marked overlay, id ws-ring) under the click. */
+  ringOnTop: false,
 }));
 
 vi.mock('../entities/session/model/useUnitTree', async () => {
@@ -37,6 +39,7 @@ vi.mock('../app/providers/MapProvider', () => {
     on: (ev: string, fn: (e: unknown) => void) => { if (ev === 'singleclick') h.handler = fn; },
     un: () => {},
     forEachFeatureAtPixel: (_px: unknown, cb: (f: unknown, l: unknown) => unknown) => {
+      if (h.ringOnTop) cb({ getProperties: () => ({}), getId: () => undefined }, { get: (k: string) => (k === 'personal' ? true : k === 'id' ? 'ws-ring' : undefined) });
       // A feature of a personal map's layer (an edit copy of dams: database column names, no layerKey).
       if (h.personalOnTop) {
         cb({ getProperties: () => ({ external_id: '7', name: 'Đập của tôi' }), getId: () => 'r7' },
@@ -55,7 +58,9 @@ vi.mock('../app/providers/MapProvider', () => {
     getTargetElement: () => (h.target ??= document.createElement('div')),
     hasFeatureAtPixel: (_px: unknown, opts?: { layerFilter?: (l: unknown) => boolean; hitTolerance?: number }) => {
       const personalLayer = { get: (k: string) => (k === 'personal' ? true : k === 'id' ? 'ws:l1' : undefined) };
+      const ringLayer = { get: (k: string) => (k === 'personal' ? true : k === 'id' ? 'ws-ring' : undefined) };
       const near = h.personalNear && (opts?.hitTolerance ?? 0) >= 2;
+      if (h.ringOnTop && (!opts?.layerFilter || opts.layerFilter(ringLayer))) return true;
       return (h.personalOnTop || near) && (!opts?.layerFilter || opts.layerFilter(personalLayer));
     },
   };
@@ -207,5 +212,18 @@ describe('DynamicPopup: a personal click after an official one', () => {
     expect(container.querySelector('.dynamic-popup')).toBeNull();
     expect(screen.queryByText('Đường A')).toBeNull();
     expect(h.members).toHaveLength(0);
+  });
+});
+
+describe('DynamicPopup on the selection ring', () => {
+  beforeEach(() => { h.handler = null; h.info.length = 0; h.members.length = 0; h.thematic = null; h.personalOnTop = false; h.personalNear = false; h.ringOnTop = true; });
+  it("a click on the ring's halo alone is not a personal click: the official popup opens underneath", async () => {
+    render(<DynamicPopup />);
+    await click(1);
+    h.ringOnTop = false;
+    // The ring is marked personal so it is never official data, but it is no personal feature:
+    // the province under the halo answers, as for any other overlay.
+    expect(h.info).toHaveLength(1);
+    expect(screen.getByText('Tỉnh Đắk Lắk')).toBeInTheDocument();
   });
 });

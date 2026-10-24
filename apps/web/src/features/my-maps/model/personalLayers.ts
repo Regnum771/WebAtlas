@@ -10,7 +10,9 @@ import VectorSource from 'ol/source/Vector';
 import { Circle, Stroke, Style } from 'ol/style';
 import { isMapNotFound } from './queries';
 import { listFeatures, type GeoJsonGeometry, type LayerSummary, type PersonalFeature } from '../api/workspace.api';
-import { isPersonalLayer, PERSONAL_HIT_TOLERANCE, PERSONAL_LAYER_PROP } from '../../map/model/overlayLayers';
+import {
+  isPersonalFeatureLayer, PERSONAL_HIT_TOLERANCE, PERSONAL_LAYER_PROP, RING_LAYER_ID,
+} from '../../map/model/overlayLayers';
 import { editCopyKey, editCopyStyle, olStyleFor, parseStyle } from './personalStyle';
 
 /**
@@ -180,7 +182,7 @@ function remove(map: Map, drawn: globalThis.Map<string, Drawn>, layerId: string,
  * (997), the results (998) and the highlights (999). Marked personal, so the official popup and
  * edit selection never take it for an official feature; personalFeatureAt skips it by id.
  */
-export const RING_LAYER_ID = 'ws-ring';
+export { RING_LAYER_ID };
 const RING_Z_INDEX = 996;
 const RING_YELLOW = '#FFD928';
 const RING_HALO = 'rgba(24, 33, 58, 0.75)';
@@ -420,7 +422,7 @@ export function personalFeatureAt(
     (feature, layer) => ({ feature: feature as Feature, layer: layer as Layer }),
     {
       // The ring marks a feature that is itself on the map: the click goes to that feature.
-      layerFilter: (layer) => isPersonalLayer(layer) && layer.get('id') !== RING_LAYER_ID
+      layerFilter: (layer) => isPersonalFeatureLayer(layer)
         && (mapId === undefined || layer.get('mapId') === mapId),
       hitTolerance: PERSONAL_HIT_TOLERANCE,
     },
