@@ -198,6 +198,9 @@ GET    /api/reference/layers            → reference-layer catalog (public)
 GET    /api/reference/:layer/entities[/:entityId] → named reference entities (public)
 POST   /api/roi/resolve                 → resolve the analysis region (ROI) — area, line or point (public, 120/min)
 POST   /api/assistant/messages          → map assistant (LLM) turn               [auth, rate-limited per user]
+GET    /api/dictionary                  → data dictionary: every layer, attribute and listed value, with an ETag (public)
+GET    /api/dictionary/:layer           → one layer's dictionary entry (public)
+GET    /api/dictionary/:layer/template.csv|.gpkg → empty upload template with the layer's columns (public)
 ```
 
 Passwords are argon2-hashed; JWTs are signed from `JWT_SECRET` with a short expiry; every
@@ -212,8 +215,8 @@ write is recorded in `app.audit_log`; geometry is validated in PostGIS before wr
 | `npm run lint:web` | Lint the frontend |
 | `npm run build:shared` | Build `@webatlas/shared` |
 | `npm run test:shared` | Run `@webatlas/shared` tests (Vitest) |
-| `npm run migrate` | Apply DB migrations |
-| `npm run atlas:up` | Onboarding: check the machine, start the stack, build the tools image, migrate, build and verify every dataset (accepts `--compose <file>`, `--only`, `--except`, `--force`, `--supersede-edits`) |
+| `npm run migrate` | Apply DB migrations. Then run `npm run dictionary:sync -w @webatlas/api` (`atlas:up` does both) |
+| `npm run atlas:up` | Onboarding: check the machine, start the stack, build the tools image, migrate, sync the data dictionary, build and verify every dataset (accepts `--compose <file>`, `--only`, `--except`, `--force`, `--supersede-edits`) |
 | `npm run atlas:status` | Show what is built, stale, missing or failed, and the next command |
 | `npm run atlas:build` | Build datasets (`--only <id>`, `--except <id>`, `--force <id>`, `--supersede-edits <layer>`, `--compose <file>`); one build per database at a time |
 | `npm run atlas:verify` | Check the atlas actually serves |
@@ -225,8 +228,13 @@ write is recorded in `app.audit_log`; geometry is validated in PostGIS before wr
 | `npm run test:web` | Run the frontend tests |
 
 API-workspace scripts (run with `-w @webatlas/api`): `dev`, `start`, `create-admin`,
-`migrate:up`, `migrate:down`, the build steps the registry runs for you (`reference:build`, `contours:generate`), and
+`migrate:up`, `migrate:down`, `dictionary:sync`, the build steps the registry runs for you (`reference:build`, `contours:generate`), and
 `rivers:hierarchy`, a read-only check of the river hierarchy. Pipeline tests: `npm run test -w @webatlas/atlas-data`.
+
+After applying migrations by hand, run `npm run dictionary:sync -w @webatlas/api` (`atlas:up` runs it for you right after
+migrating). It copies the data dictionary from `packages/shared` into the `app.dictionary_*` tables, keeping staff edits
+the code still allows; without it `GET /api/dictionary` is empty and every template request answers 404. A second run in a
+row changes nothing. `npm run dictionary:sync -w @webatlas/api -- --dry-run` prints what a real run would add, update, retire and revert, and writes nothing.
 
 ## Regenerating administrative boundaries
 
