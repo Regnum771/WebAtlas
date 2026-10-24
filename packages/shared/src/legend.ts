@@ -1,6 +1,6 @@
 import { DAM_STATUS_SLUGS, DAM_STATUS_DISPLAY } from './dam-status.js';
 import { LAYER_PALETTE } from './layer-palette.js';
-import { DICTIONARY, attributeOf, formatValue, valueName } from './dictionary/index.js';
+import { DICTIONARY, attributeOf, formatDisplayNumber, formatValue, valueName } from './dictionary/index.js';
 import type { Dictionary } from './dictionary/index.js';
 
 export interface LegendEntry {
@@ -71,16 +71,12 @@ const CAPACITY_LARGE_MIN_MW = 1000;
 /** Dam size classes, with thresholds formatted in the wattage display unit. */
 function capacityEntries(dictionary: Dictionary): LegendEntry[] {
   const wattage = attributeOf(dictionary, 'dams', 'wattage_mw');
-  // In the stored unit the thresholds keep today's plain wording ("1000 MW", no thousands
-  // separator); in any other display unit they go through the shared formatter.
-  const plain = !wattage || (wattage.displayUnit ?? wattage.storedUnit) === wattage.storedUnit;
-  const fmt = (mw: number) => (plain ? `${mw} MW` : formatValue(wattage, mw));
-  // The range shows the unit once, after the upper bound: "200 – 1000 MW".
-  const bare = (text: string) => text.replace(/\s\S+$/, '');
+  const fmt = (mw: number) => (wattage ? formatValue(wattage, mw) : `${mw} MW`);
+  const bare = (mw: number) => (wattage ? formatDisplayNumber(wattage, mw) : String(mw));
   const swatch = '#6b7280';
   return [
     { swatch, shape: 'dot', size: 6, label: `Nhỏ (< ${fmt(CAPACITY_SMALL_MAX_MW)})` },
-    { swatch, shape: 'dot', size: 11, label: `Vừa (${bare(fmt(CAPACITY_SMALL_MAX_MW))} – ${fmt(CAPACITY_LARGE_MIN_MW)})` },
+    { swatch, shape: 'dot', size: 11, label: `Vừa (${bare(CAPACITY_SMALL_MAX_MW)} – ${fmt(CAPACITY_LARGE_MIN_MW)})` },
     { swatch, shape: 'dot', size: 16, label: `Lớn (> ${fmt(CAPACITY_LARGE_MIN_MW)})` },
   ];
 }

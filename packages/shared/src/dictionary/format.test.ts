@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { DictAttribute, Dictionary } from './types.js';
-import { attributeOf, formatValue, labelFor, parseDisplay, toDisplayInput, valueName } from './format.js';
+import { attributeOf, formatDisplayNumber, formatValue, labelFor, parseDisplay, toDisplayInput, valueName } from './format.js';
 
 const volume: DictAttribute = {
   name: 'volume_mcm',
@@ -133,5 +133,26 @@ describe('format', () => {
   it('toDisplayInput passes code, text and date through', () => {
     expect(toDisplayInput(level, 'Cao')).toBe('Cao');
     expect(toDisplayInput(area, '22.8 km2')).toBe('22.8 km2');
+  });
+});
+
+describe('formatDisplayNumber', () => {
+  it("formatDisplayNumber has no unit symbol and matches formatValue's number", () => {
+    const attr: DictAttribute = {
+      name: 'wattage_mw',
+      source: 'column',
+      valueType: 'number',
+      label: 'Công suất',
+      definition: 'Công suất.',
+      storedUnit: 'MW',
+      displayUnits: ['MW', 'kW'],
+      displayUnit: 'kW',
+      validFrom: '2026-01-01',
+    };
+    expect(formatDisplayNumber(attr, 200)).toBe('200.000');
+    expect(formatValue(attr, 200)).toBe('200.000 kW');
+    expect(formatDisplayNumber(attr, '1000')).toBe('1.000.000');
+    expect(formatDisplayNumber(attr, null)).toBe('—');
+    expect(formatDisplayNumber(attr, 'abc')).toBe('—');
   });
 });

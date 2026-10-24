@@ -126,8 +126,8 @@ describe('legendFor with a dictionary', () => {
     const [status, capacity] = legendFor('layer_dams');
     expect(capacity.entries.map((e) => e.label)).toEqual([
       'Nhỏ (< 200 MW)',
-      'Vừa (200 – 1000 MW)',
-      'Lớn (> 1000 MW)',
+      'Vừa (200 – 1.000 MW)',
+      'Lớn (> 1.000 MW)',
     ]);
     expect(status.entries.map((e) => e.label)).toEqual(['Bình thường', 'Xả lũ', 'Nguy hiểm']);
   });

@@ -10,32 +10,44 @@ export function labelFor(dictionary, layer, name) {
 export function valueName(attribute, code) {
     return attribute.values?.find((v) => v.code === code)?.name ?? code;
 }
+/**
+ * A number in the display unit, vi-VN grouped, at the attribute's precision, without the
+ * unit symbol. Missing or non-numeric values give the dash.
+ */
+export function formatDisplayNumber(attribute, stored) {
+    return numberParts(attribute, stored)?.text ?? DASH;
+}
+function numberParts(attribute, stored) {
+    // node-postgres returns numeric columns as strings, so accept a finite numeric string.
+    let n;
+    if (typeof stored === 'number')
+        n = stored;
+    else if (typeof stored === 'string' && stored.trim() !== '')
+        n = Number(stored);
+    else
+        return undefined;
+    if (!Number.isFinite(n))
+        return undefined;
+    const from = attribute.storedUnit;
+    const to = attribute.displayUnit ?? from;
+    const value = from && to ? convert(n, from, to) : n;
+    const text = value.toLocaleString('vi-VN', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: attribute.precision ?? 2,
+    });
+    // Unit 1 has an empty symbol, so nothing is appended for it.
+    return { text, symbol: to ? unit(to).symbol : '' };
+}
 export function formatValue(attribute, stored) {
     if (stored === null || stored === undefined)
         return DASH;
     if (typeof stored === 'number' && !Number.isFinite(stored))
         return DASH;
     if (attribute.valueType === 'number') {
-        // node-postgres returns numeric columns as strings, so accept a finite numeric string.
-        let n;
-        if (typeof stored === 'number')
-            n = stored;
-        else if (typeof stored === 'string' && stored.trim() !== '')
-            n = Number(stored);
-        else
+        const parts = numberParts(attribute, stored);
+        if (!parts)
             return DASH;
-        if (!Number.isFinite(n))
-            return DASH;
-        const from = attribute.storedUnit;
-        const to = attribute.displayUnit ?? from;
-        const value = from && to ? convert(n, from, to) : n;
-        const text = value.toLocaleString('vi-VN', {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: attribute.precision ?? 2,
-        });
-        // Unit 1 has an empty symbol, so nothing is appended for it.
-        const symbol = to ? unit(to).symbol : '';
-        return symbol ? `${text} ${symbol}` : text;
+        return parts.symbol ? `${parts.text} ${parts.symbol}` : parts.text;
     }
     if (attribute.valueType === 'code')
         return valueName(attribute, String(stored));
