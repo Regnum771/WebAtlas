@@ -8,7 +8,8 @@ exports.shorthands = undefined;
  *   only creates them; the sync from packages/shared populates them.
  * - origin: maps an edited field name to {"by": uuid, "at": iso}; an absent key means the
  *   code default is in force.
- * - dictionary_history: one row per changed field. Not granted to the assistant.
+ * - dictionary_history: one row per changed field.
+ * - No grant to webatlas_assistant: its run_sql role stays out of schema app (migration 8).
  * - The permission CHECK on app.access_group_permissions gains dictionary.manage.
  */
 const PERMISSIONS = [
@@ -90,8 +91,7 @@ exports.up = (pgm) => {
       changed_at timestamptz NOT NULL DEFAULT now()
     )
   `);
-  // A new relation starts with no privileges. History stays out of the assistant's reach.
-  pgm.sql(`GRANT SELECT ON app.dictionary_feature_types, app.dictionary_attributes, app.dictionary_values TO webatlas_assistant`);
+  // No assistant grant: the assistant's tools read dictionary labels in application code (app pool).
 
   pgm.sql(`ALTER TABLE app.access_group_permissions DROP CONSTRAINT ${CHECK}`);
   pgm.sql(`ALTER TABLE app.access_group_permissions ADD CONSTRAINT ${CHECK}

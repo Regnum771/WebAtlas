@@ -35,13 +35,22 @@ describe('the data dictionary tables', () => {
     });
   });
 
-  it('the assistant role can read the content tables but not history', async () => {
+  it('the assistant run_sql role cannot read the dictionary tables', async () => {
+    // Migration 8 keeps webatlas_assistant out of schema app; the assistant's tools read labels in
+    // application code instead. No table grant either: it could not be used without schema USAGE.
     const { rows } = await getPool().query<{ t: string; ok: boolean }>(
       `SELECT t, has_table_privilege('webatlas_assistant', 'app.' || t, 'SELECT') AS ok
          FROM unnest(ARRAY['dictionary_feature_types','dictionary_attributes','dictionary_values','dictionary_history']) AS t`);
-    expect(Object.fromEntries(rows.map((r) => [r.t, r.ok]))).toEqual({
-      dictionary_feature_types: true, dictionary_attributes: true, dictionary_values: true, dictionary_history: false,
-    });
+    expect(rows.filter((r) => r.ok).map((r) => r.t)).toEqual([]);
+    for (const t of ['dictionary_feature_types', 'dictionary_attributes', 'dictionary_values', 'dictionary_history']) {
+      await rolledBack(async (q) => {
+        await q('SET LOCAL ROLE webatlas_assistant');
+        await expect(q(`SELECT 1 FROM app.${t} LIMIT 1`)).rejects.toMatchObject({
+          code: '42501',
+          message: expect.stringMatching(/permission denied/),
+        });
+      });
+    }
   });
 
   it('an access group can be granted dictionary.manage', async () => {
