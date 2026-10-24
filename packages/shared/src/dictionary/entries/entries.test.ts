@@ -96,6 +96,19 @@ describe('dictionary entries', () => {
     expect(depth.cfStandardName).toBeUndefined();
   });
 
+  it('osm_water fclass is closed and matches the basemap style codes', () => {
+    // The codes the basemap_water style draws: packages/atlas-data/tools/basemap/styles.py:182-190.
+    const styled = [
+      'water', 'reservoir', 'riverbank', 'dock',
+      'wetland', 'wetland_marsh', 'wetland_mangrove', 'wetland_tidalflat',
+      'wetland_reedbed', 'wetland_swamp', 'wetland_wet_meadow',
+    ];
+    const fclass = attributeOf(DICTIONARY, 'osm_water', 'fclass')!;
+    expect(fclass.valueType).toBe('code');
+    expect(fclass.codeList).toBe('closed');
+    expect(fclass.values?.map((v) => v.code).sort()).toEqual([...styled].sort());
+  });
+
   it('volume is stored in million m³ and shown in triệu m³', () => {
     expect(formatValue(attributeOf(DICTIONARY, 'lakes', 'volume_mcm')!, 1250.5)).toBe('1.250,5 triệu m³');
   });

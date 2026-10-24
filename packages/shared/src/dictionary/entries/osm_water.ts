@@ -23,14 +23,14 @@ export const osm_water: DictFeatureType = {
       validFrom: VALID_FROM,
     },
     {
-      // Open: in apps/web and packages/shared only DynamicPopup's FCLASS_LABELS reads these codes,
-      // as a label lookup that falls back to the raw code; no behaviour depends on them.
+      // Closed: the basemap_water style (packages/atlas-data/tools/basemap/styles.py:182-190)
+      // filters on exactly these 11 codes, and a feature with any other code is not drawn.
       name: 'fclass',
       source: 'column',
       valueType: 'code',
       label: 'Loại',
       definition: 'Loại mặt nước theo phân loại OpenStreetMap của Geofabrik.',
-      codeList: 'open',
+      codeList: 'closed',
       values: [
         { code: 'water', name: 'Mặt nước', order: 1 },
         { code: 'reservoir', name: 'Hồ chứa', order: 2 },
