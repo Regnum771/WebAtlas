@@ -45,10 +45,18 @@ function useDebouncedFilter(layerId: string | null, filter: TableFilter): TableF
 }
 
 /**
- * `locate`: a feature id whose position in the filtered, sorted list is wanted; the answer for it
- * comes back as `located` (position null when the filter hides it).
+ * A complete condition as the server takes it (the value in stored units), or null when its value
+ * cannot be read: that condition filters nothing until it can.
  */
-export function useTableQuery(viewExtent4326: Extent | null, locate: string | null = null) {
+export type ToStoredCondition = (c: TableCondition) => TableCondition | null;
+const asTyped: ToStoredCondition = (c) => c;
+
+/**
+ * `locate`: a feature id whose position in the filtered, sorted list is wanted; the answer for it
+ * comes back as `located` (position null when the filter hides it). `toStored` turns each settled
+ * condition into what is sent; the store keeps the value as typed.
+ */
+export function useTableQuery(viewExtent4326: Extent | null, locate: string | null = null, toStored: ToStoredCondition = asTyped) {
   const qc = useQueryClient();
   const { open, byLayer } = useTableStore();
   const mapId = open?.mapId ?? '';
@@ -58,7 +66,10 @@ export function useTableQuery(viewExtent4326: Extent | null, locate: string | nu
   const extent = filter.inView ? viewExtent4326 : null;
 
   const body: LayerQueryRequest = {
-    conditions: debounced.conditions.filter(isComplete),
+    conditions: debounced.conditions.filter(isComplete).flatMap((c) => {
+      const stored = toStored(c);
+      return stored ? [stored] : [];
+    }),
     match: debounced.match,
     offset: debounced.page * TABLE_PAGE_SIZE,
     limit: TABLE_PAGE_SIZE,

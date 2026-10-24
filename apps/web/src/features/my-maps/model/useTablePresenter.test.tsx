@@ -44,7 +44,13 @@ vi.mock('./personalStyle', () => ({
   symbolDataUrl: (layer: LayerSummary, properties: Record<string, unknown>, geometryType: string) =>
     symbolDataUrl(layer, properties, geometryType),
 }));
+// The code defaults, without the served copy's fetch.
+vi.mock('../../dictionary', async () => {
+  const shared = await vi.importActual<typeof import('@webatlas/shared')>('@webatlas/shared');
+  return { useDictionary: () => shared.DICTIONARY };
+});
 
+import { DICTIONARY, attributeOf, parseDisplay, valueName } from '@webatlas/shared';
 import { useResetTableOnSignOut, useTablePresenter } from './useTablePresenter';
 import { getTableState, openTable, relocate, resetTableStore, select, setFilter } from './table.store';
 
@@ -410,6 +416,116 @@ describe('useTablePresenter: selection', () => {
     act(() => setFilter({ q: 'x' }));
     expect(result.current.selectedOutsideFilter).toBe(false);
     expect(getTableState().selectedId).toBe('999');
+  });
+});
+
+describe('useTablePresenter: the data dictionary', () => {
+  const RIVERS: LayerSummary = {
+    ...LAYER, id: 'l2', kind: 'edit_copy', title: 'Sông (bản sửa)', geometryType: 'line', layerKey: 'rivers',
+  };
+  const DAMS: LayerSummary = {
+    ...LAYER, id: 'l3', kind: 'edit_copy', title: 'Đập (bản sửa)', geometryType: 'point', layerKey: 'dams',
+  };
+  const one = (columns: LayerQueryResponse['columns'], properties: Record<string, unknown>): LayerQueryResponse => ({
+    columns, total: 1, matched: 1, rows: [{ id: '1', properties, bbox: bboxOf(1) }], position: null,
+  });
+  const ANSWERS: Record<string, LayerQueryResponse> = {
+    l1: one([{ name: 'length_m', type: 'number' }], { length_m: 12500 }),
+    l2: one([{ name: 'length_m', type: 'number' }, { name: 'name', type: 'text' }], { length_m: 12500, name: 'Sông Hương' }),
+    l3: one([{ name: 'wattage_mw', type: 'number' }, { name: 'status', type: 'text' }], { wattage_mw: 64, status: 'binh_thuong' }),
+  };
+  const lengthM = attributeOf(DICTIONARY, 'rivers', 'length_m')!;
+  const damStatus = attributeOf(DICTIONARY, 'dams', 'status')!;
+  const lastConditions = () => queryLayer.mock.calls.at(-1)![2].conditions;
+
+  beforeEach(() => {
+    getMap.mockResolvedValue({ ...DETAIL, layerCount: 3, layers: [LAYER, RIVERS, DAMS] });
+    queryLayer.mockImplementation((_m: string, l: string) => Promise.resolve(ANSWERS[l]));
+  });
+
+  it('an edit copy header shows the dictionary label and its definition on hover', async () => {
+    openTable('m1', 'l3');
+    const { result } = setup();
+    await flush(10);
+    expect(result.current.columns[0]).toEqual({
+      name: 'wattage_mw', label: 'Công suất', definition: attributeOf(DICTIONARY, 'dams', 'wattage_mw')!.definition, type: 'number',
+    });
+    expect(result.current.rows[0].cells[0]).toBe('64 MW');
+  });
+
+  it('an edit copy cell shows the display unit', async () => {
+    openTable('m1', 'l2');
+    const { result } = setup();
+    await flush(10);
+    expect(result.current.columns[0].label).toBe('Chiều dài');
+    expect(result.current.rows[0].cells).toEqual(['12,5 km', 'Sông Hương']);
+  });
+
+  it('a number condition typed in km queries metres', async () => {
+    openTable('m1', 'l2');
+    const { result } = setup();
+    await flush(10);
+    act(() => result.current.addCondition());
+    act(() => result.current.updateCondition(0, { field: 'length_m', op: 'gt', value: '12,5' }));
+    expect(result.current.conditions[0]).toMatchObject({ fieldLabel: 'Chiều dài', value: '12,5', type: 'number' });
+    expect(result.current.conditions[0].error).toBeUndefined();
+    // The value still waits for typing to pause.
+    const before = queryLayer.mock.calls.length;
+    await flush(200);
+    expect(queryLayer.mock.calls.length).toBe(before);
+    await flush(110);
+    expect(lastConditions()).toEqual([{ field: 'length_m', op: 'gt', value: 12500 }]);
+  });
+
+  it('an unreadable number condition shows the message and sends no query', async () => {
+    openTable('m1', 'l2');
+    const { result } = setup();
+    await flush(10);
+    const before = queryLayer.mock.calls.length;
+    act(() => result.current.addCondition());
+    act(() => result.current.updateCondition(0, { field: 'length_m', op: 'eq', value: '1.5' }));
+    const refused = parseDisplay(lengthM, '1.5');
+    expect(refused.ok).toBe(false);
+    expect(result.current.conditions[0].error).toBe(refused.ok ? '' : refused.message);
+    await flush(310);
+    await flush(10);
+    expect(queryLayer.mock.calls.length).toBe(before);
+    expect(queryLayer.mock.calls.some((c) => (c[2] as { conditions: unknown[] }).conditions.length > 0)).toBe(false);
+  });
+
+  it('a code column offers value names and sends the code', async () => {
+    openTable('m1', 'l3');
+    const { result } = setup();
+    await flush(10);
+    expect(result.current.columns[1]).toMatchObject({ name: 'status', label: 'Trạng thái', type: 'code' });
+    expect(result.current.rows[0].cells[1]).toBe(valueName(damStatus, 'binh_thuong'));
+    act(() => result.current.addCondition());
+    act(() => result.current.updateCondition(0, { field: 'status' }));
+    const condition = result.current.conditions[0];
+    expect(condition).toMatchObject({ field: 'status', op: 'eq', type: 'code' });
+    expect(condition.ops.map((o) => o.label)).toEqual(['bằng', 'khác', 'trống', 'không trống']);
+    expect(condition.options).toContainEqual({ value: 'binh_thuong', label: valueName(damStatus, 'binh_thuong') });
+    expect(valueName(damStatus, 'binh_thuong')).not.toBe('binh_thuong');
+    act(() => result.current.updateCondition(0, { value: 'binh_thuong' }));
+    await flush(310);
+    expect(lastConditions()).toEqual([{ field: 'status', op: 'eq', value: 'binh_thuong' }]);
+    // A stored code the dictionary does not know keeps its option, shown as the code.
+    act(() => result.current.updateCondition(0, { value: 'moi' }));
+    expect(result.current.conditions[0].options).toContainEqual({ value: 'moi', label: 'moi' });
+  });
+
+  it('a free layer keeps raw names and values', async () => {
+    const { result } = setup();
+    await flush(10);
+    expect(result.current.columns).toEqual([{ name: 'length_m', label: 'length_m', type: 'number' }]);
+    expect(result.current.rows[0].cells).toEqual(['12500']);
+    act(() => result.current.addCondition());
+    act(() => result.current.updateCondition(0, { op: 'gt', value: '12,5' }));
+    expect(result.current.conditions[0]).toMatchObject({ fieldLabel: 'length_m', type: 'number' });
+    expect(result.current.conditions[0].error).toBeUndefined();
+    expect(result.current.conditions[0].options).toBeUndefined();
+    await flush(310);
+    expect(lastConditions()).toEqual([{ field: 'length_m', op: 'gt', value: '12,5' }]);
   });
 });
 

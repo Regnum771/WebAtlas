@@ -68,7 +68,9 @@ const count = (n: number) => n.toLocaleString('vi-VN');
  * another page); `nearest` leaves a row already in view where it is.
  */
 const showSelected = (row: HTMLTableRowElement | null) => { row?.scrollIntoView?.({ block: 'nearest' }); };
-const chipText = (c: ConditionView) => (c.needsValue ? `${c.fieldLabel} ${c.opLabel} ${c.value}` : `${c.fieldLabel} ${c.opLabel}`);
+/** A code column's chip names its value; any other shows the value as typed. */
+const chipValue = (c: ConditionView) => c.options?.find((o) => o.value === c.value)?.label ?? c.value;
+const chipText = (c: ConditionView) => (c.needsValue ? `${c.fieldLabel} ${c.opLabel} ${chipValue(c)}` : `${c.fieldLabel} ${c.opLabel}`);
 
 /**
  * The table of one personal layer, docked under the map: the toolbar (counts, search, condition
@@ -201,6 +203,11 @@ export function LayerTableView(p: Props) {
           onDone={() => setEditing(null)}
         />
       )}
+      {edited?.error && (
+        <div className="layer-table-error">
+          <Message tone="error" title={edited.error} />
+        </div>
+      )}
 
       {p.error && (
         <div className="layer-table-error">
@@ -227,6 +234,7 @@ export function LayerTableView(p: Props) {
                     <th
                       key={c.name}
                       scope="col"
+                      title={c.definition}
                       aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : undefined}
                     >
                       <button type="button" className="layer-table-sort" onClick={() => p.onSort(c.name)}>

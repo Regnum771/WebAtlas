@@ -186,6 +186,53 @@ describe('LayerTableView', () => {
     expect(draw).toHaveAttribute('title', 'Lớp này không vẽ thêm được');
   });
 
+  it('an edit copy header shows the dictionary label and its definition on hover', () => {
+    const definition = 'Công suất lắp máy của nhà máy thủy điện.';
+    const columns = [{ name: 'wattage_mw', label: 'Công suất', definition, type: 'number' as const }];
+    render(<LayerTableView {...props({ columns, sort: null, rows: [{ id: '1', symbol: '', cells: ['64 MW'], properties: {}, bbox: null }] })} />);
+    expect(screen.getByRole('columnheader', { name: 'Công suất' })).toHaveAttribute('title', definition);
+    expect(screen.getByRole('cell', { name: '64 MW' })).toBeInTheDocument();
+    // A column without a definition has no hover text.
+    render(<LayerTableView {...props()} />);
+    expect(screen.getAllByRole('columnheader', { name: 'ten' })[0]).not.toHaveAttribute('title');
+  });
+
+  it('a code column offers value names and sends the code', async () => {
+    const p = props({
+      conditions: [{
+        field: 'status', fieldLabel: 'Trạng thái', op: 'eq', opLabel: 'bằng', value: 'xa_lu', needsValue: true, type: 'code',
+        ops: [{ op: 'eq', label: 'bằng' }, { op: 'neq', label: 'khác' }, { op: 'empty', label: 'trống' }, { op: 'notEmpty', label: 'không trống' }],
+        options: [{ value: 'binh_thuong', label: 'Bình thường' }, { value: 'xa_lu', label: 'Đang xả lũ' }],
+      }],
+      fields: [{ name: 'status', label: 'Trạng thái', type: 'code' }],
+    });
+    render(<LayerTableView {...p} />);
+    // The chip reads the value's name, not its code.
+    await userEvent.click(screen.getByRole('button', { name: 'Trạng thái bằng Đang xả lũ' }));
+    const editor = screen.getByRole('group', { name: 'Điều kiện' });
+    expect(within(editor).queryByRole('textbox', { name: 'Giá trị' })).toBeNull();
+    const value = within(editor).getByRole('combobox', { name: 'Giá trị' });
+    expect(value).toHaveValue('xa_lu');
+    expect(within(value).getAllByRole('option').map((o) => o.textContent)).toEqual(['Bình thường', 'Đang xả lũ']);
+    await userEvent.selectOptions(value, 'binh_thuong');
+    expect(p.onUpdateCondition).toHaveBeenCalledWith(0, { value: 'binh_thuong' });
+  });
+
+  it('an unreadable number condition shows the message under the editor', async () => {
+    const message = 'Không đọc được số "1.5". Dùng dấu phẩy cho phần thập phân, ví dụ 1.250,5.';
+    const p = props();
+    const conditions = [{ ...p.conditions[0], value: '1.5', error: message }, p.conditions[1]];
+    const { container } = render(<LayerTableView {...p} conditions={conditions} />);
+    // Shown only while its editor is open.
+    expect(screen.queryByRole('alert')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'cong_suat > 1.5' }));
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(message);
+    const editor = screen.getByRole('group', { name: 'Điều kiện' });
+    expect(editor.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(alert.compareDocumentPosition(container.querySelector('table')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('Sửa đối tượng no longer exists', () => {
     render(<LayerTableView {...props({ onDraw: vi.fn(), canDraw: true, selectedId: '1' })} />);
     expect(screen.queryByText('Sửa đối tượng')).toBeNull();

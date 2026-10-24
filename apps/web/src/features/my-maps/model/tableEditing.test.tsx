@@ -38,6 +38,10 @@ vi.mock('./personalLayers', () => ({
   personalFeature: () => null,
 }));
 vi.mock('./personalStyle', () => ({ symbolDataUrl: () => '', editCopyKey: () => null }));
+vi.mock('../../dictionary', async () => {
+  const shared = await vi.importActual<typeof import('@webatlas/shared')>('@webatlas/shared');
+  return { useDictionary: () => shared.DICTIONARY };
+});
 vi.mock('../../map/model/mapEditing', () => ({
   useMapEditing: () => ({ startDraw: vi.fn(), cancelDraw: vi.fn(), startModifyFeature: vi.fn(), cancelModify: vi.fn() }),
 }));

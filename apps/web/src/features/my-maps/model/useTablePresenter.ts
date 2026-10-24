@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { LAYER_GEOMETRY, type OgcGeometryType } from '@webatlas/shared';
+import {
+  LAYER_GEOMETRY, formatValue, parseDisplay, valueName, type DictAttribute, type Dictionary, type OgcGeometryType,
+} from '@webatlas/shared';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { useSession } from '../../../entities/session/model/session.store';
+import { useDictionary } from '../../dictionary';
 import type { GeometryType, LayerSummary, TableColumn, TableCondition, TableRow } from '../api/workspace.api';
-import { columnLabel } from './columnLabel';
+import { columnAttribute, columnLabel } from './columnLabel';
 import {
   clearRing, fitToExtent4326, personalFeature, ringExtent4326, ringFeature, viewExtent4326, watchViewExtent4326,
 } from './personalLayers';
@@ -15,14 +18,19 @@ import {
 import type { TableSelection } from './usePersonalEditingPresenter';
 import { DEBOUNCE_MS, TABLE_LOAD_ERROR, TABLE_PAGE_SIZE, useTableQuery } from './useTableQuery';
 
-export type ColumnType = TableColumn['type'];
+/** The server's column types, and `code` for an edit copy's column with a dictionary code list. */
+export type ColumnType = TableColumn['type'] | 'code';
 export type ConditionOp = 'contains' | 'eq' | 'neq' | 'empty' | 'notEmpty' | 'lt' | 'lte' | 'gt' | 'gte';
 
-/** The operators each column type takes, in the order the picker lists them (as the API checks them). */
+/**
+ * The operators each column type takes, in the order the picker lists them (as the API checks
+ * them). A code column is compiled as the server's text column, and offers only whole-code tests.
+ */
 export const OPERATORS: Record<ColumnType, readonly ConditionOp[]> = {
   text: ['contains', 'eq', 'neq', 'empty', 'notEmpty'],
   number: ['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'empty', 'notEmpty'],
   date: ['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'empty', 'notEmpty'],
+  code: ['eq', 'neq', 'empty', 'notEmpty'],
 };
 export const OP_LABEL: Record<ConditionOp, string> = {
   contains: 'chứa', eq: 'bằng', neq: 'khác', empty: 'trống', notEmpty: 'không trống',
@@ -34,18 +42,31 @@ export const MAX_CONDITIONS = 10;
 const needsValue = (op: string) => op !== 'empty' && op !== 'notEmpty';
 
 export interface OperatorOption { op: ConditionOp; label: string }
-export interface TableColumnView { name: string; label: string; type: ColumnType }
+export interface TableColumnView {
+  name: string;
+  label: string;
+  type: ColumnType;
+  /** The dictionary's definition of an edit copy's column: the header's hover text. */
+  definition?: string;
+}
+/** One value a code column's picker offers: the stored code and its name. */
+export interface ValueOption { value: string; label: string }
 /** One condition as its chip and its editor show it. */
 export interface ConditionView {
   field: string;
   fieldLabel: string;
   op: string;
   opLabel: string;
+  /** As typed (in the display unit) or, for a code column, the stored code. */
   value: string;
   needsValue: boolean;
   type: ColumnType;
   /** Only the operators of the column's type. */
   ops: OperatorOption[];
+  /** A code column's values, by name. */
+  options?: ValueOption[];
+  /** Why the typed value cannot be read; the condition filters nothing meanwhile. */
+  error?: string;
 }
 export interface TableRowView extends TableRow {
   /** The feature's symbol as a data URL ('' when the browser cannot draw). */
@@ -80,11 +101,39 @@ function rowGeometry(layer: LayerSummary, bbox: TableRow['bbox']): GeometryType 
   return 'polygon';
 }
 
-/** A property value as a cell shows it. */
-function cellText(value: unknown): string {
+/** A property value as a cell shows it: through the dictionary for an edit copy's column, raw otherwise. */
+function cellText(value: unknown, attribute: DictAttribute | undefined): string {
+  if (attribute) return formatValue(attribute, value);
   if (value === null || value === undefined) return '';
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
+}
+
+/** A typed number is read in the display unit only where the dictionary gives a stored unit. */
+const takesUnits = (a: DictAttribute | undefined): a is DictAttribute => a?.valueType === 'number' && !!a.storedUnit;
+
+/**
+ * A condition as the server takes it: a number typed in an edit copy's display unit becomes the
+ * stored number; anything else goes as typed. An unreadable number gives the reader's message.
+ */
+function storedCondition(
+  layer: LayerSummary | null, c: TableCondition, dictionary: Dictionary,
+): { ok: true; condition: TableCondition } | { ok: false; message: string } {
+  const attribute = layer ? columnAttribute(layer, c.field, dictionary) : undefined;
+  if (!takesUnits(attribute) || !needsValue(c.op) || c.value === undefined || String(c.value).trim() === '') {
+    return { ok: true, condition: c };
+  }
+  const read = parseDisplay(attribute, String(c.value));
+  return read.ok ? { ok: true, condition: { ...c, value: read.value } } : read;
+}
+
+/** A code column's values in their declared order; a stored code the dictionary lacks is offered as itself. */
+function valueOptions(attribute: DictAttribute, current: string): ValueOption[] {
+  const options = [...(attribute.values ?? [])]
+    .sort((a, b) => a.order - b.order)
+    .map((v) => ({ value: v.code, label: valueName(attribute, v.code) }));
+  if (current !== '' && !options.some((o) => o.value === current)) options.push({ value: current, label: current });
+  return options;
 }
 
 /**
@@ -163,7 +212,13 @@ export function useTablePresenter() {
   const selection: Target | null = selectedId && layerId ? { layerId, id: selectedId } : null;
   const [lastSelected, setLastSelected] = useState<{ target: Target | null; seq: number }>({ target: null, seq: locateSeq });
   const [hidden, setHidden] = useState<(Target & { filter: string }) | null>(null);
-  const query = useTableQuery(extent, locating && locating.layerId === layerId ? locating.id : null);
+  const dictionary = useDictionary();
+  // An unreadable value is left out of the request (storedCondition gives the editor its message).
+  const toStored = (c: TableCondition) => {
+    const s = storedCondition(layer, c, dictionary);
+    return s.ok ? s.condition : null;
+  };
+  const query = useTableQuery(extent, locating && locating.layerId === layerId ? locating.id : null, toStored);
   const data = query.data;
   const last = lastSelected.target;
   const changed = last?.id !== selection?.id || last?.layerId !== selection?.layerId;
@@ -219,34 +274,59 @@ export function useTablePresenter() {
   const selectedOutsideFilter = hidden !== null && hidden.id === selectedId && hidden.layerId === layerId
     && hidden.filter === key;
 
+  // An edit copy's columns carry their dictionary entry; a free or imported layer's have none.
+  const attributes: (DictAttribute | undefined)[] = useMemo(
+    () => (layer && data ? data.columns.map((c) => columnAttribute(layer, c.name, dictionary)) : []),
+    [layer, data, dictionary],
+  );
   const columns: TableColumnView[] = useMemo(
-    () => (layer && data ? data.columns.map((c) => ({ name: c.name, label: columnLabel(layer, c.name), type: c.type })) : []),
-    [layer, data],
+    () => (layer && data
+      ? data.columns.map((c, i) => {
+        const attribute = attributes[i];
+        const view: TableColumnView = {
+          name: c.name,
+          label: columnLabel(layer, c.name, dictionary),
+          type: attribute?.valueType === 'code' ? 'code' : c.type,
+        };
+        if (attribute?.definition) view.definition = attribute.definition;
+        return view;
+      })
+      : []),
+    [layer, data, attributes, dictionary],
   );
   const rows: TableRowView[] = useMemo(
     () => (layer && data
       ? data.rows.map((r) => ({
         ...r,
         symbol: symbolDataUrl(layer, r.properties, rowGeometry(layer, r.bbox)),
-        cells: columns.map((c) => cellText(r.properties[c.name])),
+        cells: columns.map((c, i) => cellText(r.properties[c.name], attributes[i])),
       }))
       : []),
-    [layer, data, columns],
+    [layer, data, columns, attributes],
   );
 
   const typeOf = (field: string): ColumnType => columns.find((c) => c.name === field)?.type ?? 'text';
   const operatorsFor = (field: string): OperatorOption[] =>
     OPERATORS[typeOf(field)].map((op) => ({ op, label: OP_LABEL[op] }));
-  const conditions: ConditionView[] = filter.conditions.map((c) => ({
-    field: c.field,
-    fieldLabel: layer ? columnLabel(layer, c.field) : c.field,
-    op: c.op,
-    opLabel: OP_LABEL[c.op as ConditionOp] ?? c.op,
-    value: c.value === undefined ? '' : String(c.value),
-    needsValue: needsValue(c.op),
-    type: typeOf(c.field),
-    ops: operatorsFor(c.field),
-  }));
+  const conditions: ConditionView[] = filter.conditions.map((c) => {
+    const value = c.value === undefined ? '' : String(c.value);
+    const type = typeOf(c.field);
+    const view: ConditionView = {
+      field: c.field,
+      fieldLabel: layer ? columnLabel(layer, c.field, dictionary) : c.field,
+      op: c.op,
+      opLabel: OP_LABEL[c.op as ConditionOp] ?? c.op,
+      value,
+      needsValue: needsValue(c.op),
+      type,
+      ops: operatorsFor(c.field),
+    };
+    const attribute = layer ? columnAttribute(layer, c.field, dictionary) : undefined;
+    if (type === 'code' && attribute) view.options = valueOptions(attribute, value);
+    const stored = storedCondition(layer, c, dictionary);
+    if (!stored.ok) view.error = stored.message;
+    return view;
+  });
 
   const matched = data?.matched ?? 0;
   const index = query.page;

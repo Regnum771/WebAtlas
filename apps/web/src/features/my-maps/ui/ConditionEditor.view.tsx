@@ -12,8 +12,8 @@ interface Props {
 
 /**
  * One condition's editor under the toolbar: the field, the operators its type offers and, unless
- * the operator takes none, the value. Each change applies at once (the value waits for typing to
- * pause before the table asks the server).
+ * the operator takes none, the value: typed, or picked by name for a code column. Each change
+ * applies at once (a typed value waits for typing to pause before the table asks the server).
  */
 export function ConditionEditorView({ condition, fields, onChange, onDone }: Props) {
   const root = useRef<HTMLDivElement>(null);
@@ -58,7 +58,18 @@ export function ConditionEditorView({ condition, fields, onChange, onDone }: Pro
       >
         {condition.ops.map((o) => <option key={o.op} value={o.op}>{o.label}</option>)}
       </select>
-      {condition.needsValue && (
+      {condition.needsValue && condition.type === 'code' && (
+        <select
+          className="input layer-table-editor-value"
+          aria-label="Giá trị"
+          value={condition.value}
+          onChange={(e) => onChange({ value: e.target.value })}
+        >
+          {condition.value === '' && <option value="" disabled />}
+          {(condition.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      )}
+      {condition.needsValue && condition.type !== 'code' && (
         <input
           ref={value}
           className="input layer-table-editor-value"
