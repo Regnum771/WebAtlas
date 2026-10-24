@@ -593,6 +593,9 @@ body {
 .edit-toolbar { display: flex; flex-direction: column; gap: 10px; }
 .edit-toolbar-title { margin: 0 0 2px; font-size: var(--text-md); }
 .edit-attr-form { display: flex; flex-direction: column; gap: 10px; }
+/* A number's display unit sits after its input, in the flow (units like "triệu m³" are wide). */
+.edit-attr-form .input-wrap > .attr-unit { position: static; flex: none; margin-left: var(--space-2); color: var(--ink-2); font-size: var(--text-sm); }
+.edit-attr-form .input-wrap:has(> .attr-unit) > .input { padding-right: var(--space-3); }
 .edit-draw-controls { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
 .edit-hint { margin: 0; font-size: var(--text-sm); color: var(--ink-2); flex-basis: 100%; }
 .edit-form-actions { display: flex; gap: 8px; margin-top: 4px; }

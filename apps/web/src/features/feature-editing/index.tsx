@@ -72,6 +72,7 @@ function EditToolbar({ active, onBusy }: PartProps) {
           attributes={selected.attributes}
           labels={form.labels}
           values={form.values}
+          fields={form.fields}
           fieldErrors={form.fieldErrors}
           error={form.error}
           errorDetail={form.errorDetail}
@@ -105,7 +106,7 @@ function EditForm({ sel, geometryToSave, onSaved, onCancel, onDelete }: {
   return (
     <>
       <AttributeFormView
-        attributes={sel.attributes} labels={form.labels} values={form.values}
+        attributes={sel.attributes} labels={form.labels} values={form.values} fields={form.fields}
         fieldErrors={form.fieldErrors} error={form.error} errorDetail={form.errorDetail} canSave={form.canSave}
         saving={form.saving} managingUnit={form.managingUnit} onField={form.setField} onSubmit={form.submit} onCancel={onCancel}
       />

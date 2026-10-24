@@ -1,6 +1,7 @@
 import { AttributeFieldView } from './AttributeField.view';
 import { ManagingUnitFieldView } from './ManagingUnitField.view';
 import type { ManagingUnitFieldState } from '../model/useManagingUnitField';
+import type { FieldInfo } from '../model/useAttributeFormPresenter';
 import { Button } from '../../../shared/ui/Button';
 import { Message } from '../../../shared/ui/Message';
 
@@ -8,6 +9,8 @@ export interface AttributeFormViewProps {
   attributes: string[];
   labels: Record<string, string>;
   values: Record<string, string>;
+  /** Per column: the display unit's symbol, or the values a select offers. */
+  fields?: Record<string, FieldInfo>;
   fieldErrors: Record<string, string>;
   error: string | null;
   /** A second line under the error, e.g. the missing review right of a refusal. */
@@ -26,7 +29,7 @@ export interface AttributeFormViewProps {
 // Passive: maps a layer's attributes to a list of AttributeFieldView.
 export function AttributeFormView(props: AttributeFormViewProps) {
   const {
-    attributes, labels, values, fieldErrors, error, errorDetail, canSave, saving, managingUnit, readOnly, onField, onSubmit, onCancel,
+    attributes, labels, values, fields, fieldErrors, error, errorDetail, canSave, saving, managingUnit, readOnly, onField, onSubmit, onCancel,
   } = props;
   return (
     <form className="edit-attr-form" onSubmit={(e) => { e.preventDefault(); onSubmit(); }}>
@@ -41,6 +44,8 @@ export function AttributeFormView(props: AttributeFormViewProps) {
             value={values[col] ?? ''}
             error={fieldErrors[col]}
             disabled={readOnly}
+            unitSymbol={fields?.[col]?.unitSymbol}
+            options={fields?.[col]?.options}
             onChange={(v) => onField(col, v)}
           />
         )

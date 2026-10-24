@@ -12,10 +12,12 @@ export interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function TextField(
-  { id, label, error, hint, trailing, className, ...rest },
+  { id, label, error, hint, trailing, className, 'aria-describedby': extraDescribedBy, ...rest },
   ref,
 ) {
-  const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
+  // A caller's own description (e.g. a unit shown after the input) is kept beside the error or hint.
+  const own = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
+  const describedBy = [extraDescribedBy, own].filter(Boolean).join(' ') || undefined;
   const input = (
     <input
       {...rest}

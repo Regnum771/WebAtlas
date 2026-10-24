@@ -40,6 +40,12 @@ vi.mock('./api/features.api', () => ({
   suggestManagingUnit: vi.fn(),
 }));
 
+// The code defaults, without the served copy's fetch.
+vi.mock('../dictionary', async () => {
+  const shared = await vi.importActual<typeof import('@webatlas/shared')>('@webatlas/shared');
+  return { useDictionary: () => shared.DICTIONARY };
+});
+
 import { buildUnitTree } from '@webatlas/shared';
 import { ApiError } from '../../shared/api/apiClient';
 import FeatureEditing from './index';

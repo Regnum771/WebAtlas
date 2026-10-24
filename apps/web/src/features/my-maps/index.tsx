@@ -179,7 +179,7 @@ function EditCopyForm({ editing, copy }: { editing: Editing; copy: EditCopyFormD
   });
   return (
     <AttributeFormView
-      attributes={copy.attributes} labels={form.labels} values={form.values} fieldErrors={form.fieldErrors}
+      attributes={copy.attributes} labels={form.labels} values={form.values} fields={form.fields} fieldErrors={form.fieldErrors}
       error={form.error} errorDetail={form.errorDetail} canSave={form.canSave} saving={form.saving}
       managingUnit={form.managingUnit} onField={form.setField} onSubmit={() => { void form.submit(); }} onCancel={editing.leave}
     />

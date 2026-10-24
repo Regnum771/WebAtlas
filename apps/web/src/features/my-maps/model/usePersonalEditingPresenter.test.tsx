@@ -41,6 +41,11 @@ vi.mock('../../map/model/mapEditing', () => ({
 // The official feature routes: an edit copy must never reach them.
 const officialCreate = vi.fn();
 const officialUpdate = vi.fn();
+// The code defaults, without the served copy's fetch.
+vi.mock('../../dictionary', async () => {
+  const shared = await vi.importActual<typeof import('@webatlas/shared')>('@webatlas/shared');
+  return { useDictionary: () => shared.DICTIONARY };
+});
 vi.mock('../../feature-editing/api/features.api', () => ({
   createFeature: (...a: unknown[]) => officialCreate(...a),
   updateFeature: (...a: unknown[]) => officialUpdate(...a),

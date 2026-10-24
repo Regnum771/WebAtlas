@@ -20,6 +20,12 @@ vi.mock('./useManagingUnitField', () => ({
     };
   },
 }));
+// The code defaults, without the served copy's fetch.
+vi.mock('../../dictionary', async () => {
+  const shared = await vi.importActual<typeof import('@webatlas/shared')>('@webatlas/shared');
+  return { useDictionary: () => shared.DICTIONARY };
+});
+import { DICTIONARY, attributeOf, labelFor, parseDisplay } from '@webatlas/shared';
 import { ApiError } from '../../../shared/api/apiClient';
 import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
 import { useAttributeFormPresenter } from './useAttributeFormPresenter';
@@ -34,10 +40,10 @@ const baseArgs = {
 describe('useAttributeFormPresenter', () => {
   beforeEach(() => { createFeature.mockReset(); baseArgs.onSaved = vi.fn(); });
 
-  it('exposes ISO labels for DB columns and empty initial values', () => {
+  it('exposes dictionary labels for DB columns and empty initial values', () => {
     const { result } = renderHook(() => useAttributeFormPresenter(baseArgs));
-    expect(result.current.labels.name).toBe('geographicalName');
-    expect(result.current.labels.status).toBe('operationalStatus');
+    expect(result.current.labels.name).toBe(labelFor(DICTIONARY, 'dams', 'name'));
+    expect(result.current.labels.status).toBe(labelFor(DICTIONARY, 'dams', 'status'));
     expect(result.current.values).toEqual({ name: '', status: '' });
   });
 
@@ -291,5 +297,122 @@ describe('useAttributeFormPresenter with a save dependency', () => {
     const { result } = renderHook(() => useAttributeFormPresenter({ ...baseArgs, save }));
     await act(async () => { await result.current.submit(); });
     expect(result.current.error).toBe('Hình vẽ không hợp lệ. Vẽ lại.');
+  });
+});
+
+describe('useAttributeFormPresenter: the data dictionary', () => {
+  beforeEach(() => {
+    createFeature.mockReset();
+    updateFeature.mockReset().mockResolvedValue({ id: 'r1', warnings: [] });
+    resetToasts();
+    unit.state = { value: '', submittable: null, error: null, locked: false };
+  });
+
+  const river = (initialValues: Record<string, string>, save?: ReturnType<typeof vi.fn>) => ({
+    layerKey: 'rivers' as const, attributes: ['name', 'length_m'], geometry: null,
+    mode: 'edit' as const, featureId: 'r1', initialValues, onSaved: vi.fn(), save,
+  });
+
+  it('form labels come from the dictionary', () => {
+    const { result } = renderHook(() => useAttributeFormPresenter({ ...baseArgs, attributes: ['name', 'wattage_mw'] }));
+    expect(result.current.labels.wattage_mw).toBe(attributeOf(DICTIONARY, 'dams', 'wattage_mw')!.label);
+    expect(result.current.labels.wattage_mw).not.toBe('ratedPower');
+  });
+
+  it('a number field shows its display unit', () => {
+    const { result } = renderHook(() => useAttributeFormPresenter({
+      ...baseArgs, layerKey: 'lakes', attributes: ['name', 'volume_mcm'],
+    }));
+    expect(result.current.fields.volume_mcm.unitSymbol).toBe('triệu m³');
+    expect(result.current.fields.name.unitSymbol).toBeUndefined();
+    expect(result.current.fields.name.options).toBeUndefined();
+  });
+
+  it('an untouched number field saves its stored value unchanged', async () => {
+    const { result } = renderHook(() => useAttributeFormPresenter(river({ name: 'Sông X', length_m: '12345.678' })));
+    // Seeded in km at full precision, never rounded to the display precision.
+    expect(result.current.values.length_m).toBe('12,345678');
+    act(() => result.current.setField('name', 'Sông Y'));
+    await act(async () => { await result.current.submit(); });
+    expect(updateFeature).toHaveBeenCalledWith('rivers', 'r1', { properties: { name: 'Sông Y', length_m: '12345.678' } });
+
+    // The same through the edit-copy form's save; text typed and put back counts as untouched.
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { result: copy } = renderHook(() => useAttributeFormPresenter(river({ name: 'Sông X', length_m: '12345.678' }, save)));
+    act(() => copy.current.setField('length_m', '12,3'));
+    act(() => copy.current.setField('length_m', '12,345678'));
+    await act(async () => { await copy.current.submit(); });
+    expect(save).toHaveBeenCalledWith({ name: 'Sông X', length_m: '12345.678' }, null);
+  });
+
+  it('an edited number field is converted back to the stored unit', async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useAttributeFormPresenter(river({ name: 'Sông X', length_m: '12345.678' })));
+    act(() => result.current.setField('length_m', '12,5'));
+    await act(async () => { await result.current.submit(); });
+    expect(updateFeature).toHaveBeenCalledWith('rivers', 'r1', { properties: { name: 'Sông X', length_m: 12500 } });
+
+    const { result: copy } = renderHook(() => useAttributeFormPresenter(river({ name: 'Sông X', length_m: '' }, save)));
+    act(() => copy.current.setField('length_m', '1.250,5'));
+    await act(async () => { await copy.current.submit(); });
+    expect(save).toHaveBeenCalledWith({ name: 'Sông X', length_m: 1250500 }, null);
+  });
+
+  it('an unreadable number blocks the save with the field message', async () => {
+    const save = vi.fn();
+    const onSaved = vi.fn();
+    const { result } = renderHook(() => useAttributeFormPresenter({
+      ...river({ name: 'Sông X', length_m: '12345.678' }, save), onSaved,
+    }));
+    act(() => result.current.setField('length_m', '12.5'));
+    await act(async () => { await result.current.submit(); });
+    const lengthM = attributeOf(DICTIONARY, 'rivers', 'length_m')!;
+    const refusal = parseDisplay(lengthM, '12.5');
+    expect(refusal.ok).toBe(false);
+    expect(result.current.fieldErrors.length_m).toBe(refusal.ok ? '' : refusal.message);
+    expect(result.current.error).toBeNull();
+    expect(result.current.saving).toBe(false);
+    expect(save).not.toHaveBeenCalled();
+    expect(updateFeature).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(result.current.values.length_m).toBe('12.5');
+  });
+
+  it('a code field is a select of value names', async () => {
+    const { result } = renderHook(() => useAttributeFormPresenter({
+      ...baseArgs, mode: 'edit', featureId: 'f1', geometry: null, initialValues: { name: 'A', status: 'binh_thuong' },
+    }));
+    expect(result.current.fields.status.options).toEqual([
+      { value: 'binh_thuong', label: 'Bình thường' },
+      { value: 'xa_lu', label: 'Xả lũ' },
+      { value: 'nguy_hiem', label: 'Nguy hiểm' },
+    ]);
+    expect(result.current.values.status).toBe('binh_thuong');
+    act(() => result.current.setField('status', 'xa_lu'));
+    updateFeature.mockResolvedValue({ id: 'f1' });
+    await act(async () => { await result.current.submit(); });
+    // The stored code is what is sent.
+    expect(updateFeature).toHaveBeenCalledWith('dams', 'f1', { properties: { name: 'A', status: 'xa_lu' } });
+  });
+
+  it('an unknown code keeps its option in the form select', () => {
+    const { result } = renderHook(() => useAttributeFormPresenter({
+      ...baseArgs, mode: 'edit', featureId: 'f1', geometry: null, initialValues: { name: 'A', status: 'dang_xay' },
+    }));
+    expect(result.current.values.status).toBe('dang_xay');
+    expect(result.current.fields.status.options).toContainEqual({ value: 'dang_xay', label: 'dang_xay' });
+    expect(result.current.fields.status.options).toHaveLength(4);
+  });
+
+  it('the managing unit keeps its own field: no options, no unit, sent only when changed', async () => {
+    unit.state = { value: '48', submittable: '48', error: null, locked: false };
+    const { result } = renderHook(() => useAttributeFormPresenter({
+      ...baseArgs, attributes: ['name', 'managing_unit'], mode: 'edit', featureId: 'f1', geometry: null,
+      initialValues: { name: 'A', managing_unit: '48' },
+    }));
+    expect(result.current.fields.managing_unit).toEqual({});
+    updateFeature.mockResolvedValue({ id: 'f1' });
+    await act(async () => { await result.current.submit(); });
+    expect(updateFeature).toHaveBeenCalledWith('dams', 'f1', { properties: { name: 'A' } });
   });
 });
