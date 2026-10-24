@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { DictAttribute, Dictionary } from './types.js';
-import { attributeOf, formatValue, labelFor, parseDisplay, valueName } from './format.js';
+import { attributeOf, formatValue, labelFor, parseDisplay, toDisplayInput, valueName } from './format.js';
 
 const volume: DictAttribute = {
   name: 'volume_mcm',
@@ -102,5 +102,36 @@ describe('format', () => {
 
   it('a text value is shown as stored', () => {
     expect(formatValue(area, '22.8 km2')).toBe('22.8 km2');
+  });
+
+  const lengthM: DictAttribute = {
+    name: 'length_m',
+    source: 'column',
+    valueType: 'number',
+    label: 'Chiều dài',
+    definition: 'Chiều dài.',
+    storedUnit: 'm',
+    displayUnits: ['km', 'm'],
+    displayUnit: 'km',
+    precision: 1,
+    validFrom: '2026-01-01',
+  };
+
+  it('toDisplayInput keeps full precision in the display unit', () => {
+    const text = toDisplayInput(lengthM, 12345.678);
+    expect(text).toBe('12,345678');
+    expect(parseDisplay(lengthM, text)).toEqual({ ok: true, value: 12345.678 });
+    expect(toDisplayInput(lengthM, '12345.678')).toBe('12,345678');
+  });
+
+  it("toDisplayInput gives '' for missing values", () => {
+    for (const v of [null, undefined, NaN, Infinity, 'abc', '']) {
+      expect(toDisplayInput(lengthM, v)).toBe('');
+    }
+  });
+
+  it('toDisplayInput passes code, text and date through', () => {
+    expect(toDisplayInput(level, 'Cao')).toBe('Cao');
+    expect(toDisplayInput(area, '22.8 km2')).toBe('22.8 km2');
   });
 });

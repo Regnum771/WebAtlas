@@ -41,6 +41,28 @@ export function formatValue(attribute, stored) {
         return valueName(attribute, String(stored));
     return String(stored);
 }
+/** Text for a form input: full precision in the display unit, comma decimal, no grouping, no symbol. */
+export function toDisplayInput(attribute, stored) {
+    if (stored === null || stored === undefined)
+        return '';
+    if (typeof stored === 'number' && !Number.isFinite(stored))
+        return '';
+    if (attribute.valueType !== 'number')
+        return String(stored);
+    let n;
+    if (typeof stored === 'number')
+        n = stored;
+    else if (typeof stored === 'string' && stored.trim() !== '')
+        n = Number(stored);
+    else
+        return '';
+    if (!Number.isFinite(n))
+        return '';
+    const from = attribute.storedUnit;
+    const to = attribute.displayUnit ?? from;
+    const value = from && to ? convert(n, from, to) : n;
+    return value.toLocaleString('vi-VN', { useGrouping: false, maximumFractionDigits: 10 });
+}
 // vi-VN: a dot groups thousands, a comma marks decimals. Anything else is refused, never guessed.
 const THOUSANDS_FORM = /^-?\d{1,3}(\.\d{3})*(,\d+)?$/;
 const PLAIN_FORM = /^-?\d+(,\d+)?$/;
