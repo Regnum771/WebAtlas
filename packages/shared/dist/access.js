@@ -9,6 +9,7 @@ export const PERMISSIONS = [
     'map.import',
     'submission.review',
     'users.manage',
+    'dictionary.manage',
 ];
 export const PERMISSION_LABELS = {
     'feature.create': 'thêm đối tượng',
@@ -17,6 +18,7 @@ export const PERMISSION_LABELS = {
     'map.import': 'nhập bản đồ',
     'submission.review': 'duyệt và xuất bản',
     'users.manage': 'quản lý người dùng',
+    'dictionary.manage': 'quản lý từ điển dữ liệu',
 };
 export const COUNTRY_UNIT = 'VN';
 export const UNIT_CODE_RE = /^(VN|\d{2}|\d{5})$/;

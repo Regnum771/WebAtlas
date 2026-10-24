@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   GROUP_TEMPLATES,
+  PERMISSIONS,
+  PERMISSION_LABELS,
   ancestorsOf,
   buildUnitTree,
   can,
@@ -106,5 +108,12 @@ describe('canSaveDirectly', () => {
   });
   it('is false for no grants at all', () => {
     expect(canSaveDirectly([], tree)).toBe(false);
+  });
+});
+
+describe('dictionary.manage', () => {
+  it('dictionary.manage is a permission with its Vietnamese label', () => {
+    expect(PERMISSIONS).toContain('dictionary.manage');
+    expect(PERMISSION_LABELS['dictionary.manage']).toBe('quản lý từ điển dữ liệu');
   });
 });

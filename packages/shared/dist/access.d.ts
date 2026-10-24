@@ -2,7 +2,7 @@
  * Access model: permissions are granted on an administrative unit and cover
  * that unit and everything below it (VN -> province -> ward).
  */
-export declare const PERMISSIONS: readonly ["feature.create", "feature.update", "feature.delete", "map.import", "submission.review", "users.manage"];
+export declare const PERMISSIONS: readonly ["feature.create", "feature.update", "feature.delete", "map.import", "submission.review", "users.manage", "dictionary.manage"];
 export type Permission = (typeof PERMISSIONS)[number];
 export declare const PERMISSION_LABELS: Record<Permission, string>;
 export declare const COUNTRY_UNIT = "VN";

@@ -7,6 +7,7 @@ const SHORT_LABELS: Record<Permission, string> = {
   'map.import': 'nhập',
   'submission.review': 'duyệt',
   'users.manage': 'quản lý người dùng',
+  'dictionary.manage': 'quản lý từ điển dữ liệu',
 };
 
 /**

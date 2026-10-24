@@ -9,6 +9,7 @@ export const PERMISSIONS = [
   'map.import',
   'submission.review',
   'users.manage',
+  'dictionary.manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -20,6 +21,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'map.import': 'nhập bản đồ',
   'submission.review': 'duyệt và xuất bản',
   'users.manage': 'quản lý người dùng',
+  'dictionary.manage': 'quản lý từ điển dữ liệu',
 };
 
 export const COUNTRY_UNIT = 'VN';
