@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { validateDictionary, type Dictionary, type DictFeatureType } from '@webatlas/shared';
+import { DICTIONARY, validateDictionary, type Dictionary, type DictFeatureType } from '@webatlas/shared';
 import { buildApp } from '../../server';
 import { getPool, closePool } from '../../db/pool';
 import { runSync } from './sync';
-import { assemble } from './service';
+import { assemble, getDictionary } from './service';
 import type { AttributeRow, FeatureTypeRow } from './repository';
 
 let app: ReturnType<typeof buildApp>;
@@ -44,6 +44,44 @@ describe('GET /api/dictionary', () => {
     expect(again.body).toBe('');
     const other = await app.inject({ method: 'GET', url: '/api/dictionary', headers: { 'if-none-match': '"stale"' } });
     expect(other.statusCode).toBe(200);
+  });
+});
+
+describe('the served dictionary', () => {
+  it('the freshly synced served dictionary equals the code dictionary', async () => {
+    await runSync(getPool(), { dryRun: false });
+    const res = await app.inject({ method: 'GET', url: '/api/dictionary' });
+    const { featureTypes } = res.json() as Served;
+    // Feature types the code no longer has stay in the tables as retired rows; they are not compared.
+    const live = featureTypes.filter((f) => !(f.validTo && !Object.hasOwn(DICTIONARY, f.key)));
+    const servedByKey = Object.fromEntries(live.map((f) => [f.key, f]));
+    expect(servedByKey).toStrictEqual(JSON.parse(JSON.stringify(DICTIONARY)));
+  });
+
+  it('the version changes when the dictionary changes and not on a no-op sync', async () => {
+    await runSync(getPool(), { dryRun: false });
+    const before = (await app.inject({ method: 'GET', url: '/api/dictionary' })).json() as Served;
+
+    // A second sync changes nothing, so the version (and every client's cache) stays.
+    await runSync(getPool(), { dryRun: false });
+    const after = (await app.inject({ method: 'GET', url: '/api/dictionary' })).json() as Served;
+    expect(after.version).toBe(before.version);
+
+    // One wording change, seen inside a transaction that is rolled back.
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE app.dictionary_attributes SET label = label || ' (dd-version)' WHERE feature_type = 'dams' AND name = 'status'`);
+      const edited = await getDictionary(client);
+      expect(edited.version).not.toBe(before.version);
+      await client.query('ROLLBACK');
+      // The same rows give the same version.
+      expect((await getDictionary(client)).version).toBe(before.version);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
   });
 });
 

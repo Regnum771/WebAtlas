@@ -34,7 +34,7 @@ export interface StoredAttribute extends Omit<DictAttribute, 'values' | 'display
 export interface StoredValue extends Omit<DictValue, 'order' | 'retired'> {
   featureType: string;
   attribute: string;
-  /** The value's position in the code list; written by the sync, never edited. */
+  /** The value's declared `order` in the code entry (1-based); written by the sync, never edited. */
   ord: number;
   retired: boolean;
   /**
@@ -97,7 +97,7 @@ export const LOCKED_FEATURE_TYPE_FIELDS = ['kind', 'table', 'crs', 'geometryType
 /**
  * `source` always, `storedUnit` (Plan C adds its guarded correction), the band packing `nodata`,
  * `scale` and `offset` (they define what stored numbers mean, spec DD8), `validFrom`, and `ord`,
- * the sync's own bookkeeping. `valueType` is locked too unless the attribute is an `extra` key
+ * the sync's own bookkeeping (an attribute's position in its code entry; a value's declared order). `valueType` is locked too unless the attribute is an `extra` key
  * (see lockedAttributeFields). The codes of a `closed` list are locked as well (see
  * lockedValueFields): values are added and retired to match the code, and a staff-added code in a
  * closed list is reverted.
@@ -141,9 +141,10 @@ function attributeRow(featureType: string, a: DictAttribute, ord: number): Store
   return { ...rest, featureType, ord, displayUnits: a.displayUnits ?? [], origin: {} };
 }
 
-function valueRow(featureType: string, attribute: string, v: DictValue, ord: number): StoredValue {
-  const { order: _order, ...rest } = v;
-  return { ...rest, featureType, attribute, ord, retired: v.retired ?? false, origin: {} };
+/** A listed value's `ord` is its declared `order`, which the API serves back as `order`. */
+function valueRow(featureType: string, attribute: string, v: DictValue): StoredValue {
+  const { order, ...rest } = v;
+  return { ...rest, featureType, attribute, ord: order, retired: v.retired ?? false, origin: {} };
 }
 
 type Row = Record<string, unknown> & { origin: Origin };
@@ -282,8 +283,8 @@ export function planSync(defaults: Dictionary, stored: StoredState, today: strin
 
       const lockedValues = lockedValueFields(a.codeList);
       const valuesOfAttr = new Map((storedValues.get(keyOf(ft.key, a.name)) ?? []).map((v) => [v.code, v]));
-      (a.values ?? []).forEach((v, vOrd) => {
-        const codeValue = valueRow(ft.key, a.name, v, vOrd);
+      for (const v of a.values ?? []) {
+        const codeValue = valueRow(ft.key, a.name, v);
         const storedValue = valuesOfAttr.get(v.code);
         valuesOfAttr.delete(v.code);
         if (!storedValue) plan.inserts.values.push(codeValue);
@@ -292,7 +293,7 @@ export function planSync(defaults: Dictionary, stored: StoredState, today: strin
             codeValue as unknown as Row, lockedValues, EDITABLE_VALUE_FIELDS.filter((f) => !lockedValues.includes(f)),
             undefined, plan);
         }
-      });
+      }
       // Stored values the code no longer lists.
       for (const v of valuesOfAttr.values()) {
         if (v.retired) continue;

@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { DictAttribute, DictFeatureType, DictValue } from '@webatlas/shared';
 import {
-  listAttributes, listFeatureTypes, listValues, versionParts,
+  listAttributes, listFeatureTypes, listValues,
   type AttributeRow, type FeatureTypeRow, type ValueRow,
 } from './repository';
 
@@ -74,14 +74,19 @@ export function assemble(types: FeatureTypeRow[], attrs: AttributeRow[], values:
   }));
 }
 
-export async function getDictionary(pool: Pool): Promise<{ version: string; featureTypes: DictFeatureType[] }> {
-  const [parts, types, attrs, values] = await Promise.all([
-    versionParts(pool), listFeatureTypes(pool), listAttributes(pool), listValues(pool),
-  ]);
-  return {
-    version: createHash('sha256').update(parts).digest('hex').slice(0, 32),
-    featureTypes: assemble(types, attrs, values),
-  };
+/**
+ * The dictionary version (the ETag): a hash of exactly the JSON the response sends, so a body and
+ * its version always match, any change to the served content changes it, and a sync that changes
+ * nothing leaves it (and every client's cache) as it was.
+ */
+export function dictionaryVersion(featureTypes: readonly DictFeatureType[]): string {
+  return createHash('sha256').update(JSON.stringify(featureTypes)).digest('hex').slice(0, 32);
+}
+
+export async function getDictionary(q: Pool | PoolClient): Promise<{ version: string; featureTypes: DictFeatureType[] }> {
+  const [types, attrs, values] = await Promise.all([listFeatureTypes(q), listAttributes(q), listValues(q)]);
+  const featureTypes = assemble(types, attrs, values);
+  return { version: dictionaryVersion(featureTypes), featureTypes };
 }
 
 export async function getFeatureType(pool: Pool, key: string): Promise<DictFeatureType | null> {

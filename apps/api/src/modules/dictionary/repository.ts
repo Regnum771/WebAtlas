@@ -49,16 +49,3 @@ export async function listValues(q: Q, key?: string): Promise<ValueRow[]> {
       ORDER BY feature_type, attribute, ord`, [key ?? null]);
   return rows;
 }
-
-/** The raw ingredients of the dictionary version: latest sync, latest history change, row counts. */
-export async function versionParts(q: Q): Promise<string> {
-  const { rows } = await q.query<{ parts: string }>(
-    `SELECT concat_ws('|',
-        (SELECT max(synced_at) FROM app.dictionary_feature_types),
-        (SELECT max(changed_at) FROM app.dictionary_history),
-        (SELECT count(*) FROM app.dictionary_feature_types),
-        (SELECT count(*) FROM app.dictionary_attributes),
-        (SELECT count(*) FROM app.dictionary_values),
-        (SELECT count(*) FROM app.dictionary_history)) AS parts`);
-  return rows[0]!.parts;
-}

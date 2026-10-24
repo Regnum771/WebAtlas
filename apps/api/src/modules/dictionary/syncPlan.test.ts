@@ -83,14 +83,32 @@ describe('planSync (spec §2.1)', () => {
     expect(plan.retires).toEqual([]);
     expect(plan.reverts).toEqual([]);
 
-    // Rows carry the code defaults, the array position as ord, and no edits.
+    // Rows carry the code defaults, no edits, and as ord an attribute's array position and a
+    // value's declared order.
     const own = planSync(dictionary(damsEntry()), EMPTY, TODAY);
     expect(own.inserts.attributes.map((a) => [a.name, a.ord])).toEqual([['wattage_mw', 0], ['status', 1], ['lake_type', 2], ['note', 3]]);
     expect(own.inserts.attributes[3].displayUnits).toEqual([]);
     expect(own.inserts.values.map((v) => [v.attribute, v.code, v.ord, v.retired])).toEqual([
-      ['status', 'binh_thuong', 0, false], ['status', 'xa_lu', 1, false], ['lake_type', 'Ao', 0, false],
+      ['status', 'binh_thuong', 1, false], ['status', 'xa_lu', 2, false], ['lake_type', 'Ao', 1, false],
     ]);
     expect([...own.inserts.featureTypes, ...own.inserts.attributes, ...own.inserts.values].every((r) => Object.keys(r.origin).length === 0)).toBe(true);
+  });
+
+  it('a value keeps its declared order, and a changed order is a locked update', () => {
+    const entry = damsEntry();
+    entry.attributes[1].values = [{ code: 'binh_thuong', name: 'Bình thường', order: 10 }, { code: 'xa_lu', name: 'Xả lũ', order: 20 }];
+    const stored = synced(dictionary(entry));
+    expect(stored.values.filter((v) => v.attribute === 'status').map((v) => [v.code, v.ord])).toEqual([['binh_thuong', 10], ['xa_lu', 20]]);
+
+    // A stored order that differs from the code (e.g. written as the array position) follows the
+    // code even when it carries an origin entry: ord is locked.
+    stored.values.find((v) => v.code === 'xa_lu')!.ord = 1;
+    const binh = stored.values.find((v) => v.code === 'binh_thuong')!;
+    binh.ord = 0;
+    binh.origin = { ord: EDIT };
+    const plan = planSync(dictionary(entry), stored, TODAY);
+    expect(plan.updates).toEqual([{ featureType: 'dams', attribute: 'status', code: 'xa_lu', set: { ord: 20 } }]);
+    expect(plan.reverts).toEqual([{ featureType: 'dams', attribute: 'status', code: 'binh_thuong', field: 'ord', oldValue: 0, newValue: 10 }]);
   });
 
   it('an untouched field follows a changed code default', () => {
