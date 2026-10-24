@@ -3,7 +3,9 @@ import { drawingJustEnded, isDrawing } from '../features/map/model/drawingState'
 import { useMapContext } from '../app/providers/MapProvider';
 import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
 import { fetchBasemapInfo } from '../features/map/model/basemapInfo';
-import { damStatusDisplay, STREAM_ORDER_LABELS } from '@webatlas/shared';
+import { attributeOf, damStatusDisplay, STREAM_ORDER_LABELS, valueName, type EditableLayerKey } from '@webatlas/shared';
+import { useDictionary } from '../features/dictionary';
+import { popupHas, popupLabel, popupValue } from './popupRows';
 import { adminCandidates, entityCandidates, referenceLayerOfTable, thematicCandidate, type RoiCandidate } from '../features/roi/model/candidates';
 import { fetchEntitiesByMember } from '../features/roi/api/roi.api';
 import { RoiCandidatesView } from '../features/roi/ui/RoiCandidates.view';
@@ -95,6 +97,7 @@ const getDetailedDamInfo = (id: number, name: string, wattage?: number): DamDeta
 const DynamicPopup: React.FC = () => {
   const { map, reservoirFilter, setReservoirFilter } = useMapContext();
   const { editing } = useMapEditing();
+  const dictionary = useDictionary();
   const [popupData, setPopupData] = useState<PopupData | null>(null);
   // Bumped on every handled click; async continuations of an older click must not touch state.
   const clickSeq = useRef(0);
@@ -242,33 +245,36 @@ const DynamicPopup: React.FC = () => {
 
   // Pick the icon and the content to show from the kind of feature.
   const renderPopupContent = () => {
-    // Thematic WFS layers are discriminated by layerKey (ISO/INSPIRE attributes).
+    // Labels and value text of the eight editable layers come from the data dictionary.
+    const lbl = (layer: EditableLayerKey, col: string) => popupLabel(dictionary, layer, col);
+    const val = (layer: EditableLayerKey, col: string) => popupValue(dictionary, layer, col, props);
+    const has = (layer: EditableLayerKey, col: string) => popupHas(layer, col, props);
     if (props.layerKey === 'dams') {
+      const status = damStatusDisplay(props.statusSlug ?? props.operationalStatus);
+      const statusAttr = attributeOf(dictionary, 'dams', 'status');
+      // The badge keeps its colour; its text is the dictionary's name for the code, and an unknown code shows as itself.
+      const statusCode = props.statusSlug ?? props.operationalStatus;
+      const statusText = statusAttr && statusCode != null ? valueName(statusAttr, String(statusCode)) : status.label;
       return (
         <>
           <div className="info-row"><Database size={14} />
-            <span>Công suất: <strong>{props.ratedPower} MW</strong></span></div>
+            <span>{lbl('dams', 'wattage_mw')}: <strong>{val('dams', 'wattage_mw')}</strong></span></div>
           {props.annualGeneration != null && (
             <div className="info-row"><Droplets size={14} />
-              <span>Sản lượng điện: <strong>{props.annualGeneration} GWh/năm</strong></span></div>)}
+              <span>{lbl('dams', 'annual_output')}: <strong>{val('dams', 'annual_output')}</strong></span></div>)}
           {props.commissioningYear && (
             <div className="info-row"><Activity size={14} />
-              <span>Năm vận hành: <strong>{props.commissioningYear}</strong></span></div>)}
+              <span>{lbl('dams', 'year_operational')}: <strong>{val('dams', 'year_operational')}</strong></span></div>)}
           {props.constructionYear && (
             <div className="info-row"><Info size={14} />
-              <span>Khởi công: <strong>{props.constructionYear}</strong></span></div>)}
-          {(() => {
-            const st = damStatusDisplay(props.statusSlug ?? props.operationalStatus);
-            return (
-              <div className="info-row"><Activity size={14} />
-                <span>Trạng thái: <strong className="status-text" style={{ color: st.color }}>{st.label}</strong></span></div>
-            );
-          })()}
+              <span>{lbl('dams', 'year_launched')}: <strong>{val('dams', 'year_launched')}</strong></span></div>)}
+          <div className="info-row"><Activity size={14} />
+            <span>{lbl('dams', 'status')}: <strong className="status-text" style={{ color: status.color }}>{statusText}</strong></span></div>
           <div className="diagrammatic-info">
             <div className="title">Nền đồ giải (Cartodiagram):</div>
             <ul>
-              <li><strong>Kích thước biểu tượng:</strong> Tỷ lệ công suất ({props.ratedPower} MW)</li>
-              <li><strong>Màu sắc biểu tượng:</strong> Trạng thái ({damStatusDisplay(props.statusSlug ?? props.operationalStatus).label})</li>
+              <li><strong>Kích thước biểu tượng:</strong> Tỷ lệ {lbl('dams', 'wattage_mw').toLowerCase()} ({val('dams', 'wattage_mw')})</li>
+              <li><strong>Màu sắc biểu tượng:</strong> {lbl('dams', 'status')} ({statusText})</li>
             </ul>
           </div>
           <div className="status-filter-container">
@@ -326,19 +332,19 @@ const DynamicPopup: React.FC = () => {
       );
     }
     if (props.layerKey === 'rivers') {
-      const lengthStr = props.length != null ? `${(props.length / 1000).toFixed(2)} km` : '—';
+      const orderName = props.streamOrder != null ? STREAM_ORDER_LABELS[props.streamOrder] : undefined;
       return (
         <>
           {props.hydroId && (
             <div className="info-row"><Database size={14} />
               <span>Mã phân đoạn: <strong>{props.hydroId}</strong></span></div>)}
           {/* stream_order is now a rank by KIND of watercourse (OSM), not a Strahler
-              order, so the kind's label is shown instead of "Cấp N". */}
-          {props.streamOrder != null && STREAM_ORDER_LABELS[props.streamOrder] && (
+              order, so the kind name is shown instead of "Cấp N". */}
+          {orderName && (
             <div className="info-row"><Info size={14} />
-              <span>Loại: <strong>{STREAM_ORDER_LABELS[props.streamOrder]}</strong></span></div>)}
+              <span>{lbl('rivers', 'stream_order')}: <strong>{orderName}</strong></span></div>)}
           <div className="info-row"><Droplets size={14} />
-            <span>Chiều dài: <strong>{lengthStr}</strong></span></div>
+            <span>{lbl('rivers', 'length_m')}: <strong>{val('rivers', 'length_m')}</strong></span></div>
         </>
       );
     }
@@ -347,16 +353,16 @@ const DynamicPopup: React.FC = () => {
         <>
           {props.lakeType && (
             <div className="info-row"><Info size={14} />
-              <span>Phân loại: <strong>{props.lakeType}</strong></span></div>)}
-          {props.area != null && (
+              <span>{lbl('lakes', 'lake_type')}: <strong>{val('lakes', 'lake_type')}</strong></span></div>)}
+          {has('lakes', 'area_km2') && (
             <div className="info-row"><Database size={14} />
-              <span>Diện tích: <strong>{props.area} km²</strong></span></div>)}
-          {props.volume != null && (
+              <span>{lbl('lakes', 'area_km2')}: <strong>{val('lakes', 'area_km2')}</strong></span></div>)}
+          {has('lakes', 'volume_mcm') && (
             <div className="info-row"><Droplets size={14} />
-              <span>Dung tích: <strong>{props.volume} triệu m³</strong></span></div>)}
-          {props.shorelineLength != null && (
+              <span>{lbl('lakes', 'volume_mcm')}: <strong>{val('lakes', 'volume_mcm')}</strong></span></div>)}
+          {has('lakes', 'shore_len_km') && (
             <div className="info-row"><Activity size={14} />
-              <span>Chiều dài bờ: <strong>{props.shorelineLength} km</strong></span></div>)}
+              <span>{lbl('lakes', 'shore_len_km')}: <strong>{val('lakes', 'shore_len_km')}</strong></span></div>)}
         </>
       );
     }
@@ -364,11 +370,11 @@ const DynamicPopup: React.FC = () => {
       return (
         <>
           <div className="info-row"><Database size={14} />
-            <span>Loại trạm: <strong>{props.measurementType}</strong></span></div>
+            <span>{lbl('stations', 'station_type')}: <strong>{val('stations', 'station_type')}</strong></span></div>
           <div className="info-row"><Activity size={14} />
-            <span>Giá trị đo: <strong>{props.measurementValue}</strong></span></div>
+            <span>{lbl('stations', 'value')}: <strong>{val('stations', 'value')}</strong></span></div>
           <div className="info-row"><Info size={14} />
-            <span>Trạng thái hoạt động: <strong>{props.operationalStatus}</strong></span></div>
+            <span>{lbl('stations', 'status')}: <strong>{val('stations', 'status')}</strong></span></div>
         </>
       );
     }
@@ -376,9 +382,9 @@ const DynamicPopup: React.FC = () => {
       return (
         <>
           <div className="info-row"><Database size={14} />
-            <span>Phân loại: <strong>{props.hazardType}</strong></span></div>
+            <span>{lbl('flood_zones', 'hazard_type')}: <strong>{val('flood_zones', 'hazard_type')}</strong></span></div>
           <div className="info-row"><Droplets size={14} />
-            <span>Diện tích ảnh hưởng: <strong>{props.affectedArea}</strong></span></div>
+            <span>{lbl('flood_zones', 'area')}: <strong>{val('flood_zones', 'area')}</strong></span></div>
         </>
       );
     }
@@ -388,10 +394,10 @@ const DynamicPopup: React.FC = () => {
           <div className="info-row"><Info size={14} />
             <span>Phân loại: <strong>Khảo sát hạn hán</strong></span></div>
           <div className="info-row"><Activity size={14} />
-            <span>Trạng thái: <strong>{props.observedStatus}</strong></span></div>
+            <span>{lbl('drought_points', 'status')}: <strong>{val('drought_points', 'status')}</strong></span></div>
           {props.observationDate && (
             <div className="info-row"><Database size={14} />
-              <span>Ngày khảo sát: <strong>{props.observationDate}</strong></span></div>)}
+              <span>{lbl('drought_points', 'survey_date')}: <strong>{val('drought_points', 'survey_date')}</strong></span></div>)}
         </>
       );
     }
@@ -401,9 +407,9 @@ const DynamicPopup: React.FC = () => {
           <div className="info-row"><Info size={14} />
             <span>Phân loại: <strong>Xâm nhập mặn</strong></span></div>
           <div className="info-row"><Droplets size={14} />
-            <span>Độ mặn đo được: <strong>{props.salinity}</strong></span></div>
+            <span>{lbl('saltwater_intrusion', 'salinity')}: <strong>{val('saltwater_intrusion', 'salinity')}</strong></span></div>
           <div className="info-row"><Activity size={14} />
-            <span>Trạng thái: <strong>{props.observedStatus}</strong></span></div>
+            <span>{lbl('saltwater_intrusion', 'status')}: <strong>{val('saltwater_intrusion', 'status')}</strong></span></div>
         </>
       );
     }
@@ -413,9 +419,9 @@ const DynamicPopup: React.FC = () => {
           <div className="info-row"><Info size={14} />
             <span>Phân loại: <strong>Vùng sinh lũ</strong></span></div>
           <div className="info-row"><Database size={14} />
-            <span>Diện tích lưu vực: <strong>{props.catchmentArea}</strong></span></div>
+            <span>{lbl('flood_generation', 'area')}: <strong>{val('flood_generation', 'area')}</strong></span></div>
           <div className="info-row"><Activity size={14} />
-            <span>Đặc điểm lũ: <strong>{props.flowCharacteristics}</strong></span></div>
+            <span>{lbl('flood_generation', 'flow_rate')}: <strong>{val('flood_generation', 'flow_rate')}</strong></span></div>
         </>
       );
     }

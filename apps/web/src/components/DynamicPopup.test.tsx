@@ -25,6 +25,10 @@ vi.mock('../entities/session/model/useUnitTree', async () => {
   ]);
   return { useUnitTree: () => tree };
 });
+vi.mock('../features/dictionary', async () => {
+  const shared = await import('@webatlas/shared');
+  return { useDictionary: () => shared.DICTIONARY };
+});
 vi.mock('../features/map/model/drawingState', () => ({ isDrawing: () => false, drawingJustEnded: () => false }));
 vi.mock('../features/map/model/mapEditing', () => ({ useMapEditing: () => ({ editing: false }) }));
 vi.mock('../features/roi/model/roi.store', () => ({ setRoi: vi.fn() }));
@@ -225,5 +229,44 @@ describe('DynamicPopup on the selection ring', () => {
     // the province under the halo answers, as for any other overlay.
     expect(h.info).toHaveLength(1);
     expect(screen.getByText('Tỉnh Đắk Lắk')).toBeInTheDocument();
+  });
+});
+
+describe('DynamicPopup dictionary rows', () => {
+  beforeEach(() => { h.handler = null; h.thematic = null; });
+  const open = async (props: Record<string, unknown>) => {
+    h.thematic = props;
+    const r = render(<DynamicPopup />);
+    await click(1);
+    return r;
+  };
+
+  it('the dam popup shows dictionary labels and display units', async () => {
+    await open({ layerKey: 'dams', id: 'd1', geographicalName: 'Hồ A', ratedPower: 40, operationalStatus: 'xa_lu' });
+    expect(screen.getByText('Công suất:')).toBeInTheDocument();
+    expect(screen.getByText('40 MW')).toBeInTheDocument();
+    expect(screen.getByText('Xả lũ', { selector: 'strong.status-text' })).toBeInTheDocument();
+  });
+
+  it('the lake popup shows volume in triệu m³', async () => {
+    await open({ layerKey: 'lakes', id: 'l1', geographicalName: 'Hồ B', volume: 12.5, area: '3.456' });
+    expect(screen.getByText('Dung tích:')).toBeInTheDocument();
+    expect(screen.getByText('12,5 triệu m³')).toBeInTheDocument();
+    expect(screen.getByText('3,46 km²')).toBeInTheDocument();
+  });
+
+  it('river length follows the dictionary display unit', async () => {
+    await open({ layerKey: 'rivers', id: 'r1', geographicalName: 'Sông C', length: 12500 });
+    expect(screen.getByText('12,5 km')).toBeInTheDocument();
+  });
+
+  it('an unknown status code is shown as the code', async () => {
+    await open({ layerKey: 'stations', id: 's1', geographicalName: 'Trạm', operationalStatus: 'chua_biet' });
+    expect(screen.getByText('chua_biet')).toBeInTheDocument();
+  });
+
+  it('a missing value is not shown', async () => {
+    await open({ layerKey: 'lakes', id: 'l1', geographicalName: 'Hồ B', volume: null });
+    expect(screen.queryByText('Dung tích:')).not.toBeInTheDocument();
   });
 });
