@@ -11,8 +11,10 @@ export interface AttributeFieldViewProps {
   disabled?: boolean;
   /** The display unit's symbol, shown after the input. */
   unitSymbol?: string;
-  /** A list of values: a select instead of a text input. */
+  /** A closed list of values: a select instead of a text input. */
   options?: FieldOption[];
+  /** An open list of values: suggested under the text input, which still takes any text. */
+  suggestions?: FieldOption[];
   /** Without it a select offers an empty choice. */
   required?: boolean;
   onChange: (v: string) => void;
@@ -20,7 +22,7 @@ export interface AttributeFieldViewProps {
 
 // Passive: one attribute field — dictionary label + text input (with its unit) or value select.
 export function AttributeFieldView({
-  column, label, value, error, disabled, unitSymbol, options, required, onChange,
+  column, label, value, error, disabled, unitSymbol, options, suggestions, required, onChange,
 }: AttributeFieldViewProps) {
   const id = `attr-${column}`;
   if (options) {
@@ -51,16 +53,26 @@ export function AttributeFieldView({
     );
   }
   const unitId = `${id}-unit`;
+  const listId = `${id}-values`;
   return (
-    <TextField
-      id={id}
-      label={label}
-      value={value}
-      error={error}
-      disabled={disabled}
-      aria-describedby={unitSymbol ? unitId : undefined}
-      trailing={unitSymbol ? <span id={unitId} className="attr-unit">{unitSymbol}</span> : undefined}
-      onChange={(e) => onChange(e.target.value)}
-    />
+    <>
+      <TextField
+        id={id}
+        label={label}
+        value={value}
+        error={error}
+        disabled={disabled}
+        list={suggestions ? listId : undefined}
+        aria-describedby={unitSymbol ? unitId : undefined}
+        trailing={unitSymbol ? <span id={unitId} className="attr-unit">{unitSymbol}</span> : undefined}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {suggestions && (
+        <datalist id={listId}>
+          {/* The code is what is typed; its name is shown only where it differs. */}
+          {suggestions.map((o) => <option key={o.value} value={o.value}>{o.label !== o.value ? o.label : undefined}</option>)}
+        </datalist>
+      )}
+    </>
   );
 }

@@ -40,12 +40,17 @@ export const MANAGING_UNIT_COLUMN = 'managing_unit';
 
 export interface FieldOption { value: string; label: string }
 
-/** How one attribute is entered: a number with its display unit, or a code picked from its values. */
+/**
+ * How one attribute is entered: a number with its display unit, a code picked from a closed
+ * list, or text with an open list's values suggested.
+ */
 export interface FieldInfo {
   /** The display unit's symbol, for a number attribute with a unit. */
   unitSymbol?: string;
-  /** Every listed value of a code attribute, by name. */
+  /** A closed code list: every listed value, by name; nothing else can be chosen. */
   options?: FieldOption[];
+  /** An open code list: its listed values, suggested; any text can still be typed. */
+  suggestions?: FieldOption[];
 }
 
 /**
@@ -67,7 +72,15 @@ function codeOptions(attribute: DictAttribute, keep: string[]): FieldOption[] {
 
 function fieldInfo(attribute: DictAttribute | undefined, keep: string[]): FieldInfo {
   if (!attribute) return {};
-  if (attribute.valueType === 'code') return { options: codeOptions(attribute, keep) };
+  if (attribute.valueType === 'code') {
+    if (attribute.codeList === 'closed') return { options: codeOptions(attribute, keep) };
+    // Open (spec §2.2): the database accepts any text, so the listed values are only suggested.
+    const suggestions = (attribute.values ?? [])
+      .filter((v) => !v.retired)
+      .sort((a, b) => a.order - b.order)
+      .map((v) => ({ value: v.code, label: valueName(attribute, v.code) }));
+    return { suggestions };
+  }
   if (attribute.valueType === 'number') {
     const code = attribute.displayUnit ?? attribute.storedUnit;
     // Unit 1 has an empty symbol: nothing to show.
@@ -103,10 +116,26 @@ function messageFor(e: ApiError): { error: string | null; fieldErrors: Record<st
   return { error: e.message, fieldErrors: {} };
 }
 
-export function useAttributeFormPresenter({
-  layerKey, attributes, geometry, onSaved,
-  mode = 'create', initialValues, featureId, save, anyUnit,
-}: Args) {
+function fieldsFor(
+  attributes: string[],
+  dictAttributes: Record<string, DictAttribute | undefined>,
+  values: Record<string, string>,
+  initialValues: Record<string, string> | undefined,
+): Record<string, FieldInfo> {
+  const out: Record<string, FieldInfo> = {};
+  for (const col of attributes) out[col] = fieldInfo(dictAttributes[col], [values[col], initialValues?.[col] ?? '']);
+  return out;
+}
+
+/**
+ * What the form shows before anyone types: dictionary labels, and each stored value as the text
+ * of its input (display unit, full precision). The managing unit keeps its own field.
+ */
+function useAttributeDisplay(
+  layerKey: EditableLayerKey,
+  attributes: string[],
+  initialValues: Record<string, string> | undefined,
+) {
   const dictionary = useDictionary();
   /** The dictionary's attribute per column; the managing unit keeps its own field. */
   const dictAttributes = useMemo(() => {
@@ -135,6 +164,29 @@ export function useAttributeFormPresenter({
     return out;
   }, [attributes, initialValues, dictAttributes]);
 
+  return { dictAttributes, labels, seeded };
+}
+
+/** The official form shown for reading only (a shared personal map's recipient). */
+export function useReadOnlyAttributeForm({ layerKey, attributes, initialValues }: {
+  layerKey: EditableLayerKey;
+  attributes: string[];
+  initialValues: Record<string, string>;
+}) {
+  const { dictAttributes, labels, seeded } = useAttributeDisplay(layerKey, attributes, initialValues);
+  const fields = useMemo(
+    () => fieldsFor(attributes, dictAttributes, seeded, initialValues),
+    [attributes, dictAttributes, seeded, initialValues],
+  );
+  return { labels, values: seeded, fields };
+}
+
+export function useAttributeFormPresenter({
+  layerKey, attributes, geometry, onSaved,
+  mode = 'create', initialValues, featureId, save, anyUnit,
+}: Args) {
+  const { dictAttributes, labels, seeded } = useAttributeDisplay(layerKey, attributes, initialValues);
+
   /** Only what the user typed or picked; every other field shows its seeded text. */
   const [edits, setEdits] = useState<Record<string, string>>({});
   const values = useMemo(() => {
@@ -143,11 +195,10 @@ export function useAttributeFormPresenter({
     return out;
   }, [attributes, edits, seeded]);
 
-  const fields = useMemo(() => {
-    const out: Record<string, FieldInfo> = {};
-    for (const col of attributes) out[col] = fieldInfo(dictAttributes[col], [values[col], initialValues?.[col] ?? '']);
-    return out;
-  }, [attributes, dictAttributes, values, initialValues]);
+  const fields = useMemo(
+    () => fieldsFor(attributes, dictAttributes, values, initialValues),
+    [attributes, dictAttributes, values, initialValues],
+  );
 
   const initialUnit = initialValues?.[MANAGING_UNIT_COLUMN] ?? '';
   const managingUnit = useManagingUnitField({ layerKey, mode, geometry, initial: initialUnit, anyUnit });

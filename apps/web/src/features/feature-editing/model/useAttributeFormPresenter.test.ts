@@ -28,7 +28,7 @@ vi.mock('../../dictionary', async () => {
 import { DICTIONARY, attributeOf, labelFor, parseDisplay } from '@webatlas/shared';
 import { ApiError } from '../../../shared/api/apiClient';
 import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
-import { useAttributeFormPresenter } from './useAttributeFormPresenter';
+import { useAttributeFormPresenter, useReadOnlyAttributeForm } from './useAttributeFormPresenter';
 
 const baseArgs = {
   layerKey: 'dams' as const,
@@ -402,6 +402,42 @@ describe('useAttributeFormPresenter: the data dictionary', () => {
     expect(result.current.values.status).toBe('dang_xay');
     expect(result.current.fields.status.options).toContainEqual({ value: 'dang_xay', label: 'dang_xay' });
     expect(result.current.fields.status.options).toHaveLength(4);
+  });
+
+  it('an open code list is a text input with suggestions and accepts a new value', async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useAttributeFormPresenter({
+      ...baseArgs, layerKey: 'lakes', attributes: ['name', 'lake_type'], mode: 'edit', featureId: 'l1', geometry: null,
+      initialValues: { name: 'Hồ A', lake_type: 'Ao' }, save,
+    }));
+    expect(result.current.fields.lake_type.options).toBeUndefined();
+    expect(result.current.fields.lake_type.suggestions).toEqual(
+      attributeOf(DICTIONARY, 'lakes', 'lake_type')!.values!.map((v) => ({ value: v.code, label: v.name })),
+    );
+    act(() => result.current.setField('lake_type', 'Hồ nhân tạo'));
+    await act(async () => { await result.current.submit(); });
+    expect(save).toHaveBeenCalledWith({ name: 'Hồ A', lake_type: 'Hồ nhân tạo' }, null);
+  });
+
+  it("the recipient's read-only form shows dictionary labels and display units", () => {
+    const { result } = renderHook(() => useReadOnlyAttributeForm({
+      layerKey: 'dams', attributes: ['name', 'wattage_mw', 'status'],
+      initialValues: { name: 'Hoà Bình', wattage_mw: '1920.25', status: 'xa_lu' },
+    }));
+    expect(result.current.labels).toEqual({
+      name: labelFor(DICTIONARY, 'dams', 'name'),
+      wattage_mw: labelFor(DICTIONARY, 'dams', 'wattage_mw'),
+      status: labelFor(DICTIONARY, 'dams', 'status'),
+    });
+    expect(result.current.values).toEqual({ name: 'Hoà Bình', wattage_mw: '1920,25', status: 'xa_lu' });
+    expect(result.current.fields.wattage_mw.unitSymbol).toBe('MW');
+    expect(result.current.fields.status.options).toContainEqual({ value: 'xa_lu', label: 'Xả lũ' });
+
+    const { result: river } = renderHook(() => useReadOnlyAttributeForm({
+      layerKey: 'rivers', attributes: ['length_m'], initialValues: { length_m: '12345.678' },
+    }));
+    expect(river.current.values.length_m).toBe('12,345678');
+    expect(river.current.fields.length_m.unitSymbol).toBe('km');
   });
 
   it('the managing unit keeps its own field: no options, no unit, sent only when changed', async () => {

@@ -9,7 +9,7 @@ export interface AttributeFormViewProps {
   attributes: string[];
   labels: Record<string, string>;
   values: Record<string, string>;
-  /** Per column: the display unit's symbol, or the values a select offers. */
+  /** Per column: the display unit's symbol, a closed list's select, or an open list's suggestions. */
   fields?: Record<string, FieldInfo>;
   fieldErrors: Record<string, string>;
   error: string | null;
@@ -46,6 +46,7 @@ export function AttributeFormView(props: AttributeFormViewProps) {
             disabled={readOnly}
             unitSymbol={fields?.[col]?.unitSymbol}
             options={fields?.[col]?.options}
+            suggestions={fields?.[col]?.suggestions}
             onChange={(v) => onField(col, v)}
           />
         )

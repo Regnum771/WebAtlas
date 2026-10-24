@@ -86,6 +86,23 @@ describe('AttributeFormView', () => {
     expect(screen.getByRole('option', { name: 'dang_xay' })).toBeInTheDocument();
   });
 
+  it('an open code list is a text input with suggestions and accepts a new value', async () => {
+    const onField = vi.fn();
+    render(<AttributeFormView {...baseProps} attributes={['lake_type']} labels={{ lake_type: 'Phân loại' }}
+      values={{ lake_type: '' }} onField={onField}
+      fields={{ lake_type: { suggestions: [{ value: 'Ao', label: 'Ao' }, { value: 'ho_chua', label: 'Hồ chứa' }] } }} />);
+    const input = screen.getByLabelText('Phân loại');
+    expect(input.tagName).toBe('INPUT');
+    const list = document.getElementById(input.getAttribute('list')!)!;
+    expect(list.tagName).toBe('DATALIST');
+    const options = [...list.querySelectorAll('option')];
+    expect(options.map((o) => o.value)).toEqual(['Ao', 'ho_chua']);
+    // The value name is shown only where it differs from the code.
+    expect(options.map((o) => o.textContent)).toEqual(['', 'Hồ chứa']);
+    await userEvent.type(input, 'X');
+    expect(onField).toHaveBeenCalledWith('lake_type', 'X');
+  });
+
   it('read-only: a select is disabled too', () => {
     render(<AttributeFormView {...baseProps} values={{ name: '', status: 'xa_lu' }} readOnly
       labels={{ name: 'Tên', status: 'Trạng thái' }}

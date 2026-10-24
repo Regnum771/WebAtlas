@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { EDITABLE_LAYER_KEYS, LAYER_ATTRIBUTE_MAP } from '@webatlas/shared';
-import { MANAGING_UNIT_COLUMN, useAttributeFormPresenter } from '../feature-editing/model/useAttributeFormPresenter';
+import {
+  MANAGING_UNIT_COLUMN, useAttributeFormPresenter, useReadOnlyAttributeForm,
+} from '../feature-editing/model/useAttributeFormPresenter';
 import { AttributeFormView } from '../feature-editing/ui/AttributeForm.view';
 import { MANAGING_UNIT_LABEL } from '../feature-editing/ui/ManagingUnitField.view';
 import { LAYER_DISPLAY } from '../../entities/layer/layerDisplay';
@@ -190,13 +192,13 @@ const ignore = () => undefined;
 
 /** A recipient's view of an edit copy's feature: the official form, read-only (no unit picker, no saving). */
 function EditCopyReadOnly({ copy }: { copy: EditCopyFormData }) {
-  const names = LAYER_ATTRIBUTE_MAP[copy.layerKey].attributes;
-  const labels = Object.fromEntries(copy.attributes.map((c) => [
-    c, c === MANAGING_UNIT_COLUMN ? MANAGING_UNIT_LABEL : (names[c] ?? c),
-  ]));
+  // Read as the owner's form shows it: dictionary labels, display units, value names.
+  const form = useReadOnlyAttributeForm({ layerKey: copy.layerKey, attributes: copy.attributes, initialValues: copy.initialValues });
+  const labels = { ...form.labels };
+  if (MANAGING_UNIT_COLUMN in labels) labels[MANAGING_UNIT_COLUMN] = MANAGING_UNIT_LABEL;
   return (
     <AttributeFormView
-      readOnly attributes={copy.attributes} labels={labels} values={copy.initialValues} fieldErrors={{}}
+      readOnly attributes={copy.attributes} labels={labels} values={form.values} fields={form.fields} fieldErrors={{}}
       error={null} canSave={false} saving={false} onField={ignore} onSubmit={ignore} onCancel={ignore}
     />
   );
