@@ -146,7 +146,9 @@ The personal-maps flow is checked in a real browser by `apps/web/scripts/verify-
 768×900. With the `worker` profile up, the API and `npm run dev:web` running, it signs in as an owner and a recipient
 (two existing accounts, from the environment only: `VERIFY_OWNER_EMAIL` / `VERIFY_OWNER_PASSWORD`,
 `VERIFY_RECIPIENT_EMAIL` / `VERIFY_RECIPIENT_PASSWORD`), creates the map `Kiểm thử P3c`, uploads a GeoJSON and a
-GeoTIFF it writes into `--out` and checks that both draw, draws a polygon, exports a zipped Shapefile in VN-2000 /
+GeoTIFF it writes into `--out` and checks that both draw, opens the GeoJSON layer's table (filters it, selects a row
+and checks the yellow ring on the map, selects a feature on the map and checks its row, edits a value in the form beside
+the rows), draws a polygon from a layer's table, exports a zipped Shapefile in VN-2000 /
 Đà Nẵng and opens the zip, shares the map, lets the recipient copy it, revokes the share and checks that the recipient
 loses the map. It prints one `PASS` / `FAIL` line per step, saves screenshots and the download in `--out`, and exits 1
 on any `FAIL`. At the end it deletes through the API what it made (the export jobs, the maps, the copy, the uploads);

@@ -1,19 +1,30 @@
 /**
  * Proves in a real browser that personal maps work end to end, for an owner and a recipient:
  *
- *   1. The owner signs in, opens Bản của tôi and creates the map "Kiểm thử P3c".
+ *   1. The owner signs in, opens Bản của tôi and creates the map "Kiểm thử P3c": the card offers
+ *      Tải tệp lên and Thêm lớp, its ⋯ menu (Thao tác khác) the map-level actions.
  *   2. The owner uploads a small GeoJSON this script writes into --out (three points and one
  *      polygon in Đà Nẵng, with Vietnamese attribute values) and waits for "Đã nhập xong.". The
  *      layer row is on, and the map draws pixels where the features are: each spot is sampled
  *      with the layer on and off, and must change.
- *   2b. The same with a small GeoTIFF the script writes (3 bands, EPSG:4326, over Đà Nẵng); it
- *      draws through the raster code that loads on demand.
- *   3. The owner adds a drawn polygon layer with one text field, draws a polygon, fills the
- *      field and saves; a click on the polygon opens the feature card with the value.
- *   4. The owner exports as "Shapefile nén (.zip)" in vn2000-tm3-da-nang. The cut-name table
- *      shows what the API's preview lists, the file downloads, and the zip holds .cpg and .prj.
- *   5. The owner shares with the recipient. The recipient sees the map under "Được chia sẻ với
- *      tôi" with no Đổi tên / Xoá bản đồ / Chia sẻ, and makes a copy.
+ *   T1–T6. The GeoJSON layer's table, docked under the map: Bảng opens it with the counts and
+ *      the Ký hiệu column; a condition on loai_dia_diem leaves one row; a click on that row
+ *      draws the yellow ring where the feature is (sampled before and after); with the filter
+ *      cleared, a click on another feature on the map selects its row; its ten_dia_diem is
+ *      changed in the form beside the rows and saved, and the row shows it; the card keeps only
+ *      Tải tệp lên and Thêm lớp, and its ⋯ menu holds the four owner items. The table is closed.
+ *   2b. The same as 2 with a small GeoTIFF the script writes (3 bands, EPSG:4326, over Đà Nẵng);
+ *      it draws through the raster code that loads on demand.
+ *   3. The owner adds a drawn polygon layer with one text field. The raster has no table, and
+ *      the mixed GeoJSON's table has Vẽ thêm disabled; from the new layer's table, Vẽ thêm draws
+ *      a polygon, the field is filled and saved, and the new row is selected. With the table
+ *      closed, a click on the polygon opens the feature card with the value.
+ *   4. The owner exports (⋯ → Tải xuống) as "Shapefile nén (.zip)" in vn2000-tm3-da-nang. The
+ *      cut-name table shows what the API's preview lists, the file downloads, and the zip holds
+ *      .cpg and .prj.
+ *   5. The owner shares (⋯ → Chia sẻ) with the recipient. The recipient sees the map under "Được
+ *      chia sẻ với tôi" with no Đổi tên / Xoá bản đồ / Chia sẻ in its ⋯ menu, no Thêm lớp or
+ *      Tải tệp lên on the card and no Vẽ thêm in the layer's table, and makes a copy.
  *   6. The owner revokes the share. The recipient's next read (a zoom out re-reads the layers)
  *      answers 404: the map leaves the list with the toast, and its layers leave the map.
  *   7. At 768 only: nothing covers the scale bar or the coordinate readout, and neither the side
@@ -41,7 +52,7 @@
  * (`docker compose -f infra/docker-compose.yml --profile worker up -d`), the API and `npm run dev:web`
  * (the dev server exposes the map as window.__olMap, which the script uses to frame Đà Nẵng).
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import puppeteer from 'puppeteer-core';
@@ -111,6 +122,16 @@ const RASTER_INSIDE = [108.1525, 16.0225];
 /** The polygon the owner draws, clockwise from the north-west, and a point inside it. */
 const DRAWN_RING = [[108.14, 16.09], [108.18, 16.09], [108.18, 16.065], [108.14, 16.065]];
 const DRAWN_INSIDE = [108.16, 16.0775];
+
+/** The GeoJSON layer's table: all its features, the one the condition keeps, the one clicked on the map. */
+const TABLE_ALL = `${POINTS.length + 1} đối tượng · ${POINTS.length + 1} khớp`;
+const FILTERED = POINTS[1];
+const CLICKED = POINTS[2];
+const EDITED_NAME = `${CLICKED.ten_dia_diem} — đã sửa`;
+/** The ring is yellow (#FFD928) over a dark halo; this many yellow pixels must appear around the feature. */
+const RING_MIN_PIXELS = 30;
+/** The owner's map-level actions in the card's ⋯ menu, in order. */
+const OWNER_MENU = ['Tải xuống', 'Chia sẻ', 'Đổi tên', 'Xoá bản đồ'];
 
 function writeGeoJson(path) {
   const features = POINTS.map(({ at, ...properties }) => ({
@@ -456,6 +477,21 @@ async function click(page, scope, label) {
   }
 }
 
+/**
+ * A real mouse click on the enabled button `label` inside `selector`, scrolled into view first:
+ * the table's toolbar and the form beside the rows scroll on their own.
+ */
+async function press(page, selector, label) {
+  for (const button of await page.$$(`${selector} button`)) {
+    const match = await button.evaluate((b, l) => b.textContent.replace(/\s+/g, ' ').trim() === l && !b.disabled, label);
+    if (match) {
+      await button.click();
+      return;
+    }
+  }
+  throw new Error(`no enabled button "${label}" in ${selector}`);
+}
+
 const dialogText = (page) => page.evaluate(() => window.__p3c.text({ selector: '.dialog' }));
 
 /** Waits until the topmost dialog's text contains `wanted`; fails early on one of `failures`. */
@@ -580,10 +616,7 @@ async function drawsAt(session, scope, title, spots, minChanged) {
   if (!on) problems.push(`the layer row "${title}" is off after the import`);
   await setLayer(session, scope, title, true);
   const pixels = await pixelsOf(page, spots.map((s) => s.at));
-  const covered = await page.evaluate((pts) => pts.map(({ x, y }) => {
-    const hit = document.elementFromPoint(x, y);
-    return hit && !document.querySelector('.map-container').contains(hit) ? hit.className.toString() : null;
-  }), pixels);
+  const covered = await coveredAt(page, pixels);
   covered.forEach((c, i) => { if (c) problems.push(`${spots[i].name} is covered by .${c}`); });
   const shown = await sample(page, pixels, 3);
   await setLayer(session, scope, title, false);
@@ -597,6 +630,136 @@ async function drawsAt(session, scope, title, spots, minChanged) {
     if (again > 49 - minChanged) problems.push(`${s.name}: switched on again, ${again} of 49 pixels differ from before`);
   });
   return problems;
+}
+
+/** Pixels that are the ring's yellow in `after` and were not in `before`. */
+function newYellow(before, after) {
+  const yellow = (d, i) => d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 120;
+  let n = 0;
+  for (let i = 0; i < after.length; i += 4) if (yellow(after, i) && !yellow(before, i)) n += 1;
+  return n;
+}
+
+/** The class of whatever covers each window pixel instead of the map, or null where the map is hit. */
+const coveredAt = (page, pixels) => page.evaluate((pts) => pts.map(({ x, y }) => {
+  const hit = document.elementFromPoint(x, y);
+  return hit && !document.querySelector('.map-container').contains(hit) ? hit.className.toString() : null;
+}), pixels);
+
+// ---- The card's ⋯ menu ---------------------------------------------------------------------
+
+const MENU_BUTTON = 'button[aria-label="Thao tác khác"]';
+
+/**
+ * Opens a card's ⋯ menu and returns its items, each with whether it is disabled and whether it
+ * is actually visible (the side panel scrolls, and must not clip the menu).
+ */
+async function openMenu(page, scope) {
+  const found = await page.evaluate((s, sel) => {
+    const button = window.__p3c.root(s)?.querySelector(sel);
+    if (button && button.getAttribute('aria-expanded') !== 'true') button.click();
+    return Boolean(button);
+  }, scope, MENU_BUTTON);
+  if (!found) throw new Error(`no ⋯ menu in ${JSON.stringify(scope)}`);
+  await page.waitForFunction((s) => Boolean(window.__p3c.root(s)?.querySelector('.card-menu-list')), { timeout: 5000 }, scope);
+  return page.evaluate((s) => [...window.__p3c.root(s).querySelectorAll('.card-menu-list [role="menuitem"]')].map((b) => {
+    const r = b.getBoundingClientRect();
+    const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+    return { label: b.textContent.trim(), disabled: b.disabled, visible: Boolean(hit && b.contains(hit)) };
+  }), scope);
+}
+
+async function closeMenu(page, scope) {
+  await page.evaluate((s, sel) => {
+    const button = window.__p3c.root(s)?.querySelector(sel);
+    if (button?.getAttribute('aria-expanded') === 'true') button.click();
+  }, scope, MENU_BUTTON);
+  await page.waitForFunction((s) => !window.__p3c.root(s)?.querySelector('.card-menu-list'), { timeout: 5000 }, scope);
+}
+
+/** Chooses `label` in a card's ⋯ menu: the map-level actions live there. */
+async function menuSelect(page, scope, label) {
+  const items = await openMenu(page, scope);
+  const chosen = await page.evaluate((s, l) => {
+    const item = [...window.__p3c.root(s).querySelectorAll('.card-menu-list [role="menuitem"]')]
+      .find((b) => b.textContent.trim() === l && !b.disabled);
+    item?.click();
+    return Boolean(item);
+  }, scope, label);
+  if (!chosen) throw new Error(`the ⋯ menu has no enabled "${label}"; it holds: ${items.map((i) => i.label).join(' | ')}`);
+}
+
+// ---- The layer table -----------------------------------------------------------------------
+
+/** What the table docked under the map shows, or null while none is open. */
+const tableState = (page) => page.evaluate(() => {
+  const table = document.querySelector('.layer-table');
+  if (!table) return null;
+  const text = (el) => (el ? el.textContent.replace(/\s+/g, ' ').trim() : null);
+  return {
+    title: text(table.querySelector('.layer-table-title')),
+    count: text(table.querySelector('.layer-table-count')),
+    busy: table.querySelector('table')?.getAttribute('aria-busy') === 'true',
+    headers: [...table.querySelectorAll('thead th')].map(text),
+    rows: [...table.querySelectorAll('tbody tr')].map((r) => ({
+      cells: [...r.cells].map(text),
+      selected: r.classList.contains('selected'),
+      symbol: Boolean(r.querySelector('td.layer-table-symbol img')),
+    })),
+    buttons: [...table.querySelectorAll('.layer-table-toolbar button')]
+      .map((b) => ({ label: text(b), disabled: b.disabled, title: b.title })),
+    form: text(table.querySelector('.layer-table-form')),
+  };
+});
+
+/** Waits until the table's state passes `ok`; the error names `what` and shows the table. */
+async function waitTable(page, what, ok, timeout = 15000) {
+  const start = Date.now();
+  let last = null;
+  while (Date.now() - start < timeout) {
+    last = await tableState(page);
+    if (last && ok(last)) return last;
+    await sleep(250);
+  }
+  const shown = last && { title: last.title, count: last.count, rows: last.rows.map((r) => `${r.selected ? '*' : ''}${r.cells.join(' | ')}`), form: last.form };
+  throw new Error(`the table never showed ${what}: ${JSON.stringify(shown).slice(0, 500)}`);
+}
+
+/** The count line reads `wanted` and no request is in flight. */
+const countIs = (wanted) => (s) => s.count === wanted && !s.busy;
+
+/** Presses the layer row's Bảng and waits for its table; the map, shrunk above the dock, is framed again. */
+async function openTable(session, scope, title) {
+  const { page } = session;
+  const found = await page.evaluate((s, t) => {
+    const button = [...(window.__p3c.root(s)?.querySelectorAll('button') ?? [])]
+      .find((b) => b.getAttribute('aria-label') === `Bảng ${t}`);
+    button?.click();
+    return Boolean(button);
+  }, scope, title);
+  if (!found) throw new Error(`the layer row "${title}" has no Bảng`);
+  await waitTable(page, `the table of "${title}"`, (s) => s.title === title && s.count !== null && !s.busy);
+  await frame(session, VIEW_EXTENT);
+  return tableState(page);
+}
+
+/** Presses the table's Đóng, if a table is open. */
+async function closeTable(page) {
+  if (!(await page.$('.layer-table'))) return;
+  await press(page, '.layer-table-toolbar', 'Đóng');
+  await page.waitForFunction(() => !document.querySelector('.layer-table'), { timeout: 5000 });
+}
+
+/** Clicks the table row that shows `text` in one of its cells. */
+async function clickRow(page, text) {
+  for (const row of await page.$$('.layer-table tbody tr')) {
+    const cells = await row.$$eval('td', (tds) => tds.map((td) => td.textContent.trim()));
+    if (cells.includes(text)) {
+      await row.click();
+      return;
+    }
+  }
+  throw new Error(`no table row shows "${text}"`);
 }
 
 // ---- Steps ---------------------------------------------------------------------------------
@@ -624,16 +787,21 @@ async function stepCreate(session, ctx) {
   }, { timeout: 15000 }, MAP_TITLE, GROUP_OWN);
   ctx.mapId = (await ownTestMap(ctx)).id;
   const buttons = await page.evaluate((s) => window.__p3c.buttons(s), OWN());
-  for (const wanted of ['Tải xuống', 'Thêm lớp', 'Tải tệp lên vào bản đồ này', 'Chia sẻ', 'Đổi tên', 'Xoá bản đồ', 'Vẽ thêm']) {
+  for (const wanted of ['Tải tệp lên', 'Thêm lớp']) {
     if (!buttons.includes(wanted)) problems.push(`the new map's card has no "${wanted}"`);
   }
+  const items = (await openMenu(page, OWN())).map((i) => i.label);
+  for (const wanted of OWNER_MENU) {
+    if (!items.includes(wanted)) problems.push(`the new map's ⋯ menu has no "${wanted}"`);
+  }
+  await closeMenu(page, OWN());
   return problems;
 }
 
 /** Uploads one file into the test map through the card's button and waits for the import. */
 async function uploadInto(session, ctx, path) {
   const { page } = session;
-  await click(page, OWN(), 'Tải tệp lên vào bản đồ này');
+  await click(page, OWN(), 'Tải tệp lên');
   await page.waitForSelector('#upload-file', { timeout: 5000 });
   const input = await page.$('#upload-file');
   await input.uploadFile(path);
@@ -691,6 +859,144 @@ async function stepUploadGeoTiff(session, vp, ctx) {
   }
 }
 
+/** Step T1, as the owner: Bảng opens the GeoJSON layer's table under the map. */
+async function stepTableOpen(session, vp) {
+  const { page } = session;
+  const problems = [];
+  await openTable(session, OWN(), GEOJSON_LAYER);
+  const state = await waitTable(page, `"${TABLE_ALL}"`, countIs(TABLE_ALL));
+  if (state.headers[0] !== 'Ký hiệu') problems.push(`the first column is "${state.headers[0]}", expected "Ký hiệu"`);
+  for (const key of ['ten_dia_diem', 'loai_dia_diem', 'ghi_chu']) {
+    if (!state.headers.includes(key)) problems.push(`no column "${key}": ${state.headers.join(' | ')}`);
+  }
+  if (state.rows.length !== POINTS.length + 1) problems.push(`${state.rows.length} rows, expected ${POINTS.length + 1}`);
+  const bare = state.rows.filter((r) => !r.symbol).length;
+  if (bare > 0) problems.push(`${bare} rows have no symbol in Ký hiệu`);
+  await shot(session, vp, 'bang-mo');
+  return problems;
+}
+
+/** Step T2: a condition loai_dia_diem bằng <one feature's value> leaves that feature. */
+async function stepTableFilter(session) {
+  const { page } = session;
+  const problems = [];
+  await press(page, '.layer-table-toolbar', '+ Thêm điều kiện');
+  const editor = '.layer-table-editor';
+  await page.waitForSelector(`${editor} select[aria-label="Trường"]`, { timeout: 5000 });
+  await page.select(`${editor} select[aria-label="Trường"]`, 'loai_dia_diem');
+  await page.select(`${editor} select[aria-label="Phép so sánh"]`, 'eq');
+  const op = await page.$eval(`${editor} select[aria-label="Phép so sánh"]`, (s) => s.selectedOptions[0]?.textContent.trim());
+  if (op !== 'bằng') problems.push(`the operator reads "${op}", expected "bằng"`);
+  await page.type(`${editor} input[aria-label="Giá trị"]`, FILTERED.loai_dia_diem);
+  // Enter closes the editor; the condition stays.
+  await page.keyboard.press('Enter');
+  const wanted = `${POINTS.length + 1} đối tượng · 1 khớp`;
+  const state = await waitTable(page, `"${wanted}"`, (s) => countIs(wanted)(s) && s.rows.length === 1);
+  if (!state.rows[0].cells.includes(FILTERED.ten_dia_diem)) problems.push(`the row left is ${state.rows[0].cells.join(' | ')}`);
+  const chip = await page.$eval('.layer-table .layer-table-chip-text', (b) => b.textContent.trim()).catch(() => null);
+  if (chip !== `loai_dia_diem bằng ${FILTERED.loai_dia_diem}`) problems.push(`the condition chip reads "${chip}"`);
+  return problems;
+}
+
+/** Step T3: a click on the row rings the feature in yellow on the map. */
+async function stepTableSelectRow(session, vp) {
+  const { page } = session;
+  const problems = [];
+  const pixels = await pixelsOf(page, [FILTERED.at]);
+  const [cover] = await coveredAt(page, pixels);
+  if (cover) throw new Error(`${FILTERED.ten_dia_diem} is covered by .${cover}`);
+  const [before] = await sample(page, pixels, 16);
+  await clickRow(page, FILTERED.ten_dia_diem);
+  await waitTable(page, `the row "${FILTERED.ten_dia_diem}" selected`,
+    (s) => s.rows.some((r) => r.selected && r.cells.includes(FILTERED.ten_dia_diem)));
+  await sleep(500);
+  await waitRender(page);
+  const [after] = await sample(page, pixels, 16);
+  const yellow = newYellow(before, after);
+  console.log(`          ${vp}: ${yellow} yellow pixels appeared around ${FILTERED.ten_dia_diem}`);
+  if (yellow < RING_MIN_PIXELS) problems.push(`${yellow} yellow pixels appeared around ${FILTERED.ten_dia_diem} (want ≥ ${RING_MIN_PIXELS})`);
+  const ringed = await page.evaluate(() => window.__olMap.getAllLayers()
+    .find((l) => l.get('id') === 'ws-ring')?.getSource().getFeatures().length ?? 0);
+  if (ringed !== 1) problems.push(`the ring layer ws-ring holds ${ringed} features, expected 1`);
+  await shot(session, vp, 'bang-chon-dong');
+  return problems;
+}
+
+/** Step T4: with the filter cleared, a click on another feature on the map selects its row. */
+async function stepTableSelectOnMap(session) {
+  const { page } = session;
+  const problems = [];
+  const removed = await page.evaluate(() => {
+    const button = document.querySelector('.layer-table [aria-label^="Bỏ điều kiện"]');
+    button?.click();
+    return Boolean(button);
+  });
+  if (!removed) throw new Error('the condition has no Bỏ điều kiện button');
+  await waitTable(page, `"${TABLE_ALL}"`, (s) => countIs(TABLE_ALL)(s) && s.rows.length === POINTS.length + 1);
+  // Pan the feature to the middle of the map, as a user would: at 768 the map is narrow and the
+  // scale control's column covers its east edge, where the feature lies after the framing.
+  await session.page.evaluate((c) => window.__olMap.getView().setCenter(c), toMercator(CLICKED.at));
+  await sleep(800);
+  await session.settle();
+  await waitRender(page);
+  const pixels = await pixelsOf(page, [CLICKED.at]);
+  const [cover] = await coveredAt(page, pixels);
+  if (cover) throw new Error(`${CLICKED.ten_dia_diem} is covered by .${cover}`);
+  await page.mouse.click(pixels[0].x, pixels[0].y);
+  await waitTable(page, `the row "${CLICKED.ten_dia_diem}" selected`, (s) => {
+    const selected = s.rows.filter((r) => r.selected);
+    return selected.length === 1 && selected[0].cells.includes(CLICKED.ten_dia_diem);
+  });
+  if (await page.$('.personal-feature-card')) problems.push('the click on the table\'s layer also opened the feature card');
+  return problems;
+}
+
+/** Step T5: the selected feature's ten_dia_diem is changed in the form beside the rows and saved. */
+async function stepTableEdit(session, vp) {
+  const { page } = session;
+  const problems = [];
+  await page.waitForSelector('.layer-table-form .edit-attr-form', { visible: true, timeout: 10000 });
+  const id = await page.evaluate((name) => [...document.querySelectorAll('.layer-table-form .edit-attr-form label')]
+    .find((l) => l.textContent.trim() === name)?.htmlFor ?? null, 'ten_dia_diem');
+  if (!id) throw new Error(`the form has no field ten_dia_diem: ${(await tableState(page))?.form}`);
+  const input = `.layer-table-form #${id}`;
+  const seeded = await page.$eval(input, (el) => el.value);
+  if (seeded !== CLICKED.ten_dia_diem) problems.push(`the form opened with ten_dia_diem "${seeded}", expected "${CLICKED.ten_dia_diem}"`);
+  await page.click(input, { clickCount: 3 });
+  await page.keyboard.press('Backspace');
+  await page.type(input, EDITED_NAME);
+  await press(page, '.layer-table-form', 'Lưu');
+  const state = await waitTable(page, `the selected row with "${EDITED_NAME}"`,
+    (s) => !s.busy && s.rows.some((r) => r.selected && r.cells.includes(EDITED_NAME)));
+  if (state.rows.some((r) => r.cells.includes(CLICKED.ten_dia_diem))) problems.push(`a row still shows "${CLICKED.ten_dia_diem}"`);
+  if (state.count !== TABLE_ALL) problems.push(`the count reads "${state.count}" after the save, expected "${TABLE_ALL}"`);
+  await shot(session, vp, 'bang-sua');
+  return problems;
+}
+
+/** Step T6: the card offers Tải tệp lên and Thêm lớp only; the ⋯ menu holds the four owner items. */
+async function stepTableCard(session, vp) {
+  const { page } = session;
+  const problems = [];
+  const actions = await page.evaluate((s) => [...window.__p3c.root(s).querySelectorAll('.my-map-actions button')]
+    .map((b) => b.textContent.trim()), OWN());
+  if (JSON.stringify(actions) !== JSON.stringify(['Tải tệp lên', 'Thêm lớp'])) problems.push(`the card's actions are ${actions.join(' | ')}`);
+  const buttons = await page.evaluate((s) => window.__p3c.buttons(s), OWN());
+  for (const gone of ['Vẽ thêm', 'Sửa đối tượng', ...OWNER_MENU]) {
+    if (buttons.includes(gone)) problems.push(`the card shows "${gone}" outside the ⋯ menu`);
+  }
+  const items = await openMenu(page, OWN());
+  const labels = items.map((i) => i.label);
+  if (JSON.stringify(labels) !== JSON.stringify(OWNER_MENU)) problems.push(`the ⋯ menu holds ${labels.join(' | ')}, expected ${OWNER_MENU.join(' | ')}`);
+  for (const item of items) {
+    if (item.disabled) problems.push(`"${item.label}" is disabled`);
+    if (!item.visible) problems.push(`"${item.label}" is hidden (clipped or covered)`);
+  }
+  await shot(session, vp, 'the-menu');
+  await closeMenu(page, OWN());
+  return problems;
+}
+
 /** Step 3, as the owner. */
 async function stepDraw(session, vp) {
   const { page } = session;
@@ -711,30 +1017,34 @@ async function stepDraw(session, vp) {
   }
   await page.waitForFunction((s, t) => Boolean(window.__p3c.layerBox(s, t)), { timeout: 15000 }, OWN(), DRAWN_LAYER);
 
-  await click(page, OWN(), 'Vẽ thêm');
-  await page.waitForFunction((s) => window.__p3c.text(s).includes('Chọn lớp để vẽ.'), { timeout: 5000 }, OWN());
-  const offered = await page.evaluate(() => [...document.querySelectorAll('.my-map-editing button')].map((b) => b.textContent.trim()));
-  if (offered.includes(GEOJSON_LAYER)) problems.push('Vẽ thêm offers the mixed imported layer');
-  if (offered.includes(TIFF_LAYER)) problems.push('Vẽ thêm offers the raster layer');
-  await click(page, { selector: '.my-map-editing' }, DRAWN_LAYER);
-  await page.waitForFunction((s) => window.__p3c.text(s).includes('Vẽ vùng lên bản đồ để tiếp tục.'), { timeout: 5000 }, OWN());
+  // Vẽ thêm lives in a layer's table: a raster has no table, and a mixed import takes no drawing.
+  const rasterTable = await page.evaluate((s, t) => [...window.__p3c.root(s).querySelectorAll('button')]
+    .some((b) => b.getAttribute('aria-label') === `Bảng ${t}`), OWN(), TIFF_LAYER);
+  if (rasterTable) problems.push('the raster layer offers a table, and with it Vẽ thêm');
+  const mixed = (await openTable(session, OWN(), GEOJSON_LAYER)).buttons.find((b) => b.label === 'Vẽ thêm');
+  if (!mixed) problems.push('the mixed imported layer\'s table has no Vẽ thêm (disabled) button');
+  else if (!mixed.disabled) problems.push('Vẽ thêm is enabled for the mixed imported layer');
+  else if (mixed.title !== 'Lớp này không vẽ thêm được') problems.push(`the disabled Vẽ thêm says "${mixed.title}"`);
+
+  await openTable(session, OWN(), DRAWN_LAYER);
+  await waitTable(page, '"0 đối tượng · 0 khớp"', countIs('0 đối tượng · 0 khớp'));
+  await press(page, '.layer-table-toolbar', 'Vẽ thêm');
+  await page.waitForFunction(() => document.querySelector('.layer-table-form')?.textContent.includes('Vẽ vùng lên bản đồ để tiếp tục.'),
+    { timeout: 5000 });
 
   const vertices = await pixelsOf(page, DRAWN_RING);
   for (const v of [...vertices, vertices[0]]) {
     await page.mouse.click(v.x, v.y);
     await sleep(450);
   }
-  await page.waitForSelector('#free-field-0', { visible: true, timeout: 10000 });
-  await page.type('#free-field-0', DRAWN_VALUE);
-  await click(page, { selector: '.edit-attr-form' }, 'Lưu');
-  try {
-    await page.waitForFunction(() => !document.querySelector('.edit-attr-form'), { timeout: 15000 });
-  } catch {
-    const message = await page.$eval('.edit-attr-form', (el) => el.innerText.replace(/\s+/g, ' ')).catch(() => '');
-    throw new Error(`the save did not finish: ${message.slice(-200)}`);
-  }
-  // The mode ends after a drawing; the layer is read again.
-  await page.waitForFunction((s) => window.__p3c.buttons(s).includes('Vẽ thêm'), { timeout: 10000 }, OWN());
+  await page.waitForSelector('.layer-table-form #free-field-0', { visible: true, timeout: 10000 });
+  await page.type('.layer-table-form #free-field-0', DRAWN_VALUE);
+  await press(page, '.layer-table-form', 'Lưu');
+  // The saved drawing becomes the table's selected row, its form still open beside it.
+  await waitTable(page, `the new row "${DRAWN_VALUE}" selected under "1 đối tượng · 1 khớp"`,
+    (s) => countIs('1 đối tượng · 1 khớp')(s) && s.rows.some((r) => r.selected && r.cells.includes(DRAWN_VALUE)));
+  // Off the table, a click on a feature opens its card.
+  await closeTable(page);
   await sleep(1500);
   await waitRender(page);
 
@@ -757,18 +1067,28 @@ async function stepDraw(session, vp) {
   return problems;
 }
 
+/** Each file in `dir` with its modification time; empty if `dir` does not exist. */
+function filesIn(dir) {
+  if (!existsSync(dir)) return {};
+  return Object.fromEntries(readdirSync(dir).map((n) => [n, statSync(join(dir, n)).mtimeMs]));
+}
+
+/**
+ * A zip that arrived in `dir` since `before` (from filesIn): a new name, or the same name written
+ * again (Chrome overwrites a download of the same name left by an earlier run into the same --out).
+ */
 function newZip(dir, before) {
-  if (!existsSync(dir)) return null;
-  const names = readdirSync(dir);
+  const now = filesIn(dir);
+  const names = Object.keys(now);
   if (names.some((n) => n.endsWith('.crdownload'))) return null;
-  return names.find((n) => n.toLowerCase().endsWith('.zip') && !before.includes(n)) ?? null;
+  return names.find((n) => n.toLowerCase().endsWith('.zip') && now[n] !== before[n]) ?? null;
 }
 
 /** Step 4, as the owner. */
 async function stepExport(session, vp, ctx) {
   const { page } = session;
   const problems = [];
-  await click(page, OWN(), 'Tải xuống');
+  await menuSelect(page, OWN(), 'Tải xuống');
   await page.waitForSelector('#export-format', { visible: true, timeout: 15000 });
   await page.select('#export-format', 'shp');
   await page.select('#export-crs', EXPORT_CRS);
@@ -787,7 +1107,7 @@ async function stepExport(session, vp, ctx) {
   console.log(`          ${vp}: the cut-name table lists ${shown.length} renamed fields${shown.length ? `: ${shown.join('; ')}` : ''}`);
   await shot(session, vp, 'xuat-ten-truong');
 
-  const before = existsSync(ctx.downloads) ? readdirSync(ctx.downloads) : [];
+  const before = filesIn(ctx.downloads);
   await click(page, { selector: '.dialog' }, 'Xuất');
   await page.waitForFunction(() => {
     const dialog = [...document.querySelectorAll('.dialog')].pop();
@@ -820,7 +1140,7 @@ async function stepExport(session, vp, ctx) {
 
 /** Opens the owner's Chia sẻ dialog and waits for its list of shares. */
 async function openShare(page) {
-  await click(page, OWN(), 'Chia sẻ');
+  await menuSelect(page, OWN(), 'Chia sẻ');
   await page.waitForFunction(() => {
     const d = document.querySelector('.dialog');
     return d && !d.querySelector('[aria-labelledby="share-current-title"] .spinner') && /Chưa chia sẻ với ai\.|Thu hồi/.test(d.textContent);
@@ -855,16 +1175,25 @@ async function stepShare(owner, recipientSession, vp, ctx) {
   await rp.evaluate((s) => window.__p3c.root(s).querySelector('.my-map-head').click(), SHARED());
   await rp.waitForFunction((s, t) => Boolean(window.__p3c.layerBox(s, t)), { timeout: 15000 }, SHARED(), DRAWN_LAYER);
   const buttons = await rp.evaluate((s) => window.__p3c.buttons(s), SHARED());
-  for (const banned of ['Đổi tên', 'Xoá bản đồ', 'Chia sẻ', 'Thêm lớp', 'Vẽ thêm', 'Sửa đối tượng', 'Tải tệp lên vào bản đồ này']) {
-    if (buttons.includes(banned)) problems.push(`the recipient is offered "${banned}"`);
+  for (const banned of ['Thêm lớp', 'Vẽ thêm', 'Sửa đối tượng', 'Tải tệp lên', ...OWNER_MENU]) {
+    if (buttons.includes(banned)) problems.push(`the recipient's card offers "${banned}"`);
   }
-  for (const wanted of ['Tải xuống', 'Tạo bản sao']) if (!buttons.includes(wanted)) problems.push(`the recipient has no "${wanted}"`);
+  const items = (await openMenu(rp, SHARED())).map((i) => i.label);
+  for (const banned of ['Đổi tên', 'Xoá bản đồ', 'Chia sẻ']) {
+    if (items.includes(banned)) problems.push(`the recipient's ⋯ menu offers "${banned}"`);
+  }
+  for (const wanted of ['Tải xuống', 'Tạo bản sao']) if (!items.includes(wanted)) problems.push(`the recipient's ⋯ menu has no "${wanted}"`);
+  await closeMenu(rp, SHARED());
   const settings = await rp.evaluate((s) => window.__p3c.root(s).querySelectorAll('[aria-label^="Thiết lập lớp"]').length, SHARED());
   if (settings > 0) problems.push(`the recipient is offered ${settings} layer settings buttons`);
+  // The recipient reads the layer's table but cannot draw into it.
+  const table = await openTable(recipientSession, SHARED(), DRAWN_LAYER);
+  if (table.buttons.some((b) => b.label === 'Vẽ thêm')) problems.push('the recipient\'s table offers "Vẽ thêm"');
+  await closeTable(rp);
   await sleep(1500);
   await shot(recipientSession, vp, 'nguoi-nhan');
 
-  await click(rp, SHARED(), 'Tạo bản sao');
+  await menuSelect(rp, SHARED(), 'Tạo bản sao');
   const toast = await rp.waitForFunction(() => [...document.querySelectorAll('.toast-host .toast')]
     .map((t) => t.textContent.trim()).find((t) => t.startsWith('Đã tạo bản sao')) ?? false, { timeout: 20000 });
   const said = await toast.jsonValue();
@@ -971,8 +1300,22 @@ async function runViewport(browser, viewport, ctx) {
     await signIn(owner.page, ACCOUNTS.owner);
     const created = await check(vp, '1', `the owner creates "${MAP_TITLE}" in Bản của tôi`, () => stepCreate(owner, ctx));
     if (!created) return;
-    await check(vp, '2', 'the owner uploads a GeoJSON: Đã nhập xong., the row is on, the features are drawn',
+    const imported = await check(vp, '2', 'the owner uploads a GeoJSON: Đã nhập xong., the row is on, the features are drawn',
       () => stepUploadGeoJson(owner, vp, ctx));
+    const tableOpen = await check(vp, 'T1', `Bảng opens the layer's table: "${TABLE_ALL}" and the Ký hiệu column`,
+      async () => (imported ? stepTableOpen(owner, vp) : ['skipped: step 2 failed']));
+    const afterTable = (fn) => async () => (tableOpen ? fn() : ['skipped: T1 failed']);
+    const filtered = await check(vp, 'T2', 'a condition loai_dia_diem bằng one feature\'s value: "· 1 khớp"',
+      afterTable(() => stepTableFilter(owner)));
+    await check(vp, 'T3', 'a click on that row rings the feature in yellow on the map',
+      afterTable(async () => (filtered ? stepTableSelectRow(owner, vp) : ['skipped: T2 failed'])));
+    const picked = await check(vp, 'T4', 'with the filter cleared, a click on another feature on the map selects its row',
+      afterTable(() => stepTableSelectOnMap(owner)));
+    await check(vp, 'T5', 'ten_dia_diem changed in the form beside the rows and saved: the row shows the new value',
+      afterTable(async () => (picked ? stepTableEdit(owner, vp) : ['skipped: T4 failed'])));
+    await check(vp, 'T6', 'the card offers Tải tệp lên and Thêm lớp only; its ⋯ menu holds the four owner items',
+      () => stepTableCard(owner, vp));
+    await closeTable(owner.page);
     await check(vp, '2b', 'the owner uploads a GeoTIFF: Đã nhập xong., the row is on, the raster is drawn',
       () => stepUploadGeoTiff(owner, vp, ctx));
     await check(vp, '3', 'the owner draws a polygon in a new layer and its card shows the field value',
