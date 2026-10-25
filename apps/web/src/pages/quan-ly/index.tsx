@@ -5,15 +5,17 @@ import { useUnitTreeStatus } from '../../entities/session/model/useUnitTree';
 import { Button } from '../../shared/ui/Button';
 import { Message } from '../../shared/ui/Message';
 import { Spinner } from '../../shared/ui/Spinner';
-import { canSeeBanDoCaNhan, canSeeGroups, canSeeUnassigned, canSeeUsers } from './model/visibility';
+import { canSeeBanDoCaNhan, canSeeGroups, canSeeTuDien, canSeeUnassigned, canSeeUsers } from './model/visibility';
 
 const UNASSIGNED = '/quan-ly/chua-gan';
+const TU_DIEN = '/quan-ly/tu-dien';
 
 const ITEMS = [
   { to: '/quan-ly/nhom-quyen', label: 'Nhóm quyền', visible: canSeeGroups },
   { to: '/quan-ly/nguoi-dung', label: 'Người dùng', visible: canSeeUsers },
   { to: UNASSIGNED, label: 'Đơn vị chưa gán', visible: canSeeUnassigned },
   { to: '/quan-ly/ban-do-ca-nhan', label: 'Bản đồ cá nhân', visible: canSeeBanDoCaNhan },
+  { to: '/quan-ly/tu-dien', label: 'Từ điển dữ liệu', visible: canSeeTuDien },
 ] as const;
 
 // UX gate ONLY. A forced render still gets 401/403 from every API call behind it.
@@ -28,16 +30,18 @@ export default function QuanLyRoute() {
 
   const user = status === 'authenticated' ? currentUser : null;
   const visible = ITEMS.filter((item) => item.visible(user, can));
-  // Only Đơn vị chưa gán needs the tree: a non-admin who could pass its VN check (update and
-  // review held somewhere) is undecided until the tree arrives (or fails). Nhóm quyền and
-  // Người dùng never wait.
-  const undecided = !!user && !user.isAdmin && can('feature.update') && can('submission.review')
-    && !visible.some((item) => item.to === UNASSIGNED) && (tree.status === 'loading' || tree.status === 'error');
+  // Only Đơn vị chưa gán and Từ điển dữ liệu need the tree: a non-admin who could pass a VN check
+  // (update and review, or dictionary.manage, held somewhere) is undecided until the tree arrives
+  // (or fails). Nhóm quyền and Người dùng never wait.
+  const shown = (to: string) => visible.some((item) => item.to === to);
+  const mayNeedTree = (can('feature.update') && can('submission.review') && !shown(UNASSIGNED))
+    || (can('dictionary.manage') && !shown(TU_DIEN));
+  const undecided = !!user && !user.isAdmin && mayNeedTree && (tree.status === 'loading' || tree.status === 'error');
   const failed = undecided && tree.status === 'error';
 
   const current = pathname.replace(/\/+$/, '');
   const onVisible = visible.some((item) => item.to === current);
-  const waitingHere = undecided && current === UNASSIGNED;
+  const waitingHere = undecided && (current === UNASSIGNED || current === TU_DIEN);
 
   if (visible.length === 0 && !undecided) return <Navigate to="/" replace />;
   if (visible.length > 0 && !onVisible && !waitingHere) return <Navigate to={visible[0].to} replace />;

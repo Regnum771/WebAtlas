@@ -2,7 +2,7 @@ import { COUNTRY_UNIT } from '@webatlas/shared';
 import type { CurrentUser } from '../../../entities/session/model/session.types';
 
 /** The `can` function that `useCan()` returns. */
-export type CanFn = (permission: 'users.manage' | 'feature.update' | 'submission.review', unit?: string) => boolean;
+export type CanFn = (permission: 'users.manage' | 'feature.update' | 'submission.review' | 'dictionary.manage', unit?: string) => boolean;
 
 type User = CurrentUser | null;
 
@@ -26,5 +26,9 @@ export const canSeeUnassigned = (user: User, can: CanFn): boolean =>
 /** Bản đồ cá nhân: admin only (usage and quotas of every user). */
 export const canSeeBanDoCaNhan = (user: User, _can: CanFn): boolean => user?.isAdmin === true;
 
+/** Từ điển dữ liệu: admin, or dictionary.manage on the country unit (a provincial grant does not count). */
+export const canSeeTuDien = (user: User, can: CanFn): boolean =>
+  user !== null && (user.isAdmin || can('dictionary.manage', COUNTRY_UNIT));
+
 export const canSeeQuanLy = (user: User, can: CanFn): boolean =>
-  canSeeGroups(user, can) || canSeeUsers(user, can) || canSeeUnassigned(user, can);
+  canSeeGroups(user, can) || canSeeUsers(user, can) || canSeeUnassigned(user, can) || canSeeTuDien(user, can);

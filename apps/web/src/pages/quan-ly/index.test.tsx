@@ -37,6 +37,7 @@ const renderAt = (path: string) =>
           <Route path="nguoi-dung" element={<div>SEC_NGUOI</div>} />
           <Route path="chua-gan" element={<div>SEC_CHUA</div>} />
           <Route path="ban-do-ca-nhan" element={<div>SEC_BDCN</div>} />
+          <Route path="tu-dien" element={<div>SEC_TUDIEN</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -73,10 +74,10 @@ describe('QuanLyRoute', () => {
     expect(screen.getByText('Không tải được danh sách đơn vị hành chính.')).toBeInTheDocument();
   });
 
-  it('shows all four sub-nav items to admin and lands on Nhóm quyền', () => {
+  it('shows all five sub-nav items to admin and lands on Nhóm quyền', () => {
     mock = signedIn(true);
     renderAt('/quan-ly');
-    expect(links()).toEqual(['Nhóm quyền', 'Người dùng', 'Đơn vị chưa gán', 'Bản đồ cá nhân']);
+    expect(links()).toEqual(['Nhóm quyền', 'Người dùng', 'Đơn vị chưa gán', 'Bản đồ cá nhân', 'Từ điển dữ liệu']);
     expect(screen.getByText('SEC_NHOM')).toBeInTheDocument();
   });
 
@@ -157,5 +158,26 @@ describe('QuanLyRoute', () => {
     expect(links()).toEqual(['Người dùng']);
     expect(screen.queryByText('SEC_BDCN')).toBeNull();
     expect(screen.getByText('SEC_NGUOI')).toBeInTheDocument();
+  });
+
+  it('the tab is hidden without dictionary.manage on VN', () => {
+    mock = signedIn(false, { permission: 'dictionary.manage', unit: '48' }, { permission: 'users.manage', unit: '48' });
+    renderAt('/quan-ly/tu-dien');
+    expect(links()).toEqual(['Người dùng']);
+    expect(screen.queryByText('SEC_TUDIEN')).toBeNull();
+  });
+
+  it('an admin sees the tab', () => {
+    mock = signedIn(true);
+    renderAt('/quan-ly/tu-dien');
+    expect(links()).toContain('Từ điển dữ liệu');
+    expect(screen.getByText('SEC_TUDIEN')).toBeInTheDocument();
+  });
+
+  it('a holder of dictionary.manage on VN sees only the tab', () => {
+    mock = signedIn(false, { permission: 'dictionary.manage', unit: 'VN' });
+    renderAt('/quan-ly');
+    expect(links()).toEqual(['Từ điển dữ liệu']);
+    expect(screen.getByText('SEC_TUDIEN')).toBeInTheDocument();
   });
 });

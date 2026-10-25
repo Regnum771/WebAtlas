@@ -14,6 +14,7 @@ const NhomQuyen = lazy(() => import('../pages/quan-ly/sections/NhomQuyen'));
 const NguoiDung = lazy(() => import('../pages/quan-ly/sections/NguoiDung'));
 const ChuaGan = lazy(() => import('../pages/quan-ly/sections/ChuaGan'));
 const BanDoCaNhan = lazy(() => import('../pages/quan-ly/sections/BanDoCaNhan'));
+const TuDien = lazy(() => import('../pages/quan-ly/sections/TuDien'));
 
 // The data dictionary pages are rarely visited too.
 const DuLieuRoute = lazy(() => import('../pages/du-lieu'));
@@ -48,6 +49,7 @@ function App() {
               <Route path="nguoi-dung" element={<Suspense fallback={loading}><NguoiDung /></Suspense>} />
               <Route path="chua-gan" element={<Suspense fallback={loading}><ChuaGan /></Suspense>} />
               <Route path="ban-do-ca-nhan" element={<Suspense fallback={loading}><BanDoCaNhan /></Suspense>} />
+              <Route path="tu-dien" element={<Suspense fallback={loading}><TuDien /></Suspense>} />
             </Route>
           </Routes>
         </div>

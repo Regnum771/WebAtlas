@@ -1201,3 +1201,14 @@ body {
   .layer-page .no-print { display: none; }
   .layer-page-table-wrap { overflow: visible; }
 }
+
+/* Quản lý > Từ điển dữ liệu */
+.dictionary-editor-body { display: grid; grid-template-columns: minmax(10rem, 16rem) 1fr; gap: var(--space-4); align-items: start; }
+.dictionary-editor-list ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.dictionary-editor-list [aria-current='true'] { font-weight: 600; }
+.dictionary-editor-form { display: flex; flex-direction: column; gap: var(--space-3); }
+.dictionary-checks { border: 0; padding: 0; margin: 0; }
+.dictionary-check { display: inline-flex; align-items: center; gap: var(--space-1); margin-right: var(--space-3); }
+.dictionary-history-table { width: 100%; border-collapse: collapse; }
+.dictionary-history-table th, .dictionary-history-table td { text-align: left; padding: var(--space-1) var(--space-2); vertical-align: top; }
+@media (max-width: 640px) { .dictionary-editor-body { grid-template-columns: 1fr; } }
