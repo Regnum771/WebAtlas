@@ -497,6 +497,34 @@ describe('useTablePresenter: the data dictionary', () => {
     expect(lastConditions()).toEqual([{ field: 'length_m', op: 'gte', value: 12500 }]);
   });
 
+  it('a table condition keeps the unit it was typed in', async () => {
+    openTable('m1', 'l2');
+    const { result, rerender } = setup();
+    await flush(10);
+    act(() => result.current.addCondition());
+    act(() => result.current.updateCondition(0, { field: 'length_m', op: 'eq', value: '12,5' }));
+    // The served dictionary arrives showing metres before the typing settles.
+    served.dictionary = {
+      ...DICTIONARY,
+      rivers: {
+        ...DICTIONARY.rivers,
+        attributes: DICTIONARY.rivers.attributes.map((a) => (a.name === 'length_m' ? { ...a, displayUnit: 'm', precision: 0 } : a)),
+      },
+    };
+    try {
+      rerender();
+      await flush(310);
+      expect(lastConditions()).toEqual([{ field: 'length_m', op: 'eq', value: 12500, tolerance: 50 }]);
+      // The snapshot never reaches the request or the editor's error.
+      expect(result.current.conditions[0].error).toBeUndefined();
+      // Another field starts afresh: the snapshot goes with the old field.
+      act(() => result.current.updateCondition(0, { field: 'name' }));
+      expect(result.current.filter.conditions[0]).not.toHaveProperty('typedWith');
+    } finally {
+      served.dictionary = null;
+    }
+  });
+
   it('an unreadable number condition shows the message and sends no query', async () => {
     openTable('m1', 'l2');
     const { result } = setup();

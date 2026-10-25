@@ -1,9 +1,19 @@
 import { useSyncExternalStore } from 'react';
+import type { DictAttribute } from '@webatlas/shared';
 import type { TableCondition } from '../api/workspace.api';
+
+/**
+ * A condition as the table keeps it. `typedWith` is the number attribute (unit, precision) its value
+ * was first typed against: it lives here, beside the typed text, so the debounced copy of the filter
+ * carries the very snapshot its text was typed with. It never reaches the server (storedCondition).
+ */
+export interface FilterCondition extends TableCondition {
+  typedWith?: DictAttribute;
+}
 
 export interface TableFilter {
   q: string;
-  conditions: TableCondition[];
+  conditions: FilterCondition[];
   match: 'all' | 'any';
   inView: boolean;
   sort: { field: string; dir: 'asc' | 'desc' } | null;

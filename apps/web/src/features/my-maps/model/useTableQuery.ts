@@ -4,7 +4,7 @@ import { ApiError } from '../../../shared/api/apiClient';
 import * as api from '../api/workspace.api';
 import type { LayerQueryRequest, TableCondition } from '../api/workspace.api';
 import { dropGoneMap, isMapNotFound, keys } from './queries';
-import { closeTable, emptyFilter, useTableStore, type TableFilter } from './table.store';
+import { closeTable, emptyFilter, useTableStore, type FilterCondition, type TableFilter } from './table.store';
 
 export const TABLE_PAGE_SIZE = 100;
 export const DEBOUNCE_MS = 300;
@@ -15,7 +15,7 @@ type Extent = [number, number, number, number];
 const needsValue = (op: string) => op !== 'empty' && op !== 'notEmpty';
 
 /** A condition whose operator takes a value is sent once it has one; until then it filters nothing. */
-export function isComplete(c: TableCondition): boolean {
+export function isComplete(c: FilterCondition): boolean {
   return !needsValue(c.op) || (c.value !== undefined && String(c.value).trim() !== '');
 }
 
@@ -48,8 +48,8 @@ function useDebouncedFilter(layerId: string | null, filter: TableFilter): TableF
  * A complete condition as the server takes it (the value in stored units), or null when its value
  * cannot be read: that condition filters nothing until it can.
  */
-export type ToStoredCondition = (c: TableCondition) => TableCondition | null;
-const asTyped: ToStoredCondition = (c) => c;
+export type ToStoredCondition = (c: FilterCondition) => TableCondition | null;
+const asTyped: ToStoredCondition = ({ typedWith: _typedWith, ...c }) => c;
 
 /**
  * `locate`: a feature id whose position in the filtered, sorted list is wanted; the answer for it

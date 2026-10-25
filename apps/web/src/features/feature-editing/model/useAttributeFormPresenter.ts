@@ -195,9 +195,14 @@ export function useAttributeFormPresenter({
     return out;
   }, [attributes, edits, seeded]);
 
+  /** The attribute (unit, precision) a number field had at its first keystroke; lives as long as the form. */
+  const [typedWith, setTypedWith] = useState<Record<string, DictAttribute>>({});
+  // A typed field shows and parses by its snapshot, the others by the current dictionary.
+  const effective = useMemo(() => ({ ...dictAttributes, ...typedWith }), [dictAttributes, typedWith]);
+
   const fields = useMemo(
-    () => fieldsFor(attributes, dictAttributes, values, initialValues),
-    [attributes, dictAttributes, values, initialValues],
+    () => fieldsFor(attributes, effective, values, initialValues),
+    [attributes, effective, values, initialValues],
   );
 
   const initialUnit = initialValues?.[MANAGING_UNIT_COLUMN] ?? '';
@@ -216,7 +221,13 @@ export function useAttributeFormPresenter({
 
   const setField = useCallback((col: string, v: string) => {
     setEdits((prev) => ({ ...prev, [col]: v }));
-  }, []);
+    // The first keystroke on a number field fixes the unit it is typed in (Ruling 8); the served
+    // dictionary arriving later changes what untouched fields show, never this one.
+    const attribute = dictAttributes[col];
+    if (attribute?.valueType === 'number') {
+      setTypedWith((prev) => (Object.hasOwn(prev, col) ? prev : { ...prev, [col]: attribute }));
+    }
+  }, [dictAttributes]);
 
   const submit = useCallback(async () => {
     if (mode === 'create' && !geometry) { setError('Vẽ hình trước khi lưu.'); return; }
@@ -235,7 +246,7 @@ export function useAttributeFormPresenter({
         continue;
       }
       if (text === '') continue;
-      const attribute = dictAttributes[col];
+      const attribute = effective[col];
       if (attribute?.valueType === 'number') {
         // Typed in the display unit; sent in the stored unit.
         const parsed = parseDisplay(attribute, text);
@@ -285,7 +296,7 @@ export function useAttributeFormPresenter({
     } finally {
       setSaving(false);
     }
-  }, [mode, geometry, attributes, values, seeded, initialValues, dictAttributes, layerKey, featureId, onSaved, save,
+  }, [mode, geometry, attributes, values, seeded, initialValues, effective, layerKey, featureId, onSaved, save,
     hasUnitField, managingUnit.error, managingUnit.locked, managingUnit.submittable, initialUnit]);
 
   return { values, labels, fields, setField, managingUnit, canSave, saving, error, errorDetail, fieldErrors, submit };

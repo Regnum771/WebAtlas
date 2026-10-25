@@ -13,7 +13,7 @@ import {
 import { editCopyKey, symbolDataUrl } from './personalStyle';
 import { isMapNotFound, useMapDetail, useMyMaps } from './queries';
 import {
-  closeTable, emptyFilter, resetTableStore, select, setFilter, useTableStore, type TableFilter,
+  closeTable, emptyFilter, resetTableStore, select, setFilter, useTableStore, type FilterCondition, type TableFilter,
 } from './table.store';
 import type { TableSelection } from './usePersonalEditingPresenter';
 import { DEBOUNCE_MS, TABLE_LOAD_ERROR, TABLE_PAGE_SIZE, useTableQuery } from './useTableQuery';
@@ -131,13 +131,16 @@ function halfDisplayStep(attribute: DictAttribute): number {
  * else goes as typed. An unreadable number gives the reader's message.
  */
 function storedCondition(
-  layer: LayerSummary | null, c: TableCondition, dictionary: Dictionary,
+  layer: LayerSummary | null, full: FilterCondition, dictionary: Dictionary,
 ): { ok: true; condition: TableCondition } | { ok: false; message: string } {
-  const attribute = layer ? columnAttribute(layer, c.field, dictionary) : undefined;
+  // The unit the value was typed in wins over the dictionary as it is now (Ruling 8). The snapshot
+  // is the table's own; it is not sent.
+  const { typedWith, ...c } = full;
+  const attribute = typedWith ?? (layer ? columnAttribute(layer, c.field, dictionary) : undefined);
   if (attribute?.valueType !== 'number' || !needsValue(c.op) || c.value === undefined || String(c.value).trim() === '') {
     return { ok: true, condition: c };
   }
-  let condition = c;
+  let condition: TableCondition = c;
   if (takesUnits(attribute)) {
     const read = parseDisplay(attribute, String(c.value));
     if (!read.ok) return read;
@@ -238,7 +241,7 @@ export function useTablePresenter() {
   const [hidden, setHidden] = useState<(Target & { filter: string }) | null>(null);
   const dictionary = useDictionary();
   // An unreadable value is left out of the request (storedCondition gives the editor its message).
-  const toStored = (c: TableCondition) => {
+  const toStored = (c: FilterCondition) => {
     const s = storedCondition(layer, c, dictionary);
     return s.ok ? s.condition : null;
   };
@@ -363,7 +366,7 @@ export function useTablePresenter() {
     canNext: (index + 1) * TABLE_PAGE_SIZE < matched,
   };
 
-  const setConditions = (next: TableCondition[]) => setFilter({ conditions: next });
+  const setConditions = (next: FilterCondition[]) => setFilter({ conditions: next });
 
   // Phóng tới: the selected row's box; a selection without a row here (the filter hides it) is
   // fitted from its ring; nothing selected, every row on the page.
@@ -418,7 +421,16 @@ export function useTablePresenter() {
     updateCondition: (i: number, patch: ConditionPatch) => {
       const current = filter.conditions[i];
       if (!current) return;
-      const next: TableCondition = { ...current, ...patch };
+      const next: FilterCondition = { ...current, ...patch };
+      // Snapshot: the value's first keystroke fixes the unit it is read in, until the field changes
+      // or the value is emptied (the next keystroke then starts afresh).
+      const nextAttribute = layer ? columnAttribute(layer, next.field, dictionary) : undefined;
+      if (next.field !== current.field) delete next.typedWith;
+      if (!('value' in patch) || patch.value === undefined || String(patch.value).trim() === '') {
+        if ('value' in patch) delete next.typedWith;
+      } else if (!next.typedWith && takesUnits(nextAttribute)) {
+        next.typedWith = nextAttribute;
+      }
       // A field of another type keeps the operator only when that type offers it.
       if (!(OPERATORS[typeOf(next.field)] as readonly string[]).includes(next.op)) next.op = OPERATORS[typeOf(next.field)][0];
       // A field switched to a code column keeps the value only when it is one of that column's codes.

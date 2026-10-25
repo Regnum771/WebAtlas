@@ -20,10 +20,11 @@ vi.mock('./useManagingUnitField', () => ({
     };
   },
 }));
-// The code defaults, without the served copy's fetch.
+// The code defaults, without the served copy's fetch; a test can serve another copy.
+const served = vi.hoisted(() => ({ dictionary: null as null | import('@webatlas/shared').Dictionary }));
 vi.mock('../../dictionary', async () => {
   const shared = await vi.importActual<typeof import('@webatlas/shared')>('@webatlas/shared');
-  return { useDictionary: () => shared.DICTIONARY };
+  return { useDictionary: () => served.dictionary ?? shared.DICTIONARY };
 });
 import { DICTIONARY, attributeOf, labelFor, parseDisplay } from '@webatlas/shared';
 import { ApiError } from '../../../shared/api/apiClient';
@@ -356,6 +357,28 @@ describe('useAttributeFormPresenter: the data dictionary', () => {
     act(() => copy.current.setField('length_m', '1.250,5'));
     await act(async () => { await copy.current.submit(); });
     expect(save).toHaveBeenCalledWith({ name: 'Sông X', length_m: 1250500 }, null);
+  });
+
+  it('a number typed before the served dictionary arrives is read in the unit it was typed in', async () => {
+    const { result, rerender } = renderHook(() => useAttributeFormPresenter(river({ name: 'Sông X', length_m: '12345.678' })));
+    // Typed against the defaults (km, precision 1).
+    expect(result.current.fields.length_m.unitSymbol).toBe('km');
+    act(() => result.current.setField('length_m', '12,5'));
+    // The served dictionary arrives showing metres.
+    const rivers = DICTIONARY.rivers;
+    served.dictionary = {
+      ...DICTIONARY,
+      rivers: { ...rivers, attributes: rivers.attributes.map((a) => (a.name === 'length_m' ? { ...a, displayUnit: 'm', precision: 0 } : a)) },
+    };
+    try {
+      rerender();
+      // Untouched fields follow the served dictionary; the typed one keeps its unit.
+      expect(result.current.fields.length_m.unitSymbol).toBe('km');
+      await act(async () => { await result.current.submit(); });
+      expect(updateFeature).toHaveBeenCalledWith('rivers', 'r1', { properties: { name: 'Sông X', length_m: 12500 } });
+    } finally {
+      served.dictionary = null;
+    }
   });
 
   it('an unreadable number blocks the save with the field message', async () => {
