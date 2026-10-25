@@ -222,13 +222,13 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
       });
 
     // The fields that show an error under them; any other field's refusal is the form's message.
-    const shown = fields.filter((f) => f.kind !== 'locked').map((f) => f.key);
+    const errorFields = fields.filter((f) => f.kind !== 'locked').map((f) => f.key);
     const restore = (list: string[]) => {
       if (list.length === 0) return;
       // The API restores the display unit and its permitted list together when one would leave the other invalid.
       const units = list.some((k) => k === 'displayUnit' || k === 'displayUnits') ? ['displayUnit', 'displayUnits'] : [];
       void run(formId, editKey, () => restoreFields(layerKey, name, { expectedRevision: target.revision, fields: list }),
-        [...list, ...units], shown);
+        [...list, ...units], errorFields);
     };
     return {
       idPrefix: isLayerForm ? 'dict-layer-form' : 'dict-attr',
@@ -257,7 +257,7 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
         const payload = { expectedRevision: target.revision, ...body };
         void run(formId, editKey, () => (isLayerForm
           ? patchLayer(layerKey, payload)
-          : patchAttribute(layerKey, name!, payload)), Object.keys(body), shown);
+          : patchAttribute(layerKey, name!, payload)), Object.keys(body), errorFields);
       },
       onRestore: (key) => restore([key]),
       onRestoreAll: () => restore([...editedKeys]),
