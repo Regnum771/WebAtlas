@@ -92,6 +92,53 @@ describe('compileQuery', () => {
     expect(ok.params).toEqual(['cong_suat', '12.5']);
   });
 
+  it('a tolerance makes eq and neq on a number column compare within it, all values bound', () => {
+    const eq = compileQuery(
+      COLUMNS, body({ conditions: [{ field: 'cong_suat', op: 'eq', value: 29.7, tolerance: 0.05 }] }), 1
+    );
+    expect(eq.where).toBe(
+      `(CASE WHEN (r.properties ->> $1::text) ~ ${NUM} THEN abs((r.properties ->> $1::text)::numeric - $2::numeric) <= $3::numeric ELSE false END)`
+    );
+    expect(eq.params).toEqual(['cong_suat', 29.7, 0.05]);
+    expect(eq.where).not.toContain('0.05');
+    expect(eq.where).not.toContain('29.7');
+
+    // neq keeps its rule for missing or non-numeric values: they match neither eq nor neq.
+    const neq = compileQuery(
+      COLUMNS, body({ conditions: [{ field: 'cong_suat', op: 'neq', value: '29.7', tolerance: 0.05 }] }), 1
+    );
+    expect(neq.where).toBe(
+      `(CASE WHEN (r.properties ->> $1::text) ~ ${NUM} THEN abs((r.properties ->> $1::text)::numeric - $2::numeric) > $3::numeric ELSE false END)`
+    );
+    expect(neq.params).toEqual(['cong_suat', '29.7', 0.05]);
+    expect(placeholders(neq.where)).toEqual([1, 1, 2, 3]);
+
+    // A non-numeric value still compiles to false, binding nothing.
+    const bad = compileQuery(
+      COLUMNS, body({ conditions: [{ field: 'cong_suat', op: 'eq', value: 'N/A', tolerance: 0.05 }] }), 1
+    );
+    expect(bad).toEqual({ where: '(false)', orderBy: 'r.id', params: [] });
+  });
+
+  it('a tolerance on another operator or column type is refused', () => {
+    const cases: Array<[string, string, unknown]> = [
+      ['cong_suat', 'gt', 5],
+      ['cong_suat', 'empty', undefined],
+      ['ten', 'eq', 'x'],
+      ['ngay', 'eq', '2024-01-01'],
+    ];
+    for (const [field, op, value] of cases) {
+      const run = () =>
+        compileQuery(COLUMNS, body({ conditions: [{ field, op, ...(value === undefined ? {} : { value }), tolerance: 1 }] }), 1);
+      expect(run, `${field} ${op}`).toThrow(ValidationError);
+      expect(run, `${field} ${op}`).toThrow(`Dung sai không dùng được với phép so sánh "${op}" trên trường "${field}".`);
+    }
+    // The schema takes only a finite tolerance of zero or more.
+    expect(() => body({ conditions: [{ field: 'cong_suat', op: 'eq', value: 1, tolerance: -0.1 }] })).toThrow();
+    expect(() => body({ conditions: [{ field: 'cong_suat', op: 'eq', value: 1, tolerance: Infinity }] })).toThrow();
+    expect(() => body({ conditions: [{ field: 'cong_suat', op: 'eq', value: 1, tolerance: '0.1' }] })).toThrow();
+  });
+
   it('the number guard caps digits at 30 on each side, for stored and sent values', () => {
     const cond = (value: string | number) =>
       compileQuery(COLUMNS, body({ conditions: [{ field: 'cong_suat', op: 'gt', value }] }), 1);

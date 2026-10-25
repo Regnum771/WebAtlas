@@ -154,6 +154,8 @@ export const LayerQueryBody = z.object({
         field: ColumnName,
         op: LayerQueryOp,
         value: z.union([z.string().max(200), z.number().finite()]).optional(),
+        /** eq/neq on a number column only: match within this distance of the value (layerQuery.ts). */
+        tolerance: z.number().finite().min(0).optional(),
       })
     )
     .max(10)

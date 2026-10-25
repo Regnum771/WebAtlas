@@ -136,6 +136,12 @@ export function compileQuery(columns: Column[], body: LayerQueryBody, firstParam
         field: col.name,
       });
     }
+    // A tolerance only means something for eq/neq on numbers; anywhere else it is refused.
+    if (c.tolerance !== undefined && !(col.type === 'number' && (c.op === 'eq' || c.op === 'neq'))) {
+      throw new ValidationError(`Dung sai không dùng được với phép so sánh "${c.op}" trên trường "${col.name}".`, {
+        field: col.name,
+      });
+    }
     if (c.op === 'empty' || c.op === 'notEmpty') {
       const v = `(${textOf(col.name)})`;
       return c.op === 'empty' ? `${v} IS NULL OR ${v} = ''` : `${v} IS NOT NULL AND ${v} <> ''`;
@@ -163,6 +169,11 @@ export function compileQuery(columns: Column[], body: LayerQueryBody, firstParam
               : null;
         if (value === null) return 'false';
         const v = `(${textOf(col.name)})`;
+        if (c.tolerance !== undefined) {
+          // eq: within the tolerance; neq: beyond it. A missing value still matches neither.
+          const within = c.op === 'eq' ? '<=' : '>';
+          return `CASE WHEN ${v} ~ ${NUMBER_SQL} THEN abs(${v}::numeric - ${bind(value)}::numeric) ${within} ${bind(c.tolerance)}::numeric ELSE false END`;
+        }
         return `CASE WHEN ${v} ~ ${NUMBER_SQL} THEN ${v}::numeric ${cmp} ${bind(value)}::numeric ELSE false END`;
       }
       case 'date': {

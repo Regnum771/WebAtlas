@@ -283,6 +283,19 @@ describe('layer table query', () => {
     expect(unknown.json().error.message).toBe('Trường "khong_co" không có trong lớp này.');
   }, 60_000);
 
+  it('eq with a tolerance matches the value shown at display precision', async () => {
+    const layer = await freeLayer([{ name: 'cong_suat', type: 'number' }], [
+      { label: 'A', properties: { cong_suat: 29.74 } },
+      { label: 'B', properties: { cong_suat: 29.8 } },
+      { label: 'C', properties: {} },
+    ]);
+    const eq = await query(layer, { conditions: [{ field: 'cong_suat', op: 'eq', value: 29.7, tolerance: 0.05 }] });
+    expect(labelsOf(eq, layer.labels)).toEqual(['A']);
+    // neq is its complement among the rows holding a number; the missing value matches neither.
+    const neq = await query(layer, { conditions: [{ field: 'cong_suat', op: 'neq', value: 29.7, tolerance: 0.05 }] });
+    expect(labelsOf(neq, layer.labels)).toEqual(['B']);
+  });
+
   it('the search box ignores diacritics: "dap" finds "Đập"', async () => {
     const drawn = await freeLayer(DRAWN_FIELDS, FEATURES);
     expect(sorted(labelsOf(await query(drawn, { q: 'dap' }), drawn.labels))).toEqual(['A', 'B']);
