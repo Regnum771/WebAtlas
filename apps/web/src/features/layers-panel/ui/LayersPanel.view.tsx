@@ -1,4 +1,5 @@
 import { CONTOUR_INTERVALS, TERRAIN_LAYER_STATE_IDS, type ContourInterval } from '@webatlas/shared';
+import { dictionaryKeyFor } from '../../dictionary/model/layerKeys';
 import type { PanelGroup } from '../model/useLayersPanel';
 import type { ContourSettings } from '../../map/model/contours';
 
@@ -18,6 +19,8 @@ interface Props {
   onOpacity: (layerStateId: string, opacity: number) => void;
   contourSettings: ContourSettings;
   onContourSettings: (next: ContourSettings) => void;
+  /** Opens the attribute sheet; rows without a dictionary entry get no button. */
+  onInfo?: (layerStateId: string, layerName: string) => void;
 }
 
 /** Passive: renders grouped layer rows. No data fetching, no map access. */
@@ -28,6 +31,7 @@ export function LayersPanelView({
   onOpacity,
   contourSettings,
   onContourSettings,
+  onInfo,
 }: Props) {
   return (
     <div className="layers-panel">
@@ -51,6 +55,17 @@ export function LayersPanelView({
                 />
                 <span>{layer.name}</span>
               </label>
+              {onInfo && dictionaryKeyFor(layer.id) && (
+                <button
+                  type="button"
+                  className="layer-info"
+                  data-dictionary-info={layer.id}
+                  aria-label={`Thuộc tính của ${layer.name}`}
+                  onClick={() => onInfo(layer.id, layer.name)}
+                >
+                  ⓘ
+                </button>
+              )}
               {layer.gated && <span className="layer-gate-hint">{layer.gateHint}</span>}
               {layer.visible && !layer.gated && (
                 <input

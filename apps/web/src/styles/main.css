@@ -1131,3 +1131,29 @@ body {
 .share-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .share-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .share-row .hint { margin-left: var(--space-1); }
+
+/* Dictionary quick sheet: a narrow sheet that sits on the map, right beside the side panel. */
+.layer-info {
+  background: transparent; border: 0; padding: 0 var(--space-1); cursor: pointer;
+  color: var(--ink-2); font-size: var(--text-md); line-height: 1;
+}
+.layer-info:hover, .layer-info:focus-visible { color: var(--ink); }
+.dictionary-sheet {
+  position: fixed; z-index: 20;
+  top: calc(var(--topbar-height) + var(--space-3)); left: calc(var(--panel-width) + var(--space-3));
+  width: 300px; max-height: calc(100vh - var(--topbar-height) - 2 * var(--space-3));
+  overflow-y: auto; padding: var(--space-3) var(--space-4);
+  background: var(--sheet); color: var(--ink);
+  border: 1px solid var(--ink); border-radius: var(--radius);
+}
+.dictionary-sheet-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.dictionary-sheet-title { font-size: var(--text-md); font-weight: 600; margin: 0; }
+.dictionary-sheet-close {
+  background: transparent; border: 1px solid var(--rule); border-radius: var(--radius);
+  color: var(--ink); font-size: var(--text-xs); padding: 2px var(--space-2); cursor: pointer;
+}
+.dictionary-sheet-list { list-style: none; margin: var(--space-3) 0; padding: 0; }
+.dictionary-sheet-row { padding: var(--space-2) 0; border-top: 1px solid var(--rule); }
+.dictionary-sheet-label { display: flex; gap: var(--space-2); font-size: var(--text-sm); font-weight: 600; }
+.dictionary-sheet-unit { color: var(--ink-2); font-weight: 400; }
+.dictionary-sheet-def, .dictionary-sheet-count { margin: 2px 0 0; font-size: var(--text-xs); color: var(--ink-2); }

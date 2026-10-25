@@ -126,4 +126,29 @@ describe('LayersPanelView', () => {
     );
     expect(screen.queryByLabelText('Khoảng cao đều')).not.toBeInTheDocument();
   });
-});
+
+  it('a row without an entry has no ⓘ, and a row with one opens its sheet', async () => {
+    const onInfo = vi.fn();
+    render(
+      <LayersPanelView
+        groups={[
+          {
+            name: 'G',
+            layers: [
+              { id: 'layer_dams', name: 'Đập & Hồ chứa', visible: false, opacity: 1, gated: false },
+              { id: 'layer_bm_roads', name: 'Giao thông', visible: false, opacity: 1, gated: false },
+            ],
+          },
+        ]}
+        missingDisplay={[]}
+        onToggle={vi.fn()}
+        onOpacity={vi.fn()}
+        contourSettings={contourSettings}
+        onContourSettings={vi.fn()}
+        onInfo={onInfo}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Thuộc tính của Giao thông' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Thuộc tính của Đập & Hồ chứa' }));
+    expect(onInfo).toHaveBeenCalledWith('layer_dams', 'Đập & Hồ chứa');
+  });});
