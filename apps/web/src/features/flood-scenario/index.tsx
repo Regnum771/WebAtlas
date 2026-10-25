@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMapContext } from '../../app/providers/MapProvider';
-import { attributeOf, formatScenarioTime } from '@webatlas/shared';
+import { DICTIONARY, attributeOf, formatScenarioTime } from '@webatlas/shared';
 import { useDictionary } from '../dictionary';
 import { useImpactsSummary } from './model/useImpactsSummary';
 import { useFitOnScenario } from './model/useFitOnScenario';
@@ -18,7 +18,8 @@ import './ui/flood.css';
 export default function FloodScenario() {
   const s = useFloodScenario();
   const { map } = useMapContext();
-  const depthAttr = attributeOf(useDictionary(), 'flood_depth', '1')!;
+  // A served copy missing the band falls back to the code copy rather than blanking the page.
+  const depthAttr = attributeOf(useDictionary(), 'flood_depth', '1') ?? attributeOf(DICTIONARY, 'flood_depth', '1')!;
   const [stationId, setStationId] = useState('cau-lau');
   const impacts = useImpactsSummary(s.scenarioId, s.status === 'ready', s.hour);
 

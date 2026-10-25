@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMapContext } from '../../../app/providers/MapProvider';
-import { attributeOf, formatValue } from '@webatlas/shared';
+import { DICTIONARY, attributeOf, formatValue } from '@webatlas/shared';
 import { useDictionary } from '../../dictionary';
 import { useCursorElevation } from '../model/useCursorElevation';
 
@@ -17,7 +17,8 @@ import { useCursorElevation } from '../model/useCursorElevation';
 const CursorElevation: React.FC = () => {
   const { map } = useMapContext();
   const { elevationM, pending } = useCursorElevation(map);
-  const dem = attributeOf(useDictionary(), 'dem', '1')!;
+  // A served copy missing the band falls back to the code copy rather than blanking the page.
+  const dem = attributeOf(useDictionary(), 'dem', '1') ?? attributeOf(DICTIONARY, 'dem', '1')!;
 
   if (elevationM === null && !pending) return null;
 

@@ -21,4 +21,11 @@ describe('CursorElevation', () => {
     rerender(<CursorElevation />);
     expect(screen.getByText('Độ cao: 41.260 cm')).toBeInTheDocument();
   });
+
+  it('a served dictionary without the dem band still renders the cursor readout', () => {
+    state.dictionary = { ...DICTIONARY, dem: { ...DICTIONARY.dem, attributes: [] } };
+    render(<CursorElevation />);
+    // The code copy's band stands in.
+    expect(screen.getByText('Độ cao: 413 m')).toBeInTheDocument();
+  });
 });
