@@ -86,6 +86,7 @@ export function useValueListEditor(
       colorHint: draft?.colorHint ?? v.colorHint ?? '',
       retired: v.retired === true,
       dirty: Object.keys(body).length > 0,
+      locked: busy !== null,
       saving: busy === key,
       message: mine?.message ?? null,
       errors: mine?.errors ?? {},

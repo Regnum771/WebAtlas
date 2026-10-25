@@ -265,6 +265,23 @@ describe('dictionary editor', () => {
       await waitFor(() => expect(api.patchValue).toHaveBeenCalledWith('dams', 'status', 'on', { expectedRevision: 9, colorHint: '#aabbcc' }));
     });
 
+    it('while one row save is pending, another row cannot save or retire', async () => {
+      let finish: (v: unknown) => void = () => {};
+      api.patchValue.mockReturnValue(new Promise((r) => { finish = r; }));
+      mount();
+      await userEvent.click(await screen.findByRole('button', { name: /Loại công trình/ }));
+      await userEvent.type(await screen.findByLabelText('Tên giá trị hydro'), '!');
+      await userEvent.type(screen.getByLabelText('Tên giá trị irrig'), '!');
+      expect(screen.getByRole('button', { name: 'Lưu giá trị irrig' })).toBeEnabled();
+      await userEvent.click(screen.getByRole('button', { name: 'Lưu giá trị hydro' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Lưu giá trị irrig' })).toBeDisabled());
+      expect(screen.getByRole('button', { name: 'Dùng lại giá trị irrig' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Ngừng dùng giá trị hydro' })).toBeDisabled();
+      finish({});
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Lưu giá trị irrig' })).toBeEnabled());
+      expect(api.patchValue).toHaveBeenCalledTimes(1);
+    });
+
     it('a 409 on a value reloads and shows the message', async () => {
       api.addValue.mockRejectedValue(new ApiError(409, 'DICTIONARY_CHANGED', 'x'));
       mount();
@@ -321,6 +338,27 @@ describe('dictionary editor', () => {
       expect(dialog.getByRole('button', { name: 'Áp dụng' })).toBeEnabled();
       await userEvent.selectOptions(dialog.getByLabelText('Đơn vị lưu mới'), 'm2');
       expect(dialog.getByRole('button', { name: 'Áp dụng' })).toBeDisabled();
+    });
+
+    it('switching attribute closes the dialog and it reopens empty', async () => {
+      api.previewStoredUnit.mockResolvedValue({ rows: [] });
+      mount();
+      let dialog = await open();
+      await userEvent.selectOptions(dialog.getByLabelText('Đơn vị lưu mới'), 'ha');
+      await userEvent.click(dialog.getByRole('button', { name: 'Xem trước' }));
+      await dialog.findByText('Không có giá trị mẫu để xem trước.');
+      await userEvent.type(dialog.getByLabelText('Áp dụng từ ngày'), '2026-11-01');
+      await userEvent.click(dialog.getByRole('checkbox'));
+      await userEvent.click(screen.getByRole('button', { name: /Tên tiếng Anh/ }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: /Diện tích/ }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await userEvent.click(await screen.findByRole('button', { name: 'Hiệu chỉnh đơn vị lưu…' }));
+      dialog = within(await screen.findByRole('dialog', { name: 'Hiệu chỉnh đơn vị lưu' }));
+      expect(dialog.getByLabelText('Đơn vị lưu mới')).toHaveValue('km2');
+      expect(dialog.getByLabelText('Áp dụng từ ngày')).toHaveValue('');
+      expect(dialog.getByRole('checkbox')).not.toBeChecked();
+      expect(dialog.queryByText('Không có giá trị mẫu để xem trước.')).toBeNull();
     });
 
     it('the stored-unit dialog offers only units of the same dimension', async () => {

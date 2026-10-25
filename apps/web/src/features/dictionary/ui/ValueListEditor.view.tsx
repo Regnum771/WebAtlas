@@ -11,6 +11,8 @@ export interface ValueRowView {
   colorHint: string;
   retired: boolean;
   dirty: boolean;
+  /** Another save is in flight: its reload brings the new revision, so no row may save before it. */
+  locked: boolean;
   saving: boolean;
   message: string | null;
   /** Messages by field: name, definition, colorHint. */
@@ -70,13 +72,13 @@ function ValueRow({ row }: { row: ValueRowView }) {
       {row.errors.colorHint && <p className="hint bad" role="alert">{row.errors.colorHint}</p>}
       <div className="acts">
         <Button
-          size="sm" variant="solid" busy={row.saving} busyLabel="Đang lưu…" disabled={!row.dirty}
+          size="sm" variant="solid" busy={row.saving} busyLabel="Đang lưu…" disabled={!row.dirty || row.locked}
           aria-label={`Lưu giá trị ${c}`} onClick={row.onSave}
         >
           Lưu
         </Button>
         {row.onToggleRetired ? (
-          <Button size="sm" aria-label={`${row.retired ? 'Dùng lại' : 'Ngừng dùng'} giá trị ${c}`} onClick={row.onToggleRetired}>
+          <Button size="sm" disabled={row.locked} aria-label={`${row.retired ? 'Dùng lại' : 'Ngừng dùng'} giá trị ${c}`} onClick={row.onToggleRetired}>
             {row.retired ? 'Dùng lại' : 'Ngừng dùng'}
           </Button>
         ) : (

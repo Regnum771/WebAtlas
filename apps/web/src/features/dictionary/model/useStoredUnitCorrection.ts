@@ -28,7 +28,7 @@ export function useStoredUnitCorrection(
   attribute: RevisedAttribute | undefined,
   reload: () => Promise<unknown>,
 ): { view: StoredUnitView | null; open: (() => void) | null } {
-  // The dialog belongs to one attribute: choosing another closes it.
+  // The dialog belongs to one attribute (see the key check below).
   const [openFor, setOpenFor] = useState<string | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -38,15 +38,23 @@ export function useStoredUnitCorrection(
   const [applying, setApplying] = useState(false);
   const [failure, setFailure] = useState<{ message: string | null; errors: Record<string, string> } | null>(null);
 
-  if (!attribute || attribute.valueType !== 'number' || !attribute.storedUnit) return { view: null, open: null };
-  const stored = attribute.storedUnit;
-  const key = `${layerKey}|${attribute.name}`;
-  const units = sameDimensionUnits(stored);
-  const selected = chosen ?? stored;
-
   const reset = () => {
     setChosen(null); setPreview(null); setPreviewing(false); setDate(''); setConfirmed(false); setApplying(false); setFailure(null);
   };
+  // A different attribute closes the dialog and starts it empty (state reset while rendering, as React allows).
+  const key = attribute ? `${layerKey}|${attribute.name}` : null;
+  const [seenKey, setSeenKey] = useState(key);
+  if (seenKey !== key) {
+    setSeenKey(key);
+    setOpenFor(null);
+    reset();
+  }
+
+  if (!attribute || key === null || attribute.valueType !== 'number' || !attribute.storedUnit) return { view: null, open: null };
+  const stored = attribute.storedUnit;
+  const units = sameDimensionUnits(stored);
+  const selected = chosen ?? stored;
+
   const close = () => { setOpenFor(null); reset(); };
   const previewed = preview !== null && preview.unit === selected;
   const canApply = previewed && date !== '' && confirmed && !applying;
