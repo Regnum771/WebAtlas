@@ -17,6 +17,8 @@
  *   6. The (i) beside the dams layer opens the sheet: it lists the wattage_mw label with MW, and
  *      "Xem đầy đủ" leads to /du-lieu/dams.
  *   7. That layer page shows EPSG:4326 and the two template buttons; the CSV template answers 200.
+ *  7b. Under print media the page prints whole: the code values stand open, the table's last row
+ *      is shown, the buttons are hidden, and printed on A6 the content runs on past the first page.
  *   8. /du-lieu with the search "dap" finds the dams layer.
  *   9. Staff edit: in /quan-ly/tu-dien the wattage_mw label is saved as "<label> (kiểm thử)"; the
  *      edit copy's table header and its row form then read the new label.
@@ -655,6 +657,49 @@ async function stepLayerPage(session, vp) {
   return problems;
 }
 
+/** The number of pages in a PDF the browser printed. */
+function pdfPages(pdf) {
+  return (Buffer.from(pdf).toString('latin1').match(/\/Type\s*\/Page(?!s)/g) ?? []).length;
+}
+
+/**
+ * Step 7b: the layer page prints whole. Under print media the code values stand open and the
+ * table's last row is shown; printed on A6 (the page is taller than one A6 sheet), the content
+ * runs on to more pages instead of being cut at the first one.
+ */
+async function stepPrint(session, vp) {
+  const { page } = session;
+  const problems = [];
+  await page.emulateMediaType('print');
+  try {
+    const state = await page.evaluate(() => {
+      const root = document.querySelector('.layer-page');
+      const rows = [...root.querySelectorAll('.layer-page-table tbody tr')];
+      const last = rows[rows.length - 1];
+      const values = [...root.querySelectorAll('.layer-page-values li')];
+      return {
+        rows: rows.length,
+        lastShown: Boolean(last && last.checkVisibility() && last.getBoundingClientRect().height > 0),
+        lastLabel: last?.querySelector('th span')?.textContent.trim() ?? null,
+        values: values.length,
+        hiddenValues: values.filter((li) => !li.checkVisibility() || li.getBoundingClientRect().height === 0).map((li) => li.textContent.trim()),
+        buttonsShown: [...root.querySelectorAll('.no-print')].filter((el) => el.checkVisibility()).length,
+      };
+    });
+    if (state.rows === 0) problems.push('the attribute table has no rows');
+    if (!state.lastShown) problems.push(`the table's last row "${state.lastLabel}" is not shown in print`);
+    if (state.values === 0) problems.push('the page lists no code values');
+    if (state.hiddenValues.length > 0) problems.push(`code values hidden in print: ${state.hiddenValues.join(' | ')}`);
+    if (state.buttonsShown > 0) problems.push(`${state.buttonsShown} buttons or links of the page still show in print`);
+    const pages = pdfPages(await page.pdf({ format: 'A6' }));
+    if (pages < 2) problems.push(`printed on A6 the page takes ${pages} page(s): its content is cut at the first page`);
+    console.log(`          ${vp}: printed on A6 in ${pages} pages; ${state.values} code values shown; last row "${state.lastLabel}"`);
+  } finally {
+    await page.emulateMediaType(null);
+  }
+  return problems;
+}
+
 /** Step 8: back on /du-lieu, the search "dap" finds the dams layer. */
 async function stepList(session, vp, ctx) {
   const { page } = session;
@@ -758,10 +803,16 @@ async function servedLabel() {
   return dict.attributes.find((a) => a.name === NUMBER_COLUMN)?.label;
 }
 
-/** Restores the label through the API when it ends in EDIT_SUFFIX; returns the problems. */
+/**
+ * Restores the label through the API when it ends in EDIT_SUFFIX; returns the problems. A restore
+ * quotes the attribute's current revision, read just before (a stale one is refused 409).
+ */
 async function restoreLabel(token) {
-  if (!(await servedLabel()).endsWith(EDIT_SUFFIX)) return [];
-  const res = await api('POST', `/api/dictionary/${LAYER_KEY}/${NUMBER_COLUMN}/restore`, token, { fields: ['label'] });
+  const dict = await ok('GET', `/api/dictionary/${LAYER_KEY}`, null);
+  const attr = dict.attributes.find((a) => a.name === NUMBER_COLUMN);
+  if (!attr?.label.endsWith(EDIT_SUFFIX)) return [];
+  const res = await api('POST', `/api/dictionary/${LAYER_KEY}/${NUMBER_COLUMN}/restore`, token,
+    { expectedRevision: attr.revision, fields: ['label'] });
   return res.status === 200 ? [] : [`restoring the label answered ${res.status}: ${res.json?.error?.message ?? ''}`];
 }
 
@@ -788,6 +839,8 @@ async function runViewport(browser, viewport, ctx) {
       () => stepSheet(session, vp, ctx));
     const layerPage = await check(vp, '7', 'the layer page shows EPSG:4326 and both templates; the CSV template answers 200',
       async () => (sheet ? stepLayerPage(session, vp) : ['skipped: step 6 failed']));
+    await check(vp, '7b', 'the layer page prints whole: code values open, the last row shown, the content runs on past one A6 page',
+      async () => (layerPage ? stepPrint(session, vp) : ['skipped: step 7 failed']));
     await check(vp, '8', '/du-lieu search "dap" finds the dams layer',
       async () => (layerPage ? stepList(session, vp, ctx) : ['skipped: step 7 failed']));
     const staff = await check(vp, '9', `staff edit: "${ctx.expect.numberLabel}${EDIT_SUFFIX}" reaches the table header and the row form`,

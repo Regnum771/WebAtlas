@@ -164,7 +164,7 @@ npm run verify:personal-maps -w @webatlas/web -- --out <dir> --only 768   # one 
 `--only` and `VERIFY_OWNER_EMAIL` / `VERIFY_OWNER_PASSWORD`, which must be an admin) checks that the data dictionary
 reaches the screen: in an edit copy of `dams` the table header, cells, conditions and form use the dictionary's labels,
 value names and MW, and the dams legend reads `Nhỏ (< 200 MW)`; the ⓘ sheet, the `/du-lieu` pages and their CSV
-template work; a staff edit of the `wattage_mw` label in `/quan-ly/tu-dien` reaches the table header and the form, and
+template work, and the layer page prints whole (code values open, every row, more than one A6 page); a staff edit of the `wattage_mw` label in `/quan-ly/tu-dien` reaches the table header and the form, and
 *Khôi phục mặc định* brings it back (the history keeps both rows). At the end it deletes its map and restores the label
 through the API, even when a step failed; it pauses 65 s between the two widths for the API's rate limit.
 
