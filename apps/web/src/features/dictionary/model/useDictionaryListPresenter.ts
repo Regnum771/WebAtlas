@@ -1,12 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useDictionary } from './useDictionary';
+import { isCurrent } from './isCurrent';
 import { normalizeText } from '../../access-groups/model/useUnitPicker';
 import type { ListGroup, ListRow } from '../ui/DictionaryList.view';
-
-/** Same rule as the quick sheet: retired when the end date is not in the future. */
-function isCurrent(validTo: string | undefined, today: string): boolean {
-  return !validTo || validTo > today;
-}
 
 const GROUPS = [
   { kind: 'vector', title: 'Lớp vectơ' },
@@ -19,9 +15,8 @@ export function useDictionaryListPresenter() {
   const [query, onQuery] = useState('');
 
   const { groups, empty } = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
     const q = normalizeText(query.trim());
-    const current = Object.values(dictionary).filter((f) => isCurrent(f.validTo, today));
+    const current = Object.values(dictionary).filter((f) => isCurrent(f.validTo));
     const out: ListGroup[] = [];
     for (const { kind, title } of GROUPS) {
       const rows: ListRow[] = current

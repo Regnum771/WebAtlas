@@ -1171,3 +1171,33 @@ body {
 .dictionary-list-name { font-weight: 600; }
 .dictionary-list-def { color: var(--ink-2); font-size: var(--text-sm); }
 .dictionary-list-empty { margin: 0; color: var(--ink-2); }
+
+/* Data dictionary: one layer's page (/du-lieu/:key) */
+.layer-page { max-width: 1200px; }
+.layer-page-head { display: grid; gap: 6px; }
+.layer-page-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.layer-page-actions { display: flex; align-items: center; gap: 12px; }
+.layer-page-def { margin: 0; color: var(--ink-2); }
+.layer-page-meta { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--text-sm); color: var(--ink-2); }
+.layer-page-retired { margin: 0; font-weight: 600; }
+.layer-page-templates { margin: 4px 0 0; display: flex; gap: 8px; flex-wrap: wrap; }
+.layer-page-table-wrap { overflow-x: auto; }
+.layer-page-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.layer-page-table th, .layer-page-table td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--rule); }
+.layer-page-table thead th { font-weight: 650; border-bottom: 2px solid var(--ink); }
+.layer-page-table tbody th { font-weight: 600; }
+.layer-page-attr { display: block; font-weight: 400; font-size: var(--text-xs); color: var(--ink-2); }
+.layer-page-badge { margin-left: 6px; padding: 0 6px; border: 1px solid var(--ink-2); border-radius: var(--radius); font-size: var(--text-xs); font-weight: 400; color: var(--ink-2); }
+.layer-page-row-retired { color: var(--ink-2); }
+.layer-page-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.layer-page-values summary { cursor: pointer; }
+
+@media print {
+  /* Print only the layer page: the map, top bar and every button stay out. */
+  body * { visibility: hidden; }
+  .layer-page, .layer-page * { visibility: visible; }
+  .quan-ly-route:has(.layer-page) { position: static; overflow: visible; padding: 0; background: none; }
+  .layer-page { position: absolute; left: 0; top: 0; width: 100%; max-width: none; }
+  .layer-page .no-print { display: none; }
+  .layer-page-table-wrap { overflow: visible; }
+}

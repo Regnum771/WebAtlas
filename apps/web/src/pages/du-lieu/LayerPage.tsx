@@ -1,12 +1,13 @@
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { LayerPageView, useLayerPagePresenter } from '../../features/dictionary';
 
-/** Placeholder: Task 4 replaces this with the layer page. */
+/** /du-lieu/:key: one layer's attribute table, over the live map. */
 export default function LayerPage() {
-  const { key } = useParams();
+  const { key = '' } = useParams();
+  const { page } = useLayerPagePresenter(key);
   return (
     <div className="quan-ly-route">
-      <p>{key}</p>
-      <Link className="link" to="/du-lieu">Về danh sách</Link>
+      <LayerPageView page={page} />
     </div>
   );
 }

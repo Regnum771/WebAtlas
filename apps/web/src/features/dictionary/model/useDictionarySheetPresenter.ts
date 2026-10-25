@@ -2,12 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { unit, type DictAttribute } from '@webatlas/shared';
 import { useDictionary } from './useDictionary';
 import { dictionaryKeyFor } from './layerKeys';
+import { isCurrent } from './isCurrent';
 import type { SheetRow } from '../ui/DictionarySheet.view';
-
-/** A retired attribute has an end date that is not in the future. */
-function isCurrent(attribute: DictAttribute, today: string): boolean {
-  return !attribute.validTo || attribute.validTo > today;
-}
 
 function toRow(attribute: DictAttribute): SheetRow {
   const unitCode = attribute.displayUnit ?? attribute.storedUnit;
@@ -60,11 +56,10 @@ export function useDictionarySheetPresenter() {
     const key = dictionaryKeyFor(open.layerId);
     const featureType = key ? dictionary[key] : undefined;
     if (!key || !featureType) return null;
-    const today = new Date().toISOString().slice(0, 10);
     return {
       title: `${open.layerName} — thuộc tính`,
       dictionaryKey: key,
-      rows: featureType.attributes.filter((a) => isCurrent(a, today)).map(toRow),
+      rows: featureType.attributes.filter((a) => isCurrent(a.validTo)).map(toRow),
     };
   }, [open, dictionary]);
 

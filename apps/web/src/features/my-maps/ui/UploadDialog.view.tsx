@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { CRS_OPTIONS } from '@webatlas/shared';
 import { Button } from '../../../shared/ui/Button';
 import { Dialog } from '../../../shared/ui/Dialog';
@@ -112,6 +113,11 @@ export function UploadDialogView(p: UploadDialogViewProps) {
         {p.job && <JobProgressView job={p.job} />}
         {p.error && <Message tone="error" title={p.error} />}
         {p.successText && <Message tone="success" title={p.successText} />}
+
+        {/* Following the link closes the dialog (it is portaled over the page); not offered mid-upload, where closing cancels. */}
+        {!working && (
+          <Link className="link" to="/du-lieu" onClick={p.onClose}>Cấu trúc các lớp chính thức →</Link>
+        )}
 
         <div className="dialog-actions">
           <Button onClick={p.onClose}>{closeLabel}</Button>
