@@ -65,6 +65,11 @@ export const nearestFeaturesTool: ToolFactory = (ctx) =>
         items: capResultItems(nearestGeometries(input.layerKey, input.lon, input.lat, rows)).items };
       if (isMapCommand(connectors)) ctx.collect(connectors);
 
-      return JSON.stringify({ layerKey: input.layerKey, from: [input.lon, input.lat], rows, ...(await fieldsPart(ctx.pool, input.layerKey, ['name'])) });
+      return JSON.stringify({
+        layerKey: input.layerKey,
+        from: [input.lon, input.lat],
+        rows,
+        ...(await fieldsPart(ctx.pool, input.layerKey, ['name'])),
+      });
     },
   });

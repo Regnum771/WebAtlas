@@ -3,6 +3,7 @@ import { defineConfig, configDefaults } from 'vitest/config';
 const ISOLATED = [
   'src/modules/analysis/ops/elevationProfile.test.ts',
   'src/modules/assistant/tools/command/command.test.ts',
+  'src/modules/assistant/tools/data/fieldLabels.test.ts',
 ];
 
 export default defineConfig({
