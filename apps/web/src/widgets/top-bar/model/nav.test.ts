@@ -13,29 +13,35 @@ const canFor = (u: CurrentUser | null, units: string[] = []) => (permission: Gra
 const labels = (u: CurrentUser | null, can = canFor(u)) => navFor(u, can).map((n) => n.label);
 
 describe('navFor', () => {
-  it('a visitor sees only Bản đồ', () => {
-    expect(labels(null)).toEqual(['Bản đồ']);
+  it('a visitor sees Bản đồ and Dữ liệu', () => {
+    expect(labels(null)).toEqual(['Bản đồ', 'Dữ liệu']);
+  });
+
+  it('the top bar shows Dữ liệu to everyone', () => {
+    expect(labels(null)).toContain('Dữ liệu');
+    expect(labels(user())).toContain('Dữ liệu');
+    expect(navFor(null, canFor(null)).find((n) => n.label === 'Dữ liệu')?.to).toBe('/du-lieu');
   });
 
   it('Quản lý is hidden from a reader and shown to admin', () => {
-    expect(labels(user())).toEqual(['Bản đồ']);
-    expect(labels(user({ role: 'admin', isAdmin: true }))).toEqual(['Bản đồ', 'Quản lý']);
+    expect(labels(user())).toEqual(['Bản đồ', 'Dữ liệu']);
+    expect(labels(user({ role: 'admin', isAdmin: true }))).toEqual(['Bản đồ', 'Dữ liệu', 'Quản lý']);
   });
 
   it('shows Quản lý to a users.manage holder', () => {
     const u = user({ grants: [grant('users.manage')] });
-    expect(labels(u)).toEqual(['Bản đồ', 'Quản lý']);
+    expect(labels(u)).toEqual(['Bản đồ', 'Dữ liệu', 'Quản lý']);
   });
 
   it('shows Quản lý to a holder of feature.update and submission.review on VN', () => {
     const u = user({ grants: [grant('feature.update', 'VN'), grant('submission.review', 'VN')] });
-    expect(labels(u, canFor(u, ['VN']))).toEqual(['Bản đồ', 'Quản lý']);
-    expect(labels(u, canFor(u, []))).toEqual(['Bản đồ']);
+    expect(labels(u, canFor(u, ['VN']))).toEqual(['Bản đồ', 'Dữ liệu', 'Quản lý']);
+    expect(labels(u, canFor(u, []))).toEqual(['Bản đồ', 'Dữ liệu']);
   });
 
   it('hides Quản lý from a holder of feature.update on VN without the review right', () => {
     const u = user({ grants: [grant('feature.update', 'VN')] });
-    expect(labels(u, canFor(u, ['VN']))).toEqual(['Bản đồ']);
+    expect(labels(u, canFor(u, ['VN']))).toEqual(['Bản đồ', 'Dữ liệu']);
   });
 
   it('passes the user and can to a custom visibleWhen', () => {

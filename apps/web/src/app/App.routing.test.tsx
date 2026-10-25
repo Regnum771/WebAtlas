@@ -23,6 +23,8 @@ vi.mock('../pages/quan-ly/sections/NguoiDung', () => ({ default: () => <div>NGUO
 vi.mock('../pages/quan-ly/sections/NhomQuyen', () => ({ default: () => <div>NHOM_QUYEN</div> }));
 vi.mock('../pages/quan-ly/sections/ChuaGan', () => ({ default: () => <div>CHUA_GAN</div> }));
 
+vi.mock('../pages/du-lieu', () => ({ default: () => <div>DU_LIEU</div> }));
+
 import App from './App';
 
 describe('App routing', () => {
@@ -53,6 +55,20 @@ describe('App routing', () => {
     expect(await screen.findByText('NHOM_QUYEN')).toBeInTheDocument();
     // OpenLayers must not re-initialize and the user's center/zoom must survive navigation.
     expect(screen.getByText('MAP_VIEW')).toBeInTheDocument();
+  });
+
+  it('/du-lieu overlays a live map', async () => {
+    window.history.pushState({}, '', '/du-lieu');
+    render(<App />);
+    expect(await screen.findByText('DU_LIEU')).toBeInTheDocument();
+    expect(screen.getByText('MAP_VIEW')).toBeInTheDocument();
+  });
+
+  it('the du-lieu pages are lazy-loaded', () => {
+    const source = readFileSync(resolve(__dirname, 'App.tsx'), 'utf8');
+    const lines = source.split('\n').filter((line) => line.includes('pages/du-lieu'));
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) expect(line).toMatch(/lazy\(\(\) => import\('/);
   });
 
   it('the Quản lý chunk is not in the main bundle', () => {

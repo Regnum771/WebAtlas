@@ -10,6 +10,7 @@ export interface NavItem {
 // Later sub-projects append their screen here.
 export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/', label: 'Bản đồ' },
+  { to: '/du-lieu', label: 'Dữ liệu' },
   { to: '/quan-ly', label: 'Quản lý', visibleWhen: canSeeQuanLy },
 ];
 
