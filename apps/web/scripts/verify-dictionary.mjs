@@ -14,8 +14,18 @@
  *      the value in display units and the unit's symbol after the input; status shows its name.
  *   5. The official dams layer switched off and on again: its legend shows "Nhỏ (< 200 MW)",
  *      "Vừa (200 – 1.000 MW)" and "Lớn (> 1.000 MW)", and the status names.
- *   6. Cleanup through the API: the test map is deleted (with it the edit copy's draft), and the
- *      owner holds the maps, uploads and jobs it held at the start.
+ *   6. The (i) beside the dams layer opens the sheet: it lists the wattage_mw label with MW, and
+ *      "Xem đầy đủ" leads to /du-lieu/dams.
+ *   7. That layer page shows EPSG:4326 and the two template buttons; the CSV template answers 200.
+ *   8. /du-lieu with the search "dap" finds the dams layer.
+ *   9. Staff edit: in /quan-ly/tu-dien the wattage_mw label is saved as "<label> (kiểm thử)"; the
+ *      edit copy's table header and its row form then read the new label.
+ *  10. "Khôi phục mặc định" brings the label back; the history panel lists the edit and the restore.
+ *  11. Cleanup through the API: the test map is deleted (with it the edit copy's draft), the owner
+ *      holds the maps, uploads and jobs it held at the start, and the label is back at its default
+ *      (GET /api/dictionary/dams). The label is restored through the API even when a step failed.
+ *
+ * Steps 9 and 10 need an owner who passes dictionary.manage on VN: an admin.
  *
  * Every step runs at 1440x900 and at 768x900 and prints one PASS / FAIL line, then the script
  * exits non-zero on any FAIL. A rerun first deletes maps titled "Kiểm thử từ điển" that an
@@ -23,7 +33,7 @@
  * own calls on a 429 and prints a `note` line for every 429 the app received.
  *
  * Credentials come only from the environment:
- *   VERIFY_OWNER_EMAIL / VERIFY_OWNER_PASSWORD   the owner of the test map (any role)
+ *   VERIFY_OWNER_EMAIL / VERIFY_OWNER_PASSWORD   the owner of the test map (an admin: steps 9 and 10 edit the dictionary)
  * Optional: BASE_URL (web, default http://localhost:5173), API_URL (default http://localhost:3001),
  * CHROME_PATH.
  *
@@ -57,6 +67,8 @@ const VIEWPORTS = [
 const TILE_REQUEST = /gwc|wmts|tile|arcgis|google/i;
 const QUIET_MS = 3000;
 const SETTLE_CAP_MS = 60000;
+/** Pause between the two widths, so the first width's requests leave the API's one-minute window. */
+const COOL_DOWN_MS = 65000;
 
 const MAP_TITLE = 'Kiểm thử từ điển';
 const GROUP_OWN = 'Của tôi';
@@ -69,6 +81,8 @@ const CODE_COLUMN = 'status';
 const LEGEND_SIZES = ['Nhỏ (< 200 MW)', 'Vừa (200 – 1.000 MW)', 'Lớn (> 1.000 MW)'];
 /** Operators a code column offers (spec ruling 4). */
 const CODE_OPS = ['bằng', 'khác', 'trống', 'không trống'];
+/** What the staff edit appends to the label; the check always takes it off again. */
+const EDIT_SUFFIX = ' (kiểm thử)';
 
 // ---- Reporting ---------------------------------------------------------------------------
 
@@ -174,6 +188,7 @@ async function expectations() {
   }
   const values = [...code.values].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   return {
+    layerName: dict.name,
     numberLabel: number.label,
     precision: number.precision ?? 2,
     codeLabel: code.label,
@@ -578,6 +593,178 @@ async function stepLegend(session, vp, ctx) {
   return problems;
 }
 
+// ---- Dictionary pages and the staff editor -------------------------------------------------------
+
+/** Waits for the served label of wattage_mw to equal `label`. */
+async function waitServedLabel(label) {
+  const start = Date.now();
+  let last = null;
+  while (Date.now() - start < 15000) {
+    const dict = await ok('GET', `/api/dictionary/${LAYER_KEY}`, null);
+    last = dict.attributes.find((a) => a.name === NUMBER_COLUMN)?.label;
+    if (last === label) return;
+    await sleep(300);
+  }
+  throw new Error(`the served label is "${last}", expected "${label}"`);
+}
+
+/** Step 6: the (i) beside the dams layer opens the sheet; "Xem đầy đủ" leads to its page. */
+async function stepSheet(session, vp, ctx) {
+  const { page } = session;
+  const problems = [];
+  const info = await page.$(`button[aria-label="Thuộc tính của ${DAMS_DISPLAY}"]`);
+  if (!info) throw new Error(`no (i) button beside "${DAMS_DISPLAY}"`);
+  await info.evaluate((b) => b.click());
+  await page.waitForSelector('.dictionary-sheet', { visible: true, timeout: 10000 });
+  const rows = await page.$$eval('.dictionary-sheet-row', (els) => els.map((el) => ({
+    label: el.querySelector('.dictionary-sheet-label span')?.textContent.trim(),
+    unit: el.querySelector('.dictionary-sheet-unit')?.textContent.trim() ?? null,
+  })));
+  const row = rows.find((r) => r.label === ctx.expect.numberLabel);
+  if (!row) problems.push(`the sheet has no row "${ctx.expect.numberLabel}": ${rows.map((r) => r.label).join(' | ')}`);
+  else if (row.unit !== 'MW') problems.push(`its unit reads "${row.unit}", expected "MW"`);
+  await shot(session, vp, 'ban-thuoc-tinh');
+  await page.$eval('.dictionary-sheet a.link', (a) => a.click());
+  await page.waitForFunction((k) => location.pathname === `/du-lieu/${k}`, { timeout: 10000 }, LAYER_KEY)
+    .catch(() => problems.push('"Xem đầy đủ" did not lead to /du-lieu/dams'));
+  return problems;
+}
+
+/** Step 7: the layer page names the CRS and offers both templates; the CSV one answers 200. */
+async function stepLayerPage(session, vp) {
+  const { page } = session;
+  const problems = [];
+  await page.waitForSelector('.layer-page .layer-page-templates', { timeout: 10000 });
+  const info = await page.evaluate(() => {
+    const root = document.querySelector('.layer-page');
+    return {
+      meta: root.querySelector('.layer-page-meta')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+      links: [...root.querySelectorAll('.layer-page-templates a')].map((a) => ({ text: a.textContent.trim(), href: a.href })),
+    };
+  });
+  if (!info.meta.includes('EPSG:4326')) problems.push(`the page does not show EPSG:4326: "${info.meta}"`);
+  for (const wanted of ['Tải mẫu GeoPackage', 'Tải mẫu CSV']) {
+    if (!info.links.some((l) => l.text === wanted)) problems.push(`no button "${wanted}": ${info.links.map((l) => l.text).join(' | ')}`);
+  }
+  const csv = info.links.find((l) => l.text === 'Tải mẫu CSV');
+  if (csv) {
+    const status = await page.evaluate((href) => fetch(href).then((r) => r.status), csv.href);
+    if (status !== 200) problems.push(`the CSV template answered ${status}`);
+  }
+  await shot(session, vp, 'trang-lop');
+  return problems;
+}
+
+/** Step 8: back on /du-lieu, the search "dap" finds the dams layer. */
+async function stepList(session, vp, ctx) {
+  const { page } = session;
+  await page.$$eval('.layer-page a.link', (as) => as.find((a) => a.textContent.trim() === 'Về danh sách')?.click());
+  await page.waitForSelector('input[aria-label="Tìm lớp"]', { visible: true, timeout: 10000 });
+  await page.type('input[aria-label="Tìm lớp"]', 'dap');
+  const found = await page.waitForFunction((name) => [...document.querySelectorAll('.dictionary-list-row')]
+    .some((a) => a.textContent.includes(name) && a.getAttribute('href') === '/du-lieu/dams'), { timeout: 10000 }, ctx.expect.layerName)
+    .then(() => true, () => false);
+  await shot(session, vp, 'du-lieu');
+  return found ? [] : [`the search "dap" does not list "${ctx.expect.layerName}" with a link to /du-lieu/dams`];
+}
+
+/** Opens /quan-ly/tu-dien on the dams layer with the attribute button `label` chosen. */
+async function openEditor(page, label) {
+  await page.goto(`${BASE_URL}/quan-ly/tu-dien`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#dict-layer', { visible: true, timeout: 30000 });
+  await page.select('#dict-layer', LAYER_KEY);
+  await page.waitForFunction((l) => [...document.querySelectorAll('nav[aria-label="Thuộc tính"] button')].some((b) => b.textContent.trim() === l),
+    { timeout: 15000 }, label);
+  await page.evaluate((l) => [...document.querySelectorAll('nav[aria-label="Thuộc tính"] button')].find((b) => b.textContent.trim() === l).click(), label);
+  await page.waitForSelector('#dict-attr-label', { visible: true, timeout: 10000 });
+}
+
+/** Reloads the map and opens the edit copy's table from its card. */
+async function openEditCopyTable(page, ctx) {
+  await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.map-container canvas', { timeout: 30000 });
+  await page.waitForSelector('.my-maps .my-maps-buttons', { timeout: 20000 });
+  await page.waitForFunction((t, g) => Boolean(window.__dd.card(t, g)), { timeout: 15000 }, MAP_TITLE, GROUP_OWN);
+  const expanded = await page.evaluate((t, g) => window.__dd.card(t, g).querySelector('.my-map-head').getAttribute('aria-expanded') === 'true', MAP_TITLE, GROUP_OWN);
+  if (!expanded) await page.evaluate((t, g) => window.__dd.card(t, g).querySelector('.my-map-head').click(), MAP_TITLE, GROUP_OWN);
+  await page.waitForFunction((s, t) => window.__dd.hasLayer(s, t), { timeout: 15000 }, OWN, ctx.layer.title);
+  await page.evaluate((s, t) => [...window.__dd.root(s).querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === `Bảng ${t}`).click(), OWN, ctx.layer.title);
+}
+
+/** Step 9: the staff edit reaches the edit copy's table header and its row form. */
+async function stepStaffEdit(session, vp, ctx) {
+  const { page } = session;
+  const problems = [];
+  const original = ctx.expect.numberLabel;
+  const edited = `${original}${EDIT_SUFFIX}`;
+  await openEditor(page, original);
+  await page.click('#dict-attr-label', { clickCount: 3 });
+  await page.keyboard.press('End');
+  await page.type('#dict-attr-label', EDIT_SUFFIX);
+  ctx.edited = true;
+  await press(page, `form[aria-label="${original}"]`, 'Lưu');
+  await waitServedLabel(edited);
+  await shot(session, vp, 'tu-dien-sua');
+
+  await openEditCopyTable(page, ctx);
+  const state = await waitTable(page, `a header "${edited}"`, (s) => !s.busy && s.headers.includes(edited) && s.rows.length > 0);
+  if (state.headers.includes(original)) problems.push(`a header still reads the old label "${original}"`);
+  await page.evaluate(() => document.querySelector('.layer-table tbody tr').click());
+  await page.waitForSelector(`.layer-table-form label[for="attr-${NUMBER_COLUMN}"]`, { visible: true, timeout: 10000 });
+  const formLabel = await page.$eval(`.layer-table-form label[for="attr-${NUMBER_COLUMN}"]`, (l) => l.textContent.replace(/\s+/g, ' ').trim());
+  if (formLabel !== edited) problems.push(`the row form's label reads "${formLabel}", expected "${edited}"`);
+  await shot(session, vp, 'nhan-moi');
+  return problems;
+}
+
+/** Step 10: "Khôi phục mặc định" brings the label back; the history lists the edit and the restore. */
+async function stepRestore(session, vp, ctx) {
+  const { page } = session;
+  const problems = [];
+  const original = ctx.expect.numberLabel;
+  const edited = `${original}${EDIT_SUFFIX}`;
+  await openEditor(page, edited);
+  const clicked = await page.evaluate(() => {
+    const field = document.querySelector('#dict-attr-label')?.closest('.dictionary-field');
+    const button = field && [...field.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Khôi phục mặc định');
+    button?.click();
+    return Boolean(button);
+  });
+  if (!clicked) throw new Error('the label field offers no "Khôi phục mặc định"');
+  await waitServedLabel(original);
+  ctx.edited = false;
+  const rows = () => page.$$eval('.dictionary-history-table tbody tr', (trs) => trs.map((tr) => [...tr.cells].map((c) => c.textContent.replace(/\s+/g, ' ').trim())));
+  const start = Date.now();
+  let list = [];
+  while (Date.now() - start < 15000) {
+    list = await rows();
+    if (list.some((r) => r[4] === 'khôi phục') && list.some((r) => r[4] === 'sửa')) break;
+    await sleep(300);
+  }
+  const edit = list.find((r) => r[4] === 'sửa' && r[3].endsWith(`→ ${edited}`));
+  const restore = list.find((r) => r[4] === 'khôi phục' && r[3].startsWith(edited));
+  const dump = list.map((r) => r.slice(2).join(' / ')).join(' ; ');
+  if (!edit) problems.push(`the history has no edit row "… → ${edited}": ${dump}`);
+  if (!restore) problems.push(`the history has no restore row "${edited} → …": ${dump}`);
+  const shown = await page.$eval('#dict-attr-label', (i) => i.value);
+  if (shown !== original) problems.push(`the field reads "${shown}" after the restore, expected "${original}"`);
+  await shot(session, vp, 'lich-su');
+  return problems;
+}
+
+/** The served label of wattage_mw. */
+async function servedLabel() {
+  const dict = await ok('GET', `/api/dictionary/${LAYER_KEY}`, null);
+  return dict.attributes.find((a) => a.name === NUMBER_COLUMN)?.label;
+}
+
+/** Restores the label through the API when it ends in EDIT_SUFFIX; returns the problems. */
+async function restoreLabel(token) {
+  if (!(await servedLabel()).endsWith(EDIT_SUFFIX)) return [];
+  const res = await api('POST', `/api/dictionary/${LAYER_KEY}/${NUMBER_COLUMN}/restore`, token, { fields: ['label'] });
+  return res.status === 200 ? [] : [`restoring the label answered ${res.status}: ${res.json?.error?.message ?? ''}`];
+}
+
 // ---- One viewport ------------------------------------------------------------------------
 
 async function runViewport(browser, viewport, ctx) {
@@ -597,10 +784,21 @@ async function runViewport(browser, viewport, ctx) {
     await check(vp, '4', `the selected row's form: "${ctx.expect.numberLabel}" with the MW suffix`,
       after(async () => (filtered ? stepForm(session, vp, ctx) : ['skipped: step 2 failed'])));
     await check(vp, '5', `the dams layer on: the legend shows "${LEGEND_SIZES[0]}"`, () => stepLegend(session, vp, ctx));
+    const sheet = await check(vp, '6', `the (i) sheet lists "${ctx.expect.numberLabel}" with MW; "Xem đầy đủ" opens /du-lieu/${LAYER_KEY}`,
+      () => stepSheet(session, vp, ctx));
+    const layerPage = await check(vp, '7', 'the layer page shows EPSG:4326 and both templates; the CSV template answers 200',
+      async () => (sheet ? stepLayerPage(session, vp) : ['skipped: step 6 failed']));
+    await check(vp, '8', '/du-lieu search "dap" finds the dams layer',
+      async () => (layerPage ? stepList(session, vp, ctx) : ['skipped: step 7 failed']));
+    const staff = await check(vp, '9', `staff edit: "${ctx.expect.numberLabel}${EDIT_SUFFIX}" reaches the table header and the row form`,
+      after(() => stepStaffEdit(session, vp, ctx)));
+    await check(vp, '10', 'Khôi phục mặc định brings the label back; the history lists the edit and the restore',
+      async () => (staff || ctx.edited ? stepRestore(session, vp, ctx) : ['skipped: step 9 failed']));
   } finally {
     await session.context.close().catch(() => {});
-    await check(vp, '6', 'cleanup through the API: the test map is deleted; the owner holds what it held at the start', async () => {
-      const problems = await removeTestMaps(ctx.token);
+    await check(vp, '11', 'cleanup through the API: the test map is deleted; the owner holds what it held at the start; the label is at its default', async () => {
+      const problems = [...(await removeTestMaps(ctx.token)), ...(await restoreLabel(ctx.token))];
+      if ((await servedLabel()) !== ctx.expect.numberLabel) problems.push(`the served label is not "${ctx.expect.numberLabel}"`);
       const now = await holdings(ctx.token);
       for (const key of ['maps', 'uploads', 'jobs']) {
         if (JSON.stringify(now[key]) !== JSON.stringify(ctx.start[key])) {
@@ -614,7 +812,11 @@ async function runViewport(browser, viewport, ctx) {
 
 const run = async () => {
   mkdirSync(OUT, { recursive: true });
-  const ctx = { token: await login(OWNER), expect: await expectations() };
+  const token = await login(OWNER);
+  // A label an interrupted run left edited is restored first, so the expectations read the default.
+  const stale = await restoreLabel(token);
+  if (stale.length > 0) throw new Error(stale.join('; '));
+  const ctx = { token, expect: await expectations(), edited: false };
   // Clear an interrupted run's leftovers first, then record the baseline.
   const leftovers = await removeTestMaps(ctx.token);
   if (leftovers.length > 0) throw new Error(`could not clear an earlier run: ${leftovers.join('; ')}`);
@@ -623,7 +825,9 @@ const run = async () => {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: ['--no-sandbox'] });
   try {
     console.log(`verify-dictionary against ${BASE_URL} and ${API_URL}; files in ${OUT}`);
-    for (const viewport of VIEWPORTS) {
+    for (const [index, viewport] of VIEWPORTS.entries()) {
+      // The API allows 100 requests a minute per address: let the first width's burst expire.
+      if (index > 0) await sleep(COOL_DOWN_MS);
       try {
         await runViewport(browser, viewport, ctx);
       } catch (error) {
