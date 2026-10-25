@@ -335,9 +335,9 @@ const DynamicPopup: React.FC = () => {
       const orderName = props.streamOrder != null ? STREAM_ORDER_LABELS[props.streamOrder] : undefined;
       return (
         <>
-          {props.hydroId && (
+          {has('rivers', 'code') && (
             <div className="info-row"><Database size={14} />
-              <span>Mã phân đoạn: <strong>{props.hydroId}</strong></span></div>)}
+              <span>{lbl('rivers', 'code')}: <strong>{val('rivers', 'code')}</strong></span></div>)}
           {/* stream_order is now a rank by KIND of watercourse (OSM), not a Strahler
               order, so the kind name is shown instead of "Cấp N". */}
           {orderName && (

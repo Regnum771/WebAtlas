@@ -260,6 +260,14 @@ describe('DynamicPopup dictionary rows', () => {
     expect(screen.getByText('12,5 km')).toBeInTheDocument();
   });
 
+  it('the river waterway code shows its dictionary label and value name', async () => {
+    await open({ layerKey: 'rivers', id: 'r1', geographicalName: 'Sông C', hydroId: 'canal', length: 12500 });
+    expect(screen.getByText('Loại dòng chảy OSM:')).toBeInTheDocument();
+    expect(screen.getByText('Kênh đào')).toBeInTheDocument();
+    expect(screen.queryByText(/Mã phân đoạn/)).not.toBeInTheDocument();
+    expect(screen.queryByText('canal')).not.toBeInTheDocument();
+  });
+
   it('an unknown status code is shown as the code', async () => {
     await open({ layerKey: 'stations', id: 's1', geographicalName: 'Trạm', operationalStatus: 'chua_biet' });
     expect(screen.getByText('chua_biet')).toBeInTheDocument();
