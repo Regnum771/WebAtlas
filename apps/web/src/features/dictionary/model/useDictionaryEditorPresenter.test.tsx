@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   patchLayer: vi.fn(),
   patchAttribute: vi.fn(),
   restoreFields: vi.fn(),
+  restoreValue: vi.fn(),
   addValue: vi.fn(),
   patchValue: vi.fn(),
   previewStoredUnit: vi.fn(),
@@ -36,19 +37,22 @@ const LAYER: DictFeatureType = {
       validFrom: '2026-01-01',
     },
     {
+      // `binh_thuong` is a code of the shared code default (dams.status); `on` is not.
       name: 'status', source: 'column', valueType: 'code', label: 'Trạng thái', definition: 'Trạng thái.', codeList: 'closed',
-      values: [{ code: 'on', name: 'Đang chạy', order: 1 }], validFrom: '2026-01-01',
+      values: [{ code: 'on', name: 'Đang chạy', order: 1 }, { code: 'binh_thuong', name: 'Bình thường (sửa)', order: 2 }],
+      validFrom: '2026-01-01',
     },
   ],
 };
 vi.mock('./useDictionary', () => ({ useDictionary: (): Dictionary => ({ dams: LAYER }) }));
 
-const entry = (label = 'Tên tiếng Anh'): RevisedFeatureType => ({
+/** The served layer; `bump` adds to every attribute's revision, as a save elsewhere would. */
+const entry = (label = 'Tên tiếng Anh', bump = 0): RevisedFeatureType => ({
   ...LAYER,
   revision: 3,
   attributes: [
-    { ...LAYER.attributes[0], label, revision: 5 }, { ...LAYER.attributes[1], revision: 2 },
-    { ...LAYER.attributes[2], revision: 7 }, { ...LAYER.attributes[3], revision: 9 },
+    { ...LAYER.attributes[0], label, revision: 5 + bump }, { ...LAYER.attributes[1], revision: 2 + bump },
+    { ...LAYER.attributes[2], revision: 7 + bump }, { ...LAYER.attributes[3], revision: 9 + bump },
   ],
 } as RevisedFeatureType);
 
@@ -153,9 +157,114 @@ describe('dictionary editor', () => {
     api.fetchLayerEntry.mockResolvedValue(entry());
     api.fetchHistory.mockResolvedValue([row({ id: 2, reason: 'restore', oldValue: 'Sửa', newValue: 'Tên tiếng Anh' }), row({})]);
     await userEvent.click(form.getByRole('button', { name: 'Khôi phục mặc định' }));
-    await waitFor(() => expect(api.restoreFields).toHaveBeenCalledWith('dams', 'name_en', ['label']));
+    await waitFor(() => expect(api.restoreFields).toHaveBeenCalledWith('dams', 'name_en', { expectedRevision: 5, fields: ['label'] }));
     await waitFor(() => expect(within(attributeForm('Tên tiếng Anh')).getByLabelText('Nhãn')).toHaveValue('Tên tiếng Anh'));
     expect(screen.queryByText(/Đã sửa bởi/)).toBeNull();
+  });
+
+  it('Khôi phục tất cả sends the edited fields with the revision', async () => {
+    api.fetchLayerEntry.mockResolvedValue(entry('Sửa'));
+    api.fetchHistory.mockResolvedValue([row({}), row({ id: 2, field: 'definition', oldValue: 'Tên không dấu.', newValue: 'Đ' })]);
+    api.restoreFields.mockResolvedValue(entry().attributes[0]);
+    mount();
+    await userEvent.click(await screen.findByRole('button', { name: /Sửa/ }));
+    const form = within(attributeForm('Sửa'));
+    await userEvent.click(await form.findByRole('button', { name: 'Khôi phục tất cả' }));
+    await waitFor(() => expect(api.restoreFields).toHaveBeenCalledWith(
+      'dams', 'name_en', { expectedRevision: 5, fields: ['label', 'definition'] },
+    ));
+  });
+
+  it('a restore keeps what is typed in the other fields', async () => {
+    api.fetchLayerEntry.mockResolvedValue(entry('Sửa'));
+    api.fetchHistory.mockResolvedValue([row({})]);
+    api.restoreFields.mockResolvedValue(entry().attributes[0]);
+    mount();
+    await userEvent.click(await screen.findByRole('button', { name: /Sửa/ }));
+    const form = within(attributeForm('Sửa'));
+    await userEvent.type(form.getByLabelText('Định nghĩa'), ' Thêm.');
+    // The restore bumps the attribute's revision.
+    api.fetchLayerEntry.mockResolvedValue(entry('Tên tiếng Anh', 1));
+    api.fetchHistory.mockResolvedValue([row({ id: 2, reason: 'restore', oldValue: 'Sửa', newValue: 'Tên tiếng Anh' }), row({})]);
+    await userEvent.click(await form.findByRole('button', { name: 'Khôi phục mặc định' }));
+    const after = () => within(attributeForm('Tên tiếng Anh'));
+    await waitFor(() => expect(after().getByLabelText('Nhãn')).toHaveValue('Tên tiếng Anh'));
+    expect(after().getByLabelText('Định nghĩa')).toHaveValue('Tên không dấu. Thêm.');
+    api.patchAttribute.mockResolvedValue({});
+    await userEvent.click(after().getByRole('button', { name: 'Lưu' }));
+    await waitFor(() => expect(api.patchAttribute).toHaveBeenCalledWith(
+      'dams', 'name_en', { expectedRevision: 6, definition: 'Tên không dấu. Thêm.' },
+    ));
+  });
+
+  it('a value added below keeps what is typed in the attribute form', async () => {
+    api.addValue.mockResolvedValue({});
+    mount();
+    await userEvent.click(await screen.findByRole('button', { name: /Loại công trình/ }));
+    const form = within(attributeForm('Loại công trình'));
+    await userEvent.type(form.getByLabelText('Nhãn'), ' chính');
+    const add = within(await screen.findByRole('form', { name: 'Thêm giá trị' }));
+    await userEvent.type(add.getByLabelText('Mã'), 'wind');
+    await userEvent.type(add.getByLabelText('Tên giá trị'), 'Gió');
+    // Adding the value bumps the attribute's revision.
+    api.fetchLayerEntry.mockResolvedValue(entry('Tên tiếng Anh', 1));
+    await userEvent.click(add.getByRole('button', { name: 'Thêm giá trị' }));
+    await waitFor(() => expect(api.addValue).toHaveBeenCalled());
+    await waitFor(() => expect(api.fetchLayerEntry.mock.calls.length).toBeGreaterThan(1));
+    await waitFor(() => expect(add.getByLabelText('Mã')).toHaveValue(''));
+    expect(form.getByLabelText('Nhãn')).toHaveValue('Loại công trình chính');
+    api.patchAttribute.mockResolvedValue({});
+    await userEvent.click(form.getByRole('button', { name: 'Lưu' }));
+    await waitFor(() => expect(api.patchAttribute).toHaveBeenCalledWith(
+      'dams', 'kind', { expectedRevision: 8, label: 'Loại công trình chính' },
+    ));
+  });
+
+  it('a save keeps what is typed in the field it did not send', async () => {
+    let finish: (v: unknown) => void = () => {};
+    api.patchAttribute.mockReturnValue(new Promise((r) => { finish = r; }));
+    mount();
+    await userEvent.click(await screen.findByRole('button', { name: /Tên tiếng Anh/ }));
+    const form = within(attributeForm('Tên tiếng Anh'));
+    await userEvent.type(form.getByLabelText('Nhãn'), '!');
+    await userEvent.click(form.getByRole('button', { name: 'Lưu' }));
+    // Typed while the save is in flight: not part of it.
+    await userEvent.type(form.getByLabelText('Định nghĩa'), ' Sau.');
+    api.fetchLayerEntry.mockResolvedValue(entry('Tên tiếng Anh!', 1));
+    finish({});
+    await waitFor(() => expect(within(attributeForm('Tên tiếng Anh!')).getByLabelText('Nhãn')).toHaveValue('Tên tiếng Anh!'));
+    expect(within(attributeForm('Tên tiếng Anh!')).getByLabelText('Định nghĩa')).toHaveValue('Tên không dấu. Sau.');
+  });
+
+  it('a 400 naming a field the form does not show is shown on the form', async () => {
+    api.patchAttribute.mockRejectedValue(
+      new ApiError(400, 'VALIDATION_ERROR', 'Thiếu phiên bản của mục đang sửa.', { field: 'expectedRevision' }),
+    );
+    mount();
+    await userEvent.click(await screen.findByRole('button', { name: /Tên tiếng Anh/ }));
+    const form = within(attributeForm('Tên tiếng Anh'));
+    await userEvent.type(form.getByLabelText('Nhãn'), '!');
+    await userEvent.click(form.getByRole('button', { name: 'Lưu' }));
+    expect(await form.findByText('Thiếu phiên bản của mục đang sửa.')).toBeInTheDocument();
+  });
+
+  it('locked type and source read in Vietnamese', async () => {
+    mount();
+    await userEvent.click(await screen.findByRole('button', { name: /Diện tích/ }));
+    const form = within(attributeForm('Diện tích'));
+    expect(form.getByLabelText('Kiểu giá trị')).toHaveValue('số');
+    expect(form.getByLabelText('Nguồn')).toHaveValue('cột dữ liệu');
+  });
+
+  it('the history names the system only for sync rows', async () => {
+    api.fetchHistory.mockResolvedValue([
+      row({ id: 1, attribute: null, reason: 'edit', changedBy: null }),
+      row({ id: 2, attribute: null, reason: 'sync_revert', changedBy: null }),
+    ]);
+    mount();
+    const panel = within(await screen.findByRole('region', { name: 'Lịch sử thay đổi' }));
+    expect(await panel.findByText('không rõ')).toBeInTheDocument();
+    expect(panel.getAllByText('Hệ thống')).toHaveLength(1);
   });
 
   it('a retire date is sent as validTo', async () => {
@@ -282,6 +391,21 @@ describe('dictionary editor', () => {
       expect(api.patchValue).toHaveBeenCalledTimes(1);
     });
 
+    it('a value of the code default can be restored; a code the default lacks offers no restore', async () => {
+      api.restoreValue.mockResolvedValue({});
+      mount();
+      await userEvent.click(await screen.findByRole('button', { name: /Trạng thái/ }));
+      const restore = await screen.findByRole('button', { name: 'Khôi phục mặc định giá trị binh_thuong' });
+      expect(screen.queryByRole('button', { name: 'Khôi phục mặc định giá trị on' })).toBeNull();
+      // What is typed in the row is dropped by its restore.
+      await userEvent.type(screen.getByLabelText('Tên giá trị binh_thuong'), '!');
+      await userEvent.click(restore);
+      await waitFor(() => expect(api.restoreValue).toHaveBeenCalledWith(
+        'dams', 'status', 'binh_thuong', { expectedRevision: 9, fields: ['name', 'definition', 'colorHint'] },
+      ));
+      await waitFor(() => expect(screen.getByLabelText('Tên giá trị binh_thuong')).toHaveValue('Bình thường (sửa)'));
+    });
+
     it('a 409 on a value reloads and shows the message', async () => {
       api.addValue.mockRejectedValue(new ApiError(409, 'DICTIONARY_CHANGED', 'x'));
       mount();
@@ -315,13 +439,13 @@ describe('dictionary editor', () => {
       expect(await dialog.findByText(/12,5 km² → 12,5 ha/)).toBeInTheDocument();
       expect(api.previewStoredUnit).toHaveBeenCalledWith('dams', 'area', 'ha');
       expect(apply).toBeDisabled();
-      await userEvent.type(dialog.getByLabelText('Áp dụng từ ngày'), '2026-11-01');
+      await userEvent.type(dialog.getByLabelText('Áp dụng từ ngày'), '2026-10-01');
       expect(apply).toBeDisabled();
       await userEvent.click(dialog.getByRole('checkbox', { name: 'Tôi hiểu việc này chỉ sửa cách hiểu số liệu, không đổi số liệu.' }));
       expect(apply).toBeEnabled();
       await userEvent.click(apply);
       await waitFor(() => expect(api.patchAttribute).toHaveBeenCalledWith('dams', 'area', {
-        expectedRevision: 2, storedUnit: 'ha', storedUnitValidFrom: '2026-11-01',
+        expectedRevision: 2, storedUnit: 'ha', storedUnitValidFrom: '2026-10-01',
       }));
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     });
@@ -333,7 +457,7 @@ describe('dictionary editor', () => {
       await userEvent.selectOptions(dialog.getByLabelText('Đơn vị lưu mới'), 'ha');
       await userEvent.click(dialog.getByRole('button', { name: 'Xem trước' }));
       expect(await dialog.findByText('Không có giá trị mẫu để xem trước.')).toBeInTheDocument();
-      await userEvent.type(dialog.getByLabelText('Áp dụng từ ngày'), '2026-11-01');
+      await userEvent.type(dialog.getByLabelText('Áp dụng từ ngày'), '2026-10-01');
       await userEvent.click(dialog.getByRole('checkbox'));
       expect(dialog.getByRole('button', { name: 'Áp dụng' })).toBeEnabled();
       await userEvent.selectOptions(dialog.getByLabelText('Đơn vị lưu mới'), 'm2');
@@ -347,7 +471,7 @@ describe('dictionary editor', () => {
       await userEvent.selectOptions(dialog.getByLabelText('Đơn vị lưu mới'), 'ha');
       await userEvent.click(dialog.getByRole('button', { name: 'Xem trước' }));
       await dialog.findByText('Không có giá trị mẫu để xem trước.');
-      await userEvent.type(dialog.getByLabelText('Áp dụng từ ngày'), '2026-11-01');
+      await userEvent.type(dialog.getByLabelText('Áp dụng từ ngày'), '2026-10-01');
       await userEvent.click(dialog.getByRole('checkbox'));
       await userEvent.click(screen.getByRole('button', { name: /Tên tiếng Anh/ }));
       expect(screen.queryByRole('dialog')).toBeNull();
@@ -368,6 +492,22 @@ describe('dictionary editor', () => {
       expect(values).toEqual(expect.arrayContaining(['km2', 'ha', 'm2']));
       expect(values).not.toContain('m');
       expect(values).not.toContain('mm');
+    });
+
+    it('the date may not be after today in Vietnam, nor after the retire date', async () => {
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+      mount();
+      let dialog = await open();
+      expect(dialog.getByLabelText('Áp dụng từ ngày')).toHaveAttribute('max', today);
+      await userEvent.click(dialog.getByRole('button', { name: 'Đóng' }));
+
+      const retiring = entry();
+      retiring.attributes[1] = { ...retiring.attributes[1]!, validTo: '2026-03-01' };
+      api.fetchLayerEntry.mockResolvedValue(retiring);
+      await client.invalidateQueries({ queryKey: ['dictionary'] });
+      await userEvent.click(await screen.findByRole('button', { name: 'Hiệu chỉnh đơn vị lưu…' }));
+      dialog = within(await screen.findByRole('dialog', { name: 'Hiệu chỉnh đơn vị lưu' }));
+      await waitFor(() => expect(dialog.getByLabelText('Áp dụng từ ngày')).toHaveAttribute('max', '2026-03-01'));
     });
 
     it('a date error from the API shows under the date field', async () => {

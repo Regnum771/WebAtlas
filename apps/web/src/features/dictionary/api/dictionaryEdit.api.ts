@@ -48,14 +48,22 @@ export function patchAttribute(layer: string, attribute: string, body: Record<st
   return apiRequest<RevisedAttribute>(`${layerPath(layer)}/${encodeURIComponent(attribute)}`, json(body));
 }
 
-/** Puts fields back to the current code default; `attribute` null restores feature-type fields. */
-export function restoreFields(layer: string, attribute: string | null, fields: string[]): Promise<RevisedFeatureType | RevisedAttribute> {
-  const path = attribute === null ? `${layerPath(layer)}/restore` : `${layerPath(layer)}/${encodeURIComponent(attribute)}/restore`;
-  return apiRequest(path, { method: 'POST', body: JSON.stringify({ fields }) });
-}
-
 const post = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) });
 const attributePath = (layer: string, attribute: string) => `${layerPath(layer)}/${encodeURIComponent(attribute)}`;
+
+/** What a restore sends: the revision the form was loaded at (a stale one is refused 409) and the fields. */
+export interface RestoreBody { expectedRevision: number; fields: string[] }
+
+/** Puts fields back to the current code default; `attribute` null restores feature-type fields. */
+export function restoreFields(layer: string, attribute: string | null, body: RestoreBody): Promise<RevisedFeatureType | RevisedAttribute> {
+  const path = attribute === null ? `${layerPath(layer)}/restore` : `${attributePath(layer, attribute)}/restore`;
+  return apiRequest(path, post(body));
+}
+
+/** Puts fields of one listed value back to the current code default. `expectedRevision` is the PARENT attribute's. */
+export function restoreValue(layer: string, attribute: string, code: string, body: RestoreBody): Promise<RevisedAttribute> {
+  return apiRequest<RevisedAttribute>(`${attributePath(layer, attribute)}/values/${encodeURIComponent(code)}/restore`, post(body));
+}
 
 /** Adds a code to an open list. `expectedRevision` is the PARENT attribute's revision. */
 export function addValue(

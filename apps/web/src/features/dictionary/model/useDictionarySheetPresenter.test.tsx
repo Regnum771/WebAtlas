@@ -28,25 +28,52 @@ describe('useDictionarySheetPresenter', () => {
     dictionary = DICTIONARY;
   });
 
+  function Harness() {
+    const { sheet, openSheet, close } = useDictionarySheetPresenter();
+    return (
+      <MemoryRouter>
+        <LayersPanelView
+          groups={[{ name: 'G', layers: [{ id: 'layer_dams', name: 'Đập', visible: false, opacity: 1, gated: false }] }]}
+          missingDisplay={[]}
+          onToggle={vi.fn()}
+          onOpacity={vi.fn()}
+          contourSettings={{ interval: 'auto', labels: true }}
+          onContourSettings={vi.fn()}
+          onInfo={openSheet}
+        />
+        {/* Another widget that handles Escape itself, as the search box or a menu does. */}
+        <input aria-label="Tìm kiếm" />
+        {sheet && <DictionarySheetView {...sheet} onClose={close} />}
+      </MemoryRouter>
+    );
+  }
+
+  it('Escape in another widget leaves the sheet open and the focus where it was', async () => {
+    dictionary = DICTIONARY;
+    render(<Harness />);
+    await userEvent.click(screen.getByRole('button', { name: 'Thuộc tính của Đập' }));
+    expect(screen.getByRole('region', { name: 'Đập — thuộc tính' })).toBeInTheDocument();
+    const search = screen.getByRole('textbox', { name: 'Tìm kiếm' });
+    search.focus();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('region', { name: 'Đập — thuộc tính' })).toBeInTheDocument();
+    expect(search).toHaveFocus();
+  });
+
+  it('an Escape another handler already took leaves the sheet open', async () => {
+    dictionary = DICTIONARY;
+    render(<Harness />);
+    await userEvent.click(screen.getByRole('button', { name: 'Thuộc tính của Đập' }));
+    const close = screen.getByRole('button', { name: 'Đóng' });
+    expect(close).toHaveFocus();
+    const taken = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    taken.preventDefault();
+    act(() => { close.dispatchEvent(taken); });
+    expect(screen.getByRole('region', { name: 'Đập — thuộc tính' })).toBeInTheDocument();
+  });
+
   it('Escape closes the sheet and returns focus to the ⓘ', async () => {
     dictionary = DICTIONARY;
-    function Harness() {
-      const { sheet, openSheet, close } = useDictionarySheetPresenter();
-      return (
-        <MemoryRouter>
-          <LayersPanelView
-            groups={[{ name: 'G', layers: [{ id: 'layer_dams', name: 'Đập', visible: false, opacity: 1, gated: false }] }]}
-            missingDisplay={[]}
-            onToggle={vi.fn()}
-            onOpacity={vi.fn()}
-            contourSettings={{ interval: 'auto', labels: true }}
-            onContourSettings={vi.fn()}
-            onInfo={openSheet}
-          />
-          {sheet && <DictionarySheetView {...sheet} onClose={close} />}
-        </MemoryRouter>
-      );
-    }
     render(<Harness />);
     const info = screen.getByRole('button', { name: 'Thuộc tính của Đập' });
     await userEvent.click(info);

@@ -18,6 +18,8 @@ export interface StoredUnitView {
   /** Null until the chosen unit is previewed; an empty list means there is nothing to show. */
   preview: { id: string; stored: string; before: string; after: string }[] | null;
   date: string;
+  /** The latest date offered, YYYY-MM-DD: today, or the attribute's retire date when earlier. */
+  maxDate: string;
   onDate: (value: string) => void;
   confirmed: boolean;
   onConfirmed: (value: boolean) => void;
@@ -60,7 +62,7 @@ export function StoredUnitDialogView(p: StoredUnitView) {
           </ul>
         ))}
         <TextField
-          id="dict-unit-date" label="Áp dụng từ ngày" type="date" value={p.date} error={p.errors.storedUnitValidFrom}
+          id="dict-unit-date" label="Áp dụng từ ngày" type="date" value={p.date} max={p.maxDate} error={p.errors.storedUnitValidFrom}
           onChange={(e) => p.onDate(e.target.value)}
         />
         <label className="dictionary-check">

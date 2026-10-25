@@ -44,8 +44,15 @@ export function useDictionarySheetPresenter() {
 
   useEffect(() => {
     if (!open) return;
+    // Escape is the sheet's only while focus is in it, on its ⓘ, or nowhere: a menu, the search box
+    // or a drawing tool also closes on Escape, and must not send the focus into the side panel.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const active = document.activeElement;
+      const ours = active === null || active === document.body
+        || active.closest('.dictionary-sheet') !== null
+        || active.closest(`[data-dictionary-info="${CSS.escape(open.layerId)}"]`) !== null;
+      if (ours) close();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);

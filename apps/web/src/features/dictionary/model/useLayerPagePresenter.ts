@@ -3,9 +3,8 @@ import { commonConversions, formatDisplayNumber, unit, type DictAttribute, type 
 import { API_BASE_URL } from '../../../shared/config';
 import { useDictionary } from './useDictionary';
 import { isCurrent } from './isCurrent';
+import { TYPE_LABEL } from './labels';
 import type { LayerPageData, LayerPageRow } from '../ui/LayerPage.view';
-
-const TYPE_LABEL = { text: 'chữ', number: 'số', date: 'ngày', code: 'mã' } as const;
 
 const MEANING_LABEL: Record<GeometryMeaning, string> = {
   exact: 'chính xác',

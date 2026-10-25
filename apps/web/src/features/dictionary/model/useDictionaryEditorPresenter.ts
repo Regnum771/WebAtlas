@@ -8,6 +8,7 @@ import {
 import type { EditorFormView, EditorProps, FormFieldView } from '../ui/DictionaryEditor.view';
 import type { HistoryRowView } from '../ui/DictionaryHistory.view';
 import { isCurrent } from './isCurrent';
+import { SOURCE_LABEL, TYPE_LABEL } from './labels';
 import { describeFailure } from './saveFeedback';
 import { useDictionary } from './useDictionary';
 import { sameDimensionUnits, useStoredUnitCorrection } from './useStoredUnitCorrection';
@@ -108,7 +109,9 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
   const layerKey = pickedLayer && Object.hasOwn(dictionary, pickedLayer) ? pickedLayer : (layers[0]?.key ?? '');
   const [attributeName, setAttributeName] = useState<string | null>(null);
 
-  // Touched fields only, keyed by form and the revision they were typed against: a reload drops them.
+  // Touched fields only, keyed by layer and form (not revision), so a save elsewhere that bumps the
+  // revision (a listed value, the stored unit) keeps what is typed. A save drops the fields it sent, a
+  // restore the fields it restored; a 409 drops the whole form's typing.
   const [edits, setEdits] = useState<Record<string, Draft>>({});
   const [saving, setSaving] = useState<string | null>(null);
   // Feedback belongs to one form: '' is the feature-type form, otherwise the attribute name.
@@ -146,19 +149,32 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
   const valueList = useValueListEditor(layerKey, chosenAttribute, reload);
   const storedUnit = useStoredUnitCorrection(layerKey, chosenAttribute, reload);
 
-  async function run(form: string, editKey: string, work: () => Promise<unknown>) {
+  /** Drops the typing of `keys` in one form, or all of it. */
+  const dropEdits = (editKey: string, keys: readonly string[] | 'all') => setEdits((prev) => {
+    const current = prev[editKey];
+    if (!current) return prev;
+    const { [editKey]: _gone, ...rest } = prev;
+    if (keys === 'all') return rest;
+    const kept = Object.fromEntries(Object.entries(current).filter(([k]) => !keys.includes(k)));
+    return Object.keys(kept).length === 0 ? rest : { ...rest, [editKey]: kept };
+  });
+
+  /**
+   * One save or restore of a form. `done` lists the fields whose typing it settles; `shown` the
+   * fields the form shows an error under.
+   */
+  async function run(form: string, editKey: string, work: () => Promise<unknown>, done: readonly string[], shown: readonly string[]) {
     setSaving(form);
     setFeedback(null);
-    const dropEdits = () => setEdits((prev) => { const { [editKey]: _gone, ...rest } = prev; return rest; });
     try {
       await work();
-      dropEdits();
+      dropEdits(editKey, done);
       await reload();
     } catch (e) {
-      const failure = describeFailure(e);
+      const failure = describeFailure(e, shown);
       setFeedback({ form, message: failure.message, errors: failure.errors });
       if (failure.conflict) {
-        dropEdits();
+        dropEdits(editKey, 'all');
         await reload();
       }
     } finally {
@@ -175,7 +191,7 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
     const formId = name ?? '';
     const keys: readonly string[] = isLayerForm ? LAYER_FIELDS : ATTRIBUTE_FIELDS;
     const base = baseDraft(isLayerForm, target);
-    const editKey = `${layerKey}|${formId}|${target.revision}`;
+    const editKey = `${layerKey}|${formId}`;
     const draft: Draft = { ...base, ...edits[editKey] };
     const body = diff(keys, base, draft);
     const dirty = Object.keys(body).length > 0;
@@ -205,9 +221,14 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
         };
       });
 
+    // The fields that show an error under them; any other field's refusal is the form's message.
+    const shown = fields.filter((f) => f.kind !== 'locked').map((f) => f.key);
     const restore = (list: string[]) => {
       if (list.length === 0) return;
-      void run(formId, editKey, () => restoreFields(layerKey, name, list));
+      // The API restores the display unit and its permitted list together when one would leave the other invalid.
+      const units = list.some((k) => k === 'displayUnit' || k === 'displayUnits') ? ['displayUnit', 'displayUnits'] : [];
+      void run(formId, editKey, () => restoreFields(layerKey, name, { expectedRevision: target.revision, fields: list }),
+        [...list, ...units], shown);
     };
     return {
       idPrefix: isLayerForm ? 'dict-layer-form' : 'dict-attr',
@@ -236,7 +257,7 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
         const payload = { expectedRevision: target.revision, ...body };
         void run(formId, editKey, () => (isLayerForm
           ? patchLayer(layerKey, payload)
-          : patchAttribute(layerKey, name!, payload)));
+          : patchAttribute(layerKey, name!, payload)), Object.keys(body), shown);
       },
       onRestore: (key) => restore([key]),
       onRestoreAll: () => restore([...editedKeys]),
@@ -251,7 +272,8 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
     const value = h.code === null ? '' : `Giá trị "${h.code}" · `;
     return {
       id: h.id,
-      who: h.changedBy?.name ?? 'Hệ thống',
+      // No author: the sync's own rows, or a staff edit whose account was deleted since.
+      who: h.changedBy?.name ?? (h.reason.startsWith('sync_') ? 'Hệ thống' : 'không rõ'),
       when: formatTime(h.changedAt),
       field: `${owner}${value}${field}`,
       change: `${formatValue(h.field, h.oldValue)} → ${formatValue(h.field, h.newValue)}`,
@@ -325,8 +347,8 @@ function attributeFields(a: RevisedAttribute, d: Draft, onCorrectUnit: (() => vo
     { key: 'cfStandardName', label: 'Tên chuẩn CF', kind: 'text', value: d.cfStandardName as string },
     { key: 'validTo', label: 'Ngừng dùng từ', kind: 'date', value: d.validTo as string, clearable: true },
     { key: 'name', label: 'Tên cột', kind: 'locked', value: a.name, hint: STRUCTURE_HINT },
-    { key: 'source', label: 'Nguồn', kind: 'locked', value: a.source, hint: STRUCTURE_HINT },
-    { key: 'valueType', label: 'Kiểu giá trị', kind: 'locked', value: a.valueType, hint: STRUCTURE_HINT },
+    { key: 'source', label: 'Nguồn', kind: 'locked', value: SOURCE_LABEL[a.source] ?? a.source, hint: STRUCTURE_HINT },
+    { key: 'valueType', label: 'Kiểu giá trị', kind: 'locked', value: TYPE_LABEL[a.valueType] ?? a.valueType, hint: STRUCTURE_HINT },
   );
   if (a.storedUnit) {
     fields.push({

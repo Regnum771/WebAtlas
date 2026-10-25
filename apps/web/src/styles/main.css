@@ -1200,6 +1200,10 @@ body {
   .layer-page { position: absolute; left: 0; top: 0; width: 100%; max-width: none; }
   .layer-page .no-print { display: none; }
   .layer-page-table-wrap { overflow: visible; }
+  /* Code lists print open: a closed <details> would print only its summary. */
+  .layer-page-values::details-content { content-visibility: visible; }
+  .layer-page-values summary { list-style: none; cursor: auto; }
+  .layer-page-values summary::-webkit-details-marker { display: none; }
 }
 
 /* Quản lý > Từ điển dữ liệu */

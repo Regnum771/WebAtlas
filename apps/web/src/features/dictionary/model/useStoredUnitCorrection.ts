@@ -10,6 +10,14 @@ const symbolOf = (code: string) => {
   try { return unit(code).symbol; } catch { return code; }
 };
 
+/** The fields the dialog shows an error under; any other refusal is its message. */
+const DIALOG_FIELDS = ['storedUnit', 'storedUnitValidFrom'] as const;
+
+/** Today in Vietnam, YYYY-MM-DD: the API refuses a correction dated later. */
+function todayInVietnam(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+}
+
 /** Units of the same dimension as the stored unit; none when the unit is unknown. */
 export function sameDimensionUnits(storedUnit: string): { value: string; label: string }[] {
   try {
@@ -72,7 +80,8 @@ export function useStoredUnitCorrection(
       const { rows } = await previewStoredUnit(layerKey, attribute!.name, selected);
       setPreview({ unit: selected, rows });
     } catch (e) {
-      setFailure({ message: describeFailure(e).message, errors: describeFailure(e).errors });
+      const f = describeFailure(e, DIALOG_FIELDS);
+      setFailure({ message: f.message, errors: f.errors });
     } finally {
       setPreviewing(false);
     }
@@ -88,7 +97,7 @@ export function useStoredUnitCorrection(
       close();
       await reload();
     } catch (e) {
-      const f = describeFailure(e);
+      const f = describeFailure(e, DIALOG_FIELDS);
       setFailure({ message: f.message, errors: f.errors });
       if (f.conflict) await reload();
     } finally {
@@ -110,6 +119,8 @@ export function useStoredUnitCorrection(
       ? preview.rows.map((r) => ({ id: r.id, stored: String(r.stored), before: r.before, after: r.after }))
       : null,
     date,
+    // A correction is about data already stored: not after today, nor after the attribute retires.
+    maxDate: attribute.validTo && attribute.validTo < todayInVietnam() ? attribute.validTo : todayInVietnam(),
     onDate: (value) => { setDate(value); clearError('storedUnitValidFrom'); },
     confirmed,
     onConfirmed: setConfirmed,

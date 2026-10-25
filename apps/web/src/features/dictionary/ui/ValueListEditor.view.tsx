@@ -21,6 +21,8 @@ export interface ValueRowView {
   onSave: () => void;
   /** Null on a closed list: retiring a code follows the data structure. */
   onToggleRetired: (() => void) | null;
+  /** Puts name, definition and colour back to the code default; null for a code the default does not list. */
+  onRestore: (() => void) | null;
 }
 
 export interface ValueAddView {
@@ -83,6 +85,11 @@ function ValueRow({ row }: { row: ValueRowView }) {
           </Button>
         ) : (
           <span className="hint">{STRUCTURE_HINT}</span>
+        )}
+        {row.onRestore && (
+          <Button size="sm" variant="quiet" disabled={row.locked} aria-label={`Khôi phục mặc định giá trị ${c}`} onClick={row.onRestore}>
+            Khôi phục mặc định
+          </Button>
         )}
       </div>
     </li>

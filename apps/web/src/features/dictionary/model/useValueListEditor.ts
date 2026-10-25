@@ -1,11 +1,25 @@
 import { useState } from 'react';
-import { addValue, patchValue, type RevisedAttribute } from '../api/dictionaryEdit.api';
+import { DICTIONARY } from '@webatlas/shared';
+import { addValue, patchValue, restoreValue, type RevisedAttribute } from '../api/dictionaryEdit.api';
 import type { ValueAddView, ValueListView, ValueRowView } from '../ui/ValueListEditor.view';
 import { describeFailure } from './saveFeedback';
 
 interface RowDraft { name?: string; definition?: string; colorHint?: string }
 interface AddDraft { code: string; name: string; definition: string }
 const EMPTY_ADD: AddDraft = { code: '', name: '', definition: '' };
+
+/** The fields a value row and the add form show errors under; any other refusal is their message. */
+const ROW_FIELDS = ['name', 'definition', 'colorHint'] as const;
+const ADD_FIELDS = ['code', 'name', 'definition'] as const;
+
+/**
+ * The codes the code default (the shared DICTIONARY) lists for an attribute: only those have a
+ * default to restore to. The served rows carry no origin, so a staff-added code is told apart this way.
+ */
+function defaultCodes(layerKey: string, attribute: string): Set<string> {
+  const ft = Object.hasOwn(DICTIONARY, layerKey) ? DICTIONARY[layerKey] : undefined;
+  return new Set(ft?.attributes.find((a) => a.name === attribute)?.values?.map((v) => v.code) ?? []);
+}
 
 interface Feedback { scope: string; message: string | null; errors: Record<string, string> }
 
@@ -45,7 +59,7 @@ export function useValueListEditor(
   const scopeOf = (part: string) => `${attrKey}|${part}`;
   const mineOf = (part: string) => (feedback?.scope === scopeOf(part) ? feedback : null);
 
-  async function run(part: string, work: () => Promise<unknown>, onDone: () => void) {
+  async function run(part: string, work: () => Promise<unknown>, onDone: () => void, shown: readonly string[]) {
     setBusy(scopeOf(part));
     setFeedback(null);
     try {
@@ -53,7 +67,7 @@ export function useValueListEditor(
       onDone();
       await reload();
     } catch (e) {
-      const failure = describeFailure(e);
+      const failure = describeFailure(e, shown);
       setFeedback({ scope: scopeOf(part), message: failure.message, errors: failure.errors });
       if (failure.conflict) {
         setEdits((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith(`${attrKey}|`))));
@@ -70,13 +84,14 @@ export function useValueListEditor(
     return { ...prev, errors: rest };
   });
 
+  const withDefault = defaultCodes(layerKey, attribute.name);
   const rows: ValueRowView[] = [...attribute.values].sort((a, b) => a.order - b.order).map((v) => {
     const key = scopeOf(v.code);
     const draft = edits[key];
     const body = rowBody(v, draft);
     const mine = mineOf(v.code);
     const save = (patch: Parameters<typeof patchValue>[3], onDone: () => void) => {
-      void run(v.code, () => patchValue(layerKey, attribute.name, v.code, patch), onDone);
+      void run(v.code, () => patchValue(layerKey, attribute.name, v.code, patch), onDone, ROW_FIELDS);
     };
     const dropDraft = () => setEdits((prev) => { const { [key]: _gone, ...rest } = prev; return rest; });
     return {
@@ -99,6 +114,13 @@ export function useValueListEditor(
       onToggleRetired: attribute.codeList === 'open'
         ? () => save({ expectedRevision: revision, retired: v.retired !== true }, () => {})
         : null,
+      // The wording and colour go back to the current code default; what is typed in the row goes too.
+      onRestore: withDefault.has(v.code)
+        ? () => {
+          const fields = [...ROW_FIELDS];
+          void run(v.code, () => restoreValue(layerKey, attribute.name, v.code, { expectedRevision: revision, fields }), dropDraft, ROW_FIELDS);
+        }
+        : null,
     };
   });
 
@@ -119,7 +141,8 @@ export function useValueListEditor(
       onSubmit: () => {
         const definition = draft.definition.trim();
         const body = { expectedRevision: revision, code: draft.code, name: draft.name, ...(definition ? { definition: draft.definition } : {}) };
-        void run('add', () => addValue(layerKey, attribute.name, body), () => setAdds((prev) => ({ ...prev, [attrKey]: EMPTY_ADD })));
+        void run('add', () => addValue(layerKey, attribute.name, body), () => setAdds((prev) => ({ ...prev, [attrKey]: EMPTY_ADD })),
+          ADD_FIELDS);
       },
     };
   }
