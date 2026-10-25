@@ -120,6 +120,9 @@ describe('filter_by_attribute', () => {
       rows: Array<{ featureId: string; name: string | null; matchedValue: string; lon: number | null; lat: number | null }>;
     };
     expect(parsed).toMatchObject({ layerKey: 'dams', column: 'status', value: 'binh_thuong' });
+    const fields = (parsed as unknown as { fields: Record<string, { label: string }> }).fields;
+    expect(fields.status.label).toBeTruthy();
+    expect(Object.keys(fields)).toEqual(expect.arrayContaining(['name', 'status']));
     expect(parsed.rows.length).toBeGreaterThan(0);
     for (const row of parsed.rows) {
       expect(row.matchedValue).toContain('binh_thuong');

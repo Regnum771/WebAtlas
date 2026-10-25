@@ -21,6 +21,7 @@ export const zonalElevationTool: ToolFactory = (ctx) =>
       runAnalysisTool(ctx, 'zonal_elevation', input.layerKey, (db) =>
         zonalElevationOp(db, {
           roi: roiFromParts({ feature: { layerKey: input.layerKey, featureId: input.featureId } }, input.radiusKm),
-        })
+        }),
+        { elevation: true }
       ),
   });

@@ -43,6 +43,8 @@ describe('features_in_view', () => {
     expect(parsed.count).toBeGreaterThan(0);
     expect(parsed.rows.length).toBeGreaterThan(0);
     expect(parsed.rows[0].lon).toBeGreaterThan(100);
+    // Labels once per layer, not per feature.
+    expect((parsed as unknown as { fields: Record<string, { label: string }> }).fields.name.label).toBeTruthy();
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({ tool: 'features_in_view', layerKey: 'dams' });
     expect(records[0].rowCount).toBe(parsed.count);

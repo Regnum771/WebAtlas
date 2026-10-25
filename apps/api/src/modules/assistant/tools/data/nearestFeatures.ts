@@ -8,6 +8,7 @@ import { inVietnam } from '../../../../lib/geo';
 import { withAnalysisTimeout } from '../../../analysis/db';
 import { getAnalysisPool } from '../../../analysis/pool';
 import { nearestGeometries, queryNearest, type NearestRow } from '../../../analysis/ops/nearest';
+import { fieldsPart } from './fieldLabels';
 import { LAYER_LABELS, activeVersionLabel } from './helpers';
 
 // Query lives in modules/analysis/ops/nearest.ts, shared with the toolbar.
@@ -64,6 +65,6 @@ export const nearestFeaturesTool: ToolFactory = (ctx) =>
         items: capResultItems(nearestGeometries(input.layerKey, input.lon, input.lat, rows)).items };
       if (isMapCommand(connectors)) ctx.collect(connectors);
 
-      return JSON.stringify({ layerKey: input.layerKey, from: [input.lon, input.lat], rows });
+      return JSON.stringify({ layerKey: input.layerKey, from: [input.lon, input.lat], rows, ...(await fieldsPart(ctx.pool, input.layerKey, ['name'])) });
     },
   });

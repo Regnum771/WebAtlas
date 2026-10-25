@@ -35,6 +35,12 @@ describe('SYSTEM_PROMPT', () => {
     }
   });
 
+  it('tells the model to use the field labels and display units', () => {
+    for (const prompt of [SYSTEM_PROMPT, ADMIN_SYSTEM_PROMPT]) {
+      expect(prompt).toContain('Khi trả lời, dùng nhãn trong `fields` thay cho tên cột và đổi giá trị sang đơn vị thông dụng nếu cần.');
+    }
+  });
+
   it('is stable across calls — a varying prefix would miss the cache every turn', () => {
     expect(SYSTEM_PROMPT).toBe(SYSTEM_PROMPT);
     expect(SYSTEM_PROMPT).not.toMatch(/\d{4}-\d{2}-\d{2}T/);

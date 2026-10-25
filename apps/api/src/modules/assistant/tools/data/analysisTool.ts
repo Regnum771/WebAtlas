@@ -3,6 +3,7 @@ import { AppError, NotFoundError, ValidationError } from '../../../../errors';
 import { withAnalysisTimeout } from '../../../analysis/db';
 import { getAnalysisPool } from '../../../analysis/pool';
 import type { ToolContext } from '../types';
+import { elevationUnit } from './fieldLabels';
 import { activeVersionLabel, type Queryable } from './helpers';
 
 /**
@@ -14,7 +15,8 @@ export async function runAnalysisTool(
   ctx: ToolContext,
   tool: string,
   layerKey: EditableLayerKey | null,
-  run: (db: Queryable) => Promise<AnalysisResult>
+  run: (db: Queryable) => Promise<AnalysisResult>,
+  opts: { elevation?: boolean } = {}
 ): Promise<string> {
   const datasetVersion = layerKey ? await activeVersionLabel(ctx.pool, layerKey) : null;
   let result: AnalysisResult;
@@ -47,6 +49,7 @@ export async function runAnalysisTool(
   }
   return JSON.stringify({
     summary: result.summary,
+    ...(opts.elevation ? { unit: await elevationUnit(ctx.pool) } : {}),
     ...(result.rows ? { rows: result.rows } : {}),
     ...(result.truncated ? { truncated: true } : {}),
   });

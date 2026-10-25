@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
+import { fieldsPart } from './fieldLabels';
 import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, entityPredicate, layerView } from './helpers';
 
 /**
@@ -85,6 +86,7 @@ export const filterByAttributeTool: ToolFactory = (ctx) =>
         value: input.value,
         truncated,
         rows: listed,
+        ...(await fieldsPart(ctx.pool, input.layerKey, ['name', input.column])),
       });
     },
   });

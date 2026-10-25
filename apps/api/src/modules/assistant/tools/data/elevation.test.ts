@@ -53,6 +53,7 @@ describe('elevation_at_point', () => {
     };
 
     expect(parsed.elevationM).toBe(2442.3);
+    expect((parsed as unknown as { unit: string }).unit).toBe('m');
     // The licence requires the source to be credited wherever the number surfaces;
     // the provenance chip renders datasetVersion, so this assertion is the licence
     // condition, not cosmetics.

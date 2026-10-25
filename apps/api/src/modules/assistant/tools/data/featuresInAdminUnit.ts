@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS, REGION_PROVINCE_CODES, REGION_PROVINCE_NAMES } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
+import { fieldsPart } from './fieldLabels';
 import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, entityPredicate, layerView } from './helpers';
 
 /**
@@ -66,6 +67,7 @@ export const featuresInAdminUnitTool: ToolFactory = (ctx) =>
         unit,
         count,
         rows: rows.map((r) => ({ featureId: r.featureId, name: r.name, lon: r.lon, lat: r.lat })),
+        ...(await fieldsPart(ctx.pool, input.layerKey, ['name'])),
       });
     },
   });

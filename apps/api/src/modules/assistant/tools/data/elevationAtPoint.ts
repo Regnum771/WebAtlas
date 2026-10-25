@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import type { ToolFactory } from '../types';
 import { inVietnam } from '../../../../lib/geo';
+import { elevationUnit } from './fieldLabels';
 import { elevationAt, DEM_SOURCE } from '../../../elevation/repository';
 
 export const elevationAtPointTool: ToolFactory = (ctx) =>
@@ -44,6 +45,7 @@ export const elevationAtPointTool: ToolFactory = (ctx) =>
         lon: input.lon,
         lat: input.lat,
         elevationM: result.elevationM,
+        unit: await elevationUnit(ctx.pool),
         source: DEM_SOURCE,
       });
     },

@@ -77,5 +77,6 @@ describe('analysis tools', () => {
     const parsed = JSON.parse(text);
     expect(parsed.summary['Chiều dài (km)']).toBeGreaterThan(0);
     expect(parsed).not.toHaveProperty('profile');
+    expect(parsed.unit).toBe('m');
   });
 });

@@ -21,6 +21,7 @@ export const elevationProfileTool: ToolFactory = (ctx) =>
         elevationProfileOp(db, {
           roi: { source: 'feature', layerKey: input.layerKey, featureId: input.featureId },
           samples: input.samples,
-        })
+        }),
+        { elevation: true }
       ),
   });

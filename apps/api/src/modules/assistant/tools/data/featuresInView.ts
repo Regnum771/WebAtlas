@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
+import { fieldsPart } from './fieldLabels';
 import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, entityPredicate, layerView } from './helpers';
 
 export const featuresInViewTool: ToolFactory = (ctx) =>
@@ -49,6 +50,6 @@ export const featuresInViewTool: ToolFactory = (ctx) =>
       if (count === 0) {
         return `Không có dữ liệu: không có ${LAYER_LABELS[input.layerKey]} nào trong khu vực này.`;
       }
-      return JSON.stringify({ layerKey: input.layerKey, bbox, count, listed: listed.length, rows: listed });
+      return JSON.stringify({ layerKey: input.layerKey, bbox, count, listed: listed.length, rows: listed, ...(await fieldsPart(ctx.pool, input.layerKey, ['name'])) });
     },
   });

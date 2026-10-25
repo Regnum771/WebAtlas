@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { EDITABLE_LAYER_KEYS } from '@webatlas/shared';
 import type { ToolFactory } from '../types';
+import { fieldsPart } from './fieldLabels';
 import { LAYER_LABELS, POINT_SQL, ROW_LIMIT, activeVersionLabel, entityPredicate, isFeatureId, layerView } from './helpers';
 
 /** A radius beyond this stops being a relationship and becomes a full scan of
@@ -96,6 +97,7 @@ export const relatedFeaturesTool: ToolFactory = (ctx) =>
         relatedLayerKey: input.relatedLayerKey,
         radiusKm: input.radiusKm,
         rows,
+        ...(await fieldsPart(ctx.pool, input.relatedLayerKey, ['name'])),
       });
     },
   });
