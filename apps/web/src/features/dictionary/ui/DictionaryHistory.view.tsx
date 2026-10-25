@@ -13,15 +13,18 @@ export interface HistoryRowView {
 interface Props {
   rows: HistoryRowView[];
   loading: boolean;
+  /** The query returned its limit: older entries exist and are not shown. */
+  truncated?: boolean;
 }
 
 /** Passive: who changed what, when, from what to what, and why. */
-export function DictionaryHistoryView({ rows, loading }: Props) {
+export function DictionaryHistoryView({ rows, loading, truncated }: Props) {
   return (
     <section className="dictionary-history" aria-label="Lịch sử thay đổi">
       <h3>Lịch sử thay đổi</h3>
       {loading && <Spinner label="Đang tải…" />}
       {!loading && rows.length === 0 && <p className="hint">Chưa có thay đổi nào.</p>}
+      {truncated && <p className="hint">Chỉ hiện 200 thay đổi gần nhất.</p>}
       {rows.length > 0 && (
         <table className="dictionary-history-table">
           <thead>

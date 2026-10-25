@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Dictionary, DictFeatureType } from '@webatlas/shared';
@@ -64,6 +64,8 @@ beforeEach(() => {
 });
 
 describe('dictionary editor', () => {
+  const attributeForm = (name: string) => screen.getByRole('form', { name });
+
   it('locked fields are read-only with the structure hint', async () => {
     mount();
     const crs = await screen.findByLabelText('Hệ toạ độ');
@@ -72,15 +74,24 @@ describe('dictionary editor', () => {
     expect(screen.getByLabelText('Tên lớp')).not.toHaveAttribute('readonly');
   });
 
+  it('the feature-type form sits above the attribute list', async () => {
+    mount();
+    const layerForm = await screen.findByRole('form', { name: 'Thông tin lớp' });
+    const list = screen.getByRole('navigation', { name: 'Thuộc tính' });
+    expect(layerForm.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Thông tin lớp' })).toBeNull();
+  });
+
   it('saving a label sends the expected revision and refreshes the dictionary', async () => {
     api.patchAttribute.mockResolvedValue(entry().attributes[0]);
     mount();
     await userEvent.click(await screen.findByRole('button', { name: /Tên tiếng Anh/ }));
-    const label = await screen.findByLabelText('Nhãn');
+    const form = within(attributeForm('Tên tiếng Anh'));
+    const label = form.getByLabelText('Nhãn');
     await userEvent.clear(label);
     await userEvent.type(label, 'English name');
     const invalidate = vi.spyOn(client, 'invalidateQueries');
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+    await userEvent.click(form.getByRole('button', { name: 'Lưu' }));
     await waitFor(() => expect(api.patchAttribute).toHaveBeenCalledWith('dams', 'name_en', { expectedRevision: 5, label: 'English name' }));
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['dictionary'] }));
   });
@@ -89,10 +100,10 @@ describe('dictionary editor', () => {
     api.patchAttribute.mockRejectedValue(new ApiError(409, 'DICTIONARY_CHANGED', 'x'));
     mount();
     await userEvent.click(await screen.findByRole('button', { name: /Tên tiếng Anh/ }));
-    const label = await screen.findByLabelText('Nhãn');
-    await userEvent.type(label, '!');
+    const form = within(attributeForm('Tên tiếng Anh'));
+    await userEvent.type(form.getByLabelText('Nhãn'), '!');
     const before = api.fetchLayerEntry.mock.calls.length;
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+    await userEvent.click(form.getByRole('button', { name: 'Lưu' }));
     expect(await screen.findByText('Mục này vừa được người khác sửa.')).toBeInTheDocument();
     await waitFor(() => expect(api.fetchLayerEntry.mock.calls.length).toBeGreaterThan(before));
   });
@@ -103,10 +114,14 @@ describe('dictionary editor', () => {
     );
     mount();
     await userEvent.click(await screen.findByRole('button', { name: /Diện tích/ }));
-    const precision = await screen.findByLabelText('Số chữ số thập phân');
+    const form = within(attributeForm('Diện tích'));
+    const precision = form.getByLabelText('Số chữ số thập phân');
+    expect(precision).toHaveAttribute('min', '0');
+    expect(precision).toHaveAttribute('max', '6');
+    expect(precision).toHaveAttribute('step', '1');
     await userEvent.clear(precision);
     await userEvent.type(precision, '3');
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+    await userEvent.click(form.getByRole('button', { name: 'Lưu' }));
     expect(await screen.findByText('Trường "Số chữ số thập phân" phải là số nguyên từ 0 đến 6.')).toBeInTheDocument();
     expect(precision).toHaveAttribute('aria-invalid', 'true');
   });
@@ -117,13 +132,14 @@ describe('dictionary editor', () => {
     api.restoreFields.mockResolvedValue(entry().attributes[0]);
     mount();
     await userEvent.click(await screen.findByRole('button', { name: /Sửa/ }));
-    expect(await screen.findByText(/Đã sửa bởi Lan lúc/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Nhãn')).toHaveValue('Sửa');
+    const form = within(attributeForm('Sửa'));
+    expect(await form.findByText(/Đã sửa bởi Lan lúc/)).toBeInTheDocument();
+    expect(form.getByLabelText('Nhãn')).toHaveValue('Sửa');
     api.fetchLayerEntry.mockResolvedValue(entry());
     api.fetchHistory.mockResolvedValue([row({ id: 2, reason: 'restore', oldValue: 'Sửa', newValue: 'Tên tiếng Anh' }), row({})]);
-    await userEvent.click(screen.getByRole('button', { name: 'Khôi phục mặc định' }));
+    await userEvent.click(form.getByRole('button', { name: 'Khôi phục mặc định' }));
     await waitFor(() => expect(api.restoreFields).toHaveBeenCalledWith('dams', 'name_en', ['label']));
-    await waitFor(() => expect(screen.getByLabelText('Nhãn')).toHaveValue('Tên tiếng Anh'));
+    await waitFor(() => expect(within(attributeForm('Tên tiếng Anh')).getByLabelText('Nhãn')).toHaveValue('Tên tiếng Anh'));
     expect(screen.queryByText(/Đã sửa bởi/)).toBeNull();
   });
 
@@ -131,9 +147,61 @@ describe('dictionary editor', () => {
     api.patchAttribute.mockResolvedValue(entry().attributes[0]);
     mount();
     await userEvent.click(await screen.findByRole('button', { name: /Tên tiếng Anh/ }));
-    const date = await screen.findByLabelText('Ngừng dùng từ');
-    await userEvent.type(date, '2026-12-31');
-    await userEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+    const form = within(attributeForm('Tên tiếng Anh'));
+    await userEvent.type(form.getByLabelText('Ngừng dùng từ'), '2026-12-31');
+    await userEvent.click(form.getByRole('button', { name: 'Lưu' }));
     await waitFor(() => expect(api.patchAttribute).toHaveBeenCalledWith('dams', 'name_en', { expectedRevision: 5, validTo: '2026-12-31' }));
+  });
+
+  it('unticking the shown display unit moves the shown unit to a permitted one', async () => {
+    api.patchAttribute.mockResolvedValue(entry().attributes[1]);
+    mount();
+    await userEvent.click(await screen.findByRole('button', { name: /Diện tích/ }));
+    const form = within(attributeForm('Diện tích'));
+    expect(form.getByLabelText('Đơn vị hiển thị')).toHaveValue('km2');
+    // km² is shown; remove it from the permitted units.
+    await userEvent.click(form.getByRole('checkbox', { name: 'km²' }));
+    expect(form.getByLabelText('Đơn vị hiển thị')).toHaveValue('ha');
+    await userEvent.click(form.getByRole('button', { name: 'Lưu' }));
+    await waitFor(() => expect(api.patchAttribute).toHaveBeenCalledWith(
+      'dams', 'area', { expectedRevision: 2, displayUnit: 'ha', displayUnits: ['ha'] },
+    ));
+  });
+
+  it('an attribute reads its own scoped history; the feature-type form reads the layer query', async () => {
+    mount();
+    await screen.findByRole('form', { name: 'Thông tin lớp' });
+    expect(api.fetchHistory).toHaveBeenCalledWith('dams', null, 200);
+    expect(api.fetchHistory).not.toHaveBeenCalledWith('dams', 'name_en', 200);
+    await userEvent.click(screen.getByRole('button', { name: /Tên tiếng Anh/ }));
+    await waitFor(() => expect(api.fetchHistory).toHaveBeenCalledWith('dams', 'name_en', 200));
+  });
+
+  it('feature-type badges use only the layer rows without an attribute', async () => {
+    api.fetchHistory.mockResolvedValue([row({ attribute: null, field: 'name' }), row({ id: 2 })]);
+    mount();
+    const layerForm = within(await screen.findByRole('form', { name: 'Thông tin lớp' }));
+    expect(await layerForm.findAllByText(/Đã sửa bởi Lan lúc/)).toHaveLength(1);
+  });
+
+  it('the history panel says when older entries are not shown', async () => {
+    api.fetchHistory.mockResolvedValue(Array.from({ length: 200 }, (_, i) => row({ id: i + 1 })));
+    mount();
+    expect(await screen.findByText('Chỉ hiện 200 thay đổi gần nhất.')).toBeInTheDocument();
+  });
+
+  it('no notice below the limit, and raw reasons render in Vietnamese', async () => {
+    api.fetchHistory.mockResolvedValue([
+      row({ id: 1, attribute: null, reason: 'edit' }),
+      row({ id: 2, attribute: null, reason: 'restore' }),
+      row({ id: 3, attribute: null, reason: 'sync_revert', changedBy: null }),
+      row({ id: 4, attribute: null, reason: 'sync_retire', changedBy: null }),
+    ]);
+    mount();
+    const panel = within(await screen.findByRole('region', { name: 'Lịch sử thay đổi' }));
+    for (const r of ['sửa', 'khôi phục', 'đồng bộ hoàn nguyên', 'đồng bộ ngừng dùng']) {
+      expect(await panel.findByText(r)).toBeInTheDocument();
+    }
+    expect(panel.queryByText('Chỉ hiện 200 thay đổi gần nhất.')).toBeNull();
   });
 });

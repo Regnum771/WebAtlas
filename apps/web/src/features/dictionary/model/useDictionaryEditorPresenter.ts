@@ -92,8 +92,10 @@ function diff(keys: readonly string[], base: Draft, draft: Draft): Record<string
 
 export interface DictionaryEditorPresenter {
   editor: EditorProps;
-  history: { rows: HistoryRowView[]; loading: boolean };
+  history: { rows: HistoryRowView[]; loading: boolean; truncated: boolean };
 }
+
+const HISTORY_LIMIT = 200;
 
 /** The /quan-ly/tu-dien section: picks a layer and an attribute, edits, saves and restores. */
 export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
@@ -105,11 +107,11 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
   const layerKey = pickedLayer && Object.hasOwn(dictionary, pickedLayer) ? pickedLayer : (layers[0]?.key ?? '');
   const [attributeName, setAttributeName] = useState<string | null>(null);
 
-  // Touched fields only, tied to the revision they were typed against: a reload drops them.
-  const [edits, setEdits] = useState<{ key: string; values: Draft } | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  // Touched fields only, keyed by form and the revision they were typed against: a reload drops them.
+  const [edits, setEdits] = useState<Record<string, Draft>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  // Feedback belongs to one form: '' is the feature-type form, otherwise the attribute name.
+  const [feedback, setFeedback] = useState<{ form: string; message: string | null; errors: Record<string, string> } | null>(null);
 
   const entryQuery = useQuery({
     queryKey: ['dictionary', 'entry', layerKey],
@@ -117,111 +119,132 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
     enabled: layerKey !== '',
     refetchOnWindowFocus: false,
   });
-  const historyQuery = useQuery({
+  // Layer-wide history feeds the feature-type form. With an attribute chosen, its own (scoped) query
+  // feeds that form and the history panel, so a busy layer cannot push its rows out of the limit.
+  const layerHistory = useQuery({
     queryKey: ['dictionary', 'history', layerKey],
-    queryFn: () => fetchHistory(layerKey, 200),
+    queryFn: () => fetchHistory(layerKey, null, HISTORY_LIMIT),
     enabled: layerKey !== '',
+    refetchOnWindowFocus: false,
+  });
+  const attributeHistory = useQuery({
+    queryKey: ['dictionary', 'history', layerKey, attributeName],
+    queryFn: () => fetchHistory(layerKey, attributeName, HISTORY_LIMIT),
+    enabled: layerKey !== '' && attributeName !== null,
     refetchOnWindowFocus: false,
   });
 
   const entry = entryQuery.data;
-  const attribute = entry && attributeName !== null ? entry.attributes.find((a) => a.name === attributeName) : undefined;
-  const target: RevisedFeatureType | RevisedAttribute | undefined = attributeName === null ? entry : attribute;
-  const isLayerForm = attributeName === null;
 
-  const clearFeedback = () => { setMessage(null); setErrors({}); };
-  const selectLayer = (key: string) => { setPickedLayer(key); setAttributeName(null); setEdits(null); clearFeedback(); };
-  const selectAttribute = (name: string | null) => { setAttributeName(name); setEdits(null); clearFeedback(); };
-
-  // A field is "edited" when its newest history row for (attribute, field) is a staff edit.
-  const editedBy = useMemo(() => {
-    const map = new Map<string, HistoryEntry>();
-    for (const h of historyQuery.data ?? []) {
-      if (h.code !== null) continue;
-      const k = `${h.attribute ?? ''}\u0000${h.field}`;
-      if (!map.has(k)) map.set(k, h);
-    }
-    return map;
-  }, [historyQuery.data]);
-  const editedOf = useCallback((field: string) => {
-    const h = editedBy.get(`${attributeName ?? ''}\u0000${field}`);
-    return h && h.reason === 'edit' ? h : undefined;
-  }, [editedBy, attributeName]);
-
-  const keys: readonly string[] = isLayerForm ? LAYER_FIELDS : ATTRIBUTE_FIELDS;
-  const base = useMemo(() => (target ? baseDraft(isLayerForm, target) : null), [target, isLayerForm]);
-  const editKey = `${layerKey}|${attributeName ?? ''}|${target?.revision ?? ''}`;
-  const draft: Draft | null = base ? { ...base, ...(edits?.key === editKey ? edits.values : {}) } : null;
-  const body = base && draft ? diff(keys, base, draft) : {};
-  const dirty = Object.keys(body).length > 0;
+  const selectLayer = (key: string) => { setPickedLayer(key); setAttributeName(null); setFeedback(null); };
+  const selectAttribute = (name: string | null) => { setAttributeName(name); setFeedback(null); };
 
   const reload = () => client.invalidateQueries({ queryKey: ['dictionary'] });
 
-  async function run(work: () => Promise<unknown>) {
-    setSaving(true);
-    clearFeedback();
+  async function run(form: string, editKey: string, work: () => Promise<unknown>) {
+    setSaving(form);
+    setFeedback(null);
+    const dropEdits = () => setEdits((prev) => { const { [editKey]: _gone, ...rest } = prev; return rest; });
     try {
       await work();
-      setEdits(null);
+      dropEdits();
       await reload();
     } catch (e) {
+      const field = e instanceof ApiError ? (e.details as { field?: string } | undefined)?.field : undefined;
       if (e instanceof ApiError && e.status === 409) {
-        setMessage(CHANGED);
-        setEdits(null);
+        setFeedback({ form, message: CHANGED, errors: {} });
+        dropEdits();
         await reload();
-      } else if (e instanceof ApiError && e.status === 400 && (e.details as { field?: string } | undefined)?.field) {
-        setErrors({ [(e.details as { field: string }).field]: e.message });
+      } else if (e instanceof ApiError && e.status === 400 && field) {
+        setFeedback({ form, message: null, errors: { [field]: e.message } });
       } else {
-        setMessage(e instanceof Error ? e.message : 'Không lưu được.');
+        setFeedback({ form, message: e instanceof Error ? e.message : 'Không lưu được.', errors: {} });
       }
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   }
 
-  const onChange = (key: string, value: string | string[]) => {
-    if (!draft) return;
-    setErrors((prev) => { const { [key]: _gone, ...rest } = prev; return rest; });
-    setEdits({ key: editKey, values: { ...(edits?.key === editKey ? edits.values : {}), [key]: value } });
-  };
+  /** One form: the feature type (`name` null) or one attribute. */
+  function buildForm(name: string | null): EditorFormView | null {
+    const isLayerForm = name === null;
+    const target: RevisedFeatureType | RevisedAttribute | undefined = isLayerForm
+      ? entry : entry?.attributes.find((a) => a.name === name);
+    if (!target) return null;
+    const formId = name ?? '';
+    const keys: readonly string[] = isLayerForm ? LAYER_FIELDS : ATTRIBUTE_FIELDS;
+    const base = baseDraft(isLayerForm, target);
+    const editKey = `${layerKey}|${formId}|${target.revision}`;
+    const draft: Draft = { ...base, ...edits[editKey] };
+    const body = diff(keys, base, draft);
+    const dirty = Object.keys(body).length > 0;
 
-  const onSave = () => {
-    if (!target || !dirty) return;
-    const payload = { expectedRevision: target.revision, ...body };
-    void run(() => (isLayerForm ? patchLayer(layerKey, payload) : patchAttribute(layerKey, attributeName!, payload)));
-  };
+    // A field is "edited" when its newest history row for (attribute, field) is a staff edit.
+    const source = isLayerForm
+      ? (layerHistory.data ?? []).filter((h) => h.attribute === null)
+      : (attributeHistory.data ?? []);
+    const latest = new Map<string, HistoryEntry>();
+    for (const h of source) {
+      if (h.code === null && !latest.has(h.field)) latest.set(h.field, h);
+    }
+    const editedOf = (field: string) => {
+      const h = latest.get(field);
+      return h && h.reason === 'edit' ? h : undefined;
+    };
+    const editedKeys = keys.filter((k) => editedOf(k));
 
-  const restore = (fields: string[]) => {
-    if (fields.length === 0) return;
-    void run(() => restoreFields(layerKey, attributeName, fields));
-  };
+    const mine = feedback?.form === formId ? feedback : null;
+    const fields = (isLayerForm ? layerFields(target as RevisedFeatureType, draft) : attributeFields(target as RevisedAttribute, draft))
+      .map((f) => {
+        const h = keys.includes(f.key) ? editedOf(f.key) : undefined;
+        return {
+          ...f,
+          error: mine?.errors[f.key],
+          edited: h ? `Đã sửa bởi ${h.changedBy?.name ?? 'không rõ'} lúc ${formatTime(h.changedAt)}` : undefined,
+        };
+      });
 
-  const editedKeys = keys.filter((k) => editedOf(k));
-
-  const form: EditorFormView | null = target && draft ? {
-    title: isLayerForm ? 'Thông tin lớp' : (target as RevisedAttribute).label,
-    fields: isLayerForm
-      ? layerFields(target as RevisedFeatureType, draft)
-      : attributeFields(target as RevisedAttribute, draft),
-    dirty, saving, message,
-    canRestoreAll: editedKeys.length > 0,
-    onChange, onSave,
-    onRestore: (key) => restore([key]),
-    onRestoreAll: () => restore([...editedKeys]),
-  } : null;
-  if (form) {
-    form.fields = form.fields.map((f) => {
-      const h = keys.includes(f.key) ? editedOf(f.key) : undefined;
-      return {
-        ...f,
-        error: errors[f.key],
-        edited: h ? `Đã sửa bởi ${h.changedBy?.name ?? 'không rõ'} lúc ${formatTime(h.changedAt)}` : undefined,
-      };
-    });
+    const restore = (list: string[]) => {
+      if (list.length === 0) return;
+      void run(formId, editKey, () => restoreFields(layerKey, name, list));
+    };
+    return {
+      idPrefix: isLayerForm ? 'dict-layer-form' : 'dict-attr',
+      title: isLayerForm ? 'Thông tin lớp' : (target as RevisedAttribute).label,
+      fields,
+      dirty,
+      saving: saving === formId,
+      message: mine?.message ?? null,
+      canRestoreAll: editedKeys.length > 0,
+      onChange: (key, value) => {
+        const next: Draft = { ...edits[editKey], [key]: value };
+        // The shown unit must stay one of the permitted units.
+        if (key === 'displayUnits' && Array.isArray(value) && !isLayerForm) {
+          const shown = draft.displayUnit as string;
+          if (value.length > 0 && !value.includes(shown)) next.displayUnit = value[0];
+        }
+        setEdits((prev) => ({ ...prev, [editKey]: next }));
+        setFeedback((prev) => {
+          if (!prev || prev.form !== formId || !(key in prev.errors)) return prev;
+          const { [key]: _gone, ...rest } = prev.errors;
+          return { ...prev, errors: rest };
+        });
+      },
+      onSave: () => {
+        if (!dirty) return;
+        const payload = { expectedRevision: target.revision, ...body };
+        void run(formId, editKey, () => (isLayerForm
+          ? patchLayer(layerKey, payload)
+          : patchAttribute(layerKey, name!, payload)));
+      },
+      onRestore: (key) => restore([key]),
+      onRestoreAll: () => restore([...editedKeys]),
+    };
   }
 
   const labelOfAttribute = (name: string) => entry?.attributes.find((a) => a.name === name)?.label ?? name;
-  const historyRows: HistoryRowView[] = (historyQuery.data ?? []).map((h) => {
+  const panel = attributeName === null ? layerHistory : attributeHistory;
+  const historyRows: HistoryRowView[] = (panel.data ?? []).map((h) => {
     const field = FIELD_LABEL[h.field] ?? h.field;
     const owner = h.attribute === null ? '' : `${labelOfAttribute(h.attribute)} · `;
     const value = h.code === null ? '' : `Giá trị "${h.code}" · `;
@@ -246,9 +269,14 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
       loading: entryQuery.isPending && layerKey !== '',
       error: entryQuery.isError ? 'Không tải được mục từ điển.' : null,
       onRetry: () => { void entryQuery.refetch(); },
-      form,
+      layerForm: buildForm(null),
+      attributeForm: attributeName === null ? null : buildForm(attributeName),
     },
-    history: { rows: historyRows, loading: historyQuery.isPending && layerKey !== '' },
+    history: {
+      rows: historyRows,
+      loading: panel.isPending && panel.fetchStatus !== 'idle' && layerKey !== '',
+      truncated: (panel.data?.length ?? 0) >= HISTORY_LIMIT,
+    },
   };
 }
 
@@ -293,7 +321,7 @@ function attributeFields(a: RevisedAttribute, d: Draft): FormFieldView[] {
     );
   }
   if (a.valueType === 'number') {
-    fields.push({ key: 'precision', label: 'Số chữ số thập phân', kind: 'number', value: d.precision as string });
+    fields.push({ key: 'precision', label: 'Số chữ số thập phân', kind: 'number', value: d.precision as string, min: 0, max: 6, step: 1 });
   }
   fields.push(
     { key: 'cfStandardName', label: 'Tên chuẩn CF', kind: 'text', value: d.cfStandardName as string },

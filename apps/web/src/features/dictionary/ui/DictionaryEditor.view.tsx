@@ -17,9 +17,14 @@ export interface FormFieldView {
   edited?: string;
   /** A date field that can be emptied (un-retire). */
   clearable?: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
 }
 
 export interface EditorFormView {
+  /** Prefix of the element ids, so two forms on one page do not clash. */
+  idPrefix: string;
   title: string;
   fields: FormFieldView[];
   dirty: boolean;
@@ -44,11 +49,14 @@ export interface EditorProps {
   loading: boolean;
   error: string | null;
   onRetry: () => void;
-  form: EditorFormView | null;
+  /** The feature-type form, above the attribute list. */
+  layerForm: EditorFormView | null;
+  /** The form of the chosen attribute. */
+  attributeForm: EditorFormView | null;
 }
 
 function Field({ field, form }: { field: FormFieldView; form: EditorFormView }) {
-  const id = `dict-${field.key}`;
+  const id = `${form.idPrefix}-${field.key}`;
   const edited = field.edited && (
     <p className="hint dictionary-edited">
       {field.edited}{' '}
@@ -111,6 +119,7 @@ function Field({ field, form }: { field: FormFieldView; form: EditorFormView }) 
     <div className="dictionary-field">
       <TextField
         id={id} label={field.label} type={field.kind} value={field.value} error={field.error} hint={field.hint}
+        min={field.min} max={field.max} step={field.step}
         onChange={(e) => form.onChange(field.key, e.target.value)}
       />
       {field.clearable && field.value !== '' && (
@@ -121,7 +130,25 @@ function Field({ field, form }: { field: FormFieldView; form: EditorFormView }) 
   );
 }
 
-/** Passive: layer picker, attribute list and the edit form of the chosen layer or attribute. */
+function EditorForm({ form }: { form: EditorFormView }) {
+  return (
+    <form
+      className="dictionary-editor-form"
+      aria-label={form.title}
+      onSubmit={(e) => { e.preventDefault(); form.onSave(); }}
+    >
+      <h3>{form.title}</h3>
+      {form.message && <Message tone="error" title={form.message} />}
+      {form.fields.map((f) => <Field key={f.key} field={f} form={form} />)}
+      <div className="acts">
+        <Button type="submit" variant="solid" busy={form.saving} busyLabel="Đang lưu…">Lưu</Button>
+        {form.canRestoreAll && <Button onClick={form.onRestoreAll}>Khôi phục tất cả</Button>}
+      </div>
+    </form>
+  );
+}
+
+/** Passive: layer picker, the feature-type form, the attribute list and the chosen attribute's form. */
 export function DictionaryEditorView(p: EditorProps) {
   return (
     <div className="dictionary-editor">
@@ -136,46 +163,24 @@ export function DictionaryEditorView(p: EditorProps) {
       )}
       {p.loading && <Spinner label="Đang tải…" />}
       {!p.loading && !p.error && (
-        <div className="dictionary-editor-body">
-          <nav aria-label="Thuộc tính" className="dictionary-editor-list">
-            <ul>
-              <li>
-                <button type="button" className="link" aria-current={p.attributeName === null ? 'true' : undefined}
-                  onClick={() => p.onAttribute(null)}>
-                  Thông tin lớp
-                </button>
-              </li>
-              {p.attributes.map((a) => (
-                <li key={a.name}>
-                  <button type="button" className="link" aria-current={p.attributeName === a.name ? 'true' : undefined}
-                    onClick={() => p.onAttribute(a.name)}>
-                    {a.label}{a.retired ? ' (đã ngừng dùng)' : ''}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
-          {p.form && (
-            <form
-              className="dictionary-editor-form"
-              aria-label={p.form.title}
-              onSubmit={(e) => { e.preventDefault(); p.form?.onSave(); }}
-            >
-              <h3>{p.form.title}</h3>
-              {p.form.message && <Message tone="error" title={p.form.message} />}
-              {p.form.fields.map((f) => <Field key={f.key} field={f} form={p.form!} />)}
-              <div className="acts">
-                <Button type="submit" variant="solid" busy={p.form.saving} busyLabel="Đang lưu…"
-                  aria-disabled={!p.form.dirty || undefined}>
-                  Lưu
-                </Button>
-                {p.form.canRestoreAll && (
-                  <Button onClick={p.form.onRestoreAll}>Khôi phục tất cả</Button>
-                )}
-              </div>
-            </form>
-          )}
-        </div>
+        <>
+          {p.layerForm && <EditorForm form={p.layerForm} />}
+          <div className="dictionary-editor-body">
+            <nav aria-label="Thuộc tính" className="dictionary-editor-list">
+              <ul>
+                {p.attributes.map((a) => (
+                  <li key={a.name}>
+                    <button type="button" className="link" aria-current={p.attributeName === a.name ? 'true' : undefined}
+                      onClick={() => p.onAttribute(a.name)}>
+                      {a.label}{a.retired ? ' (đã ngừng dùng)' : ''}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+            {p.attributeForm && <EditorForm form={p.attributeForm} />}
+          </div>
+        </>
       )}
     </div>
   );

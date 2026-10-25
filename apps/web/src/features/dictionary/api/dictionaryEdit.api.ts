@@ -29,9 +29,13 @@ export function fetchLayerEntry(layer: string): Promise<RevisedFeatureType> {
   return apiRequest<RevisedFeatureType>(layerPath(layer));
 }
 
-/** Newest first; a layer-only query includes the rows of every attribute of the layer. */
-export function fetchHistory(layer: string, limit = 200): Promise<HistoryEntry[]> {
-  return apiRequest<HistoryEntry[]>(`/api/dictionary/history?layer=${encodeURIComponent(layer)}&limit=${limit}`);
+/**
+ * Newest first. Layer only: every row of the layer, attributes included. With `attribute`: that
+ * attribute's rows alone, so a busy layer cannot push them out of the limit.
+ */
+export function fetchHistory(layer: string, attribute: string | null, limit = 200): Promise<HistoryEntry[]> {
+  const scope = attribute === null ? '' : `&attribute=${encodeURIComponent(attribute)}`;
+  return apiRequest<HistoryEntry[]>(`/api/dictionary/history?layer=${encodeURIComponent(layer)}${scope}&limit=${limit}`);
 }
 
 export function patchLayer(layer: string, body: Record<string, unknown>): Promise<RevisedFeatureType> {
