@@ -63,6 +63,9 @@ export function convert(value, from, to) {
     const t = unit(to);
     if (f.dimension !== t.dimension)
         throw new Error(`Cannot convert ${from} to ${to}`);
+    // Multiplying and dividing by the same factor can add float noise (1.27 -> 1.2699999999999998).
+    if (from === to)
+        return value;
     const base = value * f.factor + (f.offset ?? 0);
     return (base - (t.offset ?? 0)) / t.factor;
 }

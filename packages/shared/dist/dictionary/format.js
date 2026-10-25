@@ -97,5 +97,7 @@ export function parseDisplay(attribute, text) {
     const number = Number(body.replace(/\./g, '').replace(',', '.'));
     if (!Number.isFinite(number))
         return refused;
-    return { ok: true, value: from && to ? convert(number, from, to) : number };
+    const stored = from && to ? convert(number, from, to) : number;
+    // Snap to 15 significant digits so a conversion never stores float noise (4.07 km -> 4070 m).
+    return { ok: true, value: Number(stored.toPrecision(15)) };
 }

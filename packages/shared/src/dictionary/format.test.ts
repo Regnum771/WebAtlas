@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { DictAttribute, Dictionary } from './types.js';
+import { DICTIONARY } from './entries/index.js';
 import { attributeOf, formatDisplayNumber, formatValue, labelFor, parseDisplay, toDisplayInput, valueName } from './format.js';
 
 const volume: DictAttribute = {
@@ -122,6 +123,14 @@ describe('format', () => {
     expect(text).toBe('12,345678');
     expect(parseDisplay(lengthM, text)).toEqual({ ok: true, value: 12345.678 });
     expect(toDisplayInput(lengthM, '12345.678')).toBe('12,345678');
+  });
+
+  it('parseDisplay gives clean stored values', () => {
+    const annualOutput = attributeOf(DICTIONARY, 'dams', 'annual_output')!;
+    const riverLength = attributeOf(DICTIONARY, 'rivers', 'length_m')!;
+    expect(riverLength.displayUnit).toBe('km');
+    expect(parseDisplay(annualOutput, '1,27')).toEqual({ ok: true, value: 1.27 });
+    expect(parseDisplay(riverLength, '4,07')).toEqual({ ok: true, value: 4070 });
   });
 
   it("toDisplayInput gives '' for missing values", () => {

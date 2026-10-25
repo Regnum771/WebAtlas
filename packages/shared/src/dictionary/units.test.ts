@@ -25,6 +25,13 @@ describe('units', () => {
     expect(() => unit('furlong')).toThrow('Unknown unit furlong');
   });
 
+  it('convert between equal units returns the value unchanged', () => {
+    for (const v of [1.27, 0.1, 29.74, 4070.0000001, -3.3]) {
+      expect(convert(v, 'GW.h/a', 'GW.h/a')).toBe(v);
+      expect(convert(v, 'Cel', 'Cel')).toBe(v);
+    }
+  });
+
   it('annual energy output converts to MW', () => {
     expect(Math.abs(convert(8.766, 'GW.h/a', 'MW') - 1)).toBeLessThan(1e-9);
   });
