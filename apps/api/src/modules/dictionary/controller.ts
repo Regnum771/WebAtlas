@@ -3,7 +3,9 @@ import { COUNTRY_UNIT, type DictFeatureType } from '@webatlas/shared';
 import { assertCan } from '../../authz/assert';
 import { getUnitTree } from '../../authz/unitTree';
 import { AuthError, NotFoundError } from '../../errors';
-import { editAttribute, editFeatureType, listHistory, restoreFields } from './edit';
+import {
+  addValue, editAttribute, editFeatureType, editValue, listHistory, previewCorrection, restoreFields,
+} from './edit';
 import { getDictionary, getFeatureType } from './service';
 import { csvTemplate, gpkgTemplate } from './template';
 
@@ -87,6 +89,24 @@ export async function restore(req: FastifyRequest, reply: FastifyReply) {
   const { layer, attribute } = req.params as { layer: string; attribute?: string };
   const target = attribute === undefined ? { featureType: layer } : { featureType: layer, attribute };
   return reply.send(await restoreFields(req.server.pg, userId(req), target, req.body));
+}
+
+/** POST /api/dictionary/:layer/:attribute/values: a code added to an open list. */
+export async function postValue(req: FastifyRequest, reply: FastifyReply) {
+  const { layer, attribute } = req.params as { layer: string; attribute: string };
+  return reply.send(await addValue(req.server.pg, userId(req), layer, attribute, req.body));
+}
+
+/** PATCH /api/dictionary/:layer/:attribute/values/:code: one listed value's fields. */
+export async function patchValue(req: FastifyRequest, reply: FastifyReply) {
+  const { layer, attribute, code } = req.params as { layer: string; attribute: string; code: string };
+  return reply.send(await editValue(req.server.pg, userId(req), layer, attribute, code, req.body));
+}
+
+/** POST /api/dictionary/:layer/:attribute/stored-unit/preview: five real values before and after. */
+export async function storedUnitPreview(req: FastifyRequest, reply: FastifyReply) {
+  const { layer, attribute } = req.params as { layer: string; attribute: string };
+  return reply.send(await previewCorrection(req.server.pg, layer, attribute, req.body));
 }
 
 /** GET /api/dictionary/history?layer=&attribute=&limit= */

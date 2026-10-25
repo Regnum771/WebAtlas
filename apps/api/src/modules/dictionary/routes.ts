@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { requirePermission } from '../../authz/assert';
 import {
-  dictionary, dictionaryLayer, history, manageOnVN, patchAttribute, patchLayer, restore, templateCsv, templateGpkg,
+  dictionary, dictionaryLayer, history, manageOnVN, patchAttribute, patchLayer, patchValue, postValue, restore,
+  storedUnitPreview, templateCsv, templateGpkg,
 } from './controller';
 
 export default async function dictionaryRoutes(app: FastifyInstance) {
@@ -20,4 +21,7 @@ export default async function dictionaryRoutes(app: FastifyInstance) {
   app.patch('/dictionary/:layer/:attribute', canManage, patchAttribute);
   app.post('/dictionary/:layer/restore', canManage, restore);
   app.post('/dictionary/:layer/:attribute/restore', canManage, restore);
+  app.post('/dictionary/:layer/:attribute/values', canManage, postValue);
+  app.patch('/dictionary/:layer/:attribute/values/:code', canManage, patchValue);
+  app.post('/dictionary/:layer/:attribute/stored-unit/preview', canManage, storedUnitPreview);
 }

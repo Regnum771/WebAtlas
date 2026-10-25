@@ -290,12 +290,41 @@ describe('planSync (spec §2.1)', () => {
   it('a locked field edited back to the code value only clears its origin', () => {
     const stored = synced(dictionary(damsEntry()));
     stored.featureTypes[0].origin = { table: EDIT };
-    attribute(stored, 'wattage_mw').origin = { storedUnit: EDIT };
+    attribute(stored, 'wattage_mw').origin = { source: EDIT };
     const plan = planSync(dictionary(damsEntry()), stored, TODAY);
     expect(plan.reverts).toEqual([]);
     expect(plan.updates).toEqual([
       { featureType: 'dams', set: {}, clearOrigin: ['table'] },
-      { featureType: 'dams', attribute: 'wattage_mw', set: {}, clearOrigin: ['storedUnit'] },
+      { featureType: 'dams', attribute: 'wattage_mw', set: {}, clearOrigin: ['source'] },
+    ]);
+  });
+
+  it('an edited stored unit of the same dimension is kept; of another dimension is reverted', () => {
+    const stored = synced(dictionary(damsEntry()));
+    const watt = attribute(stored, 'wattage_mw');
+    watt.storedUnit = 'kW';
+    watt.origin = { storedUnit: EDIT };
+    // The staff correction shares the code unit's dimension (power): it stays.
+    expect(planSync(dictionary(damsEntry()), stored, TODAY)).toEqual(
+      { inserts: { featureTypes: [], attributes: [], values: [] }, updates: [], retires: [], reverts: [] });
+
+    // The code unit moves to another dimension: the correction falls back to it, with history.
+    const next = damsEntry();
+    Object.assign(next.attributes[0], { storedUnit: 'm', displayUnits: ['m', 'km'], displayUnit: 'm' });
+    const plan = planSync(dictionary(next), stored, TODAY);
+    expect(plan.reverts).toEqual([
+      { featureType: 'dams', attribute: 'wattage_mw', field: 'storedUnit', oldValue: 'kW', newValue: 'm' },
+    ]);
+    expect(plan.updates).toEqual([
+      { featureType: 'dams', attribute: 'wattage_mw', set: { displayUnits: ['m', 'km'], displayUnit: 'm' } },
+    ]);
+
+    // A code entry that drops its stored unit reverts the correction too.
+    const unitless = damsEntry();
+    const { storedUnit: _u, displayUnits: _l, displayUnit: _d, ...rest } = unitless.attributes[0]!;
+    unitless.attributes[0] = rest;
+    expect(planSync(dictionary(unitless), stored, TODAY).reverts).toEqual([
+      { featureType: 'dams', attribute: 'wattage_mw', field: 'storedUnit', oldValue: 'kW', newValue: undefined },
     ]);
   });
 });

@@ -21,7 +21,7 @@ describe('the data dictionary tables', () => {
       `SELECT table_name AS t FROM information_schema.tables
         WHERE table_schema = 'app' AND table_name LIKE 'dictionary\_%' ORDER BY 1`);
     expect(rows.map((r) => r.t)).toEqual([
-      'dictionary_attributes', 'dictionary_feature_types', 'dictionary_history', 'dictionary_values',
+      'dictionary_attributes', 'dictionary_feature_types', 'dictionary_history', 'dictionary_unit_periods', 'dictionary_values',
     ]);
     await rolledBack(async (q) => {
       await q(`INSERT INTO app.dictionary_feature_types
@@ -40,9 +40,9 @@ describe('the data dictionary tables', () => {
     // application code instead. No table grant either: it could not be used without schema USAGE.
     const { rows } = await getPool().query<{ t: string; ok: boolean }>(
       `SELECT t, has_table_privilege('webatlas_assistant', 'app.' || t, 'SELECT') AS ok
-         FROM unnest(ARRAY['dictionary_feature_types','dictionary_attributes','dictionary_values','dictionary_history']) AS t`);
+         FROM unnest(ARRAY['dictionary_feature_types','dictionary_attributes','dictionary_values','dictionary_history','dictionary_unit_periods']) AS t`);
     expect(rows.filter((r) => r.ok).map((r) => r.t)).toEqual([]);
-    for (const t of ['dictionary_feature_types', 'dictionary_attributes', 'dictionary_values', 'dictionary_history']) {
+    for (const t of ['dictionary_feature_types', 'dictionary_attributes', 'dictionary_values', 'dictionary_history', 'dictionary_unit_periods']) {
       await rolledBack(async (q) => {
         await q('SET LOCAL ROLE webatlas_assistant');
         await expect(q(`SELECT 1 FROM app.${t} LIMIT 1`)).rejects.toMatchObject({

@@ -39,7 +39,7 @@ export const ATTRIBUTE_COLUMNS: Record<string, string> = {
   cfStandardName: 'cf_standard_name', codeList: 'code_list', nodata: 'nodata', scale: 'scale', offset: 'value_offset',
   validFrom: 'valid_from', validTo: 'valid_to',
 };
-const VALUE_COLUMNS: Record<string, string> = {
+export const VALUE_COLUMNS: Record<string, string> = {
   ord: 'ord', name: 'name', definition: 'definition', retired: 'retired', colorHint: 'color_hint',
 };
 
@@ -99,26 +99,47 @@ export function locate(t: SyncTarget, firstParam: number) {
 /** displayUnits is NOT NULL (default '{}'); every other absent field is NULL. */
 export const toColumn = (field: string, value: unknown) => (value === undefined ? (field === 'displayUnits' ? [] : null) : value);
 
+/** Origin entries an update removes (`drop`, applied first) and adds or replaces (`add`). */
+export interface OriginChange {
+  drop?: string[];
+  add?: Origin;
+}
+
+/** A listed value's revision is its attribute's: a stale editor form of the attribute checks it. */
+export async function bumpAttributeRevision(q: Queryable, featureType: string, attribute: string): Promise<void> {
+  const result = await q.query(`UPDATE app.dictionary_attributes SET revision = revision + 1 WHERE feature_type = $1 AND name = $2`,
+    [featureType, attribute]);
+  if (result.rowCount !== 1) throw new Error(`dictionary: no attribute ${featureType}.${attribute} to bump`);
+}
+
 /**
- * Sets fields of one row, removes origin entries, and bumps the revision a stale editor form
- * checks (for a listed value, its attribute's).
+ * Sets fields of one row, changes its origin entries, and bumps the revision a stale editor form
+ * checks (the row's own; for a listed value, its attribute's). Shared by the sync and the staff
+ * edit API: columns come from the fixed maps, every value is bound, and exactly one row must match.
  */
-async function updateRow(q: Queryable, t: SyncTarget, set: Record<string, unknown>, dropOrigin: string[] = []): Promise<void> {
+export async function updateRow(q: Queryable, t: SyncTarget, set: Record<string, unknown>, origin: OriginChange = {}): Promise<void> {
   const fields = Object.keys(set);
-  const where = locate(t, fields.length + (dropOrigin.length > 0 ? 2 : 1));
-  const assignments = fields.map((f, i) => `${where.columns[f]} = $${i + 1}`);
   const params: unknown[] = fields.map((f) => toColumn(f, set[f]));
-  if (dropOrigin.length > 0) {
-    assignments.push(`origin = origin - $${fields.length + 1}::text[]`);
-    params.push(dropOrigin);
+  let originExpr = 'origin';
+  if (origin.drop && origin.drop.length > 0) {
+    params.push(origin.drop);
+    originExpr = `(${originExpr} - $${params.length}::text[])`;
   }
+  if (origin.add && Object.keys(origin.add).length > 0) {
+    params.push(JSON.stringify(origin.add));
+    originExpr = `(${originExpr} || $${params.length}::jsonb)`;
+  }
+  const where = locate(t, params.length + 1);
+  const assignments = fields.map((f, i) => {
+    const column = where.columns[f];
+    if (column === undefined) throw new Error(`dictionary: no column for field ${f} in ${where.table}`);
+    return `${column} = $${i + 1}`;
+  });
+  if (originExpr !== 'origin') assignments.push(`origin = ${originExpr}`);
   if (where.revision) assignments.push('revision = revision + 1');
   const result = await q.query(`UPDATE ${where.table} SET ${assignments.join(', ')} WHERE ${where.where}`, [...params, ...where.key]);
-  if (result.rowCount !== 1) throw new Error(`dictionary sync: expected one row for ${JSON.stringify(t)}, updated ${result.rowCount}`);
-  if (!where.revision) {
-    await q.query(`UPDATE app.dictionary_attributes SET revision = revision + 1 WHERE feature_type = $1 AND name = $2`,
-      [t.featureType, t.attribute]);
-  }
+  if (result.rowCount !== 1) throw new Error(`dictionary: expected one row for ${JSON.stringify(t)}, updated ${result.rowCount}`);
+  if (!where.revision) await bumpAttributeRevision(q, t.featureType, t.attribute!);
 }
 
 export type HistoryReason = 'edit' | 'restore' | 'sync_revert' | 'sync_retire';
@@ -133,13 +154,19 @@ export async function writeHistory(q: Queryable, t: SyncTarget, field: string, o
     [t.featureType, t.attribute ?? null, t.code ?? null, field, json(oldValue), json(newValue), reason, changedBy]);
 }
 
-/** `sql` adds columns given as SQL expressions (synced_at = now()). */
+/** `sql` adds columns given as SQL expressions (synced_at = now()). The row's `origin` is written too. */
 async function insertRow(q: Queryable, table: string, identity: Record<string, unknown>, row: Record<string, unknown>,
   columns: Record<string, string>, sql: Record<string, string> = {}): Promise<void> {
-  const params = [...Object.values(identity), ...Object.keys(columns).map((f) => toColumn(f, row[f]))];
-  const names = [...Object.keys(identity), ...Object.values(columns), ...Object.keys(sql)];
+  const params = [...Object.values(identity), ...Object.keys(columns).map((f) => toColumn(f, row[f])), JSON.stringify(row.origin ?? {})];
+  const names = [...Object.keys(identity), ...Object.values(columns), 'origin', ...Object.keys(sql)];
   const exprs = [...params.map((_, i) => `$${i + 1}`), ...Object.values(sql)];
   await q.query(`INSERT INTO ${table} (${names.join(', ')}) VALUES (${exprs.join(', ')})`, params);
+}
+
+/** One listed value with its origin (the sync's code values have none; a staff-added code does). */
+export async function insertValue(q: Queryable, v: StoredValue): Promise<void> {
+  await insertRow(q, 'app.dictionary_values', { feature_type: v.featureType, attribute: v.attribute, code: v.code },
+    v as unknown as Record<string, unknown>, VALUE_COLUMNS);
 }
 
 export async function applyPlan(q: Queryable, plan: SyncPlan): Promise<void> {
@@ -151,18 +178,15 @@ export async function applyPlan(q: Queryable, plan: SyncPlan): Promise<void> {
     await insertRow(q, 'app.dictionary_attributes', { feature_type: a.featureType, name: a.name },
       a as unknown as Record<string, unknown>, ATTRIBUTE_COLUMNS);
   }
-  for (const v of plan.inserts.values) {
-    await insertRow(q, 'app.dictionary_values', { feature_type: v.featureType, attribute: v.attribute, code: v.code },
-      v as unknown as Record<string, unknown>, VALUE_COLUMNS);
-  }
-  for (const u of plan.updates) await updateRow(q, u, u.set, u.clearOrigin);
+  for (const v of plan.inserts.values) await insertValue(q, v);
+  for (const u of plan.updates) await updateRow(q, u, u.set, { drop: u.clearOrigin });
   for (const r of plan.reverts) {
-    await updateRow(q, r, { [r.field]: r.newValue }, [r.field]);
+    await updateRow(q, r, { [r.field]: r.newValue }, { drop: [r.field] });
     await writeHistory(q, r, r.field, r.oldValue, r.newValue, 'sync_revert');
   }
   for (const r of plan.retires) {
     // A stale edit of the same field (a staff un-retire) must not outlive the retire.
-    await updateRow(q, r, { [r.field]: r.newValue }, [r.field]);
+    await updateRow(q, r, { [r.field]: r.newValue }, { drop: [r.field] });
     await writeHistory(q, r, r.field, r.field === 'retired' ? false : null, r.newValue, 'sync_retire');
   }
 }

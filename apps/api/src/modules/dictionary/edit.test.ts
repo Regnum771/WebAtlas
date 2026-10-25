@@ -231,11 +231,12 @@ describe('the dictionary edit API', () => {
 
   it('a locked field is refused', async () => {
     const before = await attr();
-    const stored = await patch(ATTR_URL, ADMIN, { expectedRevision: before.revision, storedUnit: 'm3' });
-    expect(stored.statusCode).toBe(400);
-    expect(stored.json().error).toEqual({
-      code: 'VALIDATION_ERROR', message: 'Trường "Đơn vị lưu" theo cấu trúc dữ liệu, không sửa được.',
-      details: { field: 'storedUnit' },
+    // The stored unit is corrected only with a valid-from date (storedUnit.test.ts); nodata never.
+    const nodata = await patch(ATTR_URL, ADMIN, { expectedRevision: before.revision, nodata: 0 });
+    expect(nodata.statusCode).toBe(400);
+    expect(nodata.json().error).toEqual({
+      code: 'VALIDATION_ERROR', message: 'Trường "Giá trị không có dữ liệu" theo cấu trúc dữ liệu, không sửa được.',
+      details: { field: 'nodata' },
     });
     const valueType = await patch(ATTR_URL, ADMIN, { expectedRevision: before.revision, valueType: 'text' });
     expect(valueType.statusCode).toBe(400);

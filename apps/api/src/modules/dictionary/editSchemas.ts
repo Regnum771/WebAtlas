@@ -28,9 +28,14 @@ export const FIELD_LABELS: Record<string, string> = {
   displayUnit: 'Đơn vị hiển thị',
   precision: 'Số chữ số thập phân',
   cfStandardName: 'Tên chuẩn CF',
+  storedUnit: 'Đơn vị lưu',
+  storedUnitValidFrom: 'Ngày hiệu lực của đơn vị lưu',
+  // Listed value
+  code: 'Mã',
+  colorHint: 'Màu gợi ý',
+  retired: 'Ngừng dùng',
   // Locked or not offered here: named in refusals only.
   source: 'Nguồn',
-  storedUnit: 'Đơn vị lưu',
   nodata: 'Giá trị không có dữ liệu',
   scale: 'Hệ số tỉ lệ',
   offset: 'Độ lệch',
@@ -48,7 +53,7 @@ export const MESSAGES = {
   unknownField: (field: string) => `Không sửa được trường "${fieldName(field)}".`,
   body: 'Nội dung yêu cầu không hợp lệ.',
   expectedRevision: 'Thiếu phiên bản của mục đang sửa.',
-  text: (field: string, max: number) => `Trường "${fieldName(field)}" phải có nội dung, dài tối đa ${max} ký tự.`,
+  text: (field: string, max: number, label = fieldName(field)) => `Trường "${label}" phải có nội dung, dài tối đa ${max} ký tự.`,
   geometryMeaning: `Trường "${fieldName('geometryMeaning')}" phải là chính xác, gần đúng hoặc điểm đại diện.`,
   validTo: `Trường "${fieldName('validTo')}" phải là ngày dạng YYYY-MM-DD, không sớm hơn ngày bắt đầu dùng.`,
   displayUnits: `Trường "${fieldName('displayUnits')}" chỉ nhận các đơn vị cùng thứ nguyên với đơn vị lưu, ít nhất một đơn vị.`,
@@ -60,6 +65,17 @@ export const MESSAGES = {
   noDefault: 'Mục này không còn trong từ điển mặc định, không khôi phục được.',
   historyLimit: 'Số dòng lịch sử phải là số nguyên từ 1 đến 200.',
   historyAttribute: 'Cần nêu lớp khi lọc theo thuộc tính.',
+  // Listed values (Task 6)
+  closedList: 'Danh sách giá trị này theo cấu trúc dữ liệu, không thêm được.',
+  noCodeList: 'Thuộc tính này không có danh sách giá trị.',
+  codeExists: (code: string) => `Mã "${code}" đã có trong danh sách giá trị.`,
+  colorHint: `Trường "${fieldName('colorHint')}" phải là mã màu dạng #RRGGBB.`,
+  retired: `Trường "${fieldName('retired')}" phải là đúng hoặc sai.`,
+  // The stored-unit correction (Task 6, Ruling 6)
+  storedUnit: `Trường "${fieldName('storedUnit')}" chỉ nhận một đơn vị cùng thứ nguyên với đơn vị lưu hiện tại.`,
+  noStoredUnit: 'Thuộc tính này không có đơn vị lưu.',
+  storedUnitTogether: 'Đơn vị lưu mới và ngày hiệu lực của nó phải gửi cùng nhau.',
+  storedUnitValidFrom: `Trường "${fieldName('storedUnitValidFrom')}" phải là ngày dạng YYYY-MM-DD, không sớm hơn ngày bắt đầu dùng và lần hiệu chỉnh trước.`,
 };
 
 const NAME_MAX = 200;
@@ -68,9 +84,9 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 // Ruling 9: the CF standard name is checked for form only, not against the CF table.
 const CF_NAME = /^[a-z][a-z0-9_]*$/;
 
-/** Trimmed, non-empty text of at most `max` characters. */
-const text = (field: string, max: number) => {
-  const message = MESSAGES.text(field, max);
+/** Trimmed, non-empty text of at most `max` characters; `label` names the field in the refusal. */
+const text = (field: string, max: number, label?: string) => {
+  const message = MESSAGES.text(field, max, label);
   return z.string({ invalid_type_error: message, required_error: message }).trim().min(1, message).max(max, message);
 };
 
@@ -84,6 +100,9 @@ const validTo = z
   .string({ invalid_type_error: MESSAGES.validTo })
   .refine(isDate, MESSAGES.validTo)
   .nullable();
+
+const storedUnitValidFrom = z.string({ invalid_type_error: MESSAGES.storedUnitValidFrom })
+  .refine(isDate, MESSAGES.storedUnitValidFrom);
 
 const expectedRevision = z.number({ invalid_type_error: MESSAGES.expectedRevision, required_error: MESSAGES.expectedRevision })
   .int(MESSAGES.expectedRevision)
@@ -119,6 +138,39 @@ export const attributeEditSchema = z.object({
   valueType: z.enum(['text', 'number', 'date', 'code'], {
     errorMap: () => ({ message: `Trường "${fieldName('valueType')}" phải là text, number, date hoặc code.` }),
   }).optional(),
+  // The stored-unit correction (Ruling 6): the unit and the date it applies from, together.
+  storedUnit: z.string({ invalid_type_error: MESSAGES.storedUnit }).optional(),
+  storedUnitValidFrom: storedUnitValidFrom.optional(),
+}, { invalid_type_error: MESSAGES.body }).strict().superRefine((edit, ctx) => {
+  if ((edit.storedUnit === undefined) === (edit.storedUnitValidFrom === undefined)) return;
+  const missing = edit.storedUnit === undefined ? 'storedUnit' : 'storedUnitValidFrom';
+  ctx.addIssue({ code: z.ZodIssueCode.custom, message: MESSAGES.storedUnitTogether, path: [missing] });
+});
+
+/** POST .../stored-unit/preview */
+export const storedUnitPreviewSchema = z.object({
+  storedUnit: z.string({ invalid_type_error: MESSAGES.storedUnit, required_error: MESSAGES.storedUnit }),
+}, { invalid_type_error: MESSAGES.body }).strict();
+
+const CODE_MAX = 100;
+const COLOR_HINT = /^#[0-9a-fA-F]{6}$/;
+const VALUE_NAME = 'Tên giá trị';
+
+/** POST .../values: a code added to an open list (Ruling 4: trimmed, 1-100 characters). */
+export const valueAddSchema = z.object({
+  expectedRevision,
+  code: text('code', CODE_MAX),
+  name: text('name', NAME_MAX, VALUE_NAME),
+  definition: text('definition', DEFINITION_MAX).optional(),
+}, { invalid_type_error: MESSAGES.body }).strict();
+
+/** PATCH .../values/:code */
+export const valueEditSchema = z.object({
+  expectedRevision,
+  name: text('name', NAME_MAX, VALUE_NAME).optional(),
+  definition: text('definition', DEFINITION_MAX).optional(),
+  colorHint: z.string({ invalid_type_error: MESSAGES.colorHint }).regex(COLOR_HINT, MESSAGES.colorHint).nullable().optional(),
+  retired: z.boolean({ invalid_type_error: MESSAGES.retired }).optional(),
 }, { invalid_type_error: MESSAGES.body }).strict();
 
 export const restoreSchema = z.object({

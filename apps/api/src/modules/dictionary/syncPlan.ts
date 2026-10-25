@@ -95,14 +95,15 @@ export interface SyncPlan {
 // the lifetime the code gives an entry; staff retire only through `validTo` (spec DD8).
 export const LOCKED_FEATURE_TYPE_FIELDS = ['kind', 'table', 'crs', 'geometryType', 'validFrom'] as const;
 /**
- * `source` always, `storedUnit` (Plan C adds its guarded correction), the band packing `nodata`,
- * `scale` and `offset` (they define what stored numbers mean, spec DD8), `validFrom`, and `ord`,
- * the sync's own bookkeeping (an attribute's position in its code entry; a value's declared order). `valueType` is locked too unless the attribute is an `extra` key
- * (see lockedAttributeFields). The codes of a `closed` list are locked as well (see
+ * `source` always, the band packing `nodata`, `scale` and `offset` (they define what stored numbers
+ * mean, spec DD8), `validFrom`, and `ord`, the sync's own bookkeeping (an attribute's position in
+ * its code entry; a value's declared order). `valueType` is locked too unless the attribute is an
+ * `extra` key (see lockedAttributeFields). The codes of a `closed` list are locked as well (see
  * lockedValueFields): values are added and retired to match the code, and a staff-added code in a
- * closed list is reverted.
+ * closed list is reverted. `storedUnit` is editable but guarded (Ruling 6): a staff correction is
+ * kept only while it shares the code unit's dimension (see attributeCheck).
  */
-export const LOCKED_ATTRIBUTE_FIELDS = ['source', 'storedUnit', 'nodata', 'scale', 'offset', 'validFrom', 'ord'] as const;
+export const LOCKED_ATTRIBUTE_FIELDS = ['source', 'nodata', 'scale', 'offset', 'validFrom', 'ord'] as const;
 export const LOCKED_VALUE_FIELDS = ['ord'] as const;
 /** In a closed list, whether a code is in use is set by the code too. */
 export const CLOSED_LIST_LOCKED_VALUE_FIELDS = ['ord', 'retired'] as const;
@@ -110,7 +111,8 @@ export const CLOSED_LIST_LOCKED_VALUE_FIELDS = ['ord', 'retired'] as const;
 // Everything else is editable: it follows the code until staff edit it.
 export const EDITABLE_FEATURE_TYPE_FIELDS = ['name', 'definition', 'geometryMeaning', 'validTo'] as const;
 export const EDITABLE_ATTRIBUTE_FIELDS = [
-  'valueType', 'label', 'definition', 'displayUnits', 'displayUnit', 'precision', 'cfStandardName', 'codeList', 'validTo',
+  'valueType', 'label', 'definition', 'storedUnit', 'displayUnits', 'displayUnit', 'precision', 'cfStandardName', 'codeList',
+  'validTo',
 ] as const;
 export const EDITABLE_VALUE_FIELDS = ['name', 'definition', 'retired', 'colorHint'] as const;
 
@@ -213,6 +215,15 @@ function attributeCheck(code: StoredAttribute): Check {
     const shown = resolved.displayUnit as string | undefined;
 
     if (edited.has('valueType') && !VALUE_TYPES.includes(resolved.valueType as string)) return 'valueType';
+    // A corrected stored unit stays while it shares the code unit's dimension (Ruling 6); a code
+    // entry without a stored unit, or with one of another dimension, takes it back.
+    if (edited.has('storedUnit')) {
+      const corrected = resolved.storedUnit;
+      const codeUnit = code.storedUnit;
+      const kept = typeof corrected === 'string' && codeUnit !== undefined && known(corrected) && known(codeUnit)
+        && sameDimension(corrected, codeUnit);
+      if (!kept) return 'storedUnit';
+    }
     // Permitted display units: none without a stored unit; otherwise known units of its dimension.
     if (edited.has('displayUnits')) {
       const storedUnit = code.storedUnit;
