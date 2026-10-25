@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { unit, unitsOfDimension, type GeometryMeaning } from '@webatlas/shared';
 import { ApiError } from '../../../shared/api/apiClient';
