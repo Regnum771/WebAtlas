@@ -111,8 +111,10 @@ async function attr(): Promise<ServedAttribute> {
 async function patch(url: string, who: string, payload: Record<string, unknown>) {
   return app.inject({ method: 'PATCH', url, headers: await auth(who), payload });
 }
-async function restore(url: string, who: string, fields: string[]) {
-  return app.inject({ method: 'POST', url: `${url}/restore`, headers: await auth(who), payload: { fields } });
+/** Restores `fields` at the target's current revision, unless the caller names one. */
+async function restore(url: string, who: string, fields: string[], expectedRevision?: number) {
+  const revision = expectedRevision ?? (url === LAYER_URL ? (await layer()).revision : (await attr()).revision);
+  return app.inject({ method: 'POST', url: `${url}/restore`, headers: await auth(who), payload: { expectedRevision: revision, fields } });
 }
 async function history(who: string, query = HISTORY_URL) {
   return app.inject({ method: 'GET', url: query, headers: await auth(who) });
@@ -295,6 +297,41 @@ describe('the dictionary edit API', () => {
     const rows = (await history(ADMIN)).json().history as HistoryRow[];
     expect(rows[0]).toMatchObject({ field: 'label', oldValue: 'Nhãn sửa (dd-edit)', newValue: codeAttr.label, reason: 'restore' });
     expect(rows[1]).toMatchObject({ field: 'label', oldValue: 'Nhãn cũ (dd-edit)', reason: 'edit' });
+  });
+
+  it('a stale restore is refused and writes nothing', async () => {
+    const before = await attr();
+    const restores = async () => ((await history(ADMIN)).json().history as HistoryRow[]).filter((r) => r.reason === 'restore').length;
+    const restoresBefore = await restores();
+    // Staff A loaded the form at `before.revision`; staff B saved since.
+    expect((await patch(ATTR_URL, VN_MANAGER, { expectedRevision: before.revision, label: 'Người B (dd-edit)' })).statusCode).toBe(200);
+    const stale = await restore(ATTR_URL, ADMIN, ['label'], before.revision);
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toEqual({ error: { code: 'DICTIONARY_CHANGED', message: 'Mục này vừa được người khác sửa.' } });
+    const stored = await storedAttribute();
+    expect(stored.label).toBe('Người B (dd-edit)');
+    expect(stored.revision).toBe(before.revision + 1);
+    expect(stored.origin.label!.by).toBe(ids.get(VN_MANAGER));
+    expect(await restores()).toBe(restoresBefore);
+
+    // The layer's restore checks its own revision too; a restore without one is refused.
+    const ft = await layer();
+    expect((await restore(LAYER_URL, ADMIN, ['definition'], ft.revision + 1)).statusCode).toBe(409);
+    const missing = await app.inject({ method: 'POST', url: `${ATTR_URL}/restore`, headers: await auth(ADMIN), payload: { fields: ['label'] } });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json().error.details).toEqual({ field: 'expectedRevision' });
+  });
+
+  it("a field this API does not edit is named as the entity's own field", async () => {
+    const before = await attr();
+    const res = await patch(ATTR_URL, ADMIN, { expectedRevision: before.revision, name: 'x' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toEqual({
+      code: 'VALIDATION_ERROR', message: 'Trường "Tên cột" theo cấu trúc dữ liệu, không sửa được.', details: { field: 'name' },
+    });
+    const ft = await layer();
+    const layerName = await patch(LAYER_URL, ADMIN, { expectedRevision: ft.revision, name: '  ' });
+    expect(layerName.json().error.message).toMatch(/^Trường "Tên lớp"/);
   });
 
   it('restoring the display unit also restores a permitted list that excludes its default', async () => {

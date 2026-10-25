@@ -8,10 +8,19 @@ import { z } from 'zod';
  * it under that field.
  */
 
-/** Vietnamese names of the fields, for refusals. */
+/** The kind of entry a request edits: one field name can mean different things in each. */
+export type Entity = 'featureType' | 'attribute' | 'value';
+
+/** Vietnamese names of the fields an entity names its own way (`name` above all). */
+const ENTITY_LABELS: Record<Entity, Record<string, string>> = {
+  featureType: { name: 'Tên lớp' },
+  attribute: { name: 'Tên cột' },
+  value: { name: 'Tên giá trị' },
+};
+
+/** Vietnamese names of the fields every entity names alike, for refusals. */
 export const FIELD_LABELS: Record<string, string> = {
   // Feature type
-  name: 'Tên lớp',
   geometryMeaning: 'Ý nghĩa hình học',
   kind: 'Loại dữ liệu',
   table: 'Bảng dữ liệu',
@@ -44,13 +53,14 @@ export const FIELD_LABELS: Record<string, string> = {
   values: 'Các giá trị',
 };
 
-export const fieldName = (field: string) => FIELD_LABELS[field] ?? field;
+export const fieldName = (field: string, entity: Entity = 'featureType') =>
+  ENTITY_LABELS[entity][field] ?? FIELD_LABELS[field] ?? field;
 
 export const MESSAGES = {
   changed: 'Mục này vừa được người khác sửa.',
-  locked: (field: string) => `Trường "${fieldName(field)}" theo cấu trúc dữ liệu, không sửa được.`,
+  locked: (field: string, entity?: Entity) => `Trường "${fieldName(field, entity)}" theo cấu trúc dữ liệu, không sửa được.`,
   valueType: 'Chỉ đổi được kiểu của thuộc tính bổ sung.',
-  unknownField: (field: string) => `Không sửa được trường "${fieldName(field)}".`,
+  unknownField: (field: string, entity?: Entity) => `Không sửa được trường "${fieldName(field, entity)}".`,
   body: 'Nội dung yêu cầu không hợp lệ.',
   expectedRevision: 'Thiếu phiên bản của mục đang sửa.',
   text: (field: string, max: number, label = fieldName(field)) => `Trường "${label}" phải có nội dung, dài tối đa ${max} ký tự.`,
@@ -75,7 +85,9 @@ export const MESSAGES = {
   storedUnit: `Trường "${fieldName('storedUnit')}" chỉ nhận một đơn vị cùng thứ nguyên với đơn vị lưu hiện tại.`,
   noStoredUnit: 'Thuộc tính này không có đơn vị lưu.',
   storedUnitTogether: 'Đơn vị lưu mới và ngày hiệu lực của nó phải gửi cùng nhau.',
-  storedUnitValidFrom: `Trường "${fieldName('storedUnitValidFrom')}" phải là ngày dạng YYYY-MM-DD, không sớm hơn ngày bắt đầu dùng và lần hiệu chỉnh trước.`,
+  storedUnitValidFrom: `Trường "${fieldName('storedUnitValidFrom')}" phải là ngày dạng YYYY-MM-DD, không sớm hơn ngày bắt đầu dùng và lần hiệu chỉnh trước, không muộn hơn hôm nay và ngày ngừng dùng.`,
+  // Restoring a listed value
+  noValueDefault: (code: string) => `Giá trị "${code}" do cán bộ thêm, không có giá trị mặc định để khôi phục.`,
 };
 
 const NAME_MAX = 200;
@@ -173,7 +185,9 @@ export const valueEditSchema = z.object({
   retired: z.boolean({ invalid_type_error: MESSAGES.retired }).optional(),
 }, { invalid_type_error: MESSAGES.body }).strict();
 
+/** POST .../restore, and .../values/:code/restore (with the attribute's revision). */
 export const restoreSchema = z.object({
+  expectedRevision,
   fields: z.array(z.string({ invalid_type_error: MESSAGES.restoreFields }), { invalid_type_error: MESSAGES.restoreFields, required_error: MESSAGES.restoreFields })
     .min(1, MESSAGES.restoreFields),
 }, { invalid_type_error: MESSAGES.body }).strict();

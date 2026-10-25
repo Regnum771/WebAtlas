@@ -22,6 +22,10 @@ const ids = new Map<string, string>();
 const OPEN = { layer: 'stations', attribute: 'station_type' };
 const CLOSED = { layer: 'dams', attribute: 'status' };
 const NEW_CODE = 'dd-values-trạm thử';
+/** Added without a definition. */
+const BARE_CODE = 'dd-values-không định nghĩa';
+/** A code of the closed list's code default: its name, definition and colour hint are edited, then restored. */
+const DEFAULT_CODE = DICTIONARY[CLOSED.layer]!.attributes.find((a) => a.name === CLOSED.attribute)!.values![0]!;
 const OPEN_URL = `/api/dictionary/${OPEN.layer}/${OPEN.attribute}`;
 const CLOSED_URL = `/api/dictionary/${CLOSED.layer}/${CLOSED.attribute}`;
 const valueUrl = (base: string, code: string) => `${base}/values/${encodeURIComponent(code)}`;
@@ -39,8 +43,12 @@ async function auth(email: string) {
 
 async function cleanup() {
   const pg = getPool();
-  await pg.query(`DELETE FROM app.dictionary_values WHERE feature_type = $1 AND attribute = $2 AND code = $3`,
-    [OPEN.layer, OPEN.attribute, NEW_CODE]);
+  await pg.query(`DELETE FROM app.dictionary_values WHERE feature_type = $1 AND attribute = $2 AND code = ANY($3)`,
+    [OPEN.layer, OPEN.attribute, [NEW_CODE, BARE_CODE]]);
+  // The edits of the default code lose their origin; the sync in afterAll brings its wording back.
+  await pg.query(
+    `UPDATE app.dictionary_values SET origin = origin - $4::text[] WHERE feature_type = $1 AND attribute = $2 AND code = $3`,
+    [CLOSED.layer, CLOSED.attribute, DEFAULT_CODE.code, ['name', 'definition', 'colorHint']]);
   await pg.query(
     `DELETE FROM app.dictionary_history WHERE changed_by IN (SELECT id FROM app.users WHERE email = ANY($1))`, [EMAILS]);
   await pg.query(`DELETE FROM app.users WHERE email = ANY($1)`, [EMAILS]);
@@ -49,6 +57,7 @@ async function cleanup() {
 beforeAll(async () => {
   await app.ready();
   await cleanup();
+  await runSync(getPool(), { dryRun: false });
   const repo = usersRepository(getPool());
   for (const [email, role] of [[ADMIN, 'admin'], [NOBODY, 'viewer']] as const) {
     const row = await repo.insert({ email, password_hash: await hashPassword(PW), full_name: email, role });
@@ -149,6 +158,109 @@ describe('listed values', () => {
     expect(rows[5]).toMatchObject({ oldValue: null, newValue: NEW_CODE });
   });
 
+  it('a code added without a definition gets no definition origin', async () => {
+    const before = await attribute(OPEN.layer, OPEN.attribute);
+    const res = await app.inject({
+      method: 'POST', url: `${OPEN_URL}/values`, headers: await auth(ADMIN),
+      payload: { expectedRevision: before.revision, code: BARE_CODE, name: 'Không định nghĩa (dd-values)' },
+    });
+    expect(res.statusCode).toBe(200);
+    const stored = (await storedValue(OPEN.layer, OPEN.attribute, BARE_CODE))!;
+    expect(stored.definition).toBeNull();
+    expect(Object.keys(stored.origin).sort()).toEqual(['code', 'name']);
+  });
+
+  it('a listed value is restored to its current code default', async () => {
+    const before = await attribute(CLOSED.layer, CLOSED.attribute);
+    const edit = await app.inject({
+      method: 'PATCH', url: valueUrl(CLOSED_URL, DEFAULT_CODE.code), headers: await auth(ADMIN),
+      payload: { expectedRevision: before.revision, name: 'Tên sửa (dd-values)', definition: 'Định nghĩa sửa.', colorHint: '#010203' },
+    });
+    expect(edit.statusCode).toBe(200);
+    const edited = edit.json() as ServedAttribute;
+
+    const res = await app.inject({
+      method: 'POST', url: `${valueUrl(CLOSED_URL, DEFAULT_CODE.code)}/restore`, headers: await auth(ADMIN),
+      payload: { expectedRevision: edited.revision, fields: ['name', 'definition', 'colorHint'] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as ServedAttribute;
+    expect(body.revision).toBe(edited.revision + 1);
+    expect(body.values!.find((v) => v.code === DEFAULT_CODE.code)).toMatchObject(
+      { name: DEFAULT_CODE.name, definition: DEFAULT_CODE.definition, colorHint: DEFAULT_CODE.colorHint });
+    expect((await storedValue(CLOSED.layer, CLOSED.attribute, DEFAULT_CODE.code))!.origin).toEqual({});
+
+    const history = await app.inject({
+      method: 'GET', url: `/api/dictionary/history?layer=${CLOSED.layer}&attribute=${CLOSED.attribute}&limit=3`, headers: await auth(ADMIN),
+    });
+    const rows = history.json().history as { code: string; field: string; oldValue: unknown; newValue: unknown; reason: string }[];
+    expect(rows.map((r) => [r.code, r.field, r.reason]).sort()).toEqual([
+      [DEFAULT_CODE.code, 'colorHint', 'restore'], [DEFAULT_CODE.code, 'definition', 'restore'], [DEFAULT_CODE.code, 'name', 'restore'],
+    ]);
+    expect(rows.find((r) => r.field === 'name')).toMatchObject({ oldValue: 'Tên sửa (dd-values)', newValue: DEFAULT_CODE.name });
+
+    // Nothing left to restore: no write, no revision bump.
+    const again = await app.inject({
+      method: 'POST', url: `${valueUrl(CLOSED_URL, DEFAULT_CODE.code)}/restore`, headers: await auth(ADMIN),
+      payload: { expectedRevision: body.revision, fields: ['name'] },
+    });
+    expect(again.statusCode).toBe(200);
+    expect((again.json() as ServedAttribute).revision).toBe(body.revision);
+  });
+
+  it('a stale value restore is refused and writes nothing', async () => {
+    const before = await attribute(CLOSED.layer, CLOSED.attribute);
+    const edit = await app.inject({
+      method: 'PATCH', url: valueUrl(CLOSED_URL, DEFAULT_CODE.code), headers: await auth(ADMIN),
+      payload: { expectedRevision: before.revision, name: 'Tên mới hơn (dd-values)' },
+    });
+    expect(edit.statusCode).toBe(200);
+    const res = await app.inject({
+      method: 'POST', url: `${valueUrl(CLOSED_URL, DEFAULT_CODE.code)}/restore`, headers: await auth(ADMIN),
+      payload: { expectedRevision: before.revision, fields: ['name'] },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('DICTIONARY_CHANGED');
+    const stored = (await storedValue(CLOSED.layer, CLOSED.attribute, DEFAULT_CODE.code))!;
+    expect(stored.name).toBe('Tên mới hơn (dd-values)');
+    expect(Object.hasOwn(stored.origin, 'name')).toBe(true);
+    expect((await attribute(CLOSED.layer, CLOSED.attribute)).revision).toBe(before.revision + 1);
+
+    // Put it back for the tests after this one.
+    const back = await app.inject({
+      method: 'POST', url: `${valueUrl(CLOSED_URL, DEFAULT_CODE.code)}/restore`, headers: await auth(ADMIN),
+      payload: { expectedRevision: before.revision + 1, fields: ['name'] },
+    });
+    expect(back.statusCode).toBe(200);
+  });
+
+  it('a staff-added code has no default to restore to', async () => {
+    if (!(await storedValue(OPEN.layer, OPEN.attribute, BARE_CODE))) {
+      const add = await app.inject({
+        method: 'POST', url: `${OPEN_URL}/values`, headers: await auth(ADMIN),
+        payload: { expectedRevision: (await attribute(OPEN.layer, OPEN.attribute)).revision, code: BARE_CODE, name: 'Không định nghĩa (dd-values)' },
+      });
+      expect(add.statusCode).toBe(200);
+    }
+    const current = await attribute(OPEN.layer, OPEN.attribute);
+    const res = await app.inject({
+      method: 'POST', url: `${valueUrl(OPEN_URL, BARE_CODE)}/restore`, headers: await auth(ADMIN),
+      payload: { expectedRevision: current.revision, fields: ['name'] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toBe(`Giá trị "${BARE_CODE}" do cán bộ thêm, không có giá trị mặc định để khôi phục.`);
+    expect((await storedValue(OPEN.layer, OPEN.attribute, BARE_CODE))!.name).toBe('Không định nghĩa (dd-values)');
+    expect((await attribute(OPEN.layer, OPEN.attribute)).revision).toBe(current.revision);
+
+    // A field a listed value does not edit is refused naming it.
+    const odd = await app.inject({
+      method: 'POST', url: `${valueUrl(CLOSED_URL, DEFAULT_CODE.code)}/restore`, headers: await auth(ADMIN),
+      payload: { expectedRevision: (await attribute(CLOSED.layer, CLOSED.attribute)).revision, fields: ['ord'] },
+    });
+    expect(odd.statusCode).toBe(400);
+    expect(odd.json().error.details).toEqual({ field: 'ord' });
+  });
+
   it('adding to a closed list is refused', async () => {
     const before = await attribute(CLOSED.layer, CLOSED.attribute);
     expect(before.codeList).toBe('closed');
@@ -201,6 +313,10 @@ describe('listed values', () => {
     expect(edit.statusCode).toBe(403);
     const preview = await app.inject({ method: 'POST', url: '/api/dictionary/dams/wattage_mw/stored-unit/preview', headers, payload: { storedUnit: 'kW' } });
     expect(preview.statusCode).toBe(403);
+    const restore = await app.inject({
+      method: 'POST', url: `${valueUrl(OPEN_URL, 'Đo mực nước')}/restore`, headers, payload: { expectedRevision: revision, fields: ['name'] },
+    });
+    expect(restore.statusCode).toBe(403);
     expect((await attribute(OPEN.layer, OPEN.attribute)).revision).toBe(revision);
   });
 });

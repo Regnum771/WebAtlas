@@ -4,7 +4,7 @@ import { assertCan } from '../../authz/assert';
 import { getUnitTree } from '../../authz/unitTree';
 import { AuthError, NotFoundError } from '../../errors';
 import {
-  addValue, editAttribute, editFeatureType, editValue, listHistory, previewCorrection, restoreFields,
+  addValue, editAttribute, editFeatureType, editValue, listHistory, previewCorrection, restoreFields, restoreValue,
 } from './edit';
 import { getDictionary, getFeatureType } from './service';
 import { csvTemplate, gpkgTemplate } from './template';
@@ -89,6 +89,12 @@ export async function restore(req: FastifyRequest, reply: FastifyReply) {
   const { layer, attribute } = req.params as { layer: string; attribute?: string };
   const target = attribute === undefined ? { featureType: layer } : { featureType: layer, attribute };
   return reply.send(await restoreFields(req.server.pg, userId(req), target, req.body));
+}
+
+/** POST /api/dictionary/:layer/:attribute/values/:code/restore: one listed value's fields back at their defaults. */
+export async function restoreListedValue(req: FastifyRequest, reply: FastifyReply) {
+  const { layer, attribute, code } = req.params as { layer: string; attribute: string; code: string };
+  return reply.send(await restoreValue(req.server.pg, userId(req), layer, attribute, code, req.body));
 }
 
 /** POST /api/dictionary/:layer/:attribute/values: a code added to an open list. */

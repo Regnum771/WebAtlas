@@ -4,17 +4,17 @@ import { DICTIONARY, UNITS, sameDimension, type DictAttribute, type DictFeatureT
 import { AppError, NotFoundError, ValidationError } from '../../errors';
 import {
   attributeEditSchema, featureTypeEditSchema, historyQuerySchema, restoreSchema, storedUnitPreviewSchema,
-  valueAddSchema, valueEditSchema, MESSAGES,
+  valueAddSchema, valueEditSchema, MESSAGES, type Entity,
 } from './editSchemas';
 import { getFeatureType, type RevisedAttribute, type RevisedFeatureType } from './service';
 import { checkStoredUnit, latestUnitPeriod, previewStoredUnit, writeUnitPeriod, type PreviewRow } from './storedUnit';
 import {
   ATTRIBUTE_COLUMNS, FEATURE_TYPE_COLUMNS, VALUE_COLUMNS, bumpAttributeRevision, fromColumns, insertValue, lockDictionary,
-  updateRow, writeHistory,
+  todayInVietnam, updateRow, writeHistory,
 } from './sync';
 import {
-  EDITABLE_FEATURE_TYPE_FIELDS, LOCKED_ATTRIBUTE_FIELDS, LOCKED_FEATURE_TYPE_FIELDS, LOCKED_VALUE_FIELDS,
-  lockedAttributeFields, lockedValueFields,
+  EDITABLE_FEATURE_TYPE_FIELDS, EDITABLE_VALUE_FIELDS, LOCKED_ATTRIBUTE_FIELDS, LOCKED_FEATURE_TYPE_FIELDS,
+  LOCKED_VALUE_FIELDS, lockedAttributeFields, lockedValueFields,
   type Origin, type StoredAttribute, type StoredFeatureType, type StoredValue, type SyncTarget,
 } from './syncPlan';
 
@@ -38,21 +38,24 @@ function refuse(message: string, field: string): ValidationError {
   return new ValidationError(message, { field });
 }
 
-/** A field this API does not edit: locked by the data structure, or simply not offered. */
-function notEditable(field: string, locked: readonly string[]): ValidationError {
+/**
+ * A field this API does not edit: locked by the data structure, or simply not offered. `entity`
+ * names the field as that entity calls it (`name` is the layer's name, the column, or the value's).
+ */
+function notEditable(field: string, locked: readonly string[], entity: Entity): ValidationError {
   if (field === 'valueType') return refuse(MESSAGES.valueType, field);
-  return refuse(locked.includes(field) ? MESSAGES.locked(field) : MESSAGES.unknownField(field), field);
+  return refuse(locked.includes(field) ? MESSAGES.locked(field, entity) : MESSAGES.unknownField(field, entity), field);
 }
 
 /**
  * Parses a body; the first problem is refused in Vietnamese with `details: { field }`. A key the
  * schema does not know is reported first, as locked or not offered.
  */
-function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, locked: readonly string[]): z.output<S> {
+function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, locked: readonly string[], entity: Entity = 'featureType'): z.output<S> {
   const result = schema.safeParse(body);
   if (result.success) return result.data;
   const issues = result.error.issues;
-  for (const i of issues) if (i.code === 'unrecognized_keys') throw notEditable(i.keys[0]!, locked);
+  for (const i of issues) if (i.code === 'unrecognized_keys') throw notEditable(i.keys[0]!, locked, entity);
   const issue = issues[0]!;
   const field = issue.path[0];
   throw new ValidationError(issue.message, typeof field === 'string' ? { field } : undefined);
@@ -204,12 +207,14 @@ export async function editFeatureType(pool: Pool, userId: string, layer: string,
 /**
  * The stored-unit correction's date (Ruling 6): not before the attribute's validFrom, nor before
  * the last correction (the periods stay in date order; the same date replaces that correction).
+ * It corrects a claim about data already stored, so it is not after today (in Vietnam) nor after
+ * the attribute's validTo.
  */
 async function checkStoredUnitValidFrom(q: PoolClient, t: SyncTarget, stored: StoredAttribute, validFrom: string) {
   const latest = await latestUnitPeriod(q, t);
-  if (validFrom < stored.validFrom || (latest !== null && validFrom < latest)) {
-    throw refuse(MESSAGES.storedUnitValidFrom, 'storedUnitValidFrom');
-  }
+  const tooEarly = validFrom < stored.validFrom || (latest !== null && validFrom < latest);
+  const tooLate = validFrom > todayInVietnam() || (stored.validTo !== undefined && validFrom > stored.validTo);
+  if (tooEarly || tooLate) throw refuse(MESSAGES.storedUnitValidFrom, 'storedUnitValidFrom');
 }
 
 /**
@@ -217,8 +222,9 @@ async function checkStoredUnitValidFrom(q: PoolClient, t: SyncTarget, stored: St
  * and the stored-unit correction with the date it applies from.
  */
 export async function editAttribute(pool: Pool, userId: string, layer: string, attribute: string, body: unknown): Promise<RevisedAttribute> {
-  // valueType is in the schema: on a non-extra attribute it is refused once the row is read.
-  const { storedUnitValidFrom, ...edit } = parseBody(attributeEditSchema, body, LOCKED_ATTRIBUTE_FIELDS);
+  // valueType is in the schema: on a non-extra attribute it is refused once the row is read. The
+  // attribute's `name` is its column (or key), set by the data structure.
+  const { storedUnitValidFrom, ...edit } = parseBody(attributeEditSchema, body, [...LOCKED_ATTRIBUTE_FIELDS, 'name'], 'attribute');
   const t: SyncTarget = { featureType: layer, attribute };
   return inTransaction(pool, t, async (q) => {
     const stored = (await readTarget(q, t)) as Row<StoredAttribute>;
@@ -250,11 +256,12 @@ async function readListAttribute(q: PoolClient, t: SyncTarget, expectedRevision:
 
 /**
  * POST /api/dictionary/:layer/:attribute/values: a code staff add to an open list. Its origin
- * carries `code` (so the sync keeps it while the list stays open), `name` and `definition` (so a
- * later code default for the same code never overwrites the staff wording; Ruling 4).
+ * carries `code` (so the sync keeps it while the list stays open), `name` and, when one is sent,
+ * `definition` (so a later code default for the same code never overwrites the staff wording;
+ * Ruling 4). Without a staff definition, a later code default's definition applies.
  */
 export async function addValue(pool: Pool, userId: string, layer: string, attribute: string, body: unknown): Promise<RevisedAttribute> {
-  const add = parseBody(valueAddSchema, body, []);
+  const add = parseBody(valueAddSchema, body, [], 'value');
   const t: SyncTarget = { featureType: layer, attribute };
   return inTransaction(pool, t, async (q) => {
     const stored = await readListAttribute(q, t, add.expectedRevision);
@@ -267,7 +274,8 @@ export async function addValue(pool: Pool, userId: string, layer: string, attrib
     const value: StoredValue = {
       featureType: layer, attribute, code: add.code, name: add.name,
       ...(add.definition !== undefined ? { definition: add.definition } : {}),
-      ord: rows[0]!.ord, retired: false, origin: originOf(['code', 'name', 'definition'], userId),
+      ord: rows[0]!.ord, retired: false,
+      origin: originOf(['code', 'name', ...(add.definition !== undefined ? ['definition'] : [])], userId),
     };
     await insertValue(q, value);
     await bumpAttributeRevision(q, layer, attribute);
@@ -280,13 +288,13 @@ export async function addValue(pool: Pool, userId: string, layer: string, attrib
 /** PATCH /api/dictionary/:layer/:attribute/values/:code: name, definition, colour hint, retired. */
 export async function editValue(pool: Pool, userId: string, layer: string, attribute: string, code: string,
   body: unknown): Promise<RevisedAttribute> {
-  const edit = parseBody(valueEditSchema, body, [...LOCKED_VALUE_FIELDS, 'code']);
+  const edit = parseBody(valueEditSchema, body, [...LOCKED_VALUE_FIELDS, 'code'], 'value');
   const t: SyncTarget = { featureType: layer, attribute };
   return inTransaction(pool, t, async (q) => {
     const stored = await readListAttribute(q, t, edit.expectedRevision);
     // In a closed list the code decides which codes are in use (the sync would revert it).
     if (edit.retired !== undefined && lockedValueFields(stored.codeList).includes('retired')) {
-      throw refuse(MESSAGES.locked('retired'), 'retired');
+      throw refuse(MESSAGES.locked('retired', 'value'), 'retired');
     }
     const target = { featureType: layer, attribute, code };
     const value = await readValue(q, target);
@@ -322,11 +330,32 @@ function withCompanions(fields: Set<string>, stored: StoredAttribute, code: Reco
   return fields;
 }
 
-/** POST .../restore: the named fields go back to the CURRENT code default, and lose their origin. */
+/**
+ * Puts `fields` of one stored row back to `code`, dropping their origin entries, with one history
+ * row each (reason 'restore'). A field already at its default with no origin entry is left alone;
+ * when no field changes, nothing is written (no revision bump).
+ */
+async function restoreRow(q: PoolClient, t: SyncTarget, stored: unknown, code: Record<string, unknown>, fields: Iterable<string>,
+  userId: string): Promise<void> {
+  const row = stored as Record<string, unknown> & { origin: Origin };
+  const restored = [...fields].filter((f) => Object.hasOwn(row.origin, f) || !same(row[f], code[f]));
+  if (restored.length === 0) return;
+  const set = Object.fromEntries(restored.map((f) => [f, code[f]]));
+  await updateRow(q, t, set, { drop: restored });
+  for (const f of restored) await writeHistory(q, t, f, row[f], code[f], 'restore', userId);
+}
+
+/**
+ * POST .../restore: the named fields go back to the CURRENT code default, and lose their origin.
+ * Like a save, it quotes the revision the form was loaded at: a restore over someone else's newer
+ * edit is refused (409), never applied silently.
+ */
 export async function restoreFields(pool: Pool, userId: string, t: SyncTarget, body: unknown): Promise<RevisedFeatureType | RevisedAttribute> {
-  const { fields: requested } = parseBody(restoreSchema, body, []);
+  const entity: Entity = t.attribute === undefined ? 'featureType' : 'attribute';
+  const { expectedRevision, fields: requested } = parseBody(restoreSchema, body, [], entity);
   return inTransaction(pool, t, async (q) => {
     const stored = await readTarget(q, t);
+    checkRevision(stored, expectedRevision);
     let editable: readonly string[];
     let locked: readonly string[];
     if (t.attribute === undefined) {
@@ -337,19 +366,44 @@ export async function restoreFields(pool: Pool, userId: string, t: SyncTarget, b
       locked = lockedAttributeFields(source);
       editable = EDITED_ATTRIBUTE_FIELDS.filter((f) => !locked.includes(f));
     }
-    for (const field of requested) if (!editable.includes(field)) throw notEditable(field, locked);
+    for (const field of requested) if (!editable.includes(field)) throw notEditable(field, locked, entity);
 
     const code = codeDefault(t);
     if (!code) throw new ValidationError(MESSAGES.noDefault);
     let fields = new Set(requested);
     if (t.attribute !== undefined) fields = withCompanions(fields, stored as StoredAttribute, code);
+    await restoreRow(q, t, stored, code, fields, userId);
+  });
+}
 
-    const row = stored as unknown as Record<string, unknown> & { origin: Origin };
-    const restored = [...fields].filter((f) => Object.hasOwn(row.origin, f) || !same(row[f], code[f]));
-    if (restored.length === 0) return;
-    const set = Object.fromEntries(restored.map((f) => [f, code[f]]));
-    await updateRow(q, t, set, { drop: restored });
-    for (const f of restored) await writeHistory(q, t, f, row[f], code[f], 'restore', userId);
+/** The code default of one listed value's editable fields, as the sync writes them; null when the code has none. */
+function valueCodeDefault(t: Required<SyncTarget>): Record<string, unknown> | null {
+  const ft = Object.hasOwn(DICTIONARY, t.featureType) ? DICTIONARY[t.featureType] : undefined;
+  const v = ft?.attributes.find((a) => a.name === t.attribute)?.values?.find((x) => x.code === t.code);
+  if (!v) return null;
+  return { name: v.name, definition: v.definition, colorHint: v.colorHint, retired: v.retired ?? false };
+}
+
+/**
+ * POST /api/dictionary/:layer/:attribute/values/:code/restore: the named fields of one listed value
+ * go back to the CURRENT code default (spec §2.3). The body quotes the attribute's revision, which
+ * the restore bumps. A code staff added has no default: 400.
+ */
+export async function restoreValue(pool: Pool, userId: string, layer: string, attribute: string, code: string,
+  body: unknown): Promise<RevisedAttribute> {
+  const { expectedRevision, fields } = parseBody(restoreSchema, body, [], 'value');
+  const t: SyncTarget = { featureType: layer, attribute };
+  return inTransaction(pool, t, async (q) => {
+    const stored = await readListAttribute(q, t, expectedRevision);
+    const locked = lockedValueFields(stored.codeList);
+    const editable: readonly string[] = EDITABLE_VALUE_FIELDS.filter((f) => !locked.includes(f));
+    for (const field of fields) if (!editable.includes(field)) throw notEditable(field, [...locked, 'code'], 'value');
+    const target = { featureType: layer, attribute, code };
+    const value = await readValue(q, target);
+    if (!value) throw new NotFoundError(`Không có giá trị "${code}" của thuộc tính "${attribute}" trong từ điển dữ liệu.`);
+    const defaults = valueCodeDefault(target);
+    if (!defaults) throw new ValidationError(MESSAGES.noValueDefault(code));
+    await restoreRow(q, target, value, defaults, new Set(fields), userId);
   });
 }
 

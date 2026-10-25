@@ -4,7 +4,7 @@ import { buildApp } from '../../server';
 import { getPool } from '../../db/pool';
 import { usersRepository } from '../users/repository';
 import { hashPassword } from '../../lib/password';
-import { runSync } from './sync';
+import { runSync, todayInVietnam } from './sync';
 import { PREVIEW_SOURCES } from './storedUnit';
 
 /*
@@ -38,8 +38,8 @@ async function resetAttribute() {
   await pg.query(
     `DELETE FROM app.dictionary_unit_periods WHERE feature_type = $1 AND attribute = $2
         AND created_by IN (SELECT id FROM app.users WHERE email = ANY($3))`, [LAYER, ATTR, EMAILS]);
-  await pg.query(`UPDATE app.dictionary_attributes SET origin = origin - 'storedUnit' WHERE feature_type = $1 AND name = $2`,
-    [LAYER, ATTR]);
+  await pg.query(`UPDATE app.dictionary_attributes SET origin = origin - $3::text[] WHERE feature_type = $1 AND name = $2`,
+    [LAYER, ATTR, ['storedUnit', 'validTo']]);
   await runSync(pg, { dryRun: false });
 }
 
@@ -128,11 +128,42 @@ describe('the stored-unit correction', () => {
     expect(await periods()).toEqual([]);
   });
 
+  it('a stored-unit correction dated after today or after the attribute retires is refused', async () => {
+    const before = await served();
+    const today = todayInVietnam();
+    const tomorrow = new Date(`${today}T00:00:00Z`);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const future = await app.inject({
+      method: 'PATCH', url: URL, headers: await auth(),
+      payload: { expectedRevision: before.revision, storedUnit: 'kW', storedUnitValidFrom: tomorrow.toISOString().slice(0, 10) },
+    });
+    expect(future.statusCode).toBe(400);
+    expect(future.json().error.details).toEqual({ field: 'storedUnitValidFrom' });
+    expect(future.json().error.message).toMatch(/không muộn hơn hôm nay/);
+
+    // The attribute retires on its own validFrom; a correction dated after that is refused.
+    const retire = await app.inject({ method: 'PATCH', url: URL, headers: await auth(), payload: { expectedRevision: before.revision, validTo: codeAttr.validFrom } });
+    expect(retire.statusCode).toBe(200);
+    const retired = retire.json() as ServedAttribute;
+    const late = await app.inject({
+      method: 'PATCH', url: URL, headers: await auth(),
+      payload: { expectedRevision: retired.revision, storedUnit: 'kW', storedUnitValidFrom: today },
+    });
+    if (today > codeAttr.validFrom) {
+      expect(late.statusCode).toBe(400);
+      expect(late.json().error.details).toEqual({ field: 'storedUnitValidFrom' });
+    }
+    expect((await served()).storedUnit).toBe('MW');
+    expect(await periods()).toEqual([]);
+  });
+
   it('a stored-unit correction writes its period and survives a sync', async () => {
     const before = await served();
+    // Today: a correction may not be dated in the future, nor before the attribute's validFrom.
+    const correctedFrom = todayInVietnam();
     const res = await app.inject({
       method: 'PATCH', url: URL, headers: await auth(),
-      payload: { expectedRevision: before.revision, storedUnit: 'kW', storedUnitValidFrom: '2026-11-01' },
+      payload: { expectedRevision: before.revision, storedUnit: 'kW', storedUnitValidFrom: correctedFrom },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json() as ServedAttribute;
@@ -143,17 +174,17 @@ describe('the stored-unit correction', () => {
     // The unit in force until the correction, then the corrected one.
     expect(await periods()).toEqual([
       { stored_unit: 'MW', valid_from: codeAttr.validFrom, created_by: adminId },
-      { stored_unit: 'kW', valid_from: '2026-11-01', created_by: adminId },
+      { stored_unit: 'kW', valid_from: correctedFrom, created_by: adminId },
     ]);
     const history = await app.inject({
       method: 'GET', url: `/api/dictionary/history?layer=${LAYER}&attribute=${ATTR}&limit=1`, headers: await auth(),
     });
     expect(history.json().history[0]).toMatchObject({ field: 'storedUnit', oldValue: 'MW', newValue: 'kW', reason: 'edit' });
 
-    // A later correction may not predate the last one.
+    // A later correction may not predate the last one (the attribute's validFrom is before today).
     const earlier = await app.inject({
       method: 'PATCH', url: URL, headers: await auth(),
-      payload: { expectedRevision: body.revision, storedUnit: 'MW', storedUnitValidFrom: '2026-10-30' },
+      payload: { expectedRevision: body.revision, storedUnit: 'MW', storedUnitValidFrom: codeAttr.validFrom },
     });
     expect(earlier.statusCode).toBe(400);
     expect(earlier.json().error.details).toEqual({ field: 'storedUnitValidFrom' });
