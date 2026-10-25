@@ -6,12 +6,15 @@ export interface FeatureTypeRow {
   key: string; kind: 'vector' | 'raster'; name: string; definition: string;
   table_name: string | null; crs: number; geometry_type: string | null; geometry_meaning: string;
   valid_from: string; valid_to: string | null;
+  /** The editor's optimistic lock; served only on one layer (GET /api/dictionary/:layer). */
+  revision: number;
 }
 export interface AttributeRow {
   feature_type: string; name: string; source: string; value_type: string; label: string; definition: string;
   stored_unit: string | null; display_units: string[]; display_unit: string | null; precision: number | null;
   cf_standard_name: string | null; code_list: string | null; nodata: number | null; scale: number | null;
   value_offset: number | null; valid_from: string; valid_to: string | null;
+  revision: number;
 }
 export interface ValueRow {
   feature_type: string; attribute: string; code: string; name: string; definition: string | null;
@@ -23,7 +26,7 @@ const DATE = (c: string) => `to_char(${c}, 'YYYY-MM-DD')`;
 export async function listFeatureTypes(q: Q, key?: string): Promise<FeatureTypeRow[]> {
   const { rows } = await q.query<FeatureTypeRow>(
     `SELECT key, kind, name, definition, table_name, crs, geometry_type, geometry_meaning,
-            ${DATE('valid_from')} AS valid_from, ${DATE('valid_to')} AS valid_to
+            ${DATE('valid_from')} AS valid_from, ${DATE('valid_to')} AS valid_to, revision
        FROM app.dictionary_feature_types
       WHERE ($1::text IS NULL OR key = $1)
       ORDER BY key`, [key ?? null]);
@@ -34,7 +37,7 @@ export async function listAttributes(q: Q, key?: string): Promise<AttributeRow[]
   const { rows } = await q.query<AttributeRow>(
     `SELECT feature_type, name, source, value_type, label, definition, stored_unit, display_units,
             display_unit, precision, cf_standard_name, code_list, nodata, scale, value_offset,
-            ${DATE('valid_from')} AS valid_from, ${DATE('valid_to')} AS valid_to
+            ${DATE('valid_from')} AS valid_from, ${DATE('valid_to')} AS valid_to, revision
        FROM app.dictionary_attributes
       WHERE ($1::text IS NULL OR feature_type = $1)
       ORDER BY feature_type, ord`, [key ?? null]);

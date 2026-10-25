@@ -1,6 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { DictFeatureType } from '@webatlas/shared';
-import { NotFoundError } from '../../errors';
+import { COUNTRY_UNIT, type DictFeatureType } from '@webatlas/shared';
+import { assertCan } from '../../authz/assert';
+import { getUnitTree } from '../../authz/unitTree';
+import { AuthError, NotFoundError } from '../../errors';
+import { editAttribute, editFeatureType, listHistory, restoreFields } from './edit';
 import { getDictionary, getFeatureType } from './service';
 import { csvTemplate, gpkgTemplate } from './template';
 
@@ -13,7 +16,7 @@ export async function dictionary(req: FastifyRequest, reply: FastifyReply) {
   return reply.send(body);
 }
 
-/** GET /api/dictionary/:layer: one feature type by key. */
+/** GET /api/dictionary/:layer: one feature type by key, with the editor's revisions. */
 export async function dictionaryLayer(req: FastifyRequest, reply: FastifyReply) {
   const { layer } = req.params as { layer: string };
   const featureType = await getFeatureType(req.server.pg, layer);
@@ -53,4 +56,40 @@ export async function templateGpkg(req: FastifyRequest, reply: FastifyReply) {
   return attachment(reply, featureType.key, 'gpkg')
     .type('application/geopackage+sqlite3')
     .send(await gpkgTemplate(featureType));
+}
+
+/**
+ * Route guard after requirePermission('dictionary.manage'): the permission counts only where the
+ * group's jurisdiction includes VN (a provincial group holding it is refused). Admins pass.
+ */
+export async function manageOnVN(req: FastifyRequest) {
+  if (!req.currentUser) throw new AuthError();
+  assertCan(req.currentUser, 'dictionary.manage', COUNTRY_UNIT, await getUnitTree(req.server.pg));
+}
+
+// The edit routes run app.authenticate and manageOnVN first, so the user is always present.
+const userId = (req: FastifyRequest) => req.currentUser!.id;
+
+/** PATCH /api/dictionary/:layer: the layer's own fields. */
+export async function patchLayer(req: FastifyRequest, reply: FastifyReply) {
+  const { layer } = req.params as { layer: string };
+  return reply.send(await editFeatureType(req.server.pg, userId(req), layer, req.body));
+}
+
+/** PATCH /api/dictionary/:layer/:attribute: one attribute's fields. */
+export async function patchAttribute(req: FastifyRequest, reply: FastifyReply) {
+  const { layer, attribute } = req.params as { layer: string; attribute: string };
+  return reply.send(await editAttribute(req.server.pg, userId(req), layer, attribute, req.body));
+}
+
+/** POST /api/dictionary/:layer/restore and /:layer/:attribute/restore. */
+export async function restore(req: FastifyRequest, reply: FastifyReply) {
+  const { layer, attribute } = req.params as { layer: string; attribute?: string };
+  const target = attribute === undefined ? { featureType: layer } : { featureType: layer, attribute };
+  return reply.send(await restoreFields(req.server.pg, userId(req), target, req.body));
+}
+
+/** GET /api/dictionary/history?layer=&attribute=&limit= */
+export async function history(req: FastifyRequest, reply: FastifyReply) {
+  return reply.send({ history: await listHistory(req.server.pg, req.query) });
 }

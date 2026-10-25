@@ -27,12 +27,13 @@ export interface SyncCounts {
 
 type Queryable = Pick<pg.PoolClient, 'query'>;
 
-// Shared-type field name -> column, per table. Identity columns are handled separately.
-const FEATURE_TYPE_COLUMNS: Record<string, string> = {
+// Shared-type field name -> column, per table. Identity columns are handled separately. The edit
+// API (edit.ts) writes through the same maps, so a field name never reaches SQL as text.
+export const FEATURE_TYPE_COLUMNS: Record<string, string> = {
   kind: 'kind', name: 'name', definition: 'definition', table: 'table_name', crs: 'crs',
   geometryType: 'geometry_type', geometryMeaning: 'geometry_meaning', validFrom: 'valid_from', validTo: 'valid_to',
 };
-const ATTRIBUTE_COLUMNS: Record<string, string> = {
+export const ATTRIBUTE_COLUMNS: Record<string, string> = {
   ord: 'ord', source: 'source', valueType: 'value_type', label: 'label', definition: 'definition',
   storedUnit: 'stored_unit', displayUnits: 'display_units', displayUnit: 'display_unit', precision: 'precision',
   cfStandardName: 'cf_standard_name', codeList: 'code_list', nodata: 'nodata', scale: 'scale', offset: 'value_offset',
@@ -48,7 +49,7 @@ export function todayInVietnam(now = new Date()): string {
 }
 
 /** A row as the planner sees it: NULL columns become absent keys. */
-function fromColumns<T>(row: Record<string, unknown>, columns: Record<string, string>, identity: Record<string, string>): T {
+export function fromColumns<T>(row: Record<string, unknown>, columns: Record<string, string>, identity: Record<string, string>): T {
   const out: Record<string, unknown> = {};
   for (const [field, column] of Object.entries({ ...identity, ...columns })) {
     if (row[column] !== null && row[column] !== undefined) out[field] = row[column];
@@ -78,7 +79,7 @@ export async function readState(q: Queryable): Promise<StoredState> {
 }
 
 /** Which table a target names, its column map, its key condition, and whether it has a revision. */
-function locate(t: SyncTarget, firstParam: number) {
+export function locate(t: SyncTarget, firstParam: number) {
   const p = (i: number) => `$${firstParam + i}`;
   if (t.code !== undefined) {
     return {
@@ -96,7 +97,7 @@ function locate(t: SyncTarget, firstParam: number) {
 }
 
 /** displayUnits is NOT NULL (default '{}'); every other absent field is NULL. */
-const toColumn = (field: string, value: unknown) => (value === undefined ? (field === 'displayUnits' ? [] : null) : value);
+export const toColumn = (field: string, value: unknown) => (value === undefined ? (field === 'displayUnits' ? [] : null) : value);
 
 /**
  * Sets fields of one row, removes origin entries, and bumps the revision a stale editor form
@@ -120,13 +121,16 @@ async function updateRow(q: Queryable, t: SyncTarget, set: Record<string, unknow
   }
 }
 
-async function writeHistory(q: Queryable, t: SyncTarget, field: string, oldValue: unknown, newValue: unknown,
-  reason: 'sync_revert' | 'sync_retire'): Promise<void> {
+export type HistoryReason = 'edit' | 'restore' | 'sync_revert' | 'sync_retire';
+
+/** One history row: old -> new as jsonb (absent -> NULL). The sync writes no author. */
+export async function writeHistory(q: Queryable, t: SyncTarget, field: string, oldValue: unknown, newValue: unknown,
+  reason: HistoryReason, changedBy: string | null = null): Promise<void> {
   const json = (v: unknown) => (v === undefined || v === null ? null : JSON.stringify(v));
   await q.query(
-    `INSERT INTO app.dictionary_history (feature_type, attribute, code, field, old_value, new_value, reason)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)`,
-    [t.featureType, t.attribute ?? null, t.code ?? null, field, json(oldValue), json(newValue), reason]);
+    `INSERT INTO app.dictionary_history (feature_type, attribute, code, field, old_value, new_value, reason, changed_by)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)`,
+    [t.featureType, t.attribute ?? null, t.code ?? null, field, json(oldValue), json(newValue), reason, changedBy]);
 }
 
 /** `sql` adds columns given as SQL expressions (synced_at = now()). */
@@ -164,12 +168,21 @@ export async function applyPlan(q: Queryable, plan: SyncPlan): Promise<void> {
 }
 
 /**
+ * The dictionary writers' lock, held until the caller's transaction ends. Staff edits take it too:
+ * the sync plans from a snapshot read under it, so an edit committed between that read and the
+ * sync's writes would be overwritten as if it were a code default.
+ */
+export async function lockDictionary(q: Queryable): Promise<void> {
+  await q.query(`SELECT pg_advisory_xact_lock(hashtext('dictionary_sync'))`);
+}
+
+/**
  * One sync inside the caller's open transaction: takes the advisory lock (held until that
  * transaction ends), then reads, plans and applies. The state is read after the lock, so a run
  * that waited sees what the other run committed.
  */
 export async function syncInTransaction(q: Queryable, defaults: Dictionary, today: string): Promise<SyncCounts> {
-  await q.query(`SELECT pg_advisory_xact_lock(hashtext('dictionary_sync'))`);
+  await lockDictionary(q);
   const plan = planSync(defaults, await readState(q), today);
   await applyPlan(q, plan);
   // The feature types the code still has were confirmed by this run.

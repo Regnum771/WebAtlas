@@ -42,8 +42,22 @@ function toAttribute(r: AttributeRow, values: ValueRow[], parentValidTo: string 
   };
 }
 
-/** Rebuilds the shared-type shapes from database rows (already ordered by `ord`). */
-export function assemble(types: FeatureTypeRow[], attrs: AttributeRow[], values: ValueRow[]): DictFeatureType[] {
+/** An attribute as one layer serves it: the shared shape plus the editor's revision. */
+export type RevisedAttribute = DictAttribute & { revision: number };
+/** A feature type as one layer serves it (GET /api/dictionary/:layer and the edit answers). */
+export type RevisedFeatureType = Omit<DictFeatureType, 'attributes'> & { revision: number; attributes: RevisedAttribute[] };
+
+/**
+ * Rebuilds the shared-type shapes from database rows (already ordered by `ord`). `revisions`
+ * adds each entry's `revision`: one layer serves it, the full list does not (its ETag would
+ * change with every edit anyway, and readers have no use for it).
+ */
+export function assemble(types: FeatureTypeRow[], attrs: AttributeRow[], values: ValueRow[]): DictFeatureType[];
+export function assemble(types: FeatureTypeRow[], attrs: AttributeRow[], values: ValueRow[],
+  opts: { revisions: true }): RevisedFeatureType[];
+export function assemble(types: FeatureTypeRow[], attrs: AttributeRow[], values: ValueRow[],
+  opts: { revisions?: boolean } = {}): DictFeatureType[] | RevisedFeatureType[] {
+  const rev = (r: { revision: number }) => (opts.revisions ? { revision: r.revision } : {});
   const valuesBy = new Map<string, ValueRow[]>();
   for (const v of values) {
     const k = `${v.feature_type}|${v.attribute}`;
@@ -69,8 +83,11 @@ export function assemble(types: FeatureTypeRow[], attrs: AttributeRow[], values:
     geometryMeaning: t.geometry_meaning as DictFeatureType['geometryMeaning'],
     validFrom: t.valid_from,
     ...opt('validTo', t.valid_to),
-    attributes: (attrsBy.get(t.key) ?? []).map((a) =>
-      toAttribute(a, valuesBy.get(`${t.key}|${a.name}`) ?? [], t.valid_to)),
+    ...rev(t),
+    attributes: (attrsBy.get(t.key) ?? []).map((a) => ({
+      ...toAttribute(a, valuesBy.get(`${t.key}|${a.name}`) ?? [], t.valid_to),
+      ...rev(a),
+    })),
   }));
 }
 
@@ -89,9 +106,11 @@ export async function getDictionary(q: Pool | PoolClient): Promise<{ version: st
   return { version: dictionaryVersion(featureTypes), featureTypes };
 }
 
-export async function getFeatureType(pool: Pool, key: string): Promise<DictFeatureType | null> {
-  const [types, attrs, values] = await Promise.all([
-    listFeatureTypes(pool, key), listAttributes(pool, key), listValues(pool, key),
-  ]);
-  return assemble(types, attrs, values)[0] ?? null;
+/** One layer with its revisions. Sequential, so it can run on one client inside a transaction. */
+export async function getFeatureType(q: Pool | PoolClient, key: string): Promise<RevisedFeatureType | null> {
+  const types = await listFeatureTypes(q, key);
+  if (types.length === 0) return null;
+  const attrs = await listAttributes(q, key);
+  const values = await listValues(q, key);
+  return assemble(types, attrs, values, { revisions: true })[0] ?? null;
 }

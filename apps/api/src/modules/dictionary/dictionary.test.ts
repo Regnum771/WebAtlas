@@ -103,12 +103,12 @@ describe('a retired feature type', () => {
   it('is served with its validTo, and its attributes inherit it unless they have their own', () => {
     const type: FeatureTypeRow = {
       key: 'old', kind: 'vector', name: 'Cũ', definition: 'd', table_name: null, crs: 4326,
-      geometry_type: 'Point', geometry_meaning: 'exact', valid_from: '2020-01-01', valid_to: '2026-01-01',
+      geometry_type: 'Point', geometry_meaning: 'exact', valid_from: '2020-01-01', valid_to: '2026-01-01', revision: 0,
     };
     const attr = (name: string, valid_to: string | null): AttributeRow => ({
       feature_type: 'old', name, source: 'column', value_type: 'text', label: name, definition: 'd',
       stored_unit: null, display_units: [], display_unit: null, precision: null, cf_standard_name: null,
-      code_list: null, nodata: null, scale: null, value_offset: null, valid_from: '2020-01-01', valid_to,
+      code_list: null, nodata: null, scale: null, value_offset: null, valid_from: '2020-01-01', valid_to, revision: 0,
     });
     const [served] = assemble([type], [attr('a', null), attr('b', '2025-06-01')], []);
     expect(served!.validTo).toBe('2026-01-01');
