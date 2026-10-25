@@ -15,6 +15,9 @@ const api = vi.hoisted(() => ({
   patchLayer: vi.fn(),
   patchAttribute: vi.fn(),
   restoreFields: vi.fn(),
+  addValue: vi.fn(),
+  patchValue: vi.fn(),
+  previewStoredUnit: vi.fn(),
 }));
 vi.mock('../api/dictionaryEdit.api', () => api);
 
@@ -27,6 +30,15 @@ const LAYER: DictFeatureType = {
       name: 'area', source: 'column', valueType: 'number', label: 'Diện tích', definition: 'Diện tích mặt nước.',
       storedUnit: 'km2', displayUnits: ['km2', 'ha'], displayUnit: 'km2', precision: 1, validFrom: '2026-01-01',
     },
+    {
+      name: 'kind', source: 'column', valueType: 'code', label: 'Loại công trình', definition: 'Loại.', codeList: 'open',
+      values: [{ code: 'hydro', name: 'Thuỷ điện', order: 1, colorHint: '#3366cc' }, { code: 'irrig', name: 'Thuỷ lợi', order: 2, retired: true }],
+      validFrom: '2026-01-01',
+    },
+    {
+      name: 'status', source: 'column', valueType: 'code', label: 'Trạng thái', definition: 'Trạng thái.', codeList: 'closed',
+      values: [{ code: 'on', name: 'Đang chạy', order: 1 }], validFrom: '2026-01-01',
+    },
   ],
 };
 vi.mock('./useDictionary', () => ({ useDictionary: (): Dictionary => ({ dams: LAYER }) }));
@@ -34,7 +46,10 @@ vi.mock('./useDictionary', () => ({ useDictionary: (): Dictionary => ({ dams: LA
 const entry = (label = 'Tên tiếng Anh'): RevisedFeatureType => ({
   ...LAYER,
   revision: 3,
-  attributes: [{ ...LAYER.attributes[0], label, revision: 5 }, { ...LAYER.attributes[1], revision: 2 }],
+  attributes: [
+    { ...LAYER.attributes[0], label, revision: 5 }, { ...LAYER.attributes[1], revision: 2 },
+    { ...LAYER.attributes[2], revision: 7 }, { ...LAYER.attributes[3], revision: 9 },
+  ],
 } as RevisedFeatureType);
 
 const row = (over: Partial<HistoryEntry>): HistoryEntry => ({
@@ -203,5 +218,133 @@ describe('dictionary editor', () => {
       expect(await panel.findByText(r)).toBeInTheDocument();
     }
     expect(panel.queryByText('Chỉ hiện 200 thay đổi gần nhất.')).toBeNull();
+  });
+
+  describe('listed values', () => {
+    it('an open list can add a value', async () => {
+      api.addValue.mockResolvedValue({});
+      mount();
+      await userEvent.click(await screen.findByRole('button', { name: /Loại công trình/ }));
+      const add = within(await screen.findByRole('form', { name: 'Thêm giá trị' }));
+      expect(add.getByRole('button', { name: 'Thêm giá trị' })).toBeDisabled();
+      await userEvent.type(add.getByLabelText('Mã'), 'wind');
+      await userEvent.type(add.getByLabelText('Tên giá trị'), 'Điện gió');
+      await userEvent.type(add.getByLabelText('Định nghĩa'), 'Tua bin gió.');
+      await userEvent.click(add.getByRole('button', { name: 'Thêm giá trị' }));
+      await waitFor(() => expect(api.addValue).toHaveBeenCalledWith('dams', 'kind', {
+        expectedRevision: 7, code: 'wind', name: 'Điện gió', definition: 'Tua bin gió.',
+      }));
+    });
+
+    it('an open list edits a value and retires it, each row named by its code', async () => {
+      api.patchValue.mockResolvedValue({});
+      mount();
+      await userEvent.click(await screen.findByRole('button', { name: /Loại công trình/ }));
+      const name = await screen.findByLabelText('Tên giá trị hydro');
+      await userEvent.clear(name);
+      await userEvent.type(name, 'Thuỷ điện lớn');
+      await userEvent.click(screen.getByRole('button', { name: 'Lưu giá trị hydro' }));
+      await waitFor(() => expect(api.patchValue).toHaveBeenCalledWith('dams', 'kind', 'hydro', { expectedRevision: 7, name: 'Thuỷ điện lớn' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Ngừng dùng giá trị hydro' }));
+      await waitFor(() => expect(api.patchValue).toHaveBeenCalledWith('dams', 'kind', 'hydro', { expectedRevision: 7, retired: true }));
+      expect(screen.getByRole('button', { name: 'Dùng lại giá trị irrig' })).toBeInTheDocument();
+    });
+
+    it("a closed list's codes cannot be added or retired", async () => {
+      api.patchValue.mockResolvedValue({});
+      mount();
+      await userEvent.click(await screen.findByRole('button', { name: /Trạng thái/ }));
+      expect(await screen.findByLabelText('Tên giá trị on')).not.toHaveAttribute('readonly');
+      expect(screen.queryByRole('form', { name: 'Thêm giá trị' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Thêm giá trị' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Ngừng dùng giá trị/ })).toBeNull();
+      const list = within(screen.getByRole('region', { name: 'Giá trị của Trạng thái' }));
+      expect(list.getAllByText('theo cấu trúc dữ liệu').length).toBeGreaterThanOrEqual(2);
+      await userEvent.type(screen.getByLabelText('Màu gợi ý giá trị on'), '#aabbcc');
+      await userEvent.click(screen.getByRole('button', { name: 'Lưu giá trị on' }));
+      await waitFor(() => expect(api.patchValue).toHaveBeenCalledWith('dams', 'status', 'on', { expectedRevision: 9, colorHint: '#aabbcc' }));
+    });
+
+    it('a 409 on a value reloads and shows the message', async () => {
+      api.addValue.mockRejectedValue(new ApiError(409, 'DICTIONARY_CHANGED', 'x'));
+      mount();
+      await userEvent.click(await screen.findByRole('button', { name: /Loại công trình/ }));
+      const add = within(await screen.findByRole('form', { name: 'Thêm giá trị' }));
+      await userEvent.type(add.getByLabelText('Mã'), 'wind');
+      await userEvent.type(add.getByLabelText('Tên giá trị'), 'Gió');
+      const before = api.fetchLayerEntry.mock.calls.length;
+      await userEvent.click(add.getByRole('button', { name: 'Thêm giá trị' }));
+      expect(await screen.findByText('Mục này vừa được người khác sửa.')).toBeInTheDocument();
+      await waitFor(() => expect(api.fetchLayerEntry.mock.calls.length).toBeGreaterThan(before));
+    });
+  });
+
+  describe('stored-unit correction', () => {
+    const open = async () => {
+      await userEvent.click(await screen.findByRole('button', { name: /Diện tích/ }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Hiệu chỉnh đơn vị lưu…' }));
+      return within(await screen.findByRole('dialog', { name: 'Hiệu chỉnh đơn vị lưu' }));
+    };
+
+    it('the stored-unit dialog needs a preview, a date and the confirmation', async () => {
+      api.previewStoredUnit.mockResolvedValue({ rows: [{ id: '1', stored: 12.5, before: '12,5 km²', after: '12,5 ha' }] });
+      api.patchAttribute.mockResolvedValue({});
+      mount();
+      const dialog = await open();
+      const apply = dialog.getByRole('button', { name: 'Áp dụng' });
+      expect(apply).toBeDisabled();
+      await userEvent.selectOptions(dialog.getByLabelText('Đơn vị lưu mới'), 'ha');
+      await userEvent.click(dialog.getByRole('button', { name: 'Xem trước' }));
+      expect(await dialog.findByText(/12,5 km² → 12,5 ha/)).toBeInTheDocument();
+      expect(api.previewStoredUnit).toHaveBeenCalledWith('dams', 'area', 'ha');
+      expect(apply).toBeDisabled();
+      await userEvent.type(dialog.getByLabelText('Áp dụng từ ngày'), '2026-11-01');
+      expect(apply).toBeDisabled();
+      await userEvent.click(dialog.getByRole('checkbox', { name: 'Tôi hiểu việc này chỉ sửa cách hiểu số liệu, không đổi số liệu.' }));
+      expect(apply).toBeEnabled();
+      await userEvent.click(apply);
+      await waitFor(() => expect(api.patchAttribute).toHaveBeenCalledWith('dams', 'area', {
+        expectedRevision: 2, storedUnit: 'ha', storedUnitValidFrom: '2026-11-01',
+      }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    });
+
+    it('changing the unit after a preview asks for a new preview', async () => {
+      api.previewStoredUnit.mockResolvedValue({ rows: [] });
+      mount();
+      const dialog = await open();
+      await userEvent.selectOptions(dialog.getByLabelText('Đơn vị lưu mới'), 'ha');
+      await userEvent.click(dialog.getByRole('button', { name: 'Xem trước' }));
+      expect(await dialog.findByText('Không có giá trị mẫu để xem trước.')).toBeInTheDocument();
+      await userEvent.type(dialog.getByLabelText('Áp dụng từ ngày'), '2026-11-01');
+      await userEvent.click(dialog.getByRole('checkbox'));
+      expect(dialog.getByRole('button', { name: 'Áp dụng' })).toBeEnabled();
+      await userEvent.selectOptions(dialog.getByLabelText('Đơn vị lưu mới'), 'm2');
+      expect(dialog.getByRole('button', { name: 'Áp dụng' })).toBeDisabled();
+    });
+
+    it('the stored-unit dialog offers only units of the same dimension', async () => {
+      mount();
+      const dialog = await open();
+      const values = Array.from((dialog.getByLabelText('Đơn vị lưu mới') as HTMLSelectElement).options).map((o) => o.value);
+      expect(values).toEqual(expect.arrayContaining(['km2', 'ha', 'm2']));
+      expect(values).not.toContain('m');
+      expect(values).not.toContain('mm');
+    });
+
+    it('a date error from the API shows under the date field', async () => {
+      api.previewStoredUnit.mockResolvedValue({ rows: [] });
+      api.patchAttribute.mockRejectedValue(new ApiError(400, 'VALIDATION_ERROR', 'Ngày quá sớm.', { field: 'storedUnitValidFrom' }));
+      mount();
+      const dialog = await open();
+      await userEvent.selectOptions(dialog.getByLabelText('Đơn vị lưu mới'), 'ha');
+      await userEvent.click(dialog.getByRole('button', { name: 'Xem trước' }));
+      await dialog.findByText('Không có giá trị mẫu để xem trước.');
+      await userEvent.type(dialog.getByLabelText('Áp dụng từ ngày'), '2020-01-01');
+      await userEvent.click(dialog.getByRole('checkbox'));
+      await userEvent.click(dialog.getByRole('button', { name: 'Áp dụng' }));
+      expect(await dialog.findByText('Ngày quá sớm.')).toBeInTheDocument();
+      expect(dialog.getByLabelText('Áp dụng từ ngày')).toHaveAttribute('aria-invalid', 'true');
+    });
   });
 });

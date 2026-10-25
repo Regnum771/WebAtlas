@@ -1212,3 +1212,8 @@ body {
 .dictionary-history-table { width: 100%; border-collapse: collapse; }
 .dictionary-history-table th, .dictionary-history-table td { text-align: left; padding: var(--space-1) var(--space-2); vertical-align: top; }
 @media (max-width: 640px) { .dictionary-editor-body { grid-template-columns: 1fr; } }
+.dictionary-editor-detail { display: flex; flex-direction: column; gap: var(--space-4); }
+.dictionary-value-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.dictionary-value-row { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px solid var(--rule); }
+.dictionary-value-color { max-width: 10rem; }
+.dictionary-unit-preview { margin: 0; padding-left: var(--space-4); }

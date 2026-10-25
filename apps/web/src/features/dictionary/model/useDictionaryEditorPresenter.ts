@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { unit, unitsOfDimension, type GeometryMeaning } from '@webatlas/shared';
-import { ApiError } from '../../../shared/api/apiClient';
+import { unit, type GeometryMeaning } from '@webatlas/shared';
 import {
   fetchHistory, fetchLayerEntry, patchAttribute, patchLayer, restoreFields,
   type HistoryEntry, type RevisedAttribute, type RevisedFeatureType,
@@ -9,12 +8,14 @@ import {
 import type { EditorFormView, EditorProps, FormFieldView } from '../ui/DictionaryEditor.view';
 import type { HistoryRowView } from '../ui/DictionaryHistory.view';
 import { isCurrent } from './isCurrent';
+import { describeFailure } from './saveFeedback';
 import { useDictionary } from './useDictionary';
+import { sameDimensionUnits, useStoredUnitCorrection } from './useStoredUnitCorrection';
+import { useValueListEditor } from './useValueListEditor';
 
 type Draft = Record<string, string | string[]>;
 
 const STRUCTURE_HINT = 'theo cấu trúc dữ liệu';
-const CHANGED = 'Mục này vừa được người khác sửa.';
 
 const MEANING_LABEL: Record<GeometryMeaning, string> = {
   exact: 'Chính xác',
@@ -135,11 +136,15 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
   });
 
   const entry = entryQuery.data;
+  const chosenAttribute = attributeName === null ? undefined : entry?.attributes.find((a) => a.name === attributeName);
 
   const selectLayer = (key: string) => { setPickedLayer(key); setAttributeName(null); setFeedback(null); };
   const selectAttribute = (name: string | null) => { setAttributeName(name); setFeedback(null); };
 
   const reload = () => client.invalidateQueries({ queryKey: ['dictionary'] });
+
+  const valueList = useValueListEditor(layerKey, chosenAttribute, reload);
+  const storedUnit = useStoredUnitCorrection(layerKey, chosenAttribute, reload);
 
   async function run(form: string, editKey: string, work: () => Promise<unknown>) {
     setSaving(form);
@@ -150,15 +155,11 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
       dropEdits();
       await reload();
     } catch (e) {
-      const field = e instanceof ApiError ? (e.details as { field?: string } | undefined)?.field : undefined;
-      if (e instanceof ApiError && e.status === 409) {
-        setFeedback({ form, message: CHANGED, errors: {} });
+      const failure = describeFailure(e);
+      setFeedback({ form, message: failure.message, errors: failure.errors });
+      if (failure.conflict) {
         dropEdits();
         await reload();
-      } else if (e instanceof ApiError && e.status === 400 && field) {
-        setFeedback({ form, message: null, errors: { [field]: e.message } });
-      } else {
-        setFeedback({ form, message: e instanceof Error ? e.message : 'Không lưu được.', errors: {} });
       }
     } finally {
       setSaving(null);
@@ -194,7 +195,7 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
     const editedKeys = keys.filter((k) => editedOf(k));
 
     const mine = feedback?.form === formId ? feedback : null;
-    const fields = (isLayerForm ? layerFields(target as RevisedFeatureType, draft) : attributeFields(target as RevisedAttribute, draft))
+    const fields = (isLayerForm ? layerFields(target as RevisedFeatureType, draft) : attributeFields(target as RevisedAttribute, draft, storedUnit.open))
       .map((f) => {
         const h = keys.includes(f.key) ? editedOf(f.key) : undefined;
         return {
@@ -271,6 +272,8 @@ export function useDictionaryEditorPresenter(): DictionaryEditorPresenter {
       onRetry: () => { void entryQuery.refetch(); },
       layerForm: buildForm(null),
       attributeForm: attributeName === null ? null : buildForm(attributeName),
+      valueList,
+      storedUnit: storedUnit.view,
     },
     history: {
       rows: historyRows,
@@ -299,14 +302,9 @@ function layerFields(f: RevisedFeatureType, d: Draft): FormFieldView[] {
   ];
 }
 
-function attributeFields(a: RevisedAttribute, d: Draft): FormFieldView[] {
+function attributeFields(a: RevisedAttribute, d: Draft, onCorrectUnit: (() => void) | null): FormFieldView[] {
   const permitted = d.displayUnits as string[];
-  let dimensionUnits: { value: string; label: string }[] = [];
-  if (a.storedUnit) {
-    try {
-      dimensionUnits = unitsOfDimension(unit(a.storedUnit).dimension).map((u) => ({ value: u.code, label: u.symbol }));
-    } catch { /* an unknown stored unit offers no choices */ }
-  }
+  const dimensionUnits = a.storedUnit ? sameDimensionUnits(a.storedUnit) : [];
   const fields: FormFieldView[] = [
     { key: 'label', label: 'Nhãn', kind: 'text', value: d.label as string },
     { key: 'definition', label: 'Định nghĩa', kind: 'textarea', value: d.definition as string },
@@ -331,7 +329,10 @@ function attributeFields(a: RevisedAttribute, d: Draft): FormFieldView[] {
     { key: 'valueType', label: 'Kiểu giá trị', kind: 'locked', value: a.valueType, hint: STRUCTURE_HINT },
   );
   if (a.storedUnit) {
-    fields.push({ key: 'storedUnit', label: 'Đơn vị lưu', kind: 'locked', value: symbolOf(a.storedUnit) });
+    fields.push({
+      key: 'storedUnit', label: 'Đơn vị lưu', kind: 'locked', value: symbolOf(a.storedUnit),
+      action: onCorrectUnit ? { label: 'Hiệu chỉnh đơn vị lưu…', onClick: onCorrectUnit } : undefined,
+    });
   }
   return fields;
 }

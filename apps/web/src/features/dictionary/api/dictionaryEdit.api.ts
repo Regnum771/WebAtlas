@@ -51,3 +51,35 @@ export function restoreFields(layer: string, attribute: string | null, fields: s
   const path = attribute === null ? `${layerPath(layer)}/restore` : `${layerPath(layer)}/${encodeURIComponent(attribute)}/restore`;
   return apiRequest(path, { method: 'POST', body: JSON.stringify({ fields }) });
 }
+
+const post = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) });
+const attributePath = (layer: string, attribute: string) => `${layerPath(layer)}/${encodeURIComponent(attribute)}`;
+
+/** Adds a code to an open list. `expectedRevision` is the PARENT attribute's revision. */
+export function addValue(
+  layer: string, attribute: string, body: { expectedRevision: number; code: string; name: string; definition?: string },
+): Promise<RevisedAttribute> {
+  return apiRequest<RevisedAttribute>(`${attributePath(layer, attribute)}/values`, post(body));
+}
+
+/** Edits one listed value; a null `colorHint` clears the colour. Bumps the parent attribute's revision. */
+export function patchValue(
+  layer: string, attribute: string, code: string,
+  body: { expectedRevision: number; name?: string; definition?: string; colorHint?: string | null; retired?: boolean },
+): Promise<RevisedAttribute> {
+  return apiRequest<RevisedAttribute>(`${attributePath(layer, attribute)}/values/${encodeURIComponent(code)}`, json(body));
+}
+
+export interface StoredUnitPreviewRow {
+  id: string;
+  stored: unknown;
+  /** The value formatted under the current stored unit. */
+  before: string;
+  /** The value formatted under the proposed stored unit. */
+  after: string;
+}
+
+/** Up to five real values before and after a stored-unit correction. May be empty (raster band, no data). */
+export function previewStoredUnit(layer: string, attribute: string, storedUnit: string): Promise<{ rows: StoredUnitPreviewRow[] }> {
+  return apiRequest(`${attributePath(layer, attribute)}/stored-unit/preview`, post({ storedUnit }));
+}

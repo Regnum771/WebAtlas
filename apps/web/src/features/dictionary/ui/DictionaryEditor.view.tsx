@@ -2,6 +2,8 @@ import { Button } from '../../../shared/ui/Button';
 import { Message } from '../../../shared/ui/Message';
 import { Spinner } from '../../../shared/ui/Spinner';
 import { TextField } from '../../../shared/ui/TextField';
+import { StoredUnitDialogView, type StoredUnitView } from './StoredUnitDialog.view';
+import { ValueListEditorView, type ValueListView } from './ValueListEditor.view';
 
 export interface FormFieldView {
   key: string;
@@ -20,6 +22,8 @@ export interface FormFieldView {
   min?: number;
   max?: number;
   step?: number;
+  /** A button beside a locked field, e.g. the stored-unit correction. */
+  action?: { label: string; onClick: () => void };
 }
 
 export interface EditorFormView {
@@ -53,6 +57,10 @@ export interface EditorProps {
   layerForm: EditorFormView | null;
   /** The form of the chosen attribute. */
   attributeForm: EditorFormView | null;
+  /** The listed values of the chosen code attribute. */
+  valueList: ValueListView | null;
+  /** The stored-unit correction dialog of the chosen number attribute. */
+  storedUnit: StoredUnitView | null;
 }
 
 function Field({ field, form }: { field: FormFieldView; form: EditorFormView }) {
@@ -66,7 +74,10 @@ function Field({ field, form }: { field: FormFieldView; form: EditorFormView }) 
 
   if (field.kind === 'locked') {
     return (
-      <TextField id={id} label={field.label} value={field.value} readOnly hint={field.hint} />
+      <div className="dictionary-field">
+        <TextField id={id} label={field.label} value={field.value} readOnly hint={field.hint} />
+        {field.action && <Button size="sm" onClick={field.action.onClick}>{field.action.label}</Button>}
+      </div>
     );
   }
   if (field.kind === 'checks') {
@@ -178,10 +189,14 @@ export function DictionaryEditorView(p: EditorProps) {
                 ))}
               </ul>
             </nav>
-            {p.attributeForm && <EditorForm form={p.attributeForm} />}
+            <div className="dictionary-editor-detail">
+              {p.attributeForm && <EditorForm form={p.attributeForm} />}
+              {p.valueList && <ValueListEditorView list={p.valueList} />}
+            </div>
           </div>
         </>
       )}
+      {p.storedUnit && <StoredUnitDialogView {...p.storedUnit} />}
     </div>
   );
 }
