@@ -12,7 +12,8 @@
     "test": "vitest run",
     "verify:shell": "node scripts/verify-shell.mjs",
     "verify:permissions": "node scripts/verify-permissions.mjs",
-    "verify:personal-maps": "node scripts/verify-personal-maps.mjs"
+    "verify:personal-maps": "node scripts/verify-personal-maps.mjs",
+    "verify:dictionary": "node scripts/verify-dictionary.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",

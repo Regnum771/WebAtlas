@@ -160,6 +160,11 @@ npm run verify:personal-maps -w @webatlas/web -- --out <dir>              # both
 npm run verify:personal-maps -w @webatlas/web -- --out <dir> --only 768   # one width
 ```
 
+`apps/web/scripts/verify-dictionary.mjs` (`npm run verify:dictionary -w @webatlas/web -- --out <dir>`, same widths,
+`--only` and `VERIFY_OWNER_EMAIL` / `VERIFY_OWNER_PASSWORD`) checks that the data dictionary reaches the screen: in an
+edit copy of `dams` the table header, cells, conditions and form use the dictionary's labels, value names and MW, and
+the dams legend reads `Nhỏ (< 200 MW)`; it deletes its map through the API at the end.
+
 ### Workspace cleanup
 
 `npm run workspace:cleanup -w @webatlas/api` must be scheduled (daily is enough): nothing else removes expired
