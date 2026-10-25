@@ -187,19 +187,26 @@ relative `WORKSPACE_FILES_DIR` at start.
 ```
 POST   /api/auth/login                 → { token, user }
 GET    /api/auth/me                     → current user                       [auth]
-GET    /api/users                       → list users                         [admin]
+GET    /api/users                       → list users                         [users.manage]
+PUT    /api/users/:id/groups            → set a user's access groups         [users.manage]
 POST   /api/users                       → create user                        [admin]
 PUT    /api/users/:id                   → update user                        [admin]
 DELETE /api/users/:id                   → delete user                        [admin]
+GET    /api/access-groups[/:id/members] → access groups (jurisdiction + permission set) and their members   [users.manage]
+POST|PUT|DELETE /api/access-groups[/:id] → create, update, delete an access group                         [admin]
 GET    /api/layers                      → editable-layer catalog (metadata)
-GET    /api/layers/:key/features        → GeoJSON FeatureCollection           [admin]
-POST   /api/layers/:key/features        → create feature                     [admin]
-PUT    /api/layers/:key/features/:id    → update feature                     [admin]
-DELETE /api/layers/:key/features/:id    → delete feature                     [admin]
+GET    /api/layers/unassigned           → features with no managing unit     [feature.update]
+GET    /api/layers/:key/features?province=&ward= → GeoJSON of the ACTIVE version, filtered   [auth]
+POST   /api/layers/:key/features        → create feature                     [feature.create + submission.review on the managing unit]
+PUT    /api/layers/:key/features/:id    → update feature                     [feature.update + submission.review on the managing unit]
+DELETE /api/layers/:key/features/:id    → delete feature                     [feature.delete + submission.review on the managing unit]
 GET    /api/features/:layerKey/:id/geometry → simplified GeoJSON geometry (public)
 POST   /api/analysis/:op                → buffer | select_within | nearest | elevation_profile | zonal_elevation (public, 60/min)
 GET    /api/admin-units?level=province|ward&province= → administrative units with extents (public)
-GET    /api/layers/:key/features?province=&ward=      → features of the ACTIVE version, filtered   [auth]
+GET    /api/admin-units/tree            → the three-level unit tree: country, provinces, wards (public)
+POST   /api/admin-units/suggest         → suggested managing unit for a geometry (public)
+GET    /api/tiles/versions | /api/tiles/:layer/:z/:x/:y → vector tiles of the active versions (public)
+GET    /api/scenarios[/:id[/impacts|/plan|/roads|/frames/:hour]] → flood scenarios (public)
 GET    /api/elevation?lon=&lat=         → DEM height at a point (public, 600/min)
 GET    /api/search?q=                   → named entities across layers (public)
 GET    /api/reference/layers            → reference-layer catalog (public)
@@ -209,7 +216,23 @@ POST   /api/assistant/messages          → map assistant (LLM) turn            
 GET    /api/dictionary                  → data dictionary: every layer, attribute and listed value, with an ETag (public)
 GET    /api/dictionary/:layer           → one layer's dictionary entry (public)
 GET    /api/dictionary/:layer/template.csv|.gpkg → empty upload template with the layer's columns (public)
+GET    /api/dictionary/history?layer=&attribute=&limit= → dictionary edits, newest first   [dictionary.manage on VN]
+PATCH  /api/dictionary/:layer[/:attribute] → edit wording, display units, retirement; a stored-unit correction with its valid-from date   [dictionary.manage on VN]
+POST   /api/dictionary/:layer[/:attribute]/restore → put named fields back to the code default   [dictionary.manage on VN]
+POST   /api/dictionary/:layer/:attribute/values      → add a code to an open list        [dictionary.manage on VN]
+PATCH  /api/dictionary/:layer/:attribute/values/:code[/restore] → edit or restore a listed value   [dictionary.manage on VN]
+POST   /api/dictionary/:layer/:attribute/stored-unit/preview → five values before and after a stored-unit correction   [dictionary.manage on VN]
+GET|POST|PATCH|DELETE /api/workspace/maps[/:mapId[/...]] → personal maps: layers, features, table query, raster, copy, shares   [auth; owner or share]
+POST|GET|DELETE /api/workspace/uploads[/:fileId] → uploaded files                          [auth]
+POST   /api/workspace/maps/:mapId/imports|exports → queue an import or export job (GPKG, GeoJSON, zipped SHP; WGS 84 or VN-2000)   [auth]
+GET|DELETE /api/workspace/jobs[/:jobId[/download]] → job status, download, removal           [auth]
+GET    /api/workspace/share-targets     → users and groups a map can be shared with   [auth]
+GET    /api/workspace/admin/summary     → storage and job summary             [admin]
 ```
+
+Every dictionary edit carries the entry's `expectedRevision` (served by `GET /api/dictionary/:layer`); a stale
+revision answers 409 `DICTIONARY_CHANGED`. `dictionary.manage` counts only when the holder's jurisdiction includes `VN`;
+admins pass.
 
 Passwords are argon2-hashed; JWTs are signed from `JWT_SECRET` with a short expiry; every
 write is recorded in `app.audit_log`; geometry is validated in PostGIS before writes.
@@ -360,7 +383,10 @@ The build-out is phased. Each plan produces working, testable software on its ow
 - [x] **Phản hồi giám sát** (chỉ quản trị viên được ghi, cập nhật dữ liệu qua trợ lý, thao tác phân tích, in ấn, hệ quy chiếu).
 - [x] **Mô hình thực thể, giai đoạn 1–4**: ranh giới hành chính và đóng dấu mã tỉnh/xã lên mọi đối tượng; lớp tham chiếu, thực thể có tên và tìm kiếm; topology sông và phân cấp ba cấp; vùng phân tích (ROI) là đối tượng hạng nhất cùng thanh công cụ phân tích ([hướng dẫn](docs/runbooks/vung-phan-tich.md)). Giai đoạn 5 chưa làm.
 - [x] **Sổ đăng ký dữ liệu — kế hoạch 1, A và B** (`packages/atlas-data`: `atlas:build` / `atlas:status`, dựng lại theo chuỗi phụ thuộc, các stage `run` / `fetch-http` / `publish-geoserver`; ảnh Docker công cụ, `atlas:up` dựng và kiểm chứng mọi thứ từ bản clone mới, `atlas:verify`, `atlas:adopt`). Các [runbook](docs/runbooks/README.md) mô tả từng tập dữ liệu. Kế hoạch C (`packages/versioning`, `load-geojson`, bỏ các lệnh cũ) là bước kế tiếp.
-- [ ] **Tài liệu hoá lại kho** ([docs/superpowers/plans/2026-09-07-repo-redocumentation.md](docs/superpowers/plans/2026-09-07-repo-redocumentation.md)) — mốc kế tiếp.
+- [x] **Tải lên, chỉnh sửa và phân quyền — P1 đến P3c** ([đặc tả](docs/superpowers/specs/2026-10-19-map-upload-edit-rbac-design.md)): quyền theo cấp hành chính (nhóm truy cập = phạm vi + bộ quyền; mỗi đối tượng có đơn vị chủ quản); bản nháp bền; bản đồ cá nhân trong schema `workspace` (vẽ, bản sửa của lớp chính thức, chia sẻ, nhập/xuất GPKG, GeoJSON, SHP với WGS 84 hoặc VN-2000 qua worker); mục *Bản của tôi* trên bản đồ; bảng thuộc tính của lớp cá nhân với lọc và chọn hai chiều trên bản đồ ([đặc tả](docs/superpowers/specs/2026-10-24-personal-layer-table-design.md)).
+- [x] **Từ điển dữ liệu — kế hoạch A, B, C** ([đặc tả](docs/superpowers/specs/2026-10-24-data-dictionary-design.md)): tên, định nghĩa, đơn vị lưu và đơn vị hiển thị cho từng lớp, thuộc tính và giá trị; nhãn và đơn vị trong bảng, biểu mẫu, popup, chú giải, số đọc và trợ lý; nút ⓘ trên dòng lớp, trang *Dữ liệu* (`/du-lieu`, `/du-lieu/:lớp` với tệp mẫu CSV/GPKG và bản in); mục *Từ điển dữ liệu* trong Quản lý (`/quan-ly/tu-dien`, cho người có quyền `dictionary.manage` trên cả nước): sửa, khôi phục mặc định, lịch sử, danh sách giá trị mở, hiệu chỉnh đơn vị lưu có ngày hiệu lực. **Còn mở:** khi biểu mẫu tải lại sau một lần lưu khác, phần đang gõ được giữ nhưng không còn gắn với phiên bản đã gõ, nên lần *Lưu* sau có thể ghi đè chỉnh sửa vừa lưu của người khác mà không báo; cần sửa trước khi cán bộ dùng mục này.
+- [ ] **P4 — Nộp, duyệt và xuất bản** (bản đồ cá nhân → đã nộp → đã xuất bản hoặc trả lại) — mốc kế tiếp.
+- [ ] **Tài liệu hoá lại kho** ([docs/superpowers/plans/2026-09-07-repo-redocumentation.md](docs/superpowers/plans/2026-09-07-repo-redocumentation.md)).
 
 ## Documentation
 
