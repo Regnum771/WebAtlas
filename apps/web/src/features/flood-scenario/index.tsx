@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMapContext } from '../../app/providers/MapProvider';
-import { formatScenarioTime } from '@webatlas/shared';
+import { attributeOf, formatScenarioTime } from '@webatlas/shared';
+import { useDictionary } from '../dictionary';
 import { useImpactsSummary } from './model/useImpactsSummary';
 import { useFitOnScenario } from './model/useFitOnScenario';
 import { attachDepthHover } from './model/depthHover';
@@ -17,6 +18,7 @@ import './ui/flood.css';
 export default function FloodScenario() {
   const s = useFloodScenario();
   const { map } = useMapContext();
+  const depthAttr = attributeOf(useDictionary(), 'flood_depth', '1')!;
   const [stationId, setStationId] = useState('cau-lau');
   const impacts = useImpactsSummary(s.scenarioId, s.status === 'ready', s.hour);
 
@@ -47,9 +49,9 @@ export default function FloodScenario() {
     const ready = s.scenarioId !== null && s.status === 'ready' && s.detail !== null;
     hover.current?.update(ready ? {
       frameUrl: frameUrl(s.scenarioId!, s.hour), extent: s.detail!.frameExtent,
-      time: formatScenarioTime(s.detail!.startTime, s.hour),
+      time: formatScenarioTime(s.detail!.startTime, s.hour), depth: depthAttr,
     } : null);
-  }, [s.scenarioId, s.status, s.detail, s.hour]);
+  }, [s.scenarioId, s.status, s.detail, s.hour, depthAttr]);
 
   useEffect(() => () => { if (map) clearFloodLayers(map); }, [map]);
 

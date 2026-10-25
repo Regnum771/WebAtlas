@@ -1,5 +1,6 @@
 import type { Map, MapBrowserEvent } from 'ol';
 import Overlay from 'ol/Overlay';
+import type { DictAttribute } from '@webatlas/shared';
 import { depthAt, formatDepth, type FramePixels } from './depthColour';
 
 /** Pixels of each frame URL, decoded once through a canvas (frames are served with CORS). */
@@ -28,7 +29,7 @@ function framePixels(url: string): Promise<FramePixels | null> {
   return p;
 }
 
-export interface DepthHoverInput { frameUrl: string; extent: readonly number[]; time: string }
+export interface DepthHoverInput { frameUrl: string; extent: readonly number[]; time: string; depth: DictAttribute }
 
 /**
  * A small label by the cursor with the flood depth under it at the slider's hour, read from the
@@ -46,12 +47,12 @@ export function attachDepthHover(map: Map) {
   const onMove = (e: MapBrowserEvent) => {
     if (!input || e.dragging) { el.hidden = true; return; }
     const mine = ++seq;
-    const { frameUrl, extent, time } = input;
+    const { frameUrl, extent, time, depth } = input;
     void framePixels(frameUrl).then((frame) => {
       if (mine !== seq) return;
       const m = frame ? depthAt(frame, extent, e.coordinate) : null;
       if (m === null) { el.hidden = true; return; }
-      el.textContent = `Ngập ${formatDepth(m)} · ${time}`;
+      el.textContent = `Ngập ${formatDepth(m, depth)} · ${time}`;
       el.hidden = false;
       overlay.setPosition(e.coordinate);
     });

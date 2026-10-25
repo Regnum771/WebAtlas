@@ -1,5 +1,7 @@
 import React from 'react';
 import { useMapContext } from '../../../app/providers/MapProvider';
+import { attributeOf, formatValue } from '@webatlas/shared';
+import { useDictionary } from '../../dictionary';
 import { useCursorElevation } from '../model/useCursorElevation';
 
 /**
@@ -9,18 +11,19 @@ import { useCursorElevation } from '../model/useCursorElevation';
  * ngoài vùng có DEM (ví dụ ngoài biển), và máy chủ chưa nạp DEM. Một ô trống nằm đó mãi
  * trông như hỏng; không có ô thì đúng là "chỗ này không có số liệu độ cao".
  *
- * Làm tròn tới mét: DEM là lưới 30 m (FABDEM — mô hình BỀ MẶT ĐẤT TRẦN, đã loại tán cây
+ * Làm tròn theo độ chính xác của từ điển (mét): DEM là lưới 30 m (FABDEM — mô hình BỀ MẶT ĐẤT TRẦN, đã loại tán cây
  * và nhà cửa bằng học máy), nên phần thập phân chỉ tạo cảm giác chính xác giả.
  */
 const CursorElevation: React.FC = () => {
   const { map } = useMapContext();
   const { elevationM, pending } = useCursorElevation(map);
+  const dem = attributeOf(useDictionary(), 'dem', '1')!;
 
   if (elevationM === null && !pending) return null;
 
   return (
     <div className="map-cursor-elevation" aria-live="off">
-      Độ cao: {elevationM === null ? '…' : `${Math.round(elevationM)} m`}
+      Độ cao: {elevationM === null ? '…' : formatValue(dem, elevationM)}
     </div>
   );
 };

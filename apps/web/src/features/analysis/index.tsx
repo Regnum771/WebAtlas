@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { attributeOf } from '@webatlas/shared';
+import { useDictionary } from '../dictionary';
 import { useMapCommands } from '../map/model/useMapCommands';
 import { useRoi } from '../roi/model/roi.store';
 import { ROI_TOOLS, toolAvailability, type Availability, type RoiTool } from '../roi/model/toolAvailability';
@@ -16,6 +18,7 @@ export function useAnalysisTools(): { buttons: ReactNode; panel: ReactNode } {
   const run = useMapCommands();
   const roi = useRoi();
   const a = useAnalysis({ run });
+  const dem = attributeOf(useDictionary(), 'dem', '1')!;
   const availability = Object.fromEntries(
     ROI_TOOLS.map((tool) => [tool, toolAvailability(tool, roi.resolved)])
   ) as Record<RoiTool, Availability>;
@@ -31,6 +34,7 @@ export function useAnalysisTools(): { buttons: ReactNode; panel: ReactNode } {
   ) : a.result ? (
     <AnalysisResultCardView
       result={a.result}
+      elevation={dem}
       roiLabel={a.resultRoiLabel}
       onRow={(row) => {
         if (row.layerKey && row.featureId && row.lon !== undefined && row.lat !== undefined) {

@@ -1,3 +1,5 @@
+import { formatValue, type DictAttribute } from '@webatlas/shared';
+
 /**
  * Reads flood depth back from a frame pixel. Mirrors BANDS in
  * packages/atlas-data/tools/flood_scenario/depth.py: five blues, and within a band each 0.25 m step
@@ -51,6 +53,8 @@ export function depthAt(frame: FramePixels, extent: readonly number[], coord: re
   return depthOfRgba([frame.data[i], frame.data[i + 1], frame.data[i + 2], frame.data[i + 3]]);
 }
 
-export function formatDepth(m: number): string {
-  return m >= MAX_STEP * STEP_M ? '≥ 4 m' : `${m.toLocaleString('vi-VN')} m`;
+export function formatDepth(m: number, attribute: DictAttribute): string {
+  // The cap is a threshold in metres; its text is written in the display unit.
+  const cap = MAX_STEP * STEP_M;
+  return m >= cap ? `≥ ${formatValue(attribute, cap)}` : formatValue(attribute, m);
 }

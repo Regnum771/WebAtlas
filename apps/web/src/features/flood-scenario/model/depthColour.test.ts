@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { DICTIONARY, attributeOf } from '@webatlas/shared';
 import { DEPTH_BANDS, depthAt, depthOfRgba, formatDepth, pixelOf } from './depthColour';
 
 // Colours printed by packages/atlas-data/tools/flood_scenario/depth.py's depth_rgba: the two tables must agree.
@@ -38,9 +39,13 @@ describe('depthAt', () => {
 });
 
 describe('formatDepth and the legend bands', () => {
-  it('formats in Vietnamese, with the cap shown as at least 4 m', () => {
-    expect(formatDepth(1.75)).toBe('1,75 m');
-    expect(formatDepth(4)).toBe('≥ 4 m');
+  it('flood depth uses the band display unit and keeps the 4 m cap', () => {
+    const m = attributeOf(DICTIONARY, 'flood_depth', '1')!;
+    expect(formatDepth(1.75, m)).toBe('1,75 m');
+    expect(formatDepth(4, m)).toBe('≥ 4 m');
+    const cm = { ...m, displayUnit: 'cm' };
+    expect(formatDepth(1.75, cm)).toBe('175 cm');
+    expect(formatDepth(4, cm)).toBe('≥ 400 cm');
   });
 
   it('has five bands with labels for the legend', () => {

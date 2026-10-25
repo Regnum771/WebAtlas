@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 
 const setBusy = vi.fn();
+vi.mock('../../dictionary', async () => {
+  const shared = await import('@webatlas/shared');
+  return { useDictionary: () => shared.DICTIONARY };
+});
 vi.mock('../../../app/providers/MapProvider', () => ({
   useMapContext: () => ({
     setMap: vi.fn(),

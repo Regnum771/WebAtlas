@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import type { ResolvedRoi } from '@webatlas/shared';
 
+vi.mock('../dictionary', async () => {
+  const shared = await import('@webatlas/shared');
+  return { useDictionary: () => shared.DICTIONARY };
+});
 vi.mock('../map/model/useMapCommands', () => ({ useMapCommands: () => vi.fn() }));
 
 import { useAnalysisTools } from './index';

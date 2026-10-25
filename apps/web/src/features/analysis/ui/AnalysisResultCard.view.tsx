@@ -1,12 +1,16 @@
 import type { ReactNode } from 'react';
-import type { AnalysisResult, AnalysisRow } from '@webatlas/shared';
+import { formatValue, type AnalysisResult, type AnalysisRow, type DictAttribute } from '@webatlas/shared';
 import { Button } from '../../../shared/ui/Button';
 import { Message } from '../../../shared/ui/Message';
 import { ANALYSIS_TOOL_LABELS } from '../model/tools';
 import { ProfileChartView } from './ProfileChart.view';
 
+const ELEVATION_SUFFIX = ' (m)';
+
 export interface AnalysisResultCardViewProps {
   result: AnalysisResult;
+  /** The dem band: elevation figures in the summary and profile are shown in its display unit. */
+  elevation: DictAttribute;
   roiLabel?: string | null;
   onRow: (row: AnalysisRow) => void;
   onExport: () => void;
@@ -14,19 +18,26 @@ export interface AnalysisResultCardViewProps {
   renderRowAction?: (row: AnalysisRow) => ReactNode;
 }
 
-export function AnalysisResultCardView({ result, roiLabel, onRow, onExport, onClear, renderRowAction }: AnalysisResultCardViewProps) {
+export function AnalysisResultCardView({ result, elevation, roiLabel, onRow, onExport, onClear, renderRowAction }: AnalysisResultCardViewProps) {
   return (
     <section className="analysis-card" aria-label="Kết quả phân tích">
       <h3 className="analysis-card-title">{ANALYSIS_TOOL_LABELS[result.op]}</h3>
       {roiLabel && <p className="analysis-note">Kết quả cho: {roiLabel}</p>}
       <table className="analysis-summary">
         <tbody>
-          {Object.entries(result.summary).map(([k, v]) => (
-            <tr key={k}><th scope="row">{k}</th><td>{String(v)}</td></tr>
-          ))}
+          {Object.entries(result.summary).map(([k, v]) => {
+            // The API labels elevation figures "… (m)" and sends metres; show them in the display unit.
+            const isElevation = typeof v === 'number' && k.endsWith(ELEVATION_SUFFIX);
+            return (
+              <tr key={k}>
+                <th scope="row">{isElevation ? k.slice(0, -ELEVATION_SUFFIX.length) : k}</th>
+                <td>{isElevation ? formatValue(elevation, v) : String(v)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
-      {result.profile && <ProfileChartView profile={result.profile} />}
+      {result.profile && <ProfileChartView profile={result.profile} elevation={elevation} />}
       {result.rows && result.rows.length > 0 && (
         <ul className="analysis-rows">
           {result.rows.map((row, i) => (
