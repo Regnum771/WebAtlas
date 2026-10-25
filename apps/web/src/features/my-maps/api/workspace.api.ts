@@ -136,6 +136,8 @@ export interface TableCondition {
   field: string;
   op: string;
   value?: string | number;
+  /** Request only: eq/neq on a number column match within this distance (stored units). */
+  tolerance?: number;
 }
 export interface TableRow {
   id: string;

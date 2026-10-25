@@ -479,6 +479,24 @@ describe('useTablePresenter: the data dictionary', () => {
     expect(lastConditions()).toEqual([{ field: 'length_m', op: 'gt', value: 12500 }]);
   });
 
+  it('bằng on a number column matches the value the cell shows', async () => {
+    openTable('m1', 'l2');
+    const { result } = setup();
+    await flush(10);
+    act(() => result.current.addCondition());
+    // The cell shows 12,5 km (precision 1): half a display step is 0,05 km, sent as 50 m.
+    act(() => result.current.updateCondition(0, { field: 'length_m', op: 'eq', value: '12,5' }));
+    await flush(310);
+    expect(lastConditions()).toEqual([{ field: 'length_m', op: 'eq', value: 12500, tolerance: 50 }]);
+    act(() => result.current.updateCondition(0, { op: 'neq' }));
+    await flush(310);
+    expect(lastConditions()).toEqual([{ field: 'length_m', op: 'neq', value: 12500, tolerance: 50 }]);
+    // Other operators compare the exact value.
+    act(() => result.current.updateCondition(0, { op: 'gte' }));
+    await flush(310);
+    expect(lastConditions()).toEqual([{ field: 'length_m', op: 'gte', value: 12500 }]);
+  });
+
   it('an unreadable number condition shows the message and sends no query', async () => {
     openTable('m1', 'l2');
     const { result } = setup();
@@ -570,6 +588,10 @@ describe('useTablePresenter: the data dictionary', () => {
     expect(result.current.conditions[0].options).toBeUndefined();
     await flush(310);
     expect(lastConditions()).toEqual([{ field: 'length_m', op: 'gt', value: '12,5' }]);
+    // eq on a free layer's number stays exact: no tolerance is sent.
+    act(() => result.current.updateCondition(0, { op: 'eq' }));
+    await flush(310);
+    expect(lastConditions()).toEqual([{ field: 'length_m', op: 'eq', value: '12,5' }]);
   });
 });
 

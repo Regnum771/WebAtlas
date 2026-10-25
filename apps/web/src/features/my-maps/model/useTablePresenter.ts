@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  LAYER_GEOMETRY, formatValue, parseDisplay, valueName, type DictAttribute, type Dictionary, type OgcGeometryType,
+  LAYER_GEOMETRY, convert, formatValue, parseDisplay, valueName, type DictAttribute, type Dictionary, type OgcGeometryType,
 } from '@webatlas/shared';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { useSession } from '../../../entities/session/model/session.store';
@@ -113,18 +113,38 @@ function cellText(value: unknown, attribute: DictAttribute | undefined): string 
 const takesUnits = (a: DictAttribute | undefined): a is DictAttribute => a?.valueType === 'number' && !!a.storedUnit;
 
 /**
+ * Half of the cell's display step (10^-precision in the display unit), in stored units: how far
+ * from the typed value eq/neq still count as equal, so the value a cell shows can be found.
+ */
+function halfDisplayStep(attribute: DictAttribute): number {
+  const half = 10 ** -(attribute.precision ?? 2) / 2;
+  const to = attribute.storedUnit;
+  const from = attribute.displayUnit ?? to;
+  if (!from || !to) return half;
+  // A distance converts by scale only: convert two points and subtract, so offset units work.
+  return Number(Math.abs(convert(half, from, to) - convert(0, from, to)).toPrecision(15));
+}
+
+/**
  * A condition as the server takes it: a number typed in an edit copy's display unit becomes the
- * stored number; anything else goes as typed. An unreadable number gives the reader's message.
+ * stored number, and eq/neq on an edit copy's number compare within half a display step; anything
+ * else goes as typed. An unreadable number gives the reader's message.
  */
 function storedCondition(
   layer: LayerSummary | null, c: TableCondition, dictionary: Dictionary,
 ): { ok: true; condition: TableCondition } | { ok: false; message: string } {
   const attribute = layer ? columnAttribute(layer, c.field, dictionary) : undefined;
-  if (!takesUnits(attribute) || !needsValue(c.op) || c.value === undefined || String(c.value).trim() === '') {
+  if (attribute?.valueType !== 'number' || !needsValue(c.op) || c.value === undefined || String(c.value).trim() === '') {
     return { ok: true, condition: c };
   }
-  const read = parseDisplay(attribute, String(c.value));
-  return read.ok ? { ok: true, condition: { ...c, value: read.value } } : read;
+  let condition = c;
+  if (takesUnits(attribute)) {
+    const read = parseDisplay(attribute, String(c.value));
+    if (!read.ok) return read;
+    condition = { ...c, value: read.value };
+  }
+  if (c.op === 'eq' || c.op === 'neq') condition = { ...condition, tolerance: halfDisplayStep(attribute) };
+  return { ok: true, condition };
 }
 
 /**
