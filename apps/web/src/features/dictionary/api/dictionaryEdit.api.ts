@@ -35,7 +35,9 @@ export function fetchLayerEntry(layer: string): Promise<RevisedFeatureType> {
  */
 export function fetchHistory(layer: string, attribute: string | null, limit = 200): Promise<HistoryEntry[]> {
   const scope = attribute === null ? '' : `&attribute=${encodeURIComponent(attribute)}`;
-  return apiRequest<HistoryEntry[]>(`/api/dictionary/history?layer=${encodeURIComponent(layer)}${scope}&limit=${limit}`);
+  // The route answers `{ history: [...] }`.
+  return apiRequest<{ history: HistoryEntry[] }>(`/api/dictionary/history?layer=${encodeURIComponent(layer)}${scope}&limit=${limit}`)
+    .then((body) => body.history);
 }
 
 export function patchLayer(layer: string, body: Record<string, unknown>): Promise<RevisedFeatureType> {
