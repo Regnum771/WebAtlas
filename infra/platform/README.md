@@ -94,11 +94,17 @@ in front of all of GeoNode's). Both routes want `Authorization: Bearer $WEBATLAS
 
 - `POST /webatlas-bridge/datasets` `{name, title, abstract, owner: {sub, username, email}}` →
   `201 {pk, uuid, alternate}` (200 with the same ids when that owner registered it already; 404
-  when GeoServer has no coverage `geonode:<name>`; 409 when another owner has it). The owner is the
+  when GeoServer has no coverage `geonode:<name>`; 409 when another owner has it; 502 with a fixed
+  message when GeoNode fails half-way, details in GeoNode's log). The owner is the
   GeoNode user whose allauth `SocialAccount` has `provider = 'geonode_openid_connect'`
   (`settings.SOCIALACCOUNT_OIDC_PROVIDER`) and `uid` = the Keycloak `sub`; when missing, the bridge
   creates both (a free variant of `username`, unusable password), so the user's first Keycloak
   sign-in lands on that account.
+  **The bridge never deletes a dataset**: deleting one cascades into GeoServer (see below). When a
+  registration fails after the dataset row exists, the row stays, private (no permissions, GeoFence
+  denies by default), and sending the same request again finishes it (GeoServer sync if needed,
+  time dimension, permissions) and answers 200. "Finished" means the owner has their own
+  `view_resourcebase` permission, the last thing registration sets.
 - `GET /webatlas-bridge/resources?since=<ISO>&page=<n>` → `{resources: [...], next}`: every
   resource (published or not), 200 per page, ordered by `last_updated`.
 
@@ -118,8 +124,10 @@ Step 1 spike (2026-11-10, GeoNode 5.0.3, on a 3-step Task 4 mosaic):
   outside names, so every tile is retried. The dataset came out with `subtype = 'vector_time'` and
   `has_time = False` (and published: moderation was still off).
 - `resource_manager.create(uuid, resource_type=Dataset, defaults={name, workspace, store,
-  subtype: 'raster', alternate, title, abstract, owner, ...})` works and is what the bridge does:
-  about 60 s (GeoServer sync, CSW record, GWC style filters), no thumbnail. Then
+  subtype: 'raster', alternate, title, abstract, owner, ...})` works: about 60 s (GeoServer sync,
+  CSW record, GWC style filters), no thumbnail. But on any error it deletes the dataset, which
+  cascades into GeoServer, so the bridge runs the same steps itself (insert the row,
+  `sync_instance_with_geoserver`, `save`, `resourcebase_post_save`) without that clean-up. Then
   `set_default_permissions(owner, created=True)` applies the moderation workflow and the GeoFence
   rules (about 15 s).
 - **Time dimension.** GeoNode 5 keeps no time values for a raster: the dimension stays in
@@ -144,6 +152,10 @@ Step 1 spike (2026-11-10, GeoNode 5.0.3, on a 3-step Task 4 mosaic):
 
 Live check (needs `GEONODE_ADMIN_PASSWORD` in `infra/.env` for the clean-up through GeoNode's API):
 `docker compose ... --profile tools run --rm -T -e GEONODE_E2E=1 tools python3 packages/atlas-data/tools/timeseries/test_bridge_live.py`.
+Its forced-failure part (the permissions step fails, the GeoServer store and files must survive,
+a retry must finish the registration) needs the test hook in `django`, off by default: recreate it
+with `WEBATLAS_BRIDGE_TEST_HOOKS=1 docker compose ... up -d --no-deps django`, run the check, then
+recreate it again without the variable. With the hook off the check says it skipped that part.
 
 ## Known limits (first pass)
 

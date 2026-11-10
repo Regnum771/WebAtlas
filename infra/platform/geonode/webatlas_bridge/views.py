@@ -1,7 +1,8 @@
 """
 The two bridge routes. Registration follows the Step 1 spike (infra/platform/README.md, "Đăng ký dữ
-liệu từ mã"): `resource_manager.create` for the one coverage, not `gs_slurp`, which also builds a
-thumbnail from OpenStreetMap tiles (minutes offline) and leaves the dataset published.
+liệu từ mã"): the steps of `resource_manager.create` for the one coverage (not `gs_slurp`, which
+also builds a thumbnail from OpenStreetMap tiles, minutes offline), but without its delete-on-error:
+the bridge never deletes a dataset, since that cascades into GeoServer and the worker's files.
 """
 import contextlib
 import json
@@ -23,10 +24,13 @@ from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
+from guardian.shortcuts import get_user_perms
+
+from geonode.base import enumerations
 from geonode.base.models import ResourceBase
-from geonode.geoserver.helpers import gs_catalog, ogc_server_settings
+from geonode.geoserver.helpers import gs_catalog, ogc_server_settings, sync_instance_with_geoserver
 from geonode.layers.models import Dataset
-from geonode.resource.manager import resource_manager
+from geonode.resource.utils import resourcebase_post_save
 
 from webatlas_bridge.auth import require_bridge_token
 
@@ -39,6 +43,13 @@ _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$")
 # First key of the bridge's advisory locks ("WA").
 _LOCK_SPACE = 0x5741
 _TIME_DIMENSION = re.compile(r'<Dimension name="time"[^>]*>([^<]*)</Dimension>')
+# Honoured only when settings.WEBATLAS_BRIDGE_TEST_HOOKS (env WEBATLAS_BRIDGE_TEST_HOOKS=1, off by
+# default): `X-Webatlas-Bridge-Fail: permissions` makes the permissions step fail, for the live check.
+_FAIL_HEADER = "X-Webatlas-Bridge-Fail"
+
+
+def _test_hooks():
+    return bool(getattr(settings, "WEBATLAS_BRIDGE_TEST_HOOKS", False))
 
 
 def _error(status, detail):
@@ -64,26 +75,32 @@ def _parse_owner(owner):
 def _user_for(owner):
     """
     The GeoNode user signed in through Keycloak as `owner.sub`, created with its SocialAccount when
-    missing, so the user's later Keycloak sign-in lands on this same account.
+    missing, so the user's later Keycloak sign-in lands on this same account. None when no account
+    could be created (the username kept clashing with concurrent registrations of other subjects).
     """
     provider = _provider()
+    for _attempt in range(2):
+        found = SocialAccount.objects.select_related("user").filter(provider=provider, uid=owner["sub"]).first()
+        if found:
+            return found.user
+        try:
+            with transaction.atomic():
+                # Never take over an existing account by name: a free variant of the username.
+                username = get_adapter().generate_unique_username([owner["username"], owner["email"], "user"])
+                user = get_user_model().objects.create(username=username, email=owner["email"])
+                user.set_unusable_password()
+                user.save(update_fields=["password"])
+                SocialAccount.objects.create(
+                    user=user, provider=provider, uid=owner["sub"],
+                    extra_data={"sub": owner["sub"], "preferred_username": owner["username"],
+                                "email": owner["email"]})
+                return user
+        except IntegrityError:
+            # A concurrent registration of the same subject (found on the next pass), or of another
+            # subject that took the same username first (a fresh variant on the next pass).
+            logger.warning("webatlas bridge: account for %s clashed, retrying", owner["sub"], exc_info=True)
     found = SocialAccount.objects.select_related("user").filter(provider=provider, uid=owner["sub"]).first()
-    if found:
-        return found.user
-    try:
-        with transaction.atomic():
-            # Never take over an existing account by name: a free variant of the username.
-            username = get_adapter().generate_unique_username([owner["username"], owner["email"], "user"])
-            user = get_user_model().objects.create(username=username, email=owner["email"])
-            user.set_unusable_password()
-            user.save(update_fields=["password"])
-            SocialAccount.objects.create(
-                user=user, provider=provider, uid=owner["sub"],
-                extra_data={"sub": owner["sub"], "preferred_username": owner["username"], "email": owner["email"]})
-            return user
-    except IntegrityError:
-        # A concurrent registration for the same subject created it first.
-        return SocialAccount.objects.select_related("user").get(provider=provider, uid=owner["sub"]).user
+    return found.user if found else None
 
 
 def _coverage(name):
@@ -167,41 +184,86 @@ def register_dataset(request):
     if res is None:
         return _error(404, f"Không có lớp ảnh {alternate} trên GeoServer.")
     user = _user_for(owner)
+    if user is None:
+        return _error(409, "Không tạo được tài khoản GeoNode cho chủ sở hữu, hãy thử lại.")
+    fail_permissions = _test_hooks() and request.headers.get(_FAIL_HEADER) == "permissions"
     with _name_lock(alternate):
-        return _register(name, alternate, title.strip(), abstract, user, res)
+        return _register(name, alternate, title.strip(), abstract, user, res, fail_permissions)
 
 
-def _register(name, alternate, title, abstract, user, res):
+def _register(name, alternate, title, abstract, user, res, fail_permissions):
     existing = Dataset.objects.filter(alternate=alternate).first()
     if existing is not None:
-        if existing.owner_id == user.pk:
+        if existing.owner_id != user.pk:
+            return _error(409, f"{alternate} đã được đăng ký cho người dùng khác.")
+        if _permissions_applied(existing, user):
             return JsonResponse(_ids(existing), status=200)
-        return _error(409, f"{alternate} đã được đăng ký cho người dùng khác.")
+        # An earlier registration stopped half-way. The dataset stayed private (no permissions,
+        # GeoFence denies by default): finish it now.
+        return _finish(existing, user, res, name, fail_permissions, created=False)
+    try:
+        dataset = Dataset.objects.create(
+            uuid=str(uuidlib.uuid4()), name=name, workspace=WORKSPACE, store=name, subtype="raster",
+            alternate=alternate, title=title, abstract=abstract, owner=user, is_published=False,
+            is_approved=False)
+    except Exception:  # noqa: BLE001 - logged; a fixed message to the caller
+        logger.exception("webatlas bridge: creating the dataset row for %s failed", alternate)
+        return _error(502, f"GeoNode không đăng ký được {alternate}, hãy thử lại.")
+    return _finish(dataset, user, res, name, fail_permissions, created=True)
 
+
+def _permissions_applied(dataset, user):
+    """The owner's own view permission, the last thing registration sets (there is none before)."""
+    return "view_resourcebase" in get_user_perms(user, ResourceBase.objects.get(pk=dataset.pk))
+
+
+def _sync(dataset):
+    """
+    What resource_manager.create does after inserting the row, without its clean-up: on any error
+    it deletes the dataset, and deleting a dataset cascades into GeoServer (layer, store, the shared
+    default style; purge=all on a single GeoTIFF store deletes the file), i.e. the worker's output.
+    """
+    dataset.set_processing_state(enumerations.STATE_RUNNING)
+    with transaction.atomic():
+        dataset.set_missing_info()
+        dataset = sync_instance_with_geoserver(dataset.id) or dataset
+    dataset.save()
+    resourcebase_post_save(dataset.get_real_instance())
+    dataset.set_processing_state(enumerations.STATE_PROCESSED)
+    return dataset
+
+
+def _finish(dataset, user, res, name, fail_permissions, created):
+    """
+    Sync with GeoServer unless done already, record the time dimension, apply the moderation
+    permissions. Never deletes anything: on failure the dataset stays, private, and a retry of the
+    same registration resumes here. 201 for a new dataset, 200 when resuming one.
+    """
+    alternate = dataset.alternate
     try:
+        if dataset.state != enumerations.STATE_PROCESSED:
+            dataset = _sync(dataset)
         has_time, first, last = _time_extent(res, name)
-        dataset = resource_manager.create(
-            str(uuidlib.uuid4()), resource_type=Dataset,
-            defaults=dict(name=name, workspace=WORKSPACE, store=name, subtype="raster", alternate=alternate,
-                          title=title, abstract=abstract, owner=user,
-                          is_published=False, is_approved=False))
-    except Exception as e:  # noqa: BLE001 - reported to the caller
-        logger.exception("webatlas bridge: registering %s failed", alternate)
-        return _error(502, f"GeoNode không đăng ký được {alternate}: {e}")
-    try:
         # GeoNode's GeoServer sync labels every time-enabled resource `vector_time`, coverages included.
         Dataset.objects.filter(pk=dataset.pk).update(has_time=has_time)
         ResourceBase.objects.filter(pk=dataset.pk).update(
             subtype="raster", temporal_extent_start=first, temporal_extent_end=last)
         dataset.refresh_from_db()
+        if fail_permissions:
+            raise RuntimeError("test hook: the permissions step was asked to fail")
         # Moderation (RESOURCE_PUBLISHING + ADMIN_MODERATE_UPLOADS): unpublished, unapproved, owner
         # and group managers only, anonymous removed; GeoFence rules follow.
         dataset.set_default_permissions(owner=user, created=True)
-    except Exception as e:  # noqa: BLE001 - reported to the caller
-        logger.exception("webatlas bridge: permissions for %s failed", alternate)
-        resource_manager.delete(dataset.uuid, instance=dataset)
-        return _error(502, f"GeoNode không đặt được quyền cho {alternate}: {e}")
-    return JsonResponse(_ids(dataset), status=201)
+    except Exception:  # noqa: BLE001 - logged; a fixed message to the caller
+        logger.exception("webatlas bridge: finishing the registration of %s failed", alternate)
+        try:
+            if dataset.state != enumerations.STATE_PROCESSED:
+                dataset.set_processing_state(enumerations.STATE_INVALID)
+        except Exception:  # noqa: BLE001 - best effort only
+            logger.exception("webatlas bridge: could not mark %s as failed", alternate)
+        return _error(
+            502, f"GeoNode chưa đăng ký xong {alternate}; dữ liệu vẫn giữ nguyên, hãy gửi lại yêu cầu.")
+    return JsonResponse(_ids(dataset), status=201 if created else 200)
 
 
 @require_http_methods(["GET"])

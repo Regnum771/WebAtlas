@@ -72,6 +72,8 @@ x-geonode-env: &geonode-env
   WEBATLAS_WEB_URL: http://localhost:5173
   # Bearer token of the bridge routes (platform/geonode/webatlas_bridge), shared with the worker.
   WEBATLAS_BRIDGE_TOKEN: ${WEBATLAS_BRIDGE_TOKEN}
+  # 1 only to run the bridge's forced-failure live check (infra/platform/README.md); off by default.
+  WEBATLAS_BRIDGE_TEST_HOOKS: ${WEBATLAS_BRIDGE_TEST_HOOKS:-0}
   MONITORING_ENABLED: "False"
   C_FORCE_ROOT: "1"
   FORCE_REINIT: "false"

@@ -42,6 +42,8 @@ ACCOUNT_LOGOUT_REDIRECT_URL = os.environ.get("WEBATLAS_WEB_URL", "/")
 INSTALLED_APPS += ("webatlas_bridge",)  # noqa: F405
 ROOT_URLCONF = "webatlas_bridge.urls"
 WEBATLAS_BRIDGE_TOKEN = os.environ["WEBATLAS_BRIDGE_TOKEN"]
+# Live-check hook only (X-Webatlas-Bridge-Fail header); never set it outside a test run.
+WEBATLAS_BRIDGE_TEST_HOOKS = os.environ.get("WEBATLAS_BRIDGE_TEST_HOOKS", "0") == "1"
 
 # Moderation (GeoNode's advanced workflow): a new resource stays unpublished and unapproved, seen by
 # its owner and group managers only, until a manager or admin approves and publishes it.

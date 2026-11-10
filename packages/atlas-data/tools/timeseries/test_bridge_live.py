@@ -108,13 +108,56 @@ try:
         check("a coverage GeoServer does not have -> 404", missing == 404)
 
         before = datetime.now(timezone.utc)
-        registered = geonode_bridge.register_dataset(name, "Độ sâu ngập thử nghiệm", "Kiểm tra cầu nối", owner)
+        title, abstract = "Độ sâu ngập thử nghiệm", "Kiểm tra cầu nối"
+        # Ask the bridge to fail its permissions step. Honoured only when django runs with
+        # WEBATLAS_BRIDGE_TEST_HOOKS=1; otherwise the header is ignored and this is a plain 201.
+        r = requests.post(url, json={"name": name, "title": title, "abstract": abstract, "owner": owner},
+                          headers={**geonode_bridge._headers(), "X-Webatlas-Bridge-Fail": "permissions"},
+                          timeout=600)
+        if r.status_code == 201:
+            registered = r.json()
+            print("     test hooks off in django: forced-failure checks skipped "
+                  "(WEBATLAS_BRIDGE_TEST_HOOKS=1 in infra/.env, recreate django, run again)")
+        else:
+            check("forced permissions failure -> 502", r.status_code == 502)
+            detail = json_of(r).get("detail", "")
+            check("502 detail is the fixed Vietnamese text, no exception text",
+                  "hãy gửi lại" in detail and "test hook" not in detail and "Error" not in detail)
+            status, admin = gn_datasets(GN_ADMIN)
+            check("after the failure the dataset stays in GeoNode (not deleted)", status == 200 and len(admin) == 1)
+            # GeoNode's API gives pk as a string.
+            registered = {"pk": int(admin[0]["pk"])} if admin else {}  # for the clean-up below
+            r = requests.get(f"{GS}/rest/workspaces/geonode/coveragestores/{name}/coverages/{name}.json",
+                             auth=(os.environ["GEOSERVER_ADMIN_USER"], os.environ["GEOSERVER_ADMIN_PASSWORD"]),
+                             timeout=TIMEOUT)
+            check("after the failure the GeoServer store and coverage still exist", r.status_code == 200)
+            check("after the failure the step files still exist",
+                  all(os.path.isfile(os.path.join(folder, f)) for f in step_files))
+            status, anon = gn_datasets()
+            check("after the failure the dataset is private (anonymous API: 0)", status == 200 and anon == [])
+            retried = geonode_bridge.register_dataset(name, title, abstract, owner)
+            check("a retry finishes it: 200 with the same pk", retried.get("pk") == registered.get("pk"))
+            registered = retried
         print(f"     registered in {(datetime.now(timezone.utc) - before).total_seconds():.0f} s: {registered}")
         check("register_dataset returns alternate geonode:<name>", registered.get("alternate") == alternate)
         check("register_dataset returns pk and uuid",
               isinstance(registered.get("pk"), int) and len(str(registered.get("uuid", ""))) == 36)
         check("registering again for the same owner returns the same dataset",
-              geonode_bridge.register_dataset(name, "Độ sâu ngập thử nghiệm", "Kiểm tra cầu nối", owner) == registered)
+              geonode_bridge.register_dataset(name, title, abstract, owner) == registered)
+
+        r = requests.get(f"{GN}/api/v2/resources/{registered.get('pk')}/permissions", auth=GN_ADMIN, timeout=TIMEOUT)
+        spec = json_of(r)
+        print(f"     permissions: {spec}")
+        users = {u.get("username"): u.get("permissions") for u in spec.get("users", [])}
+        # GeoNode always lists superusers (here `admin`) with "manage"; they bypass permissions anyway.
+        superusers = {u.get("username") for u in spec.get("users", []) if u.get("is_superuser")}
+        groups = {g.get("name"): g.get("permissions") for g in spec.get("groups", [])}
+        check("permissions: the owner has them (permissions applied)",
+              users.get(owner["username"]) not in (None, "none"))
+        check("permissions: no other user has any (superusers aside)",
+              all(p in (None, "none") for u, p in users.items() if u != owner["username"] and u not in superusers))
+        check("permissions: no anonymous or registered-members access",
+              all(groups.get(g) in (None, "none") for g in ("anonymous", "registered-members")))
         try:
             geonode_bridge.register_dataset(name, "x", "", {**owner, "sub": str(uuid.uuid4()),
                                                             "username": owner["username"] + "-b"})
