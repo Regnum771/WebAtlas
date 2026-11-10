@@ -65,6 +65,17 @@ describe('syncCatalogueLayers', () => {
     expect(d.getSource()?.getParams().TIME).toBe('2025-10-25T01:00:00Z');
   });
 
+  it('never draws a time-series layer without a slider time, while other layers still draw', () => {
+    const map = new Map({});
+    syncCatalogueLayers(map, [layer('v', 'vector'), layer('t', 'timeseries')], null);
+    const [v, t] = catLayers(map);
+    expect(v.getVisible()).toBe(true);
+    expect(t.getVisible()).toBe(false);
+    expect(t.getSource()?.getParams().TIME).toBeUndefined();
+    syncCatalogueLayers(map, [layer('v', 'vector'), layer('t', 'timeseries')], '2026-01-01T00:00:00Z');
+    expect(catLayers(map)[1].getVisible()).toBe(true);
+  });
+
   it('hides a layer before its first step, not showing its first frame', () => {
     const map = new Map({});
     const depth = layer('depth', 'timeseries');

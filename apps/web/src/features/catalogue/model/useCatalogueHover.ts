@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { useTimeSlider } from '../../time-slider/model/timeSlider.store';
 import type Map from 'ol/Map';
 import type { MapBrowserEvent } from 'ol';
 import Overlay from 'ol/Overlay';
@@ -6,7 +7,7 @@ import type ImageLayer from 'ol/layer/Image';
 import type ImageWMS from 'ol/source/ImageWMS';
 import { fetchCatalogueJson } from '../api/catalogue.api';
 import { formatStepLocal } from '../../time-slider/model/timeSteps';
-import { getCatalogue } from './catalogue.store';
+import { getCatalogue, useCatalogueStore } from './catalogue.store';
 import { CATALOGUE_LAYER_PROP } from './catalogueLayers';
 
 const REST_MS = 300;
@@ -55,7 +56,7 @@ function topSeriesLayer(map: Map): { layer: ImageLayer<ImageWMS>; unit: string |
  * after the pointer rests 300 ms (GetFeatureInfo as JSON, through the authorised proxy).
  * Returns a function that removes the hover.
  */
-export function attachCatalogueHover(map: Map): () => void {
+export function attachCatalogueHover(map: Map): { hide: () => void; remove: () => void } {
   const el = document.createElement('div');
   el.className = 'catalogue-hover-tip';
   el.hidden = true;
@@ -105,18 +106,27 @@ export function attachCatalogueHover(map: Map): () => void {
   const viewport = map.getViewport();
   viewport.addEventListener('mouseleave', cancel);
 
-  return () => {
+  const remove = () => {
     cancel();
     map.un('pointermove', onMove);
     viewport.removeEventListener('mouseleave', cancel);
     map.removeOverlay(overlay);
   };
+  return { hide: cancel, remove };
 }
 
-/** Hover values for the catalogue's time-series layers while the pointer rests on the map. */
+/**
+ * Hover values for the catalogue's time-series layers while the pointer rests on the map. The
+ * label goes away when the slider time or the catalogue layers change (a layer toggled off or removed).
+ */
 export function useCatalogueHover(map: Map | null): void {
+  const layers = useCatalogueStore();
+  const { time } = useTimeSlider();
+  const handle = useRef<ReturnType<typeof attachCatalogueHover> | null>(null);
   useEffect(() => {
     if (!map) return;
-    return attachCatalogueHover(map);
+    handle.current = attachCatalogueHover(map);
+    return () => { handle.current?.remove(); handle.current = null; };
   }, [map]);
+  useEffect(() => { handle.current?.hide(); }, [layers, time]);
 }

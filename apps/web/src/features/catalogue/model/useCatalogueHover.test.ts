@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
+import { resetTimeSlider, setSteps, setTime } from '../../time-slider/model/timeSlider.store';
 import Map from 'ol/Map';
 import View from 'ol/View';
-import { addCatalogueLayer, getCatalogue, resetCatalogue } from './catalogue.store';
+import { addCatalogueLayer, getCatalogue, resetCatalogue, setCatalogueLayer } from './catalogue.store';
 import { syncCatalogueLayers } from './catalogueLayers';
 import { formatHoverValue, hoverText, useCatalogueHover } from './useCatalogueHover';
 import type { CatalogueItem } from '../api/catalogue.api';
@@ -62,6 +63,26 @@ describe('useCatalogueHover', () => {
     await vi.advanceTimersByTimeAsync(0);
     const tip = map.getOverlays().getArray()[0].getElement() as HTMLElement;
     expect(tip.textContent).toMatch(/^0,30 m · 26\/10\/2025/);
+  });
+
+  it('hides the tooltip when the slider time changes or the layer is toggled off', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ features: [{ properties: { GRAY_INDEX: 0.3 } }] }) });
+    addCatalogueLayer(item);
+    const map = new Map({ view: new View({ center: [0, 0], zoom: 5 }) });
+    syncCatalogueLayers(map, getCatalogue(), '2025-10-26T05:00:00Z');
+    renderHook(() => useCatalogueHover(map));
+    const tip = () => map.getOverlays().getArray()[0].getElement() as HTMLElement;
+    const show = async () => { move(map); await vi.advanceTimersByTimeAsync(300); await vi.advanceTimersByTimeAsync(0); };
+    await show();
+    expect(tip().hidden).toBe(false);
+    act(() => setSteps(['2025-10-26T00:00:00Z', '2025-10-26T01:00:00Z']));
+    act(() => setTime('2025-10-26T01:00:00Z'));
+    expect(tip().hidden).toBe(true);
+    await show();
+    expect(tip().hidden).toBe(false);
+    act(() => setCatalogueLayer('t', { visible: false }));
+    expect(tip().hidden).toBe(true);
+    act(() => resetTimeSlider());
   });
 
   it('moving again before 300 ms restarts the wait; nodata shows nothing', async () => {

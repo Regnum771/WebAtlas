@@ -80,8 +80,9 @@ export function syncCatalogueLayers(map: Map, layers: CatalogueLayer[], time: st
       map.addLayer(layer);
     }
     // A time-series layer shows its latest step at or before the slider time, and nothing before its first step.
-    const isSeries = item.kind === 'timeseries' && time !== null;
-    const timeParam = isSeries ? (stepAtOrBefore(item.timeSteps ?? [], time) ?? undefined) : undefined;
+    // Without a slider time a series layer is never drawn (it would load GeoServer's default time).
+    const isSeries = item.kind === 'timeseries';
+    const timeParam = isSeries && time !== null ? (stepAtOrBefore(item.timeSteps ?? [], time) ?? undefined) : undefined;
     const beforeFirst = isSeries && timeParam === undefined;
     const source = layer.getSource() as ImageWMS;
     if (source.getParams().TIME !== timeParam) source.updateParams({ TIME: timeParam });

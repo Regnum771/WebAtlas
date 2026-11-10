@@ -19,9 +19,9 @@
   font-size: var(--text-sm);
 }
 
-/* Same height allowance the toasts use for the dock. */
+/* --flood-dock-height is the dock's measured height, set on the stage (time-slider/model/floodDockHeight.ts). */
 .map-stage-map:has(.flood-dock) .time-slider {
-  bottom: calc(var(--toast-band-bottom) + 232px);
+  bottom: calc(var(--toast-band-bottom) + var(--flood-dock-height, 232px) + 8px);
 }
 
 .map-stage:has(.time-slider) .toast-host {
@@ -29,7 +29,7 @@
 }
 
 .map-stage:has(.time-slider):has(.flood-dock) .toast-host {
-  bottom: calc(var(--toast-band-bottom) + 232px + 56px);
+  bottom: calc(var(--toast-band-bottom) + var(--flood-dock-height, 232px) + 8px + 56px);
 }
 
 .time-slider-play {
