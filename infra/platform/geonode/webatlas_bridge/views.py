@@ -27,7 +27,7 @@ from django.views.decorators.http import require_http_methods
 from guardian.shortcuts import get_user_perms
 
 from geonode.base import enumerations
-from geonode.base.models import ResourceBase
+from geonode.base.models import ExtraMetadata, ResourceBase
 from geonode.geoserver.helpers import gs_catalog, ogc_server_settings, sync_instance_with_geoserver
 from geonode.layers.models import Dataset
 from geonode.resource.utils import resourcebase_post_save
@@ -44,8 +44,12 @@ _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$")
 _LOCK_SPACE = 0x5741
 _TIME_DIMENSION = re.compile(r'<Dimension name="time"[^>]*>([^<]*)</Dimension>')
 # Honoured only when settings.WEBATLAS_BRIDGE_TEST_HOOKS (env WEBATLAS_BRIDGE_TEST_HOOKS=1, off by
-# default): `X-Webatlas-Bridge-Fail: permissions` makes the permissions step fail, for the live check.
+# default): `X-Webatlas-Bridge-Fail: permissions` takes GeoNode's set_permissions failure branch
+# (state INVALID, no permissions, False returned) instead of calling it, for the live check.
 _FAIL_HEADER = "X-Webatlas-Bridge-Fail"
+# ExtraMetadata row on a dataset whose registration has not completed yet.
+_PENDING_VALUE = "registration-pending"
+_PENDING = {"webatlas_bridge": _PENDING_VALUE}
 
 
 def _test_hooks():
@@ -196,25 +200,48 @@ def _register(name, alternate, title, abstract, user, res, fail_permissions):
     if existing is not None:
         if existing.owner_id != user.pk:
             return _error(409, f"{alternate} đã được đăng ký cho người dùng khác.")
-        if _permissions_applied(existing, user):
+        if not _pending(existing):
+            # Registered completely: never touch it again (a reviewer may have published it, and
+            # the default permissions would unpublish it).
             return JsonResponse(_ids(existing), status=200)
-        # An earlier registration stopped half-way. The dataset stayed private (no permissions,
-        # GeoFence denies by default): finish it now.
+        # An earlier registration stopped half-way. The dataset stayed private (unpublished, no
+        # moderation permissions, GeoFence denies by default): finish it now.
         return _finish(existing, user, res, name, fail_permissions, created=False)
     try:
-        dataset = Dataset.objects.create(
-            uuid=str(uuidlib.uuid4()), name=name, workspace=WORKSPACE, store=name, subtype="raster",
-            alternate=alternate, title=title, abstract=abstract, owner=user, is_published=False,
-            is_approved=False)
+        with transaction.atomic():
+            dataset = Dataset.objects.create(
+                uuid=str(uuidlib.uuid4()), name=name, workspace=WORKSPACE, store=name, subtype="raster",
+                alternate=alternate, title=title, abstract=abstract, owner=user, is_published=False,
+                is_approved=False)
+            # Not added to dataset.metadata, so GeoNode's metadata pages do not show it.
+            ExtraMetadata.objects.create(resource=dataset, metadata=_PENDING)
     except Exception:  # noqa: BLE001 - logged; a fixed message to the caller
         logger.exception("webatlas bridge: creating the dataset row for %s failed", alternate)
         return _error(502, f"GeoNode không đăng ký được {alternate}, hãy thử lại.")
     return _finish(dataset, user, res, name, fail_permissions, created=True)
 
 
+def _pending(dataset):
+    """
+    The bridge's own marker, written with the row and removed once registration is complete. Not a
+    permission: GeoNode's resourcebase_post_save already gives the owner view and change rights.
+    A lost marker errs on the safe side: the dataset counts as registered and stays as it is.
+    """
+    return ExtraMetadata.objects.filter(resource_id=dataset.pk, metadata__webatlas_bridge=_PENDING_VALUE).exists()
+
+
 def _permissions_applied(dataset, user):
-    """The owner's own view permission, the last thing registration sets (there is none before)."""
-    return "view_resourcebase" in get_user_perms(user, ResourceBase.objects.get(pk=dataset.pk))
+    """What a successful set_permissions leaves: state PROCESSED and the owner's view permission."""
+    resource = ResourceBase.objects.get(pk=dataset.pk)
+    return resource.state == enumerations.STATE_PROCESSED and "view_resourcebase" in get_user_perms(user, resource)
+
+
+def _mark_invalid(dataset):
+    """Best effort: state INVALID, so a retry runs the whole GeoServer sync again."""
+    try:
+        dataset.set_processing_state(enumerations.STATE_INVALID)
+    except Exception:  # noqa: BLE001 - best effort only
+        logger.exception("webatlas bridge: could not mark %s as invalid", dataset.alternate)
 
 
 def _sync(dataset):
@@ -222,15 +249,37 @@ def _sync(dataset):
     What resource_manager.create does after inserting the row, without its clean-up: on any error
     it deletes the dataset, and deleting a dataset cascades into GeoServer (layer, store, the shared
     default style; purge=all on a single GeoTIFF store deletes the file), i.e. the worker's output.
+    State PROCESSED at the end means all of it ran: sync_instance_with_geoserver sets PROCESSED on
+    its own half-way, so any error here marks the dataset INVALID before it propagates.
     """
-    dataset.set_processing_state(enumerations.STATE_RUNNING)
-    with transaction.atomic():
-        dataset.set_missing_info()
-        dataset = sync_instance_with_geoserver(dataset.id) or dataset
-    dataset.save()
-    resourcebase_post_save(dataset.get_real_instance())
-    dataset.set_processing_state(enumerations.STATE_PROCESSED)
+    try:
+        dataset.set_processing_state(enumerations.STATE_RUNNING)
+        with transaction.atomic():
+            dataset.set_missing_info()
+            dataset = sync_instance_with_geoserver(dataset.id) or dataset
+        dataset.save()
+        resourcebase_post_save(dataset.get_real_instance())
+        dataset.set_processing_state(enumerations.STATE_PROCESSED)
+    except Exception:
+        _mark_invalid(dataset)
+        raise
     return dataset
+
+
+def _apply_permissions(dataset, user, fail_permissions):
+    """
+    Moderation (RESOURCE_PUBLISHING + ADMIN_MODERATE_UPLOADS): unpublished, unapproved, owner and
+    group managers only, anonymous removed; GeoFence rules follow. GeoNode's set_permissions never
+    raises: on error it rolls back, sets the state INVALID and returns False. True only when it
+    succeeded and the owner really holds the marker permission.
+    """
+    if fail_permissions:
+        # Test hook: GeoNode's failure branch, as set_permissions takes it.
+        dataset.set_processing_state(enumerations.STATE_INVALID)
+        ok = False
+    else:
+        ok = dataset.set_default_permissions(owner=user, created=True)
+    return bool(ok) and _permissions_applied(dataset, user)
 
 
 def _finish(dataset, user, res, name, fail_permissions, created):
@@ -249,18 +298,11 @@ def _finish(dataset, user, res, name, fail_permissions, created):
         ResourceBase.objects.filter(pk=dataset.pk).update(
             subtype="raster", temporal_extent_start=first, temporal_extent_end=last)
         dataset.refresh_from_db()
-        if fail_permissions:
-            raise RuntimeError("test hook: the permissions step was asked to fail")
-        # Moderation (RESOURCE_PUBLISHING + ADMIN_MODERATE_UPLOADS): unpublished, unapproved, owner
-        # and group managers only, anonymous removed; GeoFence rules follow.
-        dataset.set_default_permissions(owner=user, created=True)
+        if not _apply_permissions(dataset, user, fail_permissions):
+            raise RuntimeError("GeoNode did not apply the permissions (see its log above)")
+        ExtraMetadata.objects.filter(resource_id=dataset.pk, metadata__webatlas_bridge=_PENDING_VALUE).delete()
     except Exception:  # noqa: BLE001 - logged; a fixed message to the caller
         logger.exception("webatlas bridge: finishing the registration of %s failed", alternate)
-        try:
-            if dataset.state != enumerations.STATE_PROCESSED:
-                dataset.set_processing_state(enumerations.STATE_INVALID)
-        except Exception:  # noqa: BLE001 - best effort only
-            logger.exception("webatlas bridge: could not mark %s as failed", alternate)
         return _error(
             502, f"GeoNode chưa đăng ký xong {alternate}; dữ liệu vẫn giữ nguyên, hãy gửi lại yêu cầu.")
     return JsonResponse(_ids(dataset), status=201 if created else 200)
@@ -304,6 +346,8 @@ def list_resources(request):
         "ownerSub": subs.get(r.owner_id),
         "isPublished": r.is_published,
         "isApproved": r.is_approved,
+        # GeoNode's processing state (PROCESSED, RUNNING, INVALID, ...): only PROCESSED is complete.
+        "state": r.state,
         "bbox4326": list(r.ll_bbox_polygon.extent) if r.ll_bbox_polygon else None,
         "lastUpdated": r.last_updated.isoformat() if r.last_updated else None,
     } for r in rows]

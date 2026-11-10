@@ -103,10 +103,18 @@ in front of all of GeoNode's). Both routes want `Authorization: Bearer $WEBATLAS
   **The bridge never deletes a dataset**: deleting one cascades into GeoServer (see below). When a
   registration fails after the dataset row exists, the row stays, private (no permissions, GeoFence
   denies by default), and sending the same request again finishes it (GeoServer sync if needed,
-  time dimension, permissions) and answers 200. "Finished" means the owner has their own
-  `view_resourcebase` permission, the last thing registration sets.
+  time dimension, permissions) and answers 200. The bridge knows an unfinished registration by its
+  own marker, an `ExtraMetadata` row `{"webatlas_bridge": "registration-pending"}` on the dataset
+  (not linked into the dataset's metadata list, so GeoNode's pages do not show it), written with the
+  row and deleted on success. Not by permissions: GeoNode's `resourcebase_post_save` already gives
+  the owner view and change rights before the moderation permissions are set. A completed
+  registration is never touched again (re-applying the default permissions would unpublish a
+  dataset a reviewer published); a lost marker errs the same, safe way.
 - `GET /webatlas-bridge/resources?since=<ISO>&page=<n>` → `{resources: [...], next}`: every
-  resource (published or not), 200 per page, ordered by `last_updated`.
+  resource (published or not), 200 per page, ordered by `last_updated`. Each item:
+  `{pk, uuid, alternate, resourceType, subtype, title, abstract, ownerSub, isPublished, isApproved,
+  state, bbox4326, lastUpdated}`; `state` is GeoNode's processing state (`PROCESSED`, `RUNNING`,
+  `INVALID`, ...), and only `PROCESSED` is a complete resource (the catalogue sync skips the rest).
 
 From the worker or `tools`: `from timeseries import geonode_bridge`;
 `geonode_bridge.register_dataset(name, title, abstract, owner)`,
@@ -129,7 +137,12 @@ Step 1 spike (2026-11-10, GeoNode 5.0.3, on a 3-step Task 4 mosaic):
   cascades into GeoServer, so the bridge runs the same steps itself (insert the row,
   `sync_instance_with_geoserver`, `save`, `resourcebase_post_save`) without that clean-up. Then
   `set_default_permissions(owner, created=True)` applies the moderation workflow and the GeoFence
-  rules (about 15 s).
+  rules (about 15 s). It never raises: on error GeoNode rolls back, sets the state `INVALID` and
+  returns False, so the bridge checks the return value, the state `PROCESSED` and the owner's view
+  permission afterwards. GeoNode's own API hides an `INVALID` (dirty) resource even from admins;
+  the bridge listing shows it. Its own
+  sync steps mark the dataset `INVALID` on any error (GeoNode's sync sets `PROCESSED` half-way), so
+  a retry runs the whole sync again whenever the state is not `PROCESSED`.
 - **Time dimension.** GeoNode 5 keeps no time values for a raster: the dimension stays in
   GeoServer (the coverage's `time` metadata set by `publish_mosaic`). The dataset only has the flag
   `has_time`, plus the metadata fields `temporal_extent_start/_end`. The bridge sets `has_time` from
@@ -152,7 +165,8 @@ Step 1 spike (2026-11-10, GeoNode 5.0.3, on a 3-step Task 4 mosaic):
 
 Live check (needs `GEONODE_ADMIN_PASSWORD` in `infra/.env` for the clean-up through GeoNode's API):
 `docker compose ... --profile tools run --rm -T -e GEONODE_E2E=1 tools python3 packages/atlas-data/tools/timeseries/test_bridge_live.py`.
-Its forced-failure part (the permissions step fails, the GeoServer store and files must survive,
+Its forced-failure part (the permissions step takes GeoNode's failure branch: state `INVALID`, no
+permissions, False returned; the GeoServer store and files must survive,
 a retry must finish the registration) needs the test hook in `django`, off by default: recreate it
 with `WEBATLAS_BRIDGE_TEST_HOOKS=1 docker compose ... up -d --no-deps django`, run the check, then
 recreate it again without the variable. With the hook off the check says it skipped that part.

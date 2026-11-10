@@ -116,17 +116,22 @@ try:
                           timeout=600)
         if r.status_code == 201:
             registered = r.json()
-            print("     test hooks off in django: forced-failure checks skipped "
-                  "(WEBATLAS_BRIDGE_TEST_HOOKS=1 in infra/.env, recreate django, run again)")
+            print("     test hooks off in django: forced-failure checks skipped (for one run: "
+                  "WEBATLAS_BRIDGE_TEST_HOOKS=1 docker compose ... up -d --no-deps django, run this check, "
+                  "then the same command without the variable; infra/platform/README.md)")
         else:
             check("forced permissions failure -> 502", r.status_code == 502)
             detail = json_of(r).get("detail", "")
             check("502 detail is the fixed Vietnamese text, no exception text",
                   "hãy gửi lại" in detail and "test hook" not in detail and "Error" not in detail)
-            status, admin = gn_datasets(GN_ADMIN)
-            check("after the failure the dataset stays in GeoNode (not deleted)", status == 200 and len(admin) == 1)
-            # GeoNode's API gives pk as a string.
-            registered = {"pk": int(admin[0]["pk"])} if admin else {}  # for the clean-up below
+            # GeoNode's own API hides a resource in state INVALID (dirty) even from admins: the bridge
+            # listing shows every row.
+            half = [x for x in geonode_bridge.list_resources(since=before - timedelta(minutes=1))
+                    if x["alternate"] == alternate]
+            check("after the failure the dataset stays in GeoNode (not deleted)", len(half) == 1)
+            registered = {"pk": half[0]["pk"]} if half else {}  # for the clean-up below
+            check("after the failure the listing says state INVALID (GeoNode's failure branch)",
+                  bool(half) and half[0].get("state") == "INVALID" and half[0].get("isPublished") is False)
             r = requests.get(f"{GS}/rest/workspaces/geonode/coveragestores/{name}/coverages/{name}.json",
                              auth=(os.environ["GEOSERVER_ADMIN_USER"], os.environ["GEOSERVER_ADMIN_PASSWORD"]),
                              timeout=TIMEOUT)
@@ -174,6 +179,7 @@ try:
         check("ownerSub is the Keycloak subject", item.get("ownerSub") == owner["sub"])
         check("isPublished false, isApproved false",
               item.get("isPublished") is False and item.get("isApproved") is False)
+        check("state PROCESSED", item.get("state") == "PROCESSED")
         check("resourceType dataset, subtype raster, alternate, title",
               (item.get("resourceType"), item.get("subtype"), item.get("alternate"), item.get("title"))
               == ("dataset", "raster", alternate, "Độ sâu ngập thử nghiệm"))
@@ -216,6 +222,29 @@ try:
             timeout=TIMEOUT)
         check("anonymous WMS GetMap of a webatlas basemap layer still answers 200 image/png",
               r.status_code == 200 and r.headers.get("Content-Type", "").startswith("image/png"))
+
+        # A reviewer publishes it; registering the same name again must not touch it (no reset of
+        # is_published, no re-applied default permissions). Last: GeoNode's sync on this PATCH
+        # relabels the subtype vector_time (README, "subtype drift").
+        pk = registered.get("pk")
+        r = requests.patch(f"{GN}/api/v2/datasets/{pk}", json={"is_approved": True, "is_published": True},
+                           auth=GN_ADMIN, timeout=600)
+        status, admin = gn_datasets(GN_ADMIN)
+        ds = admin[0] if admin else {}
+        check("admin approves and publishes it through GeoNode's API",
+              r.status_code == 200 and ds.get("is_published") is True and ds.get("is_approved") is True)
+        perms_published = json_of(requests.get(f"{GN}/api/v2/resources/{pk}/permissions", auth=GN_ADMIN,
+                                                timeout=TIMEOUT))
+        status, anon = gn_datasets()
+        print(f"     after publishing, anonymous API sees {len(anon or [])} result(s)")
+        again = geonode_bridge.register_dataset(name, title, abstract, owner)
+        check("re-registering the published dataset returns the same ids", again == registered)
+        status, admin = gn_datasets(GN_ADMIN)
+        ds = admin[0] if admin else {}
+        check("it is still published and approved", ds.get("is_published") is True and ds.get("is_approved") is True)
+        perms_after = json_of(requests.get(f"{GN}/api/v2/resources/{pk}/permissions", auth=GN_ADMIN,
+                                           timeout=TIMEOUT))
+        check("its permissions are unchanged", bool(perms_published) and perms_after == perms_published)
     finally:
         if registered and registered.get("pk"):
             outcome = gn_delete(registered["pk"])
