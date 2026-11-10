@@ -44,6 +44,38 @@ and GeoNode runs two web workers. Give Docker about 5.5 GB (`%UserProfile%\.wslc
 Back to the standalone GeoServer: start without the platform file
 (`docker compose -p webatlas -f infra/docker-compose.yml up -d geoserver`), then `npm run atlas:publish`.
 
+## Time series (ImageMosaic)
+
+Catalogue time series (rain grids, HEC-RAS depth) are ImageMosaics with a time dimension in
+workspace **`geonode`** (never `webatlas`, whose GeoFence rule is public). The worker writes
+`/repo/var/timeseries/<name>/` (repo `var/timeseries/`, git-ignored; create it before the first
+start); GeoServer reads the same folder through the bind mount
+`../var/timeseries:/webatlas-timeseries`. The granule index is one PostGIS table per mosaic in
+`geonode_data` (as role `geonode_data`). After changing the mount, recreate only GeoServer:
+`docker compose -p webatlas -f infra/docker-compose.yml -f infra/docker-compose.platform.yml up -d geoserver`.
+
+From the `tools` or `worker` container (`packages/atlas-data/tools` on `sys.path`):
+
+```python
+from timeseries import geoserver
+geoserver.publish_mosaic("lu_2025", "depth")   # -> "geonode:lu_2025"; idempotent; styles too
+geoserver.publish_coverage("lu_2025_peak", "/webatlas-timeseries/lu_2025/peak.tif", "depth")
+geoserver.delete_mosaic("lu_2025")             # removes store + layer, drops the index table;
+                                               # the step files stay in var/timeseries/lu_2025
+```
+
+- **Never delete a time-series store with `purge`** (REST `?purge=metadata|all`): GeoTools'
+  ImageMosaic then runs the PostGIS factory's `dropDatabase`, i.e. `DROP DATABASE geonode_data`
+  (it fails only while other sessions are connected). GeoNode itself skips purge for ImageMosaic
+  stores. `delete_mosaic` deletes without purge and drops the one index table itself.
+- GeoServer's URL checks refuse every `file://` URL by default ("Failed to locate the input file");
+  publishing adds the URL check `webatlas-timeseries` for `file:///webatlas-timeseries/...` only.
+- The time dimension uses backward-only nearest match: a TIME between steps shows the step before,
+  and one before the first step gives an empty image instead of an `InvalidDimensionValue` error.
+
+GeoFence denies the new layer to everyone but the admin until GeoNode grants it. Live check:
+`docker compose ... --profile tools run --rm -T -e GEONODE_E2E=1 tools python3 packages/atlas-data/tools/timeseries/test_geoserver_live.py`.
+
 ## Known limits (first pass)
 
 - Signing out of WebATLAS ends the Keycloak session; GeoNode and Dagster keep their own session

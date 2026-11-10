@@ -163,6 +163,9 @@ services:
     volumes:
       - geonode_geoserver_data:/geoserver_data/data
       - geonode_statics:/mnt/volumes/statics
+      # Time-series ImageMosaic folders: the worker writes /repo/var/timeseries/<name>, GeoServer
+      # reads the same folder as /webatlas-timeseries/<name> (packages/atlas-data/tools/timeseries).
+      - ../var/timeseries:/webatlas-timeseries
 
   django:
     image: geonode/geonode:5.0.3
