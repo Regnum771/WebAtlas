@@ -36,3 +36,14 @@ LANGUAGES = (("vi-vn", "Tiếng Việt"), ("en-us", "English"))
 
 # Back to the WebATLAS hub after signing out of GeoNode.
 ACCOUNT_LOGOUT_REDIRECT_URL = os.environ.get("WEBATLAS_WEB_URL", "/")
+
+# The WebATLAS bridge (webatlas_bridge/): registers worker-published coverages as datasets and lists
+# resources for the catalogue sync, behind a shared bearer token. Its URL module includes GeoNode's.
+INSTALLED_APPS += ("webatlas_bridge",)  # noqa: F405
+ROOT_URLCONF = "webatlas_bridge.urls"
+WEBATLAS_BRIDGE_TOKEN = os.environ["WEBATLAS_BRIDGE_TOKEN"]
+
+# Moderation (GeoNode's advanced workflow): a new resource stays unpublished and unapproved, seen by
+# its owner and group managers only, until a manager or admin approves and publishes it.
+RESOURCE_PUBLISHING = True
+ADMIN_MODERATE_UPLOADS = True

@@ -70,6 +70,8 @@ x-geonode-env: &geonode-env
   KEYCLOAK_GEONODE_CLIENT_ID: geonode
   KEYCLOAK_GEONODE_SECRET: ${KC_GEONODE_SECRET}
   WEBATLAS_WEB_URL: http://localhost:5173
+  # Bearer token of the bridge routes (platform/geonode/webatlas_bridge), shared with the worker.
+  WEBATLAS_BRIDGE_TOKEN: ${WEBATLAS_BRIDGE_TOKEN}
   MONITORING_ENABLED: "False"
   C_FORCE_ROOT: "1"
   FORCE_REINIT: "false"
@@ -88,6 +90,7 @@ x-geonode-volumes: &geonode-volumes
   - geonode_tmp:/tmp
   - ./platform/geonode/webatlas_geonode_settings.py:/usr/src/webatlas/webatlas_geonode_settings.py:ro
   - ./platform/geonode/webatlas-init.py:/usr/src/webatlas/webatlas-init.py:ro
+  - ./platform/geonode/webatlas_bridge:/usr/src/webatlas/webatlas_bridge:ro
   - ./platform/geonode/uwsgi.ini:/usr/src/geonode/uwsgi.ini:ro
 
 services:
@@ -193,7 +196,8 @@ services:
     image: geonode/geonode:5.0.3
     restart: unless-stopped
     entrypoint: ["/usr/src/geonode/entrypoint.sh"]
-    command: ["/usr/src/geonode/celery-cmd"]
+    # The image ships celery-cmd without the execute bit ("Permission denied", restart loop).
+    command: ["bash", "/usr/src/geonode/celery-cmd"]
     depends_on:
       django:
         condition: service_healthy

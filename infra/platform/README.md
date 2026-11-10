@@ -19,8 +19,8 @@ and GeoNode runs two web workers. Give Docker about 5.5 GB (`%UserProfile%\.wslc
 1. Secrets. Add these to `infra/.env` (any random values; see `infra/.env.example`):
    `KC_ADMIN_PASSWORD KC_WEBATLAS_API_SECRET KC_GEONODE_SECRET KC_DAGSTER_SECRET KC_DEV_USERNAME
    KC_DEV_EMAIL KC_DEV_PASSWORD GEONODE_DB_PASSWORD GEONODE_DATA_DB_PASSWORD GEONODE_SECRET_KEY
-   GEONODE_ADMIN_PASSWORD ORCHESTRATOR_DB_PASSWORD MOSAIC_INDEX_DB_PASSWORD OAUTH2_PROXY_COOKIE_SECRET` (the last exactly 32
-   characters). `KC_DEV_EMAIL` should be the email of an existing WebATLAS admin: the first SSO
+   GEONODE_ADMIN_PASSWORD ORCHESTRATOR_DB_PASSWORD MOSAIC_INDEX_DB_PASSWORD WEBATLAS_BRIDGE_TOKEN
+   OAUTH2_PROXY_COOKIE_SECRET` (the last exactly 32 characters). `KC_DEV_EMAIL` should be the email of an existing WebATLAS admin: the first SSO
    sign-in links the two by that verified email.
 2. Databases and roles in the shared PostGIS (idempotent):
    ```sh
@@ -83,6 +83,67 @@ geoserver.delete_mosaic("lu_2025")             # removes store + layer, drops th
 
 GeoFence denies the new layer to everyone but the admin until GeoNode grants it. Live check:
 `docker compose ... --profile tools run --rm -T -e GEONODE_E2E=1 tools python3 packages/atlas-data/tools/timeseries/test_geoserver_live.py`.
+
+## Đăng ký dữ liệu từ mã
+
+The WebATLAS worker registers a coverage it published (above) as a GeoNode dataset through the
+bridge app `platform/geonode/webatlas_bridge`, mounted into `django`, `celery` and `geonode-init`
+at `/usr/src/webatlas/webatlas_bridge` (`ROOT_URLCONF = 'webatlas_bridge.urls'` adds its two routes
+in front of all of GeoNode's). Both routes want `Authorization: Bearer $WEBATLAS_BRIDGE_TOKEN`
+(`infra/.env`, shared with `worker` and `tools`), else 401.
+
+- `POST /webatlas-bridge/datasets` `{name, title, abstract, owner: {sub, username, email}}` →
+  `201 {pk, uuid, alternate}` (200 with the same ids when that owner registered it already; 404
+  when GeoServer has no coverage `geonode:<name>`; 409 when another owner has it). The owner is the
+  GeoNode user whose allauth `SocialAccount` has `provider = 'geonode_openid_connect'`
+  (`settings.SOCIALACCOUNT_OIDC_PROVIDER`) and `uid` = the Keycloak `sub`; when missing, the bridge
+  creates both (a free variant of `username`, unusable password), so the user's first Keycloak
+  sign-in lands on that account.
+- `GET /webatlas-bridge/resources?since=<ISO>&page=<n>` → `{resources: [...], next}`: every
+  resource (published or not), 200 per page, ordered by `last_updated`.
+
+From the worker or `tools`: `from timeseries import geonode_bridge`;
+`geonode_bridge.register_dataset(name, title, abstract, owner)`,
+`geonode_bridge.list_resources(since)` (follows pages).
+
+Moderation is on (`RESOURCE_PUBLISHING`, `ADMIN_MODERATE_UPLOADS`: GeoNode's advanced workflow).
+A new dataset is unpublished and unapproved; the anonymous API and GeoFence hide it until a group
+manager or admin publishes it. The `webatlas` basemap layers are not GeoNode resources and keep
+their public GeoFence rule.
+
+Step 1 spike (2026-11-10, GeoNode 5.0.3, on a 3-step Task 4 mosaic):
+
+- `gs_slurp(owner=…, workspace='geonode', store=name, filter=name)` registers the coverage, but
+  took 299 s: it builds a thumbnail over OpenStreetMap tiles, and the containers resolve no
+  outside names, so every tile is retried. The dataset came out with `subtype = 'vector_time'` and
+  `has_time = False` (and published: moderation was still off).
+- `resource_manager.create(uuid, resource_type=Dataset, defaults={name, workspace, store,
+  subtype: 'raster', alternate, title, abstract, owner, ...})` works and is what the bridge does:
+  about 60 s (GeoServer sync, CSW record, GWC style filters), no thumbnail. Then
+  `set_default_permissions(owner, created=True)` applies the moderation workflow and the GeoFence
+  rules (about 15 s).
+- **Time dimension.** GeoNode 5 keeps no time values for a raster: the dimension stays in
+  GeoServer (the coverage's `time` metadata set by `publish_mosaic`). The dataset only has the flag
+  `has_time`, plus the metadata fields `temporal_extent_start/_end`. The bridge sets `has_time` from
+  the coverage's time metadata and the extent from the first and last time GeoServer lists. Never
+  use GeoNode's `PUT /api/v2/datasets/<pk>/timeseries`: it rewrites GeoServer's dimension from a
+  vector attribute and would drop the nearest-match settings.
+- **`subtype` drift.** GeoNode's GeoServer sync (`sync_instance_with_geoserver`, on create and on
+  every metadata update) labels any time-enabled resource `vector_time`, coverages included. The
+  bridge resets it to `raster` after registering. A later metadata edit in GeoNode turns it back
+  to `vector_time`.
+- Deleting a dataset through GeoNode's API (`DELETE /api/v2/resources/<pk>/delete`) runs in
+  Celery (`cascading_delete`): it removes the GeoServer layer and store, without purge for an
+  ImageMosaic store (then `geoserver.delete_mosaic(name)` drops the index table), but **with
+  `purge=all` for a single GeoTIFF store, which deletes the `.tif`**. It also deletes the layer's
+  default style when no other layer uses it (`webatlas_depth`/`webatlas_rain`): `publish_mosaic`
+  and `publish_coverage` create them again.
+- The image ships `/usr/src/geonode/celery-cmd` without the execute bit, so `celery` was in a
+  restart loop ("Permission denied") and no queued task ever ran. Compose now starts it with
+  `bash /usr/src/geonode/celery-cmd`.
+
+Live check (needs `GEONODE_ADMIN_PASSWORD` in `infra/.env` for the clean-up through GeoNode's API):
+`docker compose ... --profile tools run --rm -T -e GEONODE_E2E=1 tools python3 packages/atlas-data/tools/timeseries/test_bridge_live.py`.
 
 ## Known limits (first pass)
 

@@ -17,7 +17,7 @@ import re
 import shutil
 import sys
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 if os.environ.get("GEONODE_E2E") != "1":
     print("skip: set GEONODE_E2E=1 to run the live GeoServer check")
@@ -26,6 +26,7 @@ if os.environ.get("GEONODE_E2E") != "1":
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from timeseries import cog, geoserver  # noqa: E402
+from timeseries.live_fixtures import mosaic_files, remove_files, write_depth_series  # noqa: E402
 from timeseries.model import Step  # noqa: E402
 
 import numpy as np  # noqa: E402
@@ -36,7 +37,6 @@ import requests  # noqa: E402
 from affine import Affine  # noqa: E402
 from rasterio.io import MemoryFile  # noqa: E402
 
-UTC = timezone.utc
 failures = []
 
 
@@ -89,18 +89,11 @@ def alpha_of_png(content):
 name = f"s1-e2e-{uuid.uuid4().hex}"
 root = os.environ["TIMESERIES_DIR"]
 folder = os.path.join(root, name)
-t0 = datetime(2025, 10, 26, 1, tzinfo=UTC)
-step_times = [t0 + timedelta(hours=i) for i in range(3)]
-
 # 40 x 40 cells of 50 m in UTM 49N (Vietnam); depth rises with each hour, one corner stays dry.
-for i, t in enumerate(step_times):
-    arr = np.full((40, 40), 0.3 + 1.2 * i, dtype="float32")
-    arr[:10, :10] = np.nan
-    cog.write_step(Step(time=t, array=arr, transform=Affine(50, 0, 500000, 0, -50, 2000000),
-                        crs="EPSG:32649"), folder, name)
-with rasterio.open(os.path.join(folder, cog.step_filename(name, step_times[0]))) as ds:
+step_times, step_files = write_depth_series(folder, name)
+t0 = step_times[0]
+with rasterio.open(os.path.join(folder, step_files[0])) as ds:
     bbox = ",".join(str(v) for v in ds.bounds)
-step_files = [cog.step_filename(name, t) for t in step_times]
 # Strays in the mosaic folder that must not become time steps: a timestamp-less peak.tif and a
 # timestamped file of another series (both would match the time regex or the *.tif default).
 stray_arr = np.full((40, 40), 9.0, dtype="float32")
@@ -128,20 +121,7 @@ def index_rows(table):
 
 def remove_test_files():
     """The test's own files, one by one by name, then the emptied folders (no recursive delete)."""
-    own = {folder: step_files + stray_files + [
-               "datastore.properties", "indexer.properties", "timeregex.properties",
-               f"{name}.properties", "sample_image.dat"],
-           peak_folder: [f"{peak}.tif"]}
-    for d, names in own.items():
-        for n in names:
-            path = os.path.join(d, n)
-            if os.path.isfile(path):
-                os.remove(path)
-        try:
-            if os.path.isdir(d):
-                os.rmdir(d)
-        except OSError:
-            print(f"     left in {d}: {sorted(os.listdir(d))}")
+    remove_files({folder: step_files + stray_files + mosaic_files(name), peak_folder: [f"{peak}.tif"]})
 
 try:
     try:
