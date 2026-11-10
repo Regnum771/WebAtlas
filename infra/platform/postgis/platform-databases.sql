@@ -58,4 +58,6 @@ GRANT SELECT ON app.dataset_lineage, app.dataset_stage_state TO webatlas_orchest
 -- catalogue.unit_for_bbox (SECURITY DEFINER, so no grant on the admin schema is needed).
 GRANT USAGE ON SCHEMA catalogue TO webatlas_orchestrator;
 GRANT SELECT, INSERT, UPDATE ON catalogue.resources TO webatlas_orchestrator;
+-- The full listing deletes rows GeoNode no longer lists.
+GRANT DELETE ON catalogue.resources TO webatlas_orchestrator;
 GRANT EXECUTE ON FUNCTION catalogue.unit_for_bbox(float8, float8, float8, float8) TO webatlas_orchestrator;

@@ -248,6 +248,8 @@ services:
     command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-w", "/opt/dagster/app/workspace.yaml"]
     environment: &dagster-env
       WEBATLAS_DATABASE_URL: postgresql://webatlas_orchestrator:${ORCHESTRATOR_DB_PASSWORD}@db:5432/${POSTGRES_DB}
+      GEONODE_BRIDGE_URL: http://django:8000
+      WEBATLAS_BRIDGE_TOKEN: ${WEBATLAS_BRIDGE_TOKEN}
     depends_on:
       db:
         condition: service_healthy

@@ -7,9 +7,11 @@ running builds from Dagster is the next pass.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import dagster as dg
 
-from . import registry
+from . import catalogue_sync, registry
 
 
 def _observer(ds: registry.Dataset) -> dg.SourceAsset:
@@ -40,6 +42,20 @@ def _observer(ds: registry.Dataset) -> dg.SourceAsset:
     return _observe
 
 
+@dg.op
+def sync_catalogue(context) -> None:
+    """Incremental listing each minute; the full listing (which also deletes) on minute 0 of every hour."""
+    now = datetime.now(timezone.utc)
+    with registry.connect() as conn:
+        report = catalogue_sync.run(conn, now, full=now.minute == 0)
+    context.log.info("catalogue: %d inserted, %d updated, %d removed", report.inserted, report.updated, report.removed)
+
+
+@dg.job(name="dong_bo_danh_muc")
+def catalogue_job():
+    sync_catalogue()
+
+
 def _load() -> dg.Definitions:
     with registry.connect() as conn:
         datasets = registry.list_datasets(conn)
@@ -47,13 +63,18 @@ def _load() -> dg.Definitions:
     observe_job = dg.define_asset_job("quan_sat_dang_ky", selection=dg.AssetSelection.groups("registry"))
     return dg.Definitions(
         assets=observers,
-        jobs=[observe_job],
+        jobs=[observe_job, catalogue_job],
         schedules=[
             dg.ScheduleDefinition(
                 job=observe_job,
                 cron_schedule="*/15 * * * *",
                 default_status=dg.DefaultScheduleStatus.STOPPED,
-            )
+            ),
+            dg.ScheduleDefinition(
+                job=catalogue_job,
+                cron_schedule="* * * * *",
+                default_status=dg.DefaultScheduleStatus.RUNNING,
+            ),
         ],
     )
 
