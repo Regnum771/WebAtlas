@@ -640,3 +640,72 @@
 .account-item:hover {
   background: var(--paper);
 }
+
+/* Thêm dữ liệu tabs and the catalogue picker / catalogue layers section */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tabs .tab {
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: inherit;
+  cursor: pointer;
+}
+
+.tabs .tab.on {
+  border-bottom-color: currentColor;
+  font-weight: 650;
+}
+
+.catalogue-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.catalogue-results,
+.catalogue-layers ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.catalogue-result,
+.catalogue-layer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.catalogue-result-head {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex: 1 1 100%;
+}
+
+.catalogue-result .badge {
+  font-size: var(--text-xs, 0.75rem);
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+}
+
+.catalogue-layer-name {
+  flex: 1 1 100%;
+}
+
+.catalogue-layer img {
+  max-width: 100%;
+}
