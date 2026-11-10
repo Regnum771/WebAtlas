@@ -11,7 +11,7 @@ import pathlib
 import sys
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -40,6 +40,14 @@ def message_of(fn):
     return None
 
 
+def _raises(fn, exc):
+    try:
+        fn()
+    except exc:
+        return True
+    return False
+
+
 def old_cell_index_grid(ras, area, transform, shape):
     """Reference: the per-cell Python loop the vectorised version replaced."""
     from rasterio import features
@@ -60,7 +68,18 @@ fx.build(p, wse=wse)
 tr = Affine(50, 0, fx.X0, 0, -50, fx.Y0 + 200)
 shape = (4, 4)
 
+# I6: the stamps carry no zone. By default they are Vietnam's clock (UTC+7) and come out in UTC.
 with hecras.RasFile(p) as ras:
+    check("default clock: 25OCT2025 00:00:00 local is 2025-10-24T17:00Z",
+          ras.times[0] == datetime(2025, 10, 24, 17, tzinfo=UTC) and ras.times[0].utcoffset() == timedelta(0))
+    check("default clock: last stamp 02:00 local is 19:00Z", ras.times[-1] == datetime(2025, 10, 24, 19, tzinfo=UTC))
+check("_parse_stamp: 24:00:00 local is the next day's 00:00 local, in UTC",
+      hecras._parse_stamp("25OCT2025 24:00:00", hecras.TIME_ZONES["Asia/Ho_Chi_Minh"])
+      == datetime(2025, 10, 25, 17, tzinfo=UTC))
+check("_parse_stamp: UTC stays as written", hecras._parse_stamp("25OCT2025 07:00:00") == datetime(2025, 10, 25, 7, tzinfo=UTC))
+check("an unknown clock is refused", _raises(lambda: hecras.RasFile(p, "Europe/Paris"), ValueError))
+
+with hecras.RasFile(p, "UTC") as ras:
     check("areas == ['A1']", ras.areas == ["A1"])
     check("9 times", len(ras.times) == 9)
     check("first time 2025-10-25T00:00Z", ras.times[0] == datetime(2025, 10, 25, tzinfo=UTC))
@@ -135,7 +154,7 @@ sample = os.environ.get("RAS_HDF_SAMPLE")
 if sample:
     t0 = time.time()
     area = "Thu_Bon_Vu_Gia_4"
-    with hecras.RasFile(sample) as ras:
+    with hecras.RasFile(sample, "UTC") as ras:
         check("real: areas", ras.areas == [area])
         check("real: 289 times", len(ras.times) == 289)
         check("real: range", ras.times[0] == datetime(2025, 10, 25, tzinfo=UTC)

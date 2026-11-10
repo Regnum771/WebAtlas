@@ -115,17 +115,22 @@ def tif_zip(names):
 
 # --- fakes for GeoServer and GeoNode -------------------------------------------------------------
 
-calls = {"publish": [], "publish_single": [], "unpublish": [], "register": []}
+calls = {"publish": [], "publish_single": [], "unpublish": [], "register": [], "seq": []}
 fail_register_on = {"n": None}  # 1-based index of the register call that raises, or None
+fail_publish_single = {"on": False}
 
 
 def fake_publish(name, variable):
     calls["publish"].append((name, variable))
+    calls["seq"].append("publish")
     return f"geonode:{name}"
 
 
 def fake_publish_single(name, gs_file, variable):
     calls["publish_single"].append((name, gs_file, variable))
+    calls["seq"].append("publish_single")
+    if fail_publish_single["on"]:
+        raise RuntimeError("GeoServer refused the coverage")
     return f"geonode:{name}"
 
 
@@ -135,6 +140,7 @@ def fake_unpublish(name):
 
 def fake_register(name, title, abstract, owner):
     calls["register"].append((name, title, abstract, dict(owner)))
+    calls["seq"].append("register")
     if fail_register_on["n"] == len(calls["register"]):
         raise geonode_bridge.BridgeError(502, "GeoNode chưa sẵn sàng")
     return {"pk": 900000 + int(uuid.uuid4().int % 90000), "uuid": str(uuid.uuid4()), "alternate": f"geonode:{name}"}
@@ -146,10 +152,15 @@ import_timeseries.unpublish = fake_unpublish
 import_timeseries.register = fake_register
 
 
-def reset_calls(fail_on=None):
+def reset_calls(fail_on=None, fail_single=False):
     for v in calls.values():
         v.clear()
     fail_register_on["n"] = fail_on
+    fail_publish_single["on"] = fail_single
+
+
+def name_of(file_id):
+    return f"ts_{uuid.UUID(file_id).hex[:16]}"
 
 
 # --- database ------------------------------------------------------------------------------------
@@ -185,7 +196,8 @@ def run_job(rel_path, original_name, source, file_id=None, **overrides):
         cur.execute("SELECT status, error, result, steps FROM workspace.jobs WHERE id = %s", (job_id,))
         cols = [d[0] for d in cur.description]
         row = dict(zip(cols, cur.fetchone()))
-    row["name"] = f"ts_{file_id[:8]}"
+    row["name"] = name_of(file_id)
+    row["file_id"] = file_id
     return row
 
 
@@ -265,12 +277,21 @@ try:
           calls["publish_single"] == [] and calls["unpublish"] == [])
     check("geotiff zip: result {resourceId, alternate, steps}",
           row["result"] == {"resourceId": r.get("id"), "alternate": f"geonode:{name}", "steps": 3})
-    check("geotiff zip: name is ts_ + the first 8 characters of fileId",
-          name.startswith("ts_") and len(name) == 11)
+    check("geotiff zip: name is ts_ + the first 16 hex digits of fileId",
+          name.startswith("ts_") and len(name) == 19 and name[3:] == row["file_id"].replace("-", "")[:16])
+
+    # --- M3: another upload whose fileId shares the first 8 hex digits is not mistaken for this one
+    reset_calls()
+    twin = row["file_id"][:8] + str(uuid.uuid4())[8:]
+    twin_row = run_job(tif_zip(["r_20251025.tif"]), "mua.zip", "geotiff", file_id=twin, timePattern="YYYYMMDD")
+    names_made.append(twin_row["name"])
+    check("M3: an upload sharing the first 8 hex digits of the fileId imports under its own name",
+          twin_row["status"] == "succeeded" and twin_row["name"] != name)
+    q("DELETE FROM catalogue.resources WHERE alternate = %s", (f"geonode:{twin_row['name']}",))
 
     # --- the same upload again: refused, the published series untouched
     reset_calls()
-    file_id = row["name"][3:] + str(uuid.uuid4())[8:]
+    file_id = row["file_id"]
     again = run_job(rel, "mua.zip", "geotiff", file_id=file_id, timePattern="YYYYMMDD")
     check("an upload already in the catalogue is refused with the exact copy",
           again["status"] == "failed" and again["error"] == MSG_DONE_BEFORE)
@@ -281,7 +302,7 @@ try:
     # --- a leftover folder from a stopped run: only this run's steps are in the mosaic folder
     reset_calls()
     file_id = str(uuid.uuid4())
-    left = f"ts_{file_id[:8]}"
+    left = name_of(file_id)
     names_made.append(left)
     os.makedirs(os.path.join(TS_DIR, left))
     for stale in (f"{left}_19990101T000000Z.tif", "indexer.properties"):
@@ -303,6 +324,10 @@ try:
 
     def pending(fid):
         return q("SELECT delete_after IS NOT NULL FROM workspace.files WHERE id = %s", (fid,))[0][0]
+
+    def hours_left(fid):
+        return q("SELECT extract(epoch FROM delete_after - now()) / 3600 FROM workspace.files WHERE id = %s",
+                 (fid,))[0][0]
 
     reset_calls()
     keep_id, csv_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -326,12 +351,36 @@ try:
           row["status"] == "succeeded" and not pending(csv_id))
     clear_rows()
     reset_calls()
-    fail_id = str(uuid.uuid4())
+    fail_id, fail_csv_id = str(uuid.uuid4()), str(uuid.uuid4())
+    fail_csv_rel = f"uploads/{user_id}/{fail_csv_id}/original.csv"
     add_file(fail_id, "uploads/x/original2.zip", "mua.zip")
+    add_file(fail_csv_id, fail_csv_rel, "times.csv")
+    other_id = str(uuid.uuid4())
+    add_file(other_id, "uploads/x/original3.zip", "khac.zip")
+    os.makedirs(os.path.dirname(os.path.join(STORE, fail_csv_rel)), exist_ok=True)
+    with open(os.path.join(STORE, fail_csv_rel), "w") as f:
+        f.write("file,time\nr_20251025.tif,2025-10-25T00:00:00Z\n")  # r_khong_ngay.tif has no time
     row = run_job(tif_zip(["r_20251025.tif", "r_khong_ngay.tif"]), "mua.zip", "geotiff", file_id=fail_id,
-                  timePattern="YYYYMMDD")
+                  timePattern="YYYYMMDD", timesCsvPath=fail_csv_rel)
     names_made.append(row["name"])
-    check("a failed import leaves the upload's delete_after", row["status"] == "failed" and pending(fail_id))
+    # I2: a failed attempt's upload (and times table) expires within a day, not after three.
+    check("a failed import shortens the upload's delete_after to at most one day",
+          row["status"] == "failed" and pending(fail_id) and 23 < hours_left(fail_id) <= 24)
+    check("... and the times table's", pending(fail_csv_id) and 23 < hours_left(fail_csv_id) <= 24)
+    check("... but not another upload's", hours_left(other_id) > 70)
+    # A retry of the same upload (the dialog keeps the file) is accepted and clears the date on success.
+    reset_calls()
+    row = run_job(tif_zip(["r_20251025.tif", "r_20251026.tif"]), "mua.zip", "geotiff", file_id=fail_id,
+                  timePattern="YYYYMMDD")
+    check("a retry of the failed upload succeeds and clears its delete_after",
+          row["status"] == "succeeded" and not pending(fail_id))
+    clear_rows()
+    # An upload already in the catalogue (date cleared) keeps no date when a resubmission fails.
+    reset_calls()
+    row = run_job(tif_zip(["r_20251025.tif", "r_khong_ngay.tif"]), "mua.zip", "geotiff", file_id=keep_id,
+                  timePattern="YYYYMMDD")
+    check("a failed resubmission of an imported upload leaves it without a date",
+          row["status"] == "failed" and not pending(keep_id))
     q("DELETE FROM workspace.files WHERE owner_id = %s", (user_id,))
 
     # --- file names that do not match the pattern: the job fails and writes nothing
@@ -384,8 +433,11 @@ try:
     check("hecras: job succeeds", row["status"] == "succeeded")
     if row["status"] != "succeeded":
         print("     error:", row["error"])
-    check("hecras: three hourly steps in the mosaic folder (and nothing else)",
-          listing(name) == [f"{name}_20251025T0{h}0000Z.tif" for h in (0, 1, 2)])
+    # I6: no hdfTimeZone means Vietnam's clock: 25OCT2025 00:00 local is 2025-10-24T17:00Z.
+    check("hecras: three hourly steps in the mosaic folder (and nothing else), named in UTC",
+          listing(name) == [f"{name}_20251024T{h}0000Z.tif" for h in (17, 18, 19)])
+    check("hecras: both GeoServer publishes run before any GeoNode registration (I3)",
+          calls["seq"] == ["publish", "publish_single", "register", "register"])
     check("hecras: the peak raster sits in its own folder beside the mosaic",
           listing(f"{name}_peak") == [f"{name}_peak.tif"])
     found = rows()
@@ -394,8 +446,8 @@ try:
     peak = next((x for x in found if x["kind"] == "raster"), {})
     check("hecras: series row variable 'depth', unit 'm', title with the FABDEM label",
           ts.get("variable") == "depth" and ts.get("unit") == "m" and ts.get("title") == f"Lũ tháng 10 {HDF_LABEL}")
-    check("hecras: series row has the three step times",
-          ts.get("time_steps") == [datetime(2025, 10, 25, h, tzinfo=UTC) for h in (0, 1, 2)])
+    check("hecras: series row has the three step times, local time converted to UTC",
+          ts.get("time_steps") == [datetime(2025, 10, 24, h, tzinfo=UTC) for h in (17, 18, 19)])
     check("hecras: peak row is a raster titled '<title> – độ sâu lớn nhất'",
           peak.get("title") == "Lũ tháng 10 – độ sâu lớn nhất" and peak.get("alternate") == f"geonode:{name}_peak"
           and peak.get("variable") == "depth" and peak.get("unit") == "m" and peak.get("origin") == "webatlas-upload"
@@ -408,6 +460,33 @@ try:
     check("hecras: series bbox lies around the fixture (UTM 49N ~ 108.2 E, 15.4 N)",
           ts.get("bbox4326") is not None and 107.5 < ts["bbox4326"][0] < 109 and 15 < ts["bbox4326"][1] < 16)
     clear_rows()
+
+    # --- HEC-RAS with hdfTimeZone UTC: the stamps are taken as written
+    reset_calls()
+    row = run_job(hdf_rel, "lu.p01.hdf", "hecras", title="Lũ tháng 10", every=4, hdfTimeZone="UTC")
+    names_made += [row["name"], f"{row['name']}_peak"]
+    found = rows()
+    ts = next((x for x in found if x["kind"] == "timeseries"), {})
+    check("hecras UTC: steps 00:00, 01:00, 02:00 UTC",
+          row["status"] == "succeeded"
+          and ts.get("time_steps") == [datetime(2025, 10, 25, h, tzinfo=UTC) for h in (0, 1, 2)])
+    clear_rows()
+    reset_calls()
+    row = run_job(hdf_rel, "lu.p01.hdf", "hecras", title="Lũ tháng 10", every=4, hdfTimeZone="Europe/Paris")
+    names_made += [row["name"], f"{row['name']}_peak"]
+    check("hecras: an unknown hdfTimeZone fails the job before anything is written",
+          row["status"] == "failed" and row["error"] == "Múi giờ của tệp .hdf không hợp lệ."
+          and listing(row["name"]) is None and calls["publish"] == [])
+
+    # --- HEC-RAS: the peak's GeoServer publish fails: nothing reaches GeoNode (I3)
+    reset_calls(fail_single=True)
+    row = run_job(hdf_rel, "lu.p01.hdf", "hecras", title="Lũ tháng 10", every=4)
+    names_made += [row["name"], f"{row['name']}_peak"]
+    check("hecras: a failed peak publish fails the job with the exact copy and registers nothing",
+          row["status"] == "failed" and row["error"] == MSG_REGISTER and calls["register"] == [])
+    check("... both stores are deleted again and both folders removed",
+          calls["unpublish"] == [f"{row['name']}_peak", row["name"]]
+          and listing(row["name"]) is None and listing(f"{row['name']}_peak") is None)
 
     # --- HEC-RAS: the peak's registration fails, so both stores and both folders go
     reset_calls(fail_on=2)

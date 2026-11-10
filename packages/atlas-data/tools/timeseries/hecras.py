@@ -18,24 +18,36 @@ _AREAS = "Geometry/2D Flow Areas"
 _TS = "Results/Unsteady/Output/Output Blocks/Base Output/Unsteady Time Series"
 _NO_RESULTS = "Tệp .hdf không có kết quả mô phỏng (thiếu nhóm Results)."
 
+# The clock a `Time Date Stamp` is read in: it carries no zone, it is the model's simulation clock.
+# Vietnam keeps UTC+7 all year (no daylight saving), so a fixed offset needs no tz database.
+TIME_ZONES = {"Asia/Ho_Chi_Minh": timezone(timedelta(hours=7), "ICT"), "UTC": timezone.utc}
+DEFAULT_TIME_ZONE = "Asia/Ho_Chi_Minh"
+
 
 def _text(v) -> str:
     return v.decode("utf-8", "replace") if isinstance(v, bytes) else str(v)
 
 
-def _parse_stamp(s: str) -> datetime:
+def _parse_stamp(s: str, tz=timezone.utc) -> datetime:
+    """A HEC-RAS stamp (`25OCT2025 07:00:00`) read on the clock `tz`, returned in UTC."""
     s = s.strip()
     # HEC-RAS writes midnight as 24:00:00 in some versions
     if s.endswith(" 24:00:00"):
-        return datetime.strptime(s[:-9], "%d%b%Y").replace(tzinfo=timezone.utc) + timedelta(days=1)
-    return datetime.strptime(s, "%d%b%Y %H:%M:%S").replace(tzinfo=timezone.utc)
+        local = datetime.strptime(s[:-9], "%d%b%Y") + timedelta(days=1)
+    else:
+        local = datetime.strptime(s, "%d%b%Y %H:%M:%S")
+    return local.replace(tzinfo=tz).astimezone(timezone.utc)
 
 
 class RasFile:
     """Open HEC-RAS result file. Use as a context manager; arrays are read lazily, one row at a time."""
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, time_zone: str = DEFAULT_TIME_ZONE):
+        """`time_zone`: a key of TIME_ZONES, the clock the file's time stamps are read in."""
+        if time_zone not in TIME_ZONES:
+            raise ValueError(f"unknown time zone {time_zone!r}")
         self.path = path
+        self._tz = TIME_ZONES[time_zone]
         self._f: Optional[h5py.File] = None
         self._times: Optional[list] = None
 
@@ -70,7 +82,7 @@ class RasFile:
             key = _TS + "/Time Date Stamp"
             if key not in self._f:
                 raise UserFacingError(_NO_RESULTS)
-            self._times = [_parse_stamp(_text(s)) for s in self._f[key][:]]
+            self._times = [_parse_stamp(_text(s), self._tz) for s in self._f[key][:]]
         return self._times
 
     def n_cells(self, area: str) -> int:

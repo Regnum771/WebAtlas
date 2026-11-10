@@ -3,7 +3,7 @@ Time-series import (S1 Task 6): the `timeseries_import` job. An upload made for 
 GeoTIFF or a zip of them, a NetCDF-4 file or a zip of them, a HEC-RAS 2D result .hdf) becomes one
 COG per time step in TIMESERIES_DIR/<name>/, published on GeoNode's GeoServer as ImageMosaic
 geonode:<name>, registered in GeoNode for its owner, and written to catalogue.resources so the
-uploader sees the entry at once (ruling R2). <name> is ts_<first 8 characters of the fileId>.
+uploader sees the entry at once (ruling R2). <name> is ts_<first 16 hex digits of the fileId>.
 
 A HEC-RAS result also gives a peak-depth raster, TIMESERIES_DIR/<name>_peak/<name>_peak.tif: in a
 folder of its own beside the mosaic (never inside it, where the mosaic would take it for a step),
@@ -11,14 +11,22 @@ published as a single coverage geonode:<name>_peak and registered as a second, `
 
 Steps: read (what the upload holds and the time of each grid), transform (the step COGs; for
 HEC-RAS the cell grid on FABDEM and the peak too), publish (GeoServer, GeoNode, the catalogue rows).
+Every GeoServer publish (the mosaic, then the peak) runs before any GeoNode registration, so a
+GeoServer failure never leaves a GeoNode dataset behind.
 
 GeoServer and GeoNode are reached only through the module attributes publish, publish_single,
 unpublish and register (the checks replace them). Neither is transactional, so what the job did
 there and on disk is undone through Steps.on_rollback when its transaction does not commit: the
 published stores are deleted (never with purge, see geoserver._delete_store), then the files this
 job wrote are removed one by one by name and their folders with os.rmdir. A GeoNode registration
-that succeeded before such a rollback stays in GeoNode (the bridge never deletes); the catalogue
-sync (Task 7) will see it, and a new run of the same upload registers it again under the same ids.
+that succeeded before such a rollback (the peak's registration failed after the series') stays in
+GeoNode (the bridge never deletes). Its GeoServer layer is gone, so the bridge lists it with
+hasLayer false and the catalogue sync skips it; a new run of the same upload (the web dialog keeps
+the uploaded file for a retry) publishes the same name again and the bridge resumes the dataset.
+
+A failed run shortens its upload's expiry to FAILED_UPLOAD_EXPIRY (expire_failed_upload, called by
+the worker after the rollback), so failed attempts do not hold the user's 4 GB of pending uploads
+for the full three days.
 """
 import os
 import pathlib
@@ -64,6 +72,7 @@ NOT_NETCDF4 = "Tệp NetCDF phải ở dạng NetCDF-4 (HDF5)."
 UNITS_DIFFER = "Các tệp NetCDF ghi đơn vị khác nhau."
 BAD_PATTERN = "Mẫu thời gian không hợp lệ."
 HDF_LABEL = "nội suy từ .hdf trên FABDEM"
+BAD_TIME_ZONE = "Múi giờ của tệp .hdf không hợp lệ."
 PEAK_TITLE_SUFFIX = " – độ sâu lớn nhất"
 
 DEFAULT_TIMESERIES_DIR = "/repo/var/timeseries"
@@ -75,6 +84,8 @@ MAX_UNZIPPED_BYTES = 8 * 1024 ** 3
 DEM_RES = 30.0
 DEFAULT_EVERY = 4  # hourly from HEC-RAS's 15-minute output
 WORLD = (-180.0, -90.0, 180.0, 90.0)
+# How long the upload of a failed run is kept for a retry (catalogue/uploads.ts gives 3 days).
+FAILED_UPLOAD_EXPIRY = "1 day"
 # Files GeoServer and mosaic.write_config put in a mosaic folder, besides the steps.
 MOSAIC_FILES = ("indexer.properties", "timeregex.properties", "datastore.properties", "sample_image.dat")
 # Overall progress: read 0-10, the steps 10-80, publishing after that.
@@ -337,6 +348,32 @@ def write_row(cur, reg: dict, kind: str, title: str, abstract: str, owner_sub, v
     return cur.fetchone()[0]
 
 
+def expire_failed_upload(conn, job) -> None:
+    """
+    After a failed timeseries_import (its transaction rolled back): the upload, and the times table
+    when one was used, expire within FAILED_UPLOAD_EXPIRY rather than the 3 days the API gave them,
+    so a user's failed attempts stop counting toward the 4 GB pending cap soon. Only a date that is
+    set is shortened (never one an earlier import cleared), and never lengthened. Commits.
+    """
+    params = job.get("params") or {}
+    try:
+        file_id = str(uuid.UUID(str(params.get("fileId"))))
+    except ValueError:
+        return
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE workspace.files SET delete_after = LEAST(delete_after, now() + %s::interval) "
+            "WHERE id = %s::uuid AND kind = 'upload' AND purpose = 'timeseries' AND delete_after IS NOT NULL",
+            (FAILED_UPLOAD_EXPIRY, file_id))
+        csv_path = params.get("timesCsvPath")
+        if isinstance(csv_path, str) and csv_path:
+            cur.execute(
+                "UPDATE workspace.files SET delete_after = LEAST(delete_after, now() + %s::interval) "
+                "WHERE path = %s AND kind = 'upload' AND purpose = 'timeseries' AND delete_after IS NOT NULL",
+                (FAILED_UPLOAD_EXPIRY, csv_path))
+    conn.commit()
+
+
 def keep_uploads(cur, file_id: str, times_csv_path) -> None:
     """
     The upload (and the times table, when one was used) is now in the catalogue, so it no longer
@@ -357,14 +394,17 @@ def keep_uploads(cur, file_id: str, times_csv_path) -> None:
 def run_timeseries_import(conn, job, steps) -> dict:
     params = job["params"]
     file_id = str(uuid.UUID(params["fileId"]))
-    name = f"ts_{file_id[:8]}"
+    # 16 hex digits (64 bits): two uploads sharing a shorter prefix would clash for good (M3).
+    name = f"ts_{uuid.UUID(file_id).hex[:16]}"
     owner = params["owner"]
     original_name = params.get("originalName") or params["path"]
     title = layer_title(params.get("title"), file_stem(original_name))
     abstract = params.get("abstract") or ""
     every = params.get("every")
     every = every if isinstance(every, int) and not isinstance(every, bool) and every >= 1 else DEFAULT_EVERY
+    # NetCDF only: the dialog sends the map view's extent ("Cắt theo khung bản đồ hiện tại").
     clip = tuple(params.get("clip4326") or WORLD)
+    hdf_time_zone = params.get("hdfTimeZone") or hecras.DEFAULT_TIME_ZONE
     root = timeseries_dir()
     folder = _inside(root, os.path.join(root, name))
 
@@ -402,7 +442,9 @@ def run_timeseries_import(conn, job, steps) -> dict:
             steps.done("transform")
         else:
             variable, unit, entry_title = "depth", "m", f"{title} ({HDF_LABEL})"
-            with hecras.RasFile(files[0][1]) as ras:
+            if hdf_time_zone not in hecras.TIME_ZONES:
+                raise UserFacingError(BAD_TIME_ZONE)
+            with hecras.RasFile(files[0][1], hdf_time_zone) as ras:
                 area = hecras.pick_area(ras, params.get("hdfArea") or None)
                 ras_times = ras.times  # a geometry-only file fails here, with its own message
                 dem_arr, transform = dem_for(ras, area)
@@ -431,13 +473,16 @@ def run_timeseries_import(conn, job, steps) -> dict:
     # --- publish
     steps.start("publish")
     try:
+        # GeoServer first, both layers; GeoNode only once both exist.
         steps.on_rollback(lambda: unpublish(name))
         alternate = publish(name, variable)
-        reg = register(name, entry_title, abstract, owner)
-        peak_reg = None
+        peak_alternate = None
         if peak:
             steps.on_rollback(lambda: unpublish(peak))
             peak_alternate = publish_single(peak, f"{geoserver_dir()}/{peak}/{peak}.tif", variable)
+        reg = register(name, entry_title, abstract, owner)
+        peak_reg = None
+        if peak:
             peak_reg = register(peak, f"{title}{PEAK_TITLE_SUFFIX}", abstract, owner)
             peak_reg = {**peak_reg, "alternate": peak_reg.get("alternate") or peak_alternate}
     except UserFacingError:
