@@ -362,9 +362,12 @@ def _workspace_layers():
 
 
 def _layer_of(alternate, coverages, feature_types):
-    """(hasLayer, layerType) of a resource; (None, None) outside the geonode workspace (not looked up)."""
+    """
+    (hasLayer, layerType) of a resource; (None, None) outside the geonode workspace or when
+    GeoServer's layer lists could not be read (coverages is None): unknown, not missing.
+    """
     prefix = f"{WORKSPACE}:"
-    if not (isinstance(alternate, str) and alternate.startswith(prefix)):
+    if coverages is None or not (isinstance(alternate, str) and alternate.startswith(prefix)):
         return None, None
     name = alternate[len(prefix):]
     if name in coverages:
@@ -381,7 +384,8 @@ def list_resources(request):
     Every GeoNode resource (published or not) changed at or after `since`, PAGE_SIZE per page, with
     GeoNode's anonymous view/download permissions and, for the geonode workspace, whether GeoServer
     still has the layer (hasLayer) and its kind (layerType: coverage or featureType). A GeoServer
-    that does not answer fails the page (502): the sync then rolls back and tries again.
+    that does not answer leaves both null (unknown) rather than failing the page, so publish and
+    permission changes still reach WebAtlas while GeoServer's REST API is down.
     """
     since = None
     if request.GET.get("since"):
@@ -411,9 +415,9 @@ def list_resources(request):
     if any(isinstance(r.alternate, str) and r.alternate.startswith(f"{WORKSPACE}:") for r in rows):
         try:
             coverages, feature_types = _workspace_layers()
-        except Exception:  # noqa: BLE001 - logged; a fixed message to the caller
+        except Exception:  # noqa: BLE001 - logged; the page is still served with layers unknown
             logger.exception("webatlas bridge: listing GeoServer's layers failed")
-            return _error(502, "GeoServer không trả lời, chưa liệt kê được dữ liệu.")
+            coverages = feature_types = None
     resources = [{
         "pk": r.pk,
         "uuid": str(r.uuid),
