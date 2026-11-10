@@ -71,4 +71,17 @@
   accent-color: var(--ink);
 }
 
-.time-slider-time { flex: none; font-weight: 600; white-space: nowrap; }
+/* Shrinks last, with an ellipsis, so a narrow stage (768 px) never pushes it through the box border. */
+.time-slider-time {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  .time-slider { gap: var(--space-2); padding-inline: var(--space-2); }
+  .time-slider-range { min-width: 64px; }
+}

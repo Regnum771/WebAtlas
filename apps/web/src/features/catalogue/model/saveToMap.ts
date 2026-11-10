@@ -4,8 +4,12 @@ import type { CatalogueItem } from '../api/catalogue.api';
 /** `link`: Lưu vào bản đồ của tôi (a catalogue link layer); `copy`: Sao vào Bản của tôi (an import of the data). */
 export type SaveMode = 'link' | 'copy';
 
-/** Only vector and raster entries have data to copy; the rest are links only (the API refuses them too). */
-export const canCopy = (item: Pick<CatalogueItem, 'kind'>) => item.kind === 'vector' || item.kind === 'raster';
+/**
+ * Only vector and raster entries have data to copy; the rest are links only. GeoNode may also
+ * withhold download (downloadable false). The API refuses both too.
+ */
+export const canCopy = (item: Pick<CatalogueItem, 'kind' | 'downloadable'>) =>
+  (item.kind === 'vector' || item.kind === 'raster') && item.downloadable !== false;
 
 export interface SaveToMapState {
   /** The user's own maps (owner role: a recipient cannot add layers to a shared map). */

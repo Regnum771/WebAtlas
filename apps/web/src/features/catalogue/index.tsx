@@ -15,13 +15,20 @@ import { useTimeseriesUploadPresenter } from './model/useTimeseriesUploadPresent
 import { CataloguePickerView } from './ui/CataloguePicker.view';
 import { CatalogueLayersSectionView } from './ui/CatalogueLayersSection.view';
 import { TimeseriesUploadDialogView } from './ui/TimeseriesUploadDialog.view';
+import { viewExtent4326 } from './model/viewExtent';
+import type { Clip4326 } from './api/catalogue.api';
 
 /** This section's share of the time slider's steps (the personal maps' links supply their own). */
 const STEPS_SOURCE = 'catalogue';
 
-/** The time-series upload dialog with its presenter. */
-export function TimeseriesUploadDialog({ onClose }: { onClose: () => void }) {
-  const presenter = useTimeseriesUploadPresenter();
+/**
+ * The time-series upload dialog with its presenter. `viewExtent4326` reads the map's current view
+ * for "Cắt theo khung bản đồ hiện tại".
+ */
+export function TimeseriesUploadDialog({ onClose, viewExtent4326: extent }: {
+  onClose: () => void; viewExtent4326?: () => Clip4326 | null;
+}) {
+  const presenter = useTimeseriesUploadPresenter({ viewExtent4326: extent });
   return <TimeseriesUploadDialogView {...presenter} onClose={onClose} />;
 }
 
@@ -29,11 +36,12 @@ export function TimeseriesUploadDialog({ onClose }: { onClose: () => void }) {
 export function CataloguePicker() {
   const picker = useCataloguePickerPresenter();
   const { status } = useSession();
+  const { map } = useMapContext();
   const [uploading, setUploading] = useState(false);
   return (
     <>
       <CataloguePickerView {...picker} canUpload={status === 'authenticated'} onUpload={() => setUploading(true)} />
-      {uploading && <TimeseriesUploadDialog onClose={() => setUploading(false)} />}
+      {uploading && <TimeseriesUploadDialog onClose={() => setUploading(false)} viewExtent4326={() => viewExtent4326(map)} />}
     </>
   );
 }

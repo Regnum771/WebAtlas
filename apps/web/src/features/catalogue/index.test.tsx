@@ -16,17 +16,22 @@ vi.mock('../my-maps/api/workspace.api', async (orig) => ({
 
 import { TimeseriesUploadDialog } from './index';
 import { getCatalogue, resetCatalogue } from './model/catalogue.store';
+import { resetFollowedJobs } from './model/timeseriesJobFollower';
 import { ApiError } from '../../shared/api/apiClient';
+import { getToasts, resetToasts } from '../../shared/ui/toast.store';
+import type { Clip4326 } from './api/catalogue.api';
 
 const file = (name: string) => new File(['x'], name);
-function setup() {
+function setup(viewExtent4326?: () => Clip4326 | null) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={qc}><TimeseriesUploadDialog onClose={vi.fn()} /></QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={qc}><TimeseriesUploadDialog onClose={vi.fn()} viewExtent4326={viewExtent4326} /></QueryClientProvider>,
+  );
 }
 const pick = (label: string, name: string) => userEvent.upload(screen.getByLabelText(label), file(name));
 
 describe('TimeseriesUploadDialog', () => {
-  beforeEach(() => { Object.values(h).forEach((f) => f.mockReset()); resetCatalogue(); });
+  beforeEach(() => { Object.values(h).forEach((f) => f.mockReset()); resetCatalogue(); resetFollowedJobs(); resetToasts(); });
 
   it('requires a title', async () => {
     setup();
@@ -65,7 +70,9 @@ describe('TimeseriesUploadDialog', () => {
     await userEvent.type(screen.getByLabelText('Vùng 2D (để trống nếu chỉ có một)'), 'Area1');
     await userEvent.click(screen.getByLabelText('Mỗi 15 phút'));
     await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
-    await waitFor(() => expect(h.createTimeseries).toHaveBeenCalledWith({ fileId: 'f1', title: 'Lũ', hdfArea: 'Area1', every: 1 }));
+    await waitFor(() => expect(h.createTimeseries).toHaveBeenCalledWith({
+      fileId: 'f1', title: 'Lũ', hdfArea: 'Area1', every: 1, hdfTimeZone: 'Asia/Ho_Chi_Minh',
+    }));
     expect(await screen.findByText('Đọc tệp')).toBeInTheDocument();
     await waitFor(() => expect(getCatalogue().map((l) => l.item.id)).toEqual(['r1']), { timeout: 5000 });
     expect(h.getCatalogueItem).toHaveBeenCalledWith('r1');
@@ -85,6 +92,102 @@ describe('TimeseriesUploadDialog', () => {
     await pick('Tệp CSV thời điểm', 't.csv');
     await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
     await waitFor(() => expect(h.createTimeseries).toHaveBeenCalledWith({ fileId: 'f1', title: 'Mưa', timesCsvFileId: 'c1' }));
+  });
+
+  it('I2: a retry with the same file reuses the upload; another file is uploaded', async () => {
+    h.uploadCatalogueFile.mockResolvedValueOnce({ id: 'f1', originalName: 'a.zip', sizeBytes: 1 })
+      .mockResolvedValueOnce({ id: 'f2', originalName: 'b.zip', sizeBytes: 1 });
+    h.createTimeseries.mockResolvedValueOnce({ job: { id: 'j1' } }).mockResolvedValue({ job: { id: 'j2' } });
+    h.getJob.mockResolvedValue({ id: 'j1', status: 'failed', progress: 0, steps: [], result: null, error: 'Mẫu thời gian không khớp.' });
+    setup();
+    await pick('Tệp dữ liệu', 'a.zip');
+    await userEvent.type(screen.getByLabelText('Tiêu đề'), 'Mưa');
+    await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
+    expect(await screen.findByText('Mẫu thời gian không khớp.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
+    await waitFor(() => expect(h.createTimeseries).toHaveBeenCalledTimes(2));
+    expect(h.uploadCatalogueFile).toHaveBeenCalledTimes(1);
+    expect(h.createTimeseries.mock.calls[1][0]).toMatchObject({ fileId: 'f1' });
+    // A different File object is a new upload.
+    await pick('Tệp dữ liệu', 'b.zip');
+    await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
+    await waitFor(() => expect(h.createTimeseries).toHaveBeenCalledTimes(3));
+    expect(h.uploadCatalogueFile).toHaveBeenCalledTimes(2);
+    expect(h.createTimeseries.mock.calls[2][0]).toMatchObject({ fileId: 'f2' });
+  });
+
+  it('I5: a NetCDF upload is cut to the map view by default; unticking sends no extent', async () => {
+    h.uploadCatalogueFile.mockResolvedValue({ id: 'f1', originalName: 'm.nc', sizeBytes: 1 });
+    h.createTimeseries.mockRejectedValueOnce(new ApiError(400, 'X', 'thử lại')).mockResolvedValue({ job: { id: 'j1' } });
+    h.getJob.mockResolvedValue({ id: 'j1', status: 'running', progress: 0, steps: [], result: null, error: null });
+    setup(() => [107.2, 14.8, 108.9, 16.2]);
+    await pick('Tệp dữ liệu', 'm.nc');
+    const box = screen.getByLabelText('Cắt theo khung bản đồ hiện tại');
+    expect(box).toBeChecked();
+    await userEvent.type(screen.getByLabelText('Tiêu đề'), 'Mưa');
+    await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
+    await waitFor(() => expect(h.createTimeseries).toHaveBeenCalledWith({ fileId: 'f1', title: 'Mưa', clip4326: [107.2, 14.8, 108.9, 16.2] }));
+    await userEvent.click(box);
+    await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
+    await waitFor(() => expect(h.createTimeseries).toHaveBeenLastCalledWith({ fileId: 'f1', title: 'Mưa' }));
+  });
+
+  it('I5/I6: the clip box shows for .nc and .zip, the clock choice for .hdf only', async () => {
+    setup(() => [0, 0, 1, 1]);
+    await pick('Tệp dữ liệu', 'a.zip');
+    expect(screen.getByLabelText('Cắt theo khung bản đồ hiện tại')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Giờ Việt Nam (UTC+7)')).toBeNull();
+    await pick('Tệp dữ liệu', 'a.tif');
+    expect(screen.queryByLabelText('Cắt theo khung bản đồ hiện tại')).toBeNull();
+    await pick('Tệp dữ liệu', 'a.hdf');
+    expect(screen.queryByLabelText('Cắt theo khung bản đồ hiện tại')).toBeNull();
+    expect(screen.getByLabelText('Giờ Việt Nam (UTC+7)')).toBeChecked();
+    expect(screen.getByLabelText('UTC')).not.toBeChecked();
+  });
+
+  it('I6: choosing UTC for a .hdf sends hdfTimeZone UTC', async () => {
+    h.uploadCatalogueFile.mockResolvedValue({ id: 'f1', originalName: 'a.hdf', sizeBytes: 1 });
+    h.createTimeseries.mockResolvedValue({ job: { id: 'j1' } });
+    h.getJob.mockResolvedValue({ id: 'j1', status: 'running', progress: 0, steps: [], result: null, error: null });
+    setup();
+    await pick('Tệp dữ liệu', 'a.hdf');
+    await userEvent.type(screen.getByLabelText('Tiêu đề'), 'Lũ');
+    await userEvent.click(screen.getByLabelText('UTC'));
+    await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
+    await waitFor(() => expect(h.createTimeseries).toHaveBeenCalledWith({ fileId: 'f1', title: 'Lũ', every: 4, hdfTimeZone: 'UTC' }));
+  });
+
+  it('M14: closing the dialog aborts the upload in flight', async () => {
+    let signal: AbortSignal | undefined;
+    h.uploadCatalogueFile.mockImplementation((_f: File, s?: AbortSignal) => {
+      signal = s;
+      return new Promise((_resolve, reject) => s?.addEventListener('abort', () => reject(new ApiError(0, 'ABORTED', 'Đã huỷ.'))));
+    });
+    const { unmount } = setup();
+    await pick('Tệp dữ liệu', 'a.zip');
+    await userEvent.type(screen.getByLabelText('Tiêu đề'), 'Mưa');
+    await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
+    await waitFor(() => expect(signal).toBeDefined());
+    expect(signal!.aborted).toBe(false);
+    unmount();
+    expect(signal!.aborted).toBe(true);
+    expect(h.createTimeseries).not.toHaveBeenCalled();
+  });
+
+  it('M14: a job still running when the dialog closes is followed and its entry put on the map', async () => {
+    h.uploadCatalogueFile.mockResolvedValue({ id: 'f1', originalName: 'a.zip', sizeBytes: 1 });
+    h.createTimeseries.mockResolvedValue({ job: { id: 'j1' } });
+    h.getJob.mockResolvedValue({ id: 'j1', status: 'running', progress: 10, steps: [{ key: 's', label: 'Đọc tệp', status: 'running' }], result: null, error: null });
+    h.getCatalogueItem.mockResolvedValue({ id: 'r1', kind: 'timeseries', title: 'Mưa', layerName: 'geonode:x', timeSteps: [] });
+    const { unmount } = setup();
+    await pick('Tệp dữ liệu', 'a.zip');
+    await userEvent.type(screen.getByLabelText('Tiêu đề'), 'Mưa');
+    await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
+    expect(await screen.findByText('Đọc tệp')).toBeInTheDocument();
+    h.getJob.mockResolvedValue({ id: 'j1', status: 'succeeded', progress: 100, steps: [], result: { resourceId: 'r1' }, error: null });
+    unmount();
+    await waitFor(() => expect(getCatalogue().map((l) => l.item.id)).toEqual(['r1']), { timeout: 5000 });
+    expect(getToasts().at(-1)?.title).toBe('Đã thêm “Mưa” vào bản đồ.');
   });
 
   it('shows the API refusal, e.g. no SSO', async () => {

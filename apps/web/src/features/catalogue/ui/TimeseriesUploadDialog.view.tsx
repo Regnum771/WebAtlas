@@ -3,7 +3,9 @@ import { Dialog } from '../../../shared/ui/Dialog';
 import { Message } from '../../../shared/ui/Message';
 import { TextField } from '../../../shared/ui/TextField';
 import { JobProgressView } from '../../my-maps/ui/JobProgress.view';
-import { CSV_PATTERN, PATTERN_OPTIONS, type useTimeseriesUploadPresenter } from '../model/useTimeseriesUploadPresenter';
+import {
+  CSV_PATTERN, HDF_TIME_ZONE_OPTIONS, PATTERN_OPTIONS, type useTimeseriesUploadPresenter,
+} from '../model/useTimeseriesUploadPresenter';
 
 export type TimeseriesUploadDialogViewProps = ReturnType<typeof useTimeseriesUploadPresenter> & { onClose: () => void };
 
@@ -60,7 +62,26 @@ export function TimeseriesUploadDialogView(p: TimeseriesUploadDialogViewProps) {
               <input type="checkbox" checked={p.fifteen} disabled={p.busy} onChange={(e) => p.setFifteen(e.target.checked)} />
               Mỗi 15 phút
             </label>
+            <fieldset className="field ts-clock">
+              <legend>Giờ ghi trong tệp .hdf</legend>
+              {HDF_TIME_ZONE_OPTIONS.map((o) => (
+                <label key={o.value} className="check">
+                  <input
+                    type="radio" name="ts-clock" value={o.value} checked={p.hdfTimeZone === o.value} disabled={p.busy}
+                    onChange={() => p.setHdfTimeZone(o.value)}
+                  />
+                  {o.label}
+                </label>
+              ))}
+            </fieldset>
           </>
+        )}
+
+        {p.showClip && (
+          <label className="check">
+            <input type="checkbox" checked={p.clip} disabled={p.busy} onChange={(e) => p.setClip(e.target.checked)} />
+            Cắt theo khung bản đồ hiện tại
+          </label>
         )}
 
         {p.job && <JobProgressView job={p.job} />}

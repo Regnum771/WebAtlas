@@ -6,6 +6,10 @@
   border: 1px solid var(--ink);
   border-radius: var(--radius);
   font: 600 var(--text-xs) var(--font-ui);
+  /* Bounded, so near the map's right edge (768 px) the label ends in an ellipsis inside the stage. */
+  max-width: min(32ch, calc(50vw - var(--space-4)));
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
 }

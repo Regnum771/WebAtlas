@@ -13,7 +13,11 @@ export interface CatalogueItem {
   abstract: string;
   managingUnit: string | null;
   isPublished: boolean;
+  /** Seen by everyone: published, and GeoNode lets anonymous users view it. */
+  isPublic?: boolean;
   mine: boolean;
+  /** The caller may copy its data into Bản của tôi (GeoNode's anonymous download, or theirs). */
+  downloadable?: boolean;
   variable: string | null;
   unit: string | null;
   timeSteps: string[] | null;
@@ -29,6 +33,10 @@ export interface CatalogueSearchResult {
 }
 
 export type TimePattern = 'YYYYMMDD' | 'YYYYMMDDHHmm' | 'YYYYDDD';
+/** The clock of a HEC-RAS file's time stamps (the worker converts them to UTC). */
+export type HdfTimeZone = 'Asia/Ho_Chi_Minh' | 'UTC';
+/** [minLon, minLat, maxLon, maxLat] in EPSG:4326. */
+export type Clip4326 = [number, number, number, number];
 
 export interface TimeseriesInput {
   fileId: string;
@@ -38,6 +46,8 @@ export interface TimeseriesInput {
   timesCsvFileId?: string;
   hdfArea?: string;
   every?: 1 | 4;
+  clip4326?: Clip4326;
+  hdfTimeZone?: HdfTimeZone;
 }
 
 export interface CatalogueUpload {
@@ -65,10 +75,12 @@ export function catalogueWmsUrl(id: string): string {
   return `${API_BASE_URL}${BASE}/${encodeURIComponent(id)}/wms`;
 }
 
-export async function uploadCatalogueFile(file: File): Promise<CatalogueUpload> {
+export async function uploadCatalogueFile(file: File, signal?: AbortSignal): Promise<CatalogueUpload> {
   const form = new FormData();
   form.append('file', file);
-  const res = await apiRequest<{ upload: CatalogueUpload }>(`${BASE}/uploads`, { method: 'POST', body: form });
+  const res = await apiRequest<{ upload: CatalogueUpload }>(`${BASE}/uploads`, {
+    method: 'POST', body: form, ...(signal ? { signal } : {}),
+  });
   return res.upload;
 }
 

@@ -110,6 +110,44 @@ describe('useSaveToMapPresenter', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.uploads });
   });
 
+  it('M1: closing the picker or opening another row mid-copy still finishes the copy, with a toast', async () => {
+    copyCatalogueItem.mockResolvedValue({ job: job('queued') });
+    let finish = false;
+    getJob.mockImplementation(async () => (finish ? job('succeeded', { result: { layerIds: ['n1'], rows: 1 } }) : job('running')));
+    const { result, invalidate } = setup();
+    await waitFor(() => expect(result.current.targets).toHaveLength(1));
+    act(() => result.current.start('r1', 'copy'));
+    await act(async () => { await result.current.submit(ITEM); });
+    act(() => result.current.close());
+    expect(result.current.job).toBeNull();
+    // Another row's copy picker cannot start a second copy meanwhile; a link stays possible.
+    act(() => result.current.start('r2', 'copy'));
+    expect(result.current.busy).toBe(true);
+    await act(async () => { await result.current.submit({ ...ITEM, id: 'r2' }); });
+    expect(copyCatalogueItem).toHaveBeenCalledTimes(1);
+    act(() => result.current.start('r2', 'link'));
+    expect(result.current.busy).toBe(false);
+    finish = true;
+    await waitFor(() => expect(getToasts().at(-1)?.title).toBe('Đã sao vào “Bản của tôi”.'), { timeout: 4000 });
+    expect(result.current.done).toBeNull();
+    expect(getMyMaps().expanded.has('m1')).toBe(true);
+    expect(getMyMaps().layers.n1).toEqual({ visible: true, opacity: 1 });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.uploads });
+  });
+
+  it('M1: reopening the copied row\'s picker shows the running copy', async () => {
+    copyCatalogueItem.mockResolvedValue({ job: job('queued') });
+    getJob.mockResolvedValue(job('running'));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.targets).toHaveLength(1));
+    act(() => result.current.start('r1', 'copy'));
+    await act(async () => { await result.current.submit(ITEM); });
+    act(() => result.current.close());
+    act(() => result.current.start('r1', 'copy'));
+    expect(result.current.job?.id).toBe('j1');
+    expect(result.current.busy).toBe(true);
+  });
+
   it('a refused copy or a failed job shows the message verbatim', async () => {
     copyCatalogueItem.mockRejectedValueOnce(new ApiError(400, 'VALIDATION_ERROR', 'Mục này chỉ thêm được dạng liên kết.'));
     const { result } = setup();
