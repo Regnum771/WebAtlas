@@ -85,6 +85,15 @@ export const AddEditCopyLayerBody = z.object({
   expectedRevision: ExpectedRevision,
 });
 
+/** Body of POST /maps/:mapId/layers once the dispatcher has seen kind = 'catalogue' (catalogueLinks.ts). */
+export const AddCatalogueLayerBody = z.object({
+  kind: z.literal('catalogue'),
+  resourceId: z.string().uuid(),
+  title: Title.optional(),
+  style: JsonObject.optional(),
+  expectedRevision: ExpectedRevision,
+});
+
 /** `fields` is for a free layer only; the dispatcher refuses it on any other kind. */
 export const UpdateLayerBody = z
   .object({

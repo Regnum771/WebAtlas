@@ -3,7 +3,12 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { layerView, setTruncated, useMyMapsStore } from './myMaps.store';
 import { PERSONAL_Z_BASE, syncPersonalLayers, type PersonalLayerEntry } from './personalLayers';
-import { dropGoneMap, isMapNotFound, mapDetailQuery, useMyMaps } from './queries';
+import { dropGoneMap, isMapNotFound, keys, mapDetailQuery, useMyMaps } from './queries';
+import { setStepsFor, useTimeSlider } from '../../time-slider/model/timeSlider.store';
+import { unionSteps } from '../../time-slider/model/timeSteps';
+
+/** The personal maps' share of the time slider's steps (the free-standing catalogue layers supply their own). */
+const STEPS_SOURCE = 'personal';
 
 /**
  * Keeps the map's personal layers in step with the panel: the layers of every expanded map,
@@ -30,11 +35,22 @@ export function usePersonalLayersSync(): void {
     zIndex: PERSONAL_Z_BASE + rows.length - 1 - i,
     onTruncated: setTruncated,
     onMapGone: (id: string) => dropGoneMap(qc, id, latest.current.filter((x) => x.mapId === id).map((x) => x.layer.id)),
+    // The map is read again: the link then comes back with `catalogue: null` and its row says why.
+    onCatalogueGone: (id: string) => { void qc.invalidateQueries({ queryKey: keys.map(id) }); },
   }));
   // Syncs only when something drawn changed, not on every render of the panel.
   const signature = JSON.stringify(entries.map((e) => [
     e.mapId, e.layer.id, e.layer.kind, e.layer.layerKey, e.layer.style, e.visible, e.opacity, e.zIndex,
+    e.layer.catalogue?.id ?? null, e.layer.catalogue?.layerName ?? null,
   ]));
+  // The visible time-series links supply their share of the time slider's steps.
+  const steps = JSON.stringify(unionSteps(entries
+    .filter((e) => e.visible && e.layer.kind === 'catalogue' && e.layer.catalogue?.kind === 'timeseries')
+    .map((e) => e.layer.catalogue?.timeSteps ?? [])));
+  const hasLinks = entries.some((e) => e.layer.kind === 'catalogue');
+  const time = useTimeSlider().time;
+  // Only links follow the slider: without any, a slider tick does not resync the personal layers.
+  const linkTime = hasLinks ? time : null;
 
   const latest = useRef(entries);
   useEffect(() => { latest.current = entries; });
@@ -49,10 +65,12 @@ export function usePersonalLayersSync(): void {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qc, details.map((d) => d.error).join('|')]);
   useEffect(() => {
-    if (map) syncPersonalLayers(map, latest.current);
-  }, [map, signature]);
+    if (map) syncPersonalLayers(map, latest.current, linkTime);
+  }, [map, signature, linkTime]);
+  useEffect(() => { setStepsFor(STEPS_SOURCE, JSON.parse(steps) as string[]); }, [steps]);
 
   useEffect(() => () => {
     if (map) syncPersonalLayers(map, []);
   }, [map]);
+  useEffect(() => () => setStepsFor(STEPS_SOURCE, []), []);
 }

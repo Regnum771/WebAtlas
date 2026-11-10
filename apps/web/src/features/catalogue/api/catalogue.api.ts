@@ -77,6 +77,14 @@ export function createTimeseries(input: TimeseriesInput): Promise<{ job: Job }> 
 }
 
 /**
+ * "Sao vào Bản của tôi": queues an import of a vector or raster entry's data into one of the
+ * caller's own maps (202 {job}); other kinds are refused with the API's message.
+ */
+export function copyCatalogueItem(id: string, mapId: string): Promise<{ job: Job }> {
+  return apiRequest<{ job: Job }>(`${BASE}/${encodeURIComponent(id)}/copy`, { method: 'POST', body: JSON.stringify({ mapId }) });
+}
+
+/**
  * GETs a catalogue URL with the Bearer token (when signed in) and returns a blob URL for it.
  * The caller revokes the URL once the image has loaded.
  */

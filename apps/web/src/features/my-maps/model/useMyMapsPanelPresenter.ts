@@ -25,6 +25,8 @@ export interface LayerRowData {
   style: PersonalLayerStyle;
   geometryType: GeometryType | null;
   fields: FieldDef[];
+  /** True for a catalogue link whose entry the reader may not see, or that was deleted. */
+  gone?: boolean;
   isFirst: boolean;
   isLast: boolean;
 }
@@ -90,6 +92,7 @@ export function useMyMapsPanelPresenter() {
           id: l.id, kind: l.kind, title: l.title, kindLabel: layerKindLabel(l), ...layerView(l.id),
           truncated: store.truncated[l.id] ?? null,
           style: parseStyle(l.style), geometryType: l.geometryType, fields: l.fields,
+          gone: l.kind === 'catalogue' && l.catalogue === null,
           isFirst: i === 0, isLast: i === all.length - 1,
         }))
         : null,

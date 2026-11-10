@@ -7,9 +7,11 @@ import {
   MAP_NOT_FOUND, assertCanRead, bumpMap, lockMapForWrite, sharedWithUserSql,
   type MapRole, type Queryable,
 } from './access';
+import type { CatalogueItem } from '../catalogue/repository';
+import { LAYER_COLUMNS, withCatalogue, type LayerRow } from './freeLayers';
 import { scheduleCogRemoval } from './rasters';
 
-export type LayerKind = 'free' | 'edit_copy' | 'raster' | 'annotation';
+export type LayerKind = 'free' | 'edit_copy' | 'raster' | 'annotation' | 'catalogue';
 
 export interface LayerSummary {
   id: string;
@@ -29,6 +31,11 @@ export interface LayerSummary {
    * /raster route; the file id itself stays private.
    */
   raster: Record<string, unknown> | null;
+  /**
+   * A catalogue link's entry as the reader sees it (catalogueLinks.ts); null when the reader may
+   * not see it or it was deleted, and for every other kind.
+   */
+  catalogue: CatalogueItem | null;
 }
 
 export interface MapSummary {
@@ -52,24 +59,22 @@ const SUMMARY_COLUMNS = `
   m.revision, m.updated_at AS "updatedAt",
   (SELECT count(*)::int FROM workspace.map_layers l WHERE l.map_id = m.id) AS "layerCount"`;
 
-async function loadLayers(q: Queryable, mapId: string): Promise<LayerSummary[]> {
-  const { rows } = await q.query<LayerSummary>(
-    `SELECT l.id, l.kind, l.title, l.position, l.style, l.geometry_type AS "geometryType", l.fields,
-            l.layer_key AS "layerKey", l.draft_id AS "draftId",
-            CASE WHEN l.kind = 'free'
-                 THEN (SELECT count(*)::int FROM workspace.features f WHERE f.layer_id = l.id)
-            END AS "featureCount",
-            CASE WHEN l.kind = 'raster' THEN l.raster END AS raster
+async function loadLayers(q: Queryable, mapId: string, viewer: CurrentUser): Promise<LayerSummary[]> {
+  const { rows } = await q.query<LayerRow>(
+    `SELECT ${LAYER_COLUMNS}
        FROM workspace.map_layers l
       WHERE l.map_id = $1
       ORDER BY l.position`,
     [mapId]
   );
-  return rows;
+  return withCatalogue(q, viewer, rows);
 }
 
-/** The map's detail as seen by a user whose role has already been established. */
-export async function loadDetail(q: Queryable, mapId: string, role: MapRole): Promise<MapDetail> {
+/**
+ * The map's detail as seen by `viewer`, whose role has already been established. The viewer's
+ * own visibility decides what each catalogue link shows.
+ */
+export async function loadDetail(q: Queryable, mapId: string, role: MapRole, viewer: CurrentUser): Promise<MapDetail> {
   const { rows } = await q.query<Omit<MapSummary, 'role'>>(
     `SELECT ${SUMMARY_COLUMNS}
        FROM workspace.maps m JOIN app.users u ON u.id = m.owner_id
@@ -78,7 +83,7 @@ export async function loadDetail(q: Queryable, mapId: string, role: MapRole): Pr
   );
   // Archived or deleted between the role check and this read.
   if (!rows[0]) throw new NotFoundError(MAP_NOT_FOUND);
-  return { ...rows[0], role, layers: await loadLayers(q, mapId) };
+  return { ...rows[0], role, layers: await loadLayers(q, mapId, viewer) };
 }
 
 export function mapsService(pg: Pool) {
@@ -112,7 +117,7 @@ export function mapsService(pg: Pool) {
            VALUES ($1, $2, $3) RETURNING id`,
           [user.id, input.title, input.description ?? '']
         );
-        return loadDetail(client, rows[0].id, 'owner');
+        return loadDetail(client, rows[0].id, 'owner', user);
       });
     },
 
@@ -138,7 +143,7 @@ export function mapsService(pg: Pool) {
           [mapId, user.id]
         );
       }
-      return loadDetail(pg, mapId, role);
+      return loadDetail(pg, mapId, role, user);
     },
 
     async update(
@@ -154,7 +159,7 @@ export function mapsService(pg: Pool) {
           [mapId, input.title ?? null, input.description ?? null]
         );
         await bumpMap(client, mapId);
-        return loadDetail(client, mapId, 'owner');
+        return loadDetail(client, mapId, 'owner', user);
       });
     },
 

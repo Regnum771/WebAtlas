@@ -87,6 +87,25 @@ describe('useExportPresenter', () => {
     expect(result.current.warnings).toEqual(['Tên trường bị cắt.']);
   });
 
+  it('a catalogue link stays in the list and is sent, so the export reports it skipped', async () => {
+    const WARN_LINK = 'Lớp liên kết Danh mục không được xuất.';
+    getMap.mockResolvedValue({
+      ...MAP,
+      layers: [layer({ id: 'l1' }), layer({ id: 'c1', kind: 'catalogue', title: 'Mưa giờ', position: 1, geometryType: null, catalogue: null })],
+    });
+    previewExport.mockResolvedValue({ layers: [{ layerId: 'l1', title: 'Cống', truncated: [] }], warnings: [WARN_LINK] });
+    queueExport.mockResolvedValue({ job: job('j1', 'queued'), warnings: [WARN_LINK] });
+    getJob.mockResolvedValue(job('j1', 'queued'));
+    const { result } = setup();
+    await waitFor(() => expect(result.current.layers.map((l) => l.id)).toEqual(['l1', 'c1']));
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    await waitFor(() => expect(result.current.warnings).toEqual([WARN_LINK]));
+    expect(previewExport).toHaveBeenCalledWith('m1', { format: 'gpkg', crs: 'wgs84-dd', layerIds: ['l1', 'c1'] });
+    await act(async () => { await result.current.submit(); });
+    expect(queueExport).toHaveBeenCalledWith('m1', { format: 'gpkg', crs: 'wgs84-dd', layerIds: ['l1', 'c1'] });
+    expect(result.current.warnings).toEqual([WARN_LINK]);
+  });
+
   it('several quick changes make one preview request', async () => {
     const { result } = setup();
     await waitFor(() => expect(result.current.layers).toHaveLength(2));

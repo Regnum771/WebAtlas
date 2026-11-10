@@ -20,6 +20,10 @@ const R = email('recipient');
 const M = email('member');
 const S = email('stranger');
 const ids = new Map<string, string>();
+/** The owner's identity-provider subject: catalogue entries are owned by subject (catalogue/access.ts). */
+const SUB_O = `p3a-sharing-sub-${randomUUID()}`;
+/** catalogue.resources rows of this file, by GeoNode pk. */
+const LINK_PK = { published: 900401, ownersDraft: 900402 };
 const NAMES: Record<string, string> = {
   [O]: 'Chu Ban Do', [R]: 'Nguoi Nhan Qzvk', [M]: 'Thanh Vien Nhom', [S]: 'Nguoi La',
 };
@@ -128,6 +132,8 @@ beforeAll(async () => {
     const row = await repo.insert({ email: who, password_hash: await hashPassword(PW), full_name: NAMES[who], role: 'viewer' });
     ids.set(who, row.id);
   }
+  await pool.query(`UPDATE app.users SET oidc_subject = $2 WHERE id = $1`, [ids.get(O), SUB_O]);
+  await pool.query(`DELETE FROM catalogue.resources WHERE geonode_pk = ANY($1::int[])`, [Object.values(LINK_PK)]);
   priorActive = await versionsService(pool).getActiveVersionId(LAYER);
   // This file commits an activation on dams: pin every existing version so retention cannot
   // prune a real ingest while it runs.
@@ -186,6 +192,7 @@ afterAll(async () => {
     },
     // audit_log.user_id is ON DELETE SET NULL: delete the audit rows before their users.
     () => pool.query(`DELETE FROM app.audit_log WHERE user_id = ANY($1::uuid[])`, [userIds]),
+    () => pool.query(`DELETE FROM catalogue.resources WHERE geonode_pk = ANY($1::int[])`, [Object.values(LINK_PK)]),
     cleanupPrincipals,
     () => app.close(),
   ]);
@@ -480,5 +487,40 @@ describe('sharing a personal map', () => {
     expect(copy.layers).toHaveLength(1);
     expect(copy.layers[0]).toMatchObject({ kind: 'edit_copy', layerKey: LAYER, draftId: null });
     expect(await mine(O)).toEqual(expect.arrayContaining([map.id, copy.id]));
+  });
+
+  it('a recipient sees a catalogue link with their own visibility, never the owner\'s', async () => {
+    const insert = async (pk: number, title: string, published: boolean) => (await getPool().query<{ id: string }>(
+      `INSERT INTO catalogue.resources (geonode_pk, geonode_uuid, alternate, kind, title, owner_sub, managing_unit,
+                                        is_published, is_approved, origin)
+       VALUES ($1, $2, $3, 'vector', $4, $5, 'VN', $6, $6, 'pipeline') RETURNING id`,
+      [pk, randomUUID(), `geonode:p3a_sharing_${pk}`, title, SUB_O, published]
+    )).rows[0].id;
+    const publishedId = await insert(LINK_PK.published, 'Trạm đo mưa', true);
+    const draftId = await insert(LINK_PK.ownersDraft, 'Nháp của chủ', false);
+
+    const map = await createMap(O, 'Bản có liên kết');
+    for (const [resourceId, expectedRevision] of [[publishedId, 0], [draftId, 1]] as const) {
+      const res = await call(O, 'POST', `/maps/${map.id}/layers`, { kind: 'catalogue', resourceId, expectedRevision });
+      expect(res.statusCode).toBe(201);
+    }
+    expect((await share(map.id, { userId: ids.get(R)! })).statusCode).toBe(201);
+
+    // The owner sees both entries, their own unpublished one included.
+    const own = (await call(O, 'GET', `/maps/${map.id}`)).json().map.layers;
+    expect(own.map((l: { catalogue: { id: string } | null }) => l.catalogue?.id)).toEqual([publishedId, draftId]);
+    expect(own[1].catalogue).toMatchObject({ mine: true, isPublished: false });
+
+    // The recipient sees the published entry (not theirs) and nothing of the owner's draft.
+    const theirs = (await call(R, 'GET', `/maps/${map.id}`)).json().map.layers;
+    expect(theirs).toHaveLength(2);
+    expect(theirs[0]).toMatchObject({ kind: 'catalogue', title: 'Trạm đo mưa', catalogue: { id: publishedId, mine: false } });
+    expect(theirs[1]).toMatchObject({ kind: 'catalogue', title: 'Nháp của chủ', catalogue: null });
+    expect(JSON.stringify(theirs[1])).not.toContain(draftId);
+
+    // Publishing it later shows it to the recipient on the next read.
+    await getPool().query(`UPDATE catalogue.resources SET is_published = true WHERE id = $1`, [draftId]);
+    const after = (await call(R, 'GET', `/maps/${map.id}`)).json().map.layers;
+    expect(after[1].catalogue).toMatchObject({ id: draftId, mine: false });
   });
 });

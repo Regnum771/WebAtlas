@@ -5,15 +5,19 @@ import {
   refreshCatalogueLayers, removeCatalogueLayer, setCatalogueLayer, useCatalogueStore,
 } from './model/catalogue.store';
 import { syncCatalogueLayers } from './model/catalogueLayers';
-import { setSteps } from '../time-slider/model/timeSlider.store';
+import { setStepsFor } from '../time-slider/model/timeSlider.store';
 import { unionSteps } from '../time-slider/model/timeSteps';
 import { useCatalogueHover } from './model/useCatalogueHover';
 import './ui/catalogue.css';
 import { useCataloguePickerPresenter } from './model/useCataloguePickerPresenter';
+import { useSaveToMapPresenter } from './model/useSaveToMapPresenter';
 import { useTimeseriesUploadPresenter } from './model/useTimeseriesUploadPresenter';
 import { CataloguePickerView } from './ui/CataloguePicker.view';
 import { CatalogueLayersSectionView } from './ui/CatalogueLayersSection.view';
 import { TimeseriesUploadDialogView } from './ui/TimeseriesUploadDialog.view';
+
+/** This section's share of the time slider's steps (the personal maps' links supply their own). */
+const STEPS_SOURCE = 'catalogue';
 
 /** The time-series upload dialog with its presenter. */
 export function TimeseriesUploadDialog({ onClose }: { onClose: () => void }) {
@@ -48,11 +52,11 @@ export default function CatalogueLayersSection({ time = null }: { time?: string 
   }, [map, layers, time]);
   // The visible time-series layers supply the steps of the shared time slider.
   useEffect(() => {
-    setSteps(unionSteps(layers
+    setStepsFor(STEPS_SOURCE, unionSteps(layers
       .filter((l) => l.status === 'ok' && l.visible && l.item.kind === 'timeseries')
       .map((l) => l.item.timeSteps ?? [])));
   }, [layers]);
-  useEffect(() => () => setSteps([]), []);
+  useEffect(() => () => setStepsFor(STEPS_SOURCE, []), []);
   useCatalogueHover(map);
   // Unmounting the section takes the layers off the map.
   useEffect(() => () => { if (map) syncCatalogueLayers(map, [], null); }, [map]);
@@ -60,5 +64,12 @@ export default function CatalogueLayersSection({ time = null }: { time?: string 
   // changes what is visible (an unpublished entry becomes gone): re-check on mount and on each change.
   useEffect(() => { void refreshCatalogueLayers(); }, [status]);
 
-  return <CatalogueLayersSectionView layers={layers} onChange={setCatalogueLayer} onRemove={removeCatalogueLayer} />;
+  const signedIn = status === 'authenticated';
+  const save = useSaveToMapPresenter({ enabled: signedIn });
+
+  return (
+    <CatalogueLayersSectionView
+      layers={layers} onChange={setCatalogueLayer} onRemove={removeCatalogueLayer} save={signedIn ? save : undefined}
+    />
+  );
 }

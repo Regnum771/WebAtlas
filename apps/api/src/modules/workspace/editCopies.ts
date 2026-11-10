@@ -128,7 +128,7 @@ export function editCopiesService(pg: Pool) {
           [mapId, input.title ?? `Sửa lớp ${def.title}`, JSON.stringify(style), def.key, draft.id]
         );
         const revision = await bumpMap(client, mapId);
-        return { layer: await loadSummary(client, rows[0].id), revision };
+        return { layer: await loadSummary(client, rows[0].id, user), revision };
       });
     },
 
@@ -141,7 +141,7 @@ export function editCopiesService(pg: Pool) {
         await loadEditCopy(client, mapId, layerId);
         await patchLayerRow(client, mapId, layerId, input);
         const revision = await bumpMap(client, mapId);
-        return { layer: await loadSummary(client, layerId), revision };
+        return { layer: await loadSummary(client, layerId, user), revision };
       });
     },
 

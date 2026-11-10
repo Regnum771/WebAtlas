@@ -28,6 +28,13 @@ vi.mock('../features/my-maps/model/useMyMapsPanelPresenter', () => ({
     pendingDelete: false, deleteError: null, deleting: false, askDelete: () => {}, cancelDelete: () => {}, confirmDelete: async () => {},
   }),
 }));
+// The catalogue section's "save into a personal map" reads the user's maps; not under test here.
+vi.mock('../features/catalogue/model/useSaveToMapPresenter', () => ({
+  useSaveToMapPresenter: () => ({
+    targets: [], open: null, target: '', busy: false, error: null, job: null, done: null,
+    start: () => {}, close: () => {}, setTarget: () => {}, submit: async () => {},
+  }),
+}));
 // Its map side (personal layers, feature card) needs the OpenLayers map; not under test here.
 vi.mock('../features/my-maps/model/usePersonalLayersSync', () => ({ usePersonalLayersSync: () => {} }));
 vi.mock('../features/my-maps/model/usePersonalPopupPresenter', () => ({

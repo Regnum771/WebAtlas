@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { stepAtOrBefore } from './timeSteps';
+import { stepAtOrBefore, unionSteps } from './timeSteps';
 
 export type TimeSpeed = 1 | 2 | 4;
 
@@ -24,7 +24,7 @@ function stopTimer() { if (timer !== null) { clearInterval(timer); timer = null;
 export function getTimeSlider(): TimeSliderState { return state; }
 export function useTimeSlider(): TimeSliderState { return useSyncExternalStore(subscribe, getTimeSlider); }
 /** Test helper. */
-export function resetTimeSlider(): void { stopTimer(); publish(INITIAL); }
+export function resetTimeSlider(): void { stopTimer(); stepsBySource.clear(); publish(INITIAL); }
 
 function sameSteps(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((s, i) => s === b[i]);
@@ -40,6 +40,20 @@ export function setSteps(steps: string[]): void {
   const time = keep ? state.time : (first ?? null);
   if (steps.length === 0) stopTimer();
   publish({ ...state, steps, time, playing: steps.length === 0 ? false : state.playing });
+}
+
+/**
+ * The steps each source of time-series layers supplies (the free-standing catalogue layers, the
+ * personal maps' catalogue links). The slider runs over their union, so two sources never
+ * overwrite each other's steps.
+ */
+const stepsBySource = new Map<string, string[]>();
+
+/** Sets one source's steps (sorted and unique, or []) and the slider's to the union of all sources. */
+export function setStepsFor(source: string, steps: string[]): void {
+  if (steps.length === 0) stepsBySource.delete(source);
+  else stepsBySource.set(source, steps);
+  setSteps(unionSteps([...stepsBySource.values()]));
 }
 
 export function setTime(time: string): void { publish({ ...state, time }); }

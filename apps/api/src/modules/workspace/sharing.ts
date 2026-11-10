@@ -232,7 +232,8 @@ export function sharingService(pg: Pool) {
      * starting at revision 0: free layers with their features, edit copies each with a copy of
      * its draft on the same parent (copyDraft), a layer whose draft is gone with no draft, and
      * raster layers each with a copy of its COG in the copier's store (copyCog; a raster whose
-     * file is gone is skipped). The copy shares nothing with the source, so later edits,
+     * file is gone is skipped), and catalogue links pointing at the same entry (each then shows
+     * what the copier may see of it). The copy shares nothing with the source, so later edits,
      * deletions or a revoked share on either side leave the other alone.
      *
      * One transaction. The source map row is held FOR SHARE: every content write locks it FOR
@@ -276,8 +277,10 @@ export function sharingService(pg: Pool) {
             const draftId = layer.kind === 'edit_copy' ? await copyLayerDraft(client, layer.draft_id, user.id) : null;
             const { rows: copied } = await client.query<{ id: string }>(
               `INSERT INTO workspace.map_layers
-                 (map_id, kind, title, position, style, geometry_type, fields, layer_key, draft_id, file_id, raster)
-               SELECT $1, kind, title, $4, style, geometry_type, fields, layer_key, $3, $5, raster
+                 (map_id, kind, title, position, style, geometry_type, fields, layer_key, draft_id, file_id, raster,
+                  catalogue_resource_id)
+               SELECT $1, kind, title, $4, style, geometry_type, fields, layer_key, $3, $5, raster,
+                      catalogue_resource_id
                  FROM workspace.map_layers WHERE id = $2
                RETURNING id`,
               [copyId, layer.id, draftId, position++, fileId]
@@ -293,7 +296,7 @@ export function sharingService(pg: Pool) {
 
           const after = await usageOf(client, user.id);
           if (after.usageBytes > after.quotaBytes) throw quotaExceeded(before.usageBytes, after.quotaBytes);
-          return loadDetail(client, copyId, 'owner');
+          return loadDetail(client, copyId, 'owner', user);
         });
       } catch (err) {
         // The rows were rolled back; the files go too. The original error is the one reported.

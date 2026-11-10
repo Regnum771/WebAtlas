@@ -12,6 +12,7 @@ import { editCopyRowsArgs } from '../layers/repository';
 import { MAP_NOT_FOUND, OWNER_ONLY, assertCanRead, mapRole, type Queryable } from './access';
 import { resolveInStore } from './fileStore';
 import { LAYER_NOT_FOUND } from './freeLayers';
+import type { LayerKind } from './maps';
 import { FILE_NOT_FOUND } from './uploads';
 
 /*
@@ -137,6 +138,7 @@ export interface TimeseriesImportParams {
 const WARN_SHP_STYLE = 'Shapefile không giữ kiểu hiển thị.';
 const WARN_SHP_SPLIT = 'Mỗi loại hình học được ghi thành một tệp riêng.';
 const WARN_RASTER = 'Lớp ảnh không được xuất; tải ảnh riêng từ lớp đó.';
+const WARN_CATALOGUE_LINK = 'Lớp liên kết Danh mục không được xuất.';
 const WARN_GEOJSON_CRS = 'GeoJSON ngoài WGS 84 không theo chuẩn RFC 7946.';
 const warnDraftGone = (title: string) => `Lớp "${title}" không còn bản nháp nên không được xuất.`;
 
@@ -213,7 +215,7 @@ function toJob(row: JobRow): Job {
 
 interface MapLayerRow {
   id: string;
-  kind: 'free' | 'edit_copy' | 'raster' | 'annotation';
+  kind: LayerKind;
   title: string;
   style: Record<string, unknown>;
   geometryType: GeometryFamily | null;
@@ -226,14 +228,16 @@ type ExportableRow = MapLayerRow & { kind: 'free' | 'edit_copy' };
 interface ExportSelection {
   layers: ExportableRow[];
   rasterSkipped: boolean;
+  /** A catalogue link was among them: it holds no data of its own to write. */
+  linkSkipped: boolean;
   /** Titles of the edit copies left out because their draft has been discarded. */
   draftsGone: string[];
 }
 
 /**
  * The layers an export writes, in map order: those named in `layerIds`, or every layer of the
- * map. Only free layers and edit copies are written. A raster layer among them is skipped and
- * reported, and so is an edit copy whose draft is gone (draft_id NULL): there is nothing left to
+ * map. Only free layers and edit copies are written. A raster layer or a catalogue link among them
+ * is skipped and reported, and so is an edit copy whose draft is gone (draft_id NULL): there is nothing left to
  * read. The reserved kinds are left out. A named layer that is not in the map is 404.
  */
 async function exportLayers(
@@ -256,6 +260,7 @@ async function exportLayers(
   return {
     layers: selected.filter((r): r is ExportableRow => (r.kind === 'free' || r.kind === 'edit_copy') && !gone(r)),
     rasterSkipped: selected.some((r) => r.kind === 'raster'),
+    linkSkipped: selected.some((r) => r.kind === 'catalogue'),
     draftsGone: selected.filter(gone).map((r) => r.title),
   };
 }
@@ -265,6 +270,7 @@ function exportWarnings(input: { format: ExportFormat }, crs: CrsParam, selectio
   const warnings: string[] = [];
   if (input.format === 'shp') warnings.push(WARN_SHP_STYLE, WARN_SHP_SPLIT);
   if (selection.rasterSkipped) warnings.push(WARN_RASTER);
+  if (selection.linkSkipped) warnings.push(WARN_CATALOGUE_LINK);
   for (const title of selection.draftsGone) warnings.push(warnDraftGone(title));
   if (input.format === 'geojson' && !isWgs84(crs)) warnings.push(WARN_GEOJSON_CRS);
   return warnings;

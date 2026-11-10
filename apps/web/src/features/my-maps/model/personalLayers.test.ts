@@ -63,7 +63,7 @@ function makeMap(): Map {
 
 const layer = (over: Partial<LayerSummary>): LayerSummary => ({
   id: 'l1', kind: 'free', title: 'Điểm khảo sát', position: 0, style: {}, geometryType: 'point', fields: [],
-  layerKey: null, draftId: null, featureCount: 3, raster: null, ...over,
+  layerKey: null, draftId: null, featureCount: 3, raster: null, catalogue: null, ...over,
 });
 const FREE = layer({ id: 'l1' });
 const COPY = layer({ id: 'l2', kind: 'edit_copy', title: 'Sửa lớp Hồ', geometryType: null, layerKey: 'lakes' });

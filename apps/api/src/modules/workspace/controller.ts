@@ -5,13 +5,14 @@ import { AuthError, MALFORMED_UPLOAD, NotFoundError, ValidationError } from '../
 import { validate } from '../../lib/validate';
 import type { CurrentUser } from '../../types/fastify';
 import { assertCanRead } from './access';
+import { catalogueLinksService } from './catalogueLinks';
 import { editCopiesService } from './editCopies';
 import { freeLayersService, LAYER_NOT_FOUND, UNSUPPORTED_KIND } from './freeLayers';
 import { layerTableService } from './layerTable';
 import { jobsService } from './jobs';
 import { mapsService, type LayerKind } from './maps';
 import {
-  AddEditCopyLayerBody, AddFeatureBody, AddFreeLayerBody, AddShareBody, CreateMapBody, DeleteMapBody,
+  AddCatalogueLayerBody, AddEditCopyLayerBody, AddFeatureBody, AddFreeLayerBody, AddShareBody, CreateMapBody, DeleteMapBody,
   EditCopyFeatureParams, EditCopyFeaturesQuery, ExportBody, ExportPreviewQuery, FeatureParams, FeaturesQuery, FileIdParams,
   ImportBody, JobIdParams, JobsQuery, LayerParams, LayerQueryBody, MapIdParams, RemoveBody, ShareParams, ShareTargetsQuery,
   UpdateFeatureBody, UpdateLayerBody, UpdateMapBody,
@@ -108,7 +109,8 @@ export async function listShareTargets(req: FastifyRequest, reply: FastifyReply)
  * Access is checked first, so a stranger gets the map's 404 before any layer lookup happens and
  * cannot tell which layers exist. 'free' goes to freeLayersService, 'edit_copy' to
  * editCopiesService; 'raster' has its COG (getRaster), a layer PATCH and a layer DELETE
- * (rastersService) but no features; the other kinds are reserved and refused.
+ * (rastersService) but no features; 'catalogue' (a link to a catalogue entry) has a layer PATCH
+ * and DELETE (catalogueLinksService) and nothing else; 'annotation' is reserved and refused.
  */
 async function layerKindOf(req: FastifyRequest, mapId: string, layerId: string): Promise<LayerKind> {
   const pg = req.server.pg;
@@ -141,9 +143,23 @@ export async function addLayer(req: FastifyRequest, reply: FastifyReply) {
   } else if (kind === 'edit_copy') {
     const body = validate(AddEditCopyLayerBody, req.body);
     reply.code(201).send(await editCopiesService(req.server.pg).addLayer(userOf(req), mapId, body));
+  } else if (kind === 'catalogue') {
+    const body = validate(AddCatalogueLayerBody, req.body);
+    reply.code(201).send(await catalogueLinksService(req.server.pg).addLayer(userOf(req), mapId, body));
   } else {
     unsupported();
   }
+}
+
+/**
+ * The service for a layer row's own routes (PATCH, DELETE). A raster layer and a catalogue link
+ * have no features, but their rows (title, style, position) are edited and deleted like any other;
+ * a raster's COG is scheduled for the cleanup sweep.
+ */
+function rowServiceFor(req: FastifyRequest, kind: LayerKind) {
+  if (kind === 'raster') return rastersService(req.server.pg);
+  if (kind === 'catalogue') return catalogueLinksService(req.server.pg);
+  return serviceFor(req, kind);
 }
 
 export async function updateLayer(req: FastifyRequest, reply: FastifyReply) {
@@ -152,18 +168,14 @@ export async function updateLayer(req: FastifyRequest, reply: FastifyReply) {
   const kind = await layerKindOf(req, mapId, layerId);
   // Only a free layer declares its own fields; an edit copy's come from the registry.
   if (body.fields !== undefined && kind !== 'free') unsupported();
-  // A raster layer has no features, but its row (title, style, position) is edited like any other.
-  const service = kind === 'raster' ? rastersService(req.server.pg) : serviceFor(req, kind);
-  reply.send(await service.updateLayer(userOf(req), mapId, layerId, body));
+  reply.send(await rowServiceFor(req, kind).updateLayer(userOf(req), mapId, layerId, body));
 }
 
 export async function removeLayer(req: FastifyRequest, reply: FastifyReply) {
   const { mapId, layerId } = validate(LayerParams, req.params);
   const body = validate(RemoveBody, req.body);
   const kind = await layerKindOf(req, mapId, layerId);
-  // A raster layer is deleted like any other; its COG is scheduled for the cleanup sweep.
-  const service = kind === 'raster' ? rastersService(req.server.pg) : serviceFor(req, kind);
-  reply.send(await service.removeLayer(userOf(req), mapId, layerId, body));
+  reply.send(await rowServiceFor(req, kind).removeLayer(userOf(req), mapId, layerId, body));
 }
 
 export async function listFeatures(req: FastifyRequest, reply: FastifyReply) {

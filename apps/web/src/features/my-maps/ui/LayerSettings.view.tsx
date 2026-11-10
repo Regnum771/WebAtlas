@@ -22,6 +22,7 @@ interface Props {
 
 const DELETE_COPY = 'Các đối tượng trong lớp sẽ bị xoá. Không khôi phục được.';
 const DELETE_DRAFT_COPY = 'Bản nháp sửa lớp sẽ bị huỷ. Không khôi phục được.';
+const DELETE_LINK_COPY = 'Liên kết sẽ bị gỡ khỏi bản đồ; dữ liệu trong Danh mục vẫn còn.';
 const FIELD_NAME_REQUIRED = 'Hãy nhập tên trường.';
 const DELETE_FIELDS_COPY = 'Giá trị của các trường bị xoá trong mọi đối tượng sẽ mất. Không khôi phục được.';
 
@@ -88,7 +89,7 @@ export function LayerSettingsView({ layer, onRename, onStyle, onMove, onSaveFiel
     else setRemoveError(failure);
   }
 
-  const deleteCopy = layer.kind === 'edit_copy' ? DELETE_DRAFT_COPY : DELETE_COPY;
+  const deleteCopy = layer.kind === 'edit_copy' ? DELETE_DRAFT_COPY : layer.kind === 'catalogue' ? DELETE_LINK_COPY : DELETE_COPY;
   return (
     <Dialog open title="Thiết lập lớp" onClose={onClose}>
       <form className="my-maps-settings-row" onSubmit={(e) => { e.preventDefault(); void rename(); }}>

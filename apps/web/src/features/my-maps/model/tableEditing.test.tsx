@@ -55,7 +55,7 @@ import { getTableState, openTable, resetTableStore, select, setFilter } from './
 
 const LAYER: LayerSummary = {
   id: 'l1', kind: 'free', title: 'Điểm đo', position: 0, style: {}, geometryType: 'point',
-  fields: [{ name: 'loai', type: 'text' }], layerKey: null, draftId: null, featureCount: 3, raster: null,
+  fields: [{ name: 'loai', type: 'text' }], layerKey: null, draftId: null, featureCount: 3, raster: null, catalogue: null,
 };
 const OTHER: LayerSummary = { ...LAYER, id: 'l2', title: 'Khác' };
 const SUMMARY = {

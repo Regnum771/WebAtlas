@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getTimeSlider, pause, play, resetTimeSlider, setSpeed, setSteps, setTime, stepBy } from './timeSlider.store';
+import { getTimeSlider, pause, play, resetTimeSlider, setSpeed, setSteps, setStepsFor, setTime, stepBy } from './timeSlider.store';
 
 const S = ['2025-10-26T00:00:00Z', '2025-10-26T01:00:00Z', '2025-10-26T02:00:00Z'];
 
@@ -17,6 +17,17 @@ describe('timeSlider.store', () => {
     expect(getTimeSlider().time).toBe('2025-10-27T00:00:00Z');
     setSteps([]);
     expect(getTimeSlider().time).toBeNull();
+  });
+
+  it('each source supplies its own steps; the slider runs over their union', () => {
+    setStepsFor('catalogue', [S[0], S[2]]);
+    setStepsFor('personal', [S[1]]);
+    expect(getTimeSlider().steps).toEqual(S);
+    // One source clearing its steps leaves the other's.
+    setStepsFor('catalogue', []);
+    expect(getTimeSlider().steps).toEqual([S[1]]);
+    setStepsFor('personal', []);
+    expect(getTimeSlider().steps).toEqual([]);
   });
 
   it('stepBy moves along the steps and clamps', () => {

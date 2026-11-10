@@ -57,6 +57,22 @@ function toItem(row: ResourceRow, user: CurrentUser | undefined): CatalogueItem 
   };
 }
 
+/**
+ * The entries among `ids` that `user` may see, by id, in one query. A missing or invisible id is
+ * simply absent: a personal map's link layer (workspace/freeLayers.ts withCatalogue) reads it as
+ * null, so a recipient never learns of an entry only its owner may see.
+ */
+export async function visibleItems(
+  q: Pick<Pool, 'query'>, user: CurrentUser | undefined, ids: string[]
+): Promise<Map<string, CatalogueItem>> {
+  if (ids.length === 0) return new Map();
+  const { rows } = await q.query<ResourceRow>(
+    `SELECT ${COLS} FROM catalogue.resources WHERE id = ANY($2::uuid[]) AND ${visibleSql(1)}`,
+    [user?.oidcSubject ?? null, [...new Set(ids)]]
+  );
+  return new Map(rows.map((r) => [r.id, toItem(r, user)]));
+}
+
 /** Escape LIKE wildcards so a search for "50%" finds a literal percent sign. */
 const likeEscape = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
@@ -99,12 +115,9 @@ export function catalogueRepository(pg: Pool) {
 
     /** One visible resource; one that is missing or not visible to the caller is the same 404. */
     async get(user: CurrentUser | undefined, id: string): Promise<CatalogueItem> {
-      const { rows } = await pg.query<ResourceRow>(
-        `SELECT ${COLS} FROM catalogue.resources WHERE id = $2 AND ${visibleSql(1)}`,
-        [user?.oidcSubject ?? null, id]
-      );
-      if (!rows[0]) throw new NotFoundError(ITEM_NOT_FOUND);
-      return toItem(rows[0], user);
+      const item = (await visibleItems(pg, user, [id])).get(id);
+      if (!item) throw new NotFoundError(ITEM_NOT_FOUND);
+      return item;
     },
   };
 }

@@ -2,7 +2,7 @@ import { Settings } from 'lucide-react';
 import type { LayerRowData } from '../model/useMyMapsPanelPresenter';
 
 interface Props {
-  layer: Pick<LayerRowData, 'id' | 'kind' | 'title' | 'kindLabel' | 'visible' | 'opacity' | 'truncated'>;
+  layer: Pick<LayerRowData, 'id' | 'kind' | 'title' | 'kindLabel' | 'visible' | 'opacity' | 'truncated'> & { gone?: boolean };
   onVisible: (visible: boolean) => void;
   onOpacity: (opacity: number) => void;
   /** Owner only: opens the layer's settings. Absent for a recipient, who gets no layer actions. */
@@ -14,9 +14,24 @@ interface Props {
 /**
  * One personal layer: a checkbox with its title, its kind, an opacity slider while visible, and
  * a note when the last viewport read was cut short. A raster has the opacity slider only: it is
- * not read by viewport, so it has no note.
+ * not read by viewport, so it has no note. A catalogue link whose entry the reader may not see
+ * (or that was deleted) says so instead, and keeps only the owner's settings (to remove it).
  */
 export function LayerRowView({ layer, onVisible, onOpacity, onSettings, onTable }: Props) {
+  if (layer.gone) {
+    return (
+      <div className="layer-row my-maps-layer gone">
+        <span className="layer-label">{layer.title}</span>
+        <span className="layer-gate-hint">{layer.kindLabel}</span>
+        {onSettings && (
+          <button type="button" className="btn quiet sm" aria-label={`Thiết lập lớp ${layer.title}`} onClick={onSettings}>
+            <Settings size={14} aria-hidden="true" />
+          </button>
+        )}
+        <p className="hint bad">Không có quyền xem hoặc đã bị xoá</p>
+      </div>
+    );
+  }
   return (
     <div className="layer-row my-maps-layer">
       <label className="layer-label">
@@ -45,7 +60,7 @@ export function LayerRowView({ layer, onVisible, onOpacity, onSettings, onTable 
           onChange={(e) => onOpacity(parseFloat(e.target.value))}
         />
       )}
-      {layer.visible && layer.kind !== 'raster' && layer.truncated !== null && (
+      {layer.visible && layer.kind !== 'raster' && layer.kind !== 'catalogue' && layer.truncated !== null && (
         <p className="my-maps-truncated">
           {`Chỉ hiện ${layer.truncated} đối tượng đầu trong khung nhìn; phóng to để xem đủ.`}
         </p>
