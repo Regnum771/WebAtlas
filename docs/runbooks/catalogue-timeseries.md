@@ -105,7 +105,8 @@ npm run verify:catalogue -w @webatlas/web -- --out <thư-mục-ảnh> [--only 14
 ```
 
 `--upload` tải hai tệp mẫu lên qua giao diện khi các mục kiểm thử chưa có trong Danh mục (lần đầu); các
-lần sau dùng lại các mục đó. Trang chạy theo giờ UTC để thanh thời gian đọc đúng giờ của dữ liệu.
+lần sau dùng lại các mục đó. Trang chạy theo giờ Việt Nam, và kịch bản chờ mục HEC-RAS nhập với *Giờ Việt Nam
+(UTC+7)* (bước `2025-10-24T17:00Z` → `2025-10-27T17:00Z`): mục cũ nhập theo UTC phải xoá rồi nhập lại trước khi chạy.
 
 Tạo mục vector kiểm thử (một GeoJSON nhỏ) bằng chính API tải lên của GeoNode, rồi xuất bản nó:
 
@@ -142,8 +143,8 @@ infra/platform/README.md: purge chạy `DROP DATABASE` trên CSDL chỉ mục).
      python3 -c "import sys; sys.path.insert(0, 'packages/atlas-data/tools'); from timeseries import geoserver; geoserver.delete_mosaic('ts_xxxxxxxx')"
    ```
    Với raster độ sâu lớn nhất: `geoserver.delete_mosaic('ts_xxxxxxxx_peak')` (store GeoTIFF đơn, cùng hàm).
-3. Dòng `catalogue.resources` đi theo ở lần đồng bộ liệt kê đủ (mỗi 10 phút; hai bước: lần đầu đánh dấu
-   `missing_since`, lần sau mới xoá). Liên kết tới mục này trong Bản của tôi khi đó hiện *Không có quyền
+3. Dòng `catalogue.resources` đi theo sau khoảng một giờ (hai bước: lần liệt kê đủ đầu tiên đánh dấu
+   `missing_since`, lần liệt kê đủ đầu tiên sau đó ít nhất 55 phút mới xoá). Liên kết tới mục này trong Bản của tôi khi đó hiện *Không có quyền
    xem hoặc đã bị xoá*.
 4. Các tệp bước COG vẫn nằm trong `var/timeseries/ts_xxxxxxxx/`: `delete_mosaic` chỉ gỡ tệp riêng của
    ImageMosaic. Xoá từng tệp `.tif` bằng tay rồi xoá thư mục rỗng (không dùng lệnh xoá đệ quy trên máy

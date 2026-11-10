@@ -10,8 +10,8 @@
  *      `thubon` lists the depth entry with "Chưa duyệt" (and its peak-depth raster).
  *   2. Thêm vào bản đồ: the row appears under "Lớp từ Danh mục" and the time slider shows one step
  *      per depth step (73 for 25/10 00:00 → 28/10 00:00).
- *   3. The slider moved to 26/10/2025 12:00 (the page runs in UTC): a GetMap of the entry goes out
- *      with TIME=2025-10-26T12:00:00.000Z.
+ *   3. The slider moved to 26/10/2025 12:00 (the page runs in Vietnam time): a GetMap of the entry goes out
+ *      with TIME=2025-10-26T05:00:00.000Z.
  *   4. A pointer resting inside the flooded river shows the depth "<n>,<nn> m · 26/10/2025 12:00"
  *      (GetFeatureInfo JSON from the real GeoServer through the proxy).
  *   5. The rain entry is added; with Phát at 4× both layers request new times together: the depth
@@ -111,7 +111,7 @@ const VECTOR_QUERY = process.env.VERIFY_VECTOR_QUERY ?? 'kiem_thu_s1';
 const DEPTH_STEPS = 73;
 const RAIN_STEPS = 7;
 /** Step 3's slider time and the TIME the map request must carry. */
-const AT = '2025-10-26T12:00:00.000Z';
+const AT = '2025-10-26T05:00:00.000Z';
 const AT_TEXT = '26/10/2025 12:00';
 /** The points of the vector test entry (as uploaded to GeoNode), lon/lat. */
 const VECTOR_POINTS = [[108.1203, 15.8436], [108.326, 15.8794], [108.24, 15.865]];
@@ -243,8 +243,9 @@ async function openSession(browser, viewport, who) {
   await page.setViewport({ ...viewport, deviceScaleFactor: 1 });
   // A reload on a loaded dev machine (Vite serves hundreds of modules) can pass the 30 s default.
   page.setDefaultNavigationTimeout(180000);
-  // The slider and the hover label show local time; UTC makes them read as the data's own times.
-  await page.emulateTimezone('UTC');
+  // The slider and the hover label show local time; the readers (and the HEC-RAS model clock,
+  // imported with the default hdfTimeZone) are in Vietnam time.
+  await page.emulateTimezone('Asia/Ho_Chi_Minh');
   page.on('pageerror', (error) => console.log(`pageerror ${viewport.width}  ${String(error.message ?? error).split('\n')[0]}`));
   page.on('response', (response) => {
     if (response.status() === 429) note(viewport.width, `the API answered 429 to ${response.request().method()} ${response.url().replace(API_URL, '')}`);
@@ -655,8 +656,9 @@ async function stepAddDepth(session, ctx) {
   if (s.text !== '25/10/2025 00:00') problems.push(`the slider starts at "${s.text}", expected 25/10/2025 00:00`);
   const steps = ctx.depth.timeSteps ?? [];
   if (steps.length !== DEPTH_STEPS) problems.push(`the entry has ${steps.length} time steps, expected ${DEPTH_STEPS}`);
-  if (steps[0] !== '2025-10-25T00:00:00.000Z' || steps[steps.length - 1] !== '2025-10-28T00:00:00.000Z') {
-    problems.push(`the entry's steps run ${steps[0]} → ${steps[steps.length - 1]}, expected 2025-10-25T00:00Z → 2025-10-28T00:00Z`);
+  // 25/10 00:00 → 28/10 00:00 in Vietnam time (UTC+7), the default hdfTimeZone.
+  if (steps[0] !== '2025-10-24T17:00:00.000Z' || steps[steps.length - 1] !== '2025-10-27T17:00:00.000Z') {
+    problems.push(`the entry's steps run ${steps[0]} → ${steps[steps.length - 1]}, expected 2025-10-24T17:00Z → 2025-10-27T17:00Z (imported as Vietnam time)`);
   }
   await closeAddData(page);
   await frame(session, ctx.depth.bbox4326);
@@ -745,11 +747,12 @@ async function stepRainAndPlay(session, ctx) {
   const firstRain = proxy.filter((r) => r.id === ctx.rain.id && r.params.REQUEST === 'GetMap').pop();
   const rainAt = (t) => [...steps].filter((x) => Date.parse(x) <= Date.parse(t)).sort().pop();
   if (!firstRain || firstRain.params.TIME !== rainAt(AT)) problems.push(`the rain layer asked TIME=${firstRain?.params.TIME}, expected ${rainAt(AT)}`);
-  // Play at 4× for 4.5 s: 18 steps of the union, past the next day's rain step.
+  // Play at 4× for 6 s: 24 steps of the union, past the next day's rain step (19 hourly steps
+  // from 12:00 Vietnam time to the 07:00 rain day boundary, 00:00 UTC).
   await click(page, '.time-slider-speeds', '4×');
   const from = proxy.length;
   await click(page, '.time-slider', 'Phát');
-  await sleep(4500);
+  await sleep(6000);
   await click(page, '.time-slider', 'Tạm dừng');
   const sent = proxy.slice(from).filter((r) => r.params.REQUEST === 'GetMap');
   const depthTimes = new Set(sent.filter((r) => r.id === ctx.depth.id).map((r) => r.params.TIME));
