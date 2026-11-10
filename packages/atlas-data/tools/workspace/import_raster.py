@@ -57,6 +57,9 @@ TIFF_MAGICS = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")
 DST_CRS = "EPSG:3857"
 # Web Mercator's latitude limit: the part of an image beyond it is not shown.
 MERCATOR_MAX_LAT = 85.0511287798066
+# Degrees an extent may pass ±180/±90 by and still count as on the globe: float32 coordinates of a
+# global grid (MSWEP) put its edges a few millionths of a degree outside.
+GLOBE_TOLERANCE = 1e-4
 # Destination pixels warped per chunk, in each direction (CHUNK^2 x bands x item size bytes, plus
 # the source window under it, of a similar size since the warp keeps the pixel count).
 CHUNK = 1024
@@ -123,9 +126,12 @@ def target_grid(src, crs):
     GDAL's suggested warp output does.
     """
     b = transform_bounds(crs, "EPSG:4326", *src.bounds, densify_pts=21)
-    # A wrong source CRS shows as an extent off the globe (or across the antimeridian).
-    if not (all(math.isfinite(v) for v in b) and -180 <= b[0] <= b[2] <= 180 and -90 <= b[1] <= b[3] <= 90):
+    # A wrong source CRS shows as an extent off the globe (or across the antimeridian); an edge
+    # past it by rounding only is put back on it.
+    t = GLOBE_TOLERANCE
+    if not (all(math.isfinite(v) for v in b) and -180 - t <= b[0] <= b[2] <= 180 + t and -90 - t <= b[1] <= b[3] <= 90 + t):
         raise UserFacingError(OUT_OF_RANGE)
+    b = (max(b[0], -180.0), max(b[1], -90.0), min(b[2], 180.0), min(b[3], 90.0))
     shown = (b[0], max(b[1], -MERCATOR_MAX_LAT), b[2], min(b[3], MERCATOR_MAX_LAT))
     if shown[1] >= shown[3]:
         raise UserFacingError(OUT_OF_RANGE)

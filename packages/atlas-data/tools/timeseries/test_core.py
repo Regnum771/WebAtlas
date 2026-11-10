@@ -99,6 +99,21 @@ with rasterio.open(path) as ds:
     row, col = ds.index(mx, my)
     check("data pixel survives", data[row, col] == arr[15, 15])
 
+# A global 0.1° grid as MSWEP's float32 coordinates give it: the edges overshoot ±180/±90 by a
+# few millionths of a degree (seen on the real files: bottom -90.0000122). Rounding, not a wrong CRS.
+glob_arr = np.ones((18, 36), dtype="float32")
+glob_step = Step(time=datetime(2025, 10, 27, tzinfo=UTC), array=glob_arr,
+                 transform=Affine(9.99999991522, 0, -179.99999694739424, 0, -10.0000007, 89.99999695078674),
+                 crs="EPSG:4326")
+try:
+    glob_path = cog.write_step(glob_step, out_dir, "mua_toan_cau")
+    with rasterio.open(glob_path) as ds:
+        b = ds.bounds
+        check("a global grid whose float32 edges overshoot ±90 warps, clamped to Web Mercator",
+              ds.crs.to_epsg() == 3857 and b.top <= 20037508.35 and b.bottom >= -20037508.35)
+except UserFacingError as e:
+    check(f"a global grid whose float32 edges overshoot ±90 warps (got: {e})", False)
+
 series = list(geotiff_series.read_series([(path, step.time)]))
 check("read_series yields a Step", len(series) == 1 and series[0].time == step.time
       and series[0].crs.endswith("3857") and np.isnan(series[0].array).any())
