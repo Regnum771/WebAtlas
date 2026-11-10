@@ -30,7 +30,7 @@ export class GeometryError extends AppError {
 }
 /** An uploaded file over the per-file limit (multipart's own "file too large" maps here too). */
 export class FileTooLargeError extends AppError {
-  constructor() { super(413, 'FILE_TOO_LARGE', 'Tệp lớn hơn 200 MB.'); }
+  constructor(message = 'Tệp lớn hơn 200 MB.') { super(413, 'FILE_TOO_LARGE', message); }
 }
 /** A workspace upload whose multipart body cannot be parsed (no boundary, cut short, ...). */
 export const MALFORMED_UPLOAD = 'Yêu cầu tải lên không hợp lệ.';

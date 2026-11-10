@@ -47,6 +47,10 @@ export function usersRepository(pg: Pool) {
       );
       return rows[0];
     },
+    async oidcSubjectOf(id: string): Promise<string | null> {
+      const { rows } = await pg.query<{ oidc_subject: string | null }>(`SELECT oidc_subject FROM app.users WHERE id = $1`, [id]);
+      return rows[0]?.oidc_subject ?? null;
+    },
     async findById(id: string): Promise<UserRow | null> {
       const { rows } = await pg.query(`SELECT ${COLS} FROM app.users WHERE id = $1`, [id]);
       return rows[0] ?? null;

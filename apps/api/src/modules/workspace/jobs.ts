@@ -37,7 +37,7 @@ export const IMPORT_MAX_ROWS = 200_000;
 /** The newest jobs a list returns. */
 export const JOB_LIST_LIMIT = 50;
 
-export type JobKind = 'import' | 'export';
+export type JobKind = 'import' | 'export' | 'timeseries_import';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type ExportFormat = 'gpkg' | 'geojson' | 'shp';
 type GeometryFamily = 'point' | 'line' | 'polygon';
@@ -112,6 +112,27 @@ const pending = (steps: Array<[string, string]>): JobStep[] =>
 
 export const IMPORT_STEPS = pending([['read', 'Đọc tệp'], ['transform', 'Chuyển hệ toạ độ'], ['write', 'Ghi vào bản đồ']]);
 export const EXPORT_STEPS = pending([['read', 'Đọc dữ liệu'], ['write', 'Ghi tệp'], ['package', 'Đóng gói']]);
+// Keys and labels as import_timeseries.py reports them.
+export const TIMESERIES_STEPS = pending([
+  ['read', 'Đọc tệp'], ['transform', 'Tạo các bước thời gian'], ['publish', 'Đưa lên Danh mục'],
+]);
+
+/** params of a time-series import job (TimeseriesImportParams in import_timeseries.py). */
+export interface TimeseriesImportParams {
+  fileId: string;
+  path: string; // store-relative
+  originalName: string;
+  ownerId: string;
+  owner: { sub: string; username: string; email: string };
+  title: string;
+  abstract: string;
+  source: 'geotiff' | 'netcdf' | 'hecras' | null; // null for a zip: the worker looks inside
+  timePattern: string | null;
+  timesCsvPath: string | null;
+  hdfArea: string | null;
+  every: 1 | 4;
+  clip4326: null;
+}
 
 const WARN_SHP_STYLE = 'Shapefile không giữ kiểu hiển thị.';
 const WARN_SHP_SPLIT = 'Mỗi loại hình học được ghi thành một tệp riêng.';
@@ -277,8 +298,9 @@ function isWgs84(crs: CrsParam): boolean {
   return crs.proj4 === crsParam(DEFAULT_CRS_ID).proj4;
 }
 
-async function insertJob(
-  q: Queryable, ownerId: string, mapId: string, kind: JobKind, params: ImportParams | ExportParams, steps: JobStep[]
+export async function insertJob(
+  q: Queryable, ownerId: string, mapId: string | null, kind: JobKind,
+  params: ImportParams | ExportParams | TimeseriesImportParams, steps: JobStep[]
 ): Promise<Job> {
   const { rows } = await q.query<JobRow>(
     `INSERT INTO workspace.jobs (owner_id, map_id, kind, params, steps)
@@ -325,7 +347,7 @@ export function jobsService(pg: Pool) {
         // queued or running import reads.
         const { rows } = await client.query<{ path: string; original_name: string }>(
           `SELECT path, original_name FROM workspace.files
-            WHERE id = $1 AND owner_id = $2 AND kind = 'upload'
+            WHERE id = $1 AND owner_id = $2 AND kind = 'upload' AND purpose = 'map'
               AND (delete_after IS NULL OR delete_after > now())
             FOR UPDATE`,
           [input.fileId, user.id]

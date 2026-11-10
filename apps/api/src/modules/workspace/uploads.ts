@@ -87,62 +87,93 @@ export async function usageOf(q: Queryable, ownerId: string) {
   return { usageBytes: Number(rows[0].usage), quotaBytes: Number(rows[0].quota) };
 }
 
+export interface StoreOptions {
+  maxBytes: number;
+  extensions: readonly string[];
+  /** workspace.files.purpose: 'map' for a personal upload, 'timeseries' for the catalogue. */
+  purpose: 'map' | 'timeseries';
+  /** False for an upload that does not count toward the personal quota (and is not capped by it). */
+  countsToQuota: boolean;
+  unsupportedMessage?: string;
+  tooLargeMessage?: string;
+}
+
+/**
+ * Stream one multipart file into the store and record it as an upload of `user`. The quota rules
+ * in the header apply when `countsToQuota`; otherwise only `maxBytes` caps the file.
+ */
+export async function storeUpload(pg: Pool, user: CurrentUser, part: UploadPart, opts: StoreOptions): Promise<{ upload: Upload }> {
+  const { maxBytes, countsToQuota } = opts;
+  const ext = path.extname(part.filename ?? '').toLowerCase();
+  if (!opts.extensions.includes(ext)) {
+    part.file.resume(); // let the request body drain
+    throw new ValidationError(opts.unsupportedMessage ?? UNSUPPORTED_FORMAT);
+  }
+
+  let room = Infinity;
+  let before = { usageBytes: 0, quotaBytes: 0 };
+  if (countsToQuota) {
+    before = await usageOf(pg, user.id);
+    room = Math.max(0, before.quotaBytes - before.usageBytes);
+    if (room === 0) {
+      part.file.resume();
+      throw quotaExceeded(before.usageBytes, before.quotaBytes);
+    }
+  }
+
+  const fileId = randomUUID();
+  const relPath = `uploads/${user.id}/${fileId}/original${ext}`;
+  let sizeBytes: number;
+  try {
+    sizeBytes = await writeStream(relPath, part.file, Math.min(maxBytes, room));
+  } catch (err) {
+    if (err instanceof FileTooLargeError) {
+      // Stopped at the room left rather than at the per-file limit: report the quota.
+      if (room < maxBytes) throw quotaExceeded(before.usageBytes, before.quotaBytes);
+      if (opts.tooLargeMessage) throw new FileTooLargeError(opts.tooLargeMessage);
+    }
+    throw err;
+  }
+
+  try {
+    const row = await inTransaction(pg, async (client) => {
+      // Lock the owner first so concurrent uploads by the same owner recheck one at a time.
+      await client.query(`SELECT 1 FROM app.users WHERE id = $1 FOR UPDATE`, [user.id]);
+      const { rows } = await client.query<UploadRow>(
+        `INSERT INTO workspace.files (id, owner_id, kind, path, original_name, content_type, size_bytes, purpose)
+         VALUES ($1, $2, 'upload', $3, $4, $5, $6, $7)
+         RETURNING ${UPLOAD_COLS}`,
+        [fileId, user.id, relPath, part.filename, part.mimetype || 'application/octet-stream', sizeBytes, opts.purpose]
+      );
+      if (countsToQuota) {
+        const after = await usageOf(client, user.id);
+        if (after.usageBytes > after.quotaBytes) throw quotaExceeded(after.usageBytes - sizeBytes, after.quotaBytes);
+      }
+      return rows[0];
+    });
+    return { upload: toUpload(row) };
+  } catch (err) {
+    // The row was rolled back; the file goes too. The original error is the one reported.
+    await unlinkInStore(relPath).catch(() => undefined);
+    throw err;
+  }
+}
+
 export function uploadsService(pg: Pool, opts: { maxBytes?: number } = {}) {
   const maxBytes = opts.maxBytes ?? MAX_UPLOAD_BYTES;
 
   return {
-    async upload(user: CurrentUser, part: UploadPart): Promise<{ upload: Upload }> {
-      const ext = path.extname(part.filename ?? '').toLowerCase();
-      if (!UPLOAD_EXTENSIONS.includes(ext)) {
-        part.file.resume(); // let the request body drain
-        throw new ValidationError(UNSUPPORTED_FORMAT);
-      }
-
-      const before = await usageOf(pg, user.id);
-      const room = Math.max(0, before.quotaBytes - before.usageBytes);
-      if (room === 0) {
-        part.file.resume();
-        throw quotaExceeded(before.usageBytes, before.quotaBytes);
-      }
-
-      const fileId = randomUUID();
-      const relPath = `uploads/${user.id}/${fileId}/original${ext}`;
-      let sizeBytes: number;
-      try {
-        sizeBytes = await writeStream(relPath, part.file, Math.min(maxBytes, room));
-      } catch (err) {
-        // Stopped at the room left rather than at the per-file limit: report the quota.
-        if (err instanceof FileTooLargeError && room < maxBytes) throw quotaExceeded(before.usageBytes, before.quotaBytes);
-        throw err;
-      }
-
-      try {
-        const row = await inTransaction(pg, async (client) => {
-          // Lock the owner first so concurrent uploads by the same owner recheck one at a time.
-          await client.query(`SELECT 1 FROM app.users WHERE id = $1 FOR UPDATE`, [user.id]);
-          const { rows } = await client.query<UploadRow>(
-            `INSERT INTO workspace.files (id, owner_id, kind, path, original_name, content_type, size_bytes)
-             VALUES ($1, $2, 'upload', $3, $4, $5, $6)
-             RETURNING ${UPLOAD_COLS}`,
-            [fileId, user.id, relPath, part.filename, part.mimetype || 'application/octet-stream', sizeBytes]
-          );
-          const after = await usageOf(client, user.id);
-          if (after.usageBytes > after.quotaBytes) throw quotaExceeded(after.usageBytes - sizeBytes, after.quotaBytes);
-          return rows[0];
-        });
-        return { upload: toUpload(row) };
-      } catch (err) {
-        // The row was rolled back; the file goes too. The original error is the one reported.
-        await unlinkInStore(relPath).catch(() => undefined);
-        throw err;
-      }
+    upload(user: CurrentUser, part: UploadPart): Promise<{ upload: Upload }> {
+      return storeUpload(pg, user, part, {
+        maxBytes, extensions: UPLOAD_EXTENSIONS, purpose: 'map', countsToQuota: true,
+      });
     },
 
-    /** The owner's uploads. One whose delete_after has passed is gone (NOT_EXPIRED). */
+    /** The owner's uploads. One whose delete_after has passed is gone (NOT_EXPIRED). Time-series uploads belong to the catalogue and are not listed. */
     async list(user: CurrentUser): Promise<Upload[]> {
       const { rows } = await pg.query<UploadRow>(
         `SELECT ${UPLOAD_COLS} FROM workspace.files
-          WHERE owner_id = $1 AND kind = 'upload' AND ${NOT_EXPIRED}
+          WHERE owner_id = $1 AND kind = 'upload' AND purpose = 'map' AND ${NOT_EXPIRED}
           ORDER BY created_at DESC, id`,
         [user.id]
       );
@@ -167,7 +198,7 @@ export function uploadsService(pg: Pool, opts: { maxBytes?: number } = {}) {
     async original(user: CurrentUser, fileId: string): Promise<{ absPath: string; originalName: string; contentType: string }> {
       const { rows } = await pg.query<{ path: string; original_name: string; content_type: string }>(
         `SELECT path, original_name, content_type FROM workspace.files
-          WHERE id = $1 AND owner_id = $2 AND kind = 'upload' AND ${NOT_EXPIRED}`,
+          WHERE id = $1 AND owner_id = $2 AND kind = 'upload' AND purpose = 'map' AND ${NOT_EXPIRED}`,
         [fileId, user.id]
       );
       if (!rows[0]) throw new NotFoundError(FILE_NOT_FOUND);
