@@ -26,7 +26,8 @@ and GeoNode runs two web workers. Give Docker about 5.5 GB (`%UserProfile%\.wslc
    ```sh
    docker exec -i webatlas-db-1 psql -U webatlas -d webatlas \
      -v geonode_pw=$GEONODE_DB_PASSWORD -v geonode_data_pw=$GEONODE_DATA_DB_PASSWORD \
-     -v orchestrator_pw=$ORCHESTRATOR_DB_PASSWORD -v mosaic_pw=$MOSAIC_INDEX_DB_PASSWORD \n     -f - < infra/platform/postgis/platform-databases.sql
+     -v orchestrator_pw=$ORCHESTRATOR_DB_PASSWORD -v mosaic_pw=$MOSAIC_INDEX_DB_PASSWORD \
+     -f - < infra/platform/postgis/platform-databases.sql
    ```
 3. Start everything (GeoNode's first start migrates and collects statics: allow 10–20 minutes):
    ```sh
@@ -61,7 +62,8 @@ From the `tools` or `worker` container (`packages/atlas-data/tools` on `sys.path
 ```python
 from timeseries import geoserver
 geoserver.publish_mosaic("lu_2025", "depth")   # -> "geonode:lu_2025"; idempotent; styles too
-geoserver.publish_coverage("lu_2025_peak", "/webatlas-timeseries/lu_2025/peak.tif", "depth")
+# The peak raster goes in a sibling folder, never inside a mosaic's folder.
+geoserver.publish_coverage("lu_2025_peak", "/webatlas-timeseries/lu_2025_peak/lu_2025_peak.tif", "depth")
 geoserver.delete_mosaic("lu_2025")             # removes store + layer, drops the index table;
                                                # the step files stay in var/timeseries/lu_2025
 ```

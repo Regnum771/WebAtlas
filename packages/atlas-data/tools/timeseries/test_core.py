@@ -117,7 +117,8 @@ check("timeregex", read("timeregex.properties") == "regex=[0-9]{8}T[0-9]{6}Z,for
 indexer = read("indexer.properties")
 check("indexer", all(s in indexer for s in (
     "TimeAttribute=time", "Schema=*the_geom:Polygon,location:String,time:java.util.Date",
-    "PropertyCollectors=TimestampFileNameExtractorSPI[timeregex](time)", "AbsolutePath=false")))
+    "PropertyCollectors=TimestampFileNameExtractorSPI[timeregex](time)", "AbsolutePath=false",
+    "Wildcard=lu_2025_*.tif")))
 store = read("datastore.properties")
 check("datastore", all(s in store for s in (
     "SPI=org.geotools.data.postgis.PostgisNGDataStoreFactory", "schema=ts_lu_2025",

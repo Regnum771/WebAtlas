@@ -23,6 +23,8 @@ def write_config(out_dir, name, index):
             "Schema=*the_geom:Polygon,location:String,time:java.util.Date",
             "PropertyCollectors=TimestampFileNameExtractorSPI[timeregex](time)",
             "AbsolutePath=false",
+            # Only the steps are granules: any other .tif in the folder stays out of the mosaic.
+            f"Wildcard={name}_*.tif",
             f"Name={name}",
             "",
         ]),

@@ -206,8 +206,10 @@ def publish_mosaic(name, variable):
 
 def publish_coverage(name, gs_file, variable):
     """
-    Publish one GeoTIFF as coverage geonode:<name>; `gs_file` is its path as GeoServer sees it
-    (under GEOSERVER_TIMESERIES_DIR). Idempotent; returns the alternate.
+    Publish one GeoTIFF as coverage geonode:<name>; `gs_file` is its path as GeoServer sees it,
+    in its own folder beside the mosaics, e.g. /webatlas-timeseries/<name>/<name>.tif (the URL
+    check allows <root>/<folder>/<file>.tif only). Never inside a mosaic's folder.
+    Idempotent; returns the alternate.
     """
     _check_name(name)
     _check_variable(variable)
