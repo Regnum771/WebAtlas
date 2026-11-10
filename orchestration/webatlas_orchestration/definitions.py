@@ -48,7 +48,11 @@ def sync_catalogue(context) -> None:
     now = datetime.now(timezone.utc)
     with registry.connect() as conn:
         report = catalogue_sync.run(conn, now, full=now.minute == 0)
-    context.log.info("catalogue: %d inserted, %d updated, %d removed", report.inserted, report.updated, report.removed)
+    if report is None:
+        context.log.warning("catalogue: another sync is running, skipped")
+        return
+    context.log.info("catalogue: %d inserted, %d updated, %d marked, %d removed",
+                     report.inserted, report.updated, report.marked, report.removed)
 
 
 @dg.job(name="dong_bo_danh_muc")
