@@ -224,6 +224,19 @@ describe('time-series uploads', () => {
       .rejects.toMatchObject({ statusCode: 413 });
   });
 
+  it('accepts a small .csv and refuses one over its own cap while the file cap is larger', async () => {
+    const svc = catalogueUploadsService(getPool(), { maxBytes: 4096, csvMaxBytes: 1024 });
+    const { upload } = await svc.upload(userFor(OWNER), part('times.csv', 512));
+    await track(upload.id);
+    expect(upload.sizeBytes).toBe(512);
+    await expect(svc.upload(userFor(OWNER), part('times.csv', 1536)))
+      .rejects.toMatchObject({ statusCode: 413, message: 'Tệp CSV lớn hơn 1 MB.' });
+    // The same size is fine for a series file.
+    const big = await svc.upload(userFor(OWNER), part('serie.nc', 1536));
+    await track(big.upload.id);
+    expect(big.upload.sizeBytes).toBe(1536);
+  });
+
   it('refuses .exe with 400 over HTTP', async () => {
     const { payload, headers } = multipart('x.exe', Buffer.from('MZ'));
     const res = await app.inject({ method: 'POST', url: '/api/catalogue/uploads', payload, headers: { ...headers, ...(await auth(OWNER)) } });
@@ -289,13 +302,34 @@ describe('POST /api/catalogue/timeseries', () => {
 
   it('resolves timesCsvFileId to the store path and takes every = 1', async () => {
     const fileId = await uploadFor(OWNER, 'run.hdf');
-    const csvId = await uploadFor(OWNER, 'times.zip');
+    const csvId = await uploadFor(OWNER, 'times.csv');
     const res = await post(OWNER, { fileId, title: 'HEC', timesCsvFileId: csvId, every: 1, hdfArea: 'Area 1' });
     expect(res.statusCode).toBe(202);
     const { rows } = await getPool().query(`SELECT params FROM workspace.jobs WHERE id = $1`, [res.json().job.id]);
     expect(rows[0].params).toMatchObject({ source: 'hecras', every: 1, hdfArea: 'Area 1' });
-    expect(rows[0].params.timesCsvPath).toMatch(/^uploads\/.+\/original\.zip$/);
+    expect(rows[0].params.timesCsvPath).toMatch(/^uploads\/.+\/original\.csv$/);
     await getPool().query(`DELETE FROM workspace.jobs WHERE id = $1`, [res.json().job.id]);
+  });
+
+  it('refuses a .csv as the series file', async () => {
+    const fileId = await uploadFor(OWNER, 'times.csv');
+    const res = await post(OWNER, { fileId, title: 'x' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toBe('Tệp CSV chỉ dùng làm bảng thời gian, không phải chuỗi dữ liệu.');
+  });
+
+  it('refuses a timesCsvFileId that is not a .csv, not a time-series upload, or not the caller\'s', async () => {
+    const fileId = await uploadFor(OWNER, 'a.tif');
+    const notCsv = await uploadFor(OWNER, 'b.tif');
+    const res = await post(OWNER, { fileId, title: 'x', timesCsvFileId: notCsv });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toBe('Bảng thời gian phải là tệp CSV đã tải lên cho chuỗi thời gian.');
+    const theirs = await uploadFor(OTHER, 'times.csv');
+    expect((await post(OWNER, { fileId, title: 'x', timesCsvFileId: theirs })).statusCode).toBe(404);
+    // A personal-map upload is not purpose 'timeseries' (the workspace takes no .csv, so name it .tif).
+    const { upload } = await uploadsService(getPool()).upload(userFor(OWNER), part('plain.tif', 16));
+    await track(upload.id);
+    expect((await post(OWNER, { fileId, title: 'x', timesCsvFileId: upload.id })).statusCode).toBe(404);
   });
 
   it('refuses every other than 1 or 4', async () => {

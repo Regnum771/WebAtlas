@@ -94,8 +94,10 @@ export interface StoreOptions {
   purpose: 'map' | 'timeseries';
   /** False for an upload that does not count toward the personal quota (and is not capped by it). */
   countsToQuota: boolean;
+  /** A lower cap for some extensions (lower case, with the dot); the lowest cap applies. */
+  extensionMaxBytes?: Record<string, number>;
   unsupportedMessage?: string;
-  tooLargeMessage?: string;
+  tooLargeMessage?: string | ((ext: string) => string);
 }
 
 /**
@@ -103,8 +105,9 @@ export interface StoreOptions {
  * in the header apply when `countsToQuota`; otherwise only `maxBytes` caps the file.
  */
 export async function storeUpload(pg: Pool, user: CurrentUser, part: UploadPart, opts: StoreOptions): Promise<{ upload: Upload }> {
-  const { maxBytes, countsToQuota } = opts;
+  const { countsToQuota } = opts;
   const ext = path.extname(part.filename ?? '').toLowerCase();
+  const maxBytes = Math.min(opts.maxBytes, opts.extensionMaxBytes?.[ext] ?? Infinity);
   if (!opts.extensions.includes(ext)) {
     part.file.resume(); // let the request body drain
     throw new ValidationError(opts.unsupportedMessage ?? UNSUPPORTED_FORMAT);
@@ -130,7 +133,9 @@ export async function storeUpload(pg: Pool, user: CurrentUser, part: UploadPart,
     if (err instanceof FileTooLargeError) {
       // Stopped at the room left rather than at the per-file limit: report the quota.
       if (room < maxBytes) throw quotaExceeded(before.usageBytes, before.quotaBytes);
-      if (opts.tooLargeMessage) throw new FileTooLargeError(opts.tooLargeMessage);
+      if (opts.tooLargeMessage) {
+        throw new FileTooLargeError(typeof opts.tooLargeMessage === 'function' ? opts.tooLargeMessage(ext) : opts.tooLargeMessage);
+      }
     }
     throw err;
   }

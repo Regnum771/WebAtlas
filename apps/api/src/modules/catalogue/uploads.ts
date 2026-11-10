@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { Pool } from 'pg';
-import { ConflictError, NotFoundError } from '../../errors';
+import { ConflictError, NotFoundError, ValidationError } from '../../errors';
 import { inTransaction } from '../../lib/transaction';
 import type { CurrentUser } from '../../types/fastify';
 import { insertJob, TIMESERIES_STEPS, type Job, type TimeseriesImportParams } from '../workspace/jobs';
@@ -13,10 +13,15 @@ import { FILE_NOT_FOUND, storeUpload, type Upload, type UploadPart } from '../wo
  */
 
 export const TIMESERIES_MAX_BYTES = 2 * 1024 * 1024 * 1024;
-export const TIMESERIES_EXTENSIONS: readonly string[] = ['.zip', '.tif', '.tiff', '.nc', '.hdf'];
+/** The times table of a GeoTIFF series: a small .csv beside the big files. */
+export const TIMES_CSV_MAX_BYTES = 1024 * 1024;
+export const TIMESERIES_EXTENSIONS: readonly string[] = ['.zip', '.tif', '.tiff', '.nc', '.hdf', '.csv'];
+export const CSV_NOT_A_SERIES = 'Tệp CSV chỉ dùng làm bảng thời gian, không phải chuỗi dữ liệu.';
+export const NOT_A_TIMES_CSV = 'Bảng thời gian phải là tệp CSV đã tải lên cho chuỗi thời gian.';
 
 export const UNSUPPORTED_TIMESERIES = 'Định dạng chưa hỗ trợ cho chuỗi thời gian.';
 export const TIMESERIES_TOO_LARGE = 'Tệp lớn hơn 2 GB.';
+export const TIMES_CSV_TOO_LARGE = 'Tệp CSV lớn hơn 1 MB.';
 export const NEEDS_SSO = 'Cần đăng nhập một lần (SSO) để đưa dữ liệu lên Danh mục.';
 
 const SOURCE_BY_EXT: Record<string, TimeseriesImportParams['source']> = {
@@ -33,8 +38,9 @@ export interface TimeseriesRequest {
   every: 1 | 4;
 }
 
-export function catalogueUploadsService(pg: Pool, opts: { maxBytes?: number } = {}) {
+export function catalogueUploadsService(pg: Pool, opts: { maxBytes?: number; csvMaxBytes?: number } = {}) {
   const maxBytes = opts.maxBytes ?? TIMESERIES_MAX_BYTES;
+  const csvMaxBytes = opts.csvMaxBytes ?? TIMES_CSV_MAX_BYTES;
 
   return {
     upload(user: CurrentUser, part: UploadPart): Promise<{ upload: Upload }> {
@@ -44,7 +50,8 @@ export function catalogueUploadsService(pg: Pool, opts: { maxBytes?: number } = 
         purpose: 'timeseries',
         countsToQuota: false,
         unsupportedMessage: UNSUPPORTED_TIMESERIES,
-        tooLargeMessage: TIMESERIES_TOO_LARGE,
+        extensionMaxBytes: { '.csv': csvMaxBytes },
+        tooLargeMessage: (ext) => (ext === '.csv' ? TIMES_CSV_TOO_LARGE : TIMESERIES_TOO_LARGE),
       });
     },
 
@@ -70,22 +77,24 @@ export function catalogueUploadsService(pg: Pool, opts: { maxBytes?: number } = 
           [input.fileId, user.id]
         );
         if (!rows[0]) throw new NotFoundError(FILE_NOT_FOUND);
+        const ext = path.extname(rows[0].original_name).toLowerCase();
+        if (ext === '.csv') throw new ValidationError(CSV_NOT_A_SERIES);
 
         let timesCsvPath: string | null = null;
         if (input.timesCsvFileId) {
-          // The times table is the caller's own upload; the worker reads it from the store.
-          const { rows: csv } = await client.query<{ path: string }>(
-            `SELECT path FROM workspace.files
-              WHERE id = $1 AND owner_id = $2 AND kind = 'upload'
+          // The times table is the caller's own time-series upload, and a .csv.
+          const { rows: csv } = await client.query<{ path: string; original_name: string }>(
+            `SELECT path, original_name FROM workspace.files
+              WHERE id = $1 AND owner_id = $2 AND kind = 'upload' AND purpose = 'timeseries'
                 AND (delete_after IS NULL OR delete_after > now())
               FOR UPDATE`,
             [input.timesCsvFileId, user.id]
           );
           if (!csv[0]) throw new NotFoundError(FILE_NOT_FOUND);
+          if (path.extname(csv[0].original_name).toLowerCase() !== '.csv') throw new ValidationError(NOT_A_TIMES_CSV);
           timesCsvPath = csv[0].path;
         }
 
-        const ext = path.extname(rows[0].original_name).toLowerCase();
         const params: TimeseriesImportParams = {
           fileId: input.fileId,
           path: rows[0].path,
