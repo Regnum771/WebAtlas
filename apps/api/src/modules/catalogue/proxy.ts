@@ -67,8 +67,12 @@ const FORMATS: Record<string, readonly string[]> = {
   GetFeatureInfo: ['image/png', 'image/png8', 'image/jpeg', 'image/webp'],
 };
 const INFO_FORMATS: readonly string[] = ['application/json', 'text/plain'];
-/** One ISO 8601 instant: a date, or a date and time with an optional zone. No list, no range. */
-const INSTANT = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+/**
+ * One ISO 8601 instant to the second, with an optional zone. No list, no range, and no reduced
+ * precision: GeoServer reads `2026-10-01` (or a time without seconds) as a range over the omitted
+ * unit and would mosaic every granule in it.
+ */
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:?\d{2})?$/;
 
 function allowed(value: string, list: readonly string[]): string {
   const v = value.trim().toLowerCase();

@@ -298,4 +298,22 @@ describe('POST /api/catalogue/:id/copy', () => {
     expect((await copy(PK.vector, ownerMap)).statusCode).toBe(502);
     expect(await uploadsOf(OWNER)).toHaveLength(before);
   });
+
+  it('turns a body that fails mid-read (timeout, dropped connection) into 502 and keeps no upload', async () => {
+    const before = (await uploadsOf(OWNER)).length;
+    respond = () => {
+      let sent = false;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (!sent) { sent = true; controller.enqueue(new TextEncoder().encode('{"type":"FeatureCollection","features":[')); return; }
+          controller.error(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+        },
+      });
+      return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+    const failed = await copy(PK.vector, ownerMap);
+    expect(failed.statusCode).toBe(502);
+    expect(failed.json().error.message).toBe(COPY_FAILED);
+    expect(await uploadsOf(OWNER)).toHaveLength(before);
+  });
 });

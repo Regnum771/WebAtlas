@@ -105,7 +105,10 @@ export function catalogueCopyService(pg: Pool) {
         // storeUpload leaves a refused source flowing to drain it; GeoServer's body has no end
         // worth waiting for, so stop reading it.
         file.destroy();
-        throw err;
+        // A refusal (quota, type) is an AppError and goes out as is; anything else is the GeoServer
+        // body failing mid-read (the 10-minute timeout, a dropped connection): a copy failure.
+        if (err instanceof AppError) throw err;
+        throw upstreamFailed();
       }
 
       try {

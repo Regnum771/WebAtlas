@@ -167,8 +167,9 @@ describe('GET /api/catalogue/:id/wms', () => {
     expect(ms.statusCode).toBe(200);
   });
 
-  it('refuses a TIME that is not one ISO instant (range, list, current) with 400', async () => {
-    for (const t of ['1900/2100', '2026-10-01T00:00:00Z/2026-10-02T00:00:00Z', '2026-10-01,2026-10-02', 'current', '2026-13-45']) {
+  it('refuses a TIME that is not one ISO instant to the second (range, list, current, reduced precision) with 400', async () => {
+    for (const t of ['1900/2100', '2026-10-01T00:00:00Z/2026-10-02T00:00:00Z', '2026-10-01,2026-10-02', 'current', '2026-13-45',
+      '2026-10-01', '2026-10-01T01:00Z', '2026-10']) {
       const res = await app.inject({ method: 'GET', url: wms(PK.pub, `${GETMAP}&TIME=${encodeURIComponent(t)}`) });
       expect(res.statusCode, t).toBe(400);
     }
