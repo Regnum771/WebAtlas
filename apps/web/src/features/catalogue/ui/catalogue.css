@@ -1,0 +1,11 @@
+/* The value label that follows a resting pointer over a time-series layer. */
+.catalogue-hover-tip {
+  padding: 3px 7px;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  font: 600 var(--text-xs) var(--font-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}

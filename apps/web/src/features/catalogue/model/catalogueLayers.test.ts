@@ -44,9 +44,35 @@ describe('syncCatalogueLayers', () => {
     const [v2, t2] = catLayers(map);
     expect(t2).toBe(t);
     expect(v2).toBe(v);
-    expect(t2.getSource()?.getParams().TIME).toBe('2026-01-02T00:00:00Z');
+    // The layer's own latest step at or before the slider time.
+    expect(t2.getSource()?.getParams().TIME).toBe('2026-01-01T00:00:00Z');
     syncCatalogueLayers(map, [layer('t', 'timeseries')], null);
     expect(catLayers(map)[0].getSource()?.getParams().TIME).toBeUndefined();
+  });
+
+  it('each time-series layer asks for its own step at or before the slider time', () => {
+    const map = new Map({});
+    const withSteps = (id: string, steps: string[]) => {
+      const l = layer(id, 'timeseries');
+      l.item.timeSteps = steps;
+      return l;
+    };
+    const rain = withSteps('rain', ['2025-10-25T00:00:00Z', '2025-10-26T00:00:00Z']);
+    const depth = withSteps('depth', ['2025-10-25T00:00:00Z', '2025-10-25T01:00:00Z']);
+    syncCatalogueLayers(map, [rain, depth], '2025-10-26T13:00:00Z');
+    const [r, d] = catLayers(map);
+    expect(r.getSource()?.getParams().TIME).toBe('2025-10-26T00:00:00Z');
+    expect(d.getSource()?.getParams().TIME).toBe('2025-10-25T01:00:00Z');
+  });
+
+  it('hides a layer before its first step, not showing its first frame', () => {
+    const map = new Map({});
+    const depth = layer('depth', 'timeseries');
+    depth.item.timeSteps = ['2025-10-25T00:00:00Z'];
+    syncCatalogueLayers(map, [depth], '2025-10-24T12:00:00Z');
+    expect(catLayers(map)[0].getVisible()).toBe(false);
+    syncCatalogueLayers(map, [depth], '2025-10-25T06:00:00Z');
+    expect(catLayers(map)[0].getVisible()).toBe(true);
   });
 
   it('applies visibility and opacity, and removes removed or gone layers', () => {

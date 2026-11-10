@@ -3,6 +3,7 @@ import ImageLayer from 'ol/layer/Image';
 import ImageWMS from 'ol/source/ImageWMS';
 import type ImageWrapper from 'ol/Image';
 import { catalogueWmsUrl, fetchCatalogueBlob } from '../api/catalogue.api';
+import { stepAtOrBefore } from '../../time-slider/model/timeSteps';
 import { markGoneIfDenied, type CatalogueLayer } from './catalogue.store';
 
 /** Below the personal layers (800+), above the base data. */
@@ -78,11 +79,14 @@ export function syncCatalogueLayers(map: Map, layers: CatalogueLayer[], time: st
       layer = new ImageLayer({ source, properties: { [CATALOGUE_LAYER_PROP]: item.id, [ABORT_PROP]: loader.abort } });
       map.addLayer(layer);
     }
-    const timeParam = item.kind === 'timeseries' && time ? time : undefined;
+    // A time-series layer shows its latest step at or before the slider time, and nothing before its first step.
+    const isSeries = item.kind === 'timeseries' && time !== null;
+    const timeParam = isSeries ? (stepAtOrBefore(item.timeSteps ?? [], time) ?? undefined) : undefined;
+    const beforeFirst = isSeries && timeParam === undefined;
     const source = layer.getSource() as ImageWMS;
     if (source.getParams().TIME !== timeParam) source.updateParams({ TIME: timeParam });
     layer.setZIndex(CATALOGUE_Z_BASE + order);
-    layer.setVisible(visible);
+    layer.setVisible(visible && !beforeFirst);
     layer.setOpacity(opacity);
   });
 }

@@ -81,6 +81,20 @@ export function createTimeseries(input: TimeseriesInput): Promise<{ job: Job }> 
  * The caller revokes the URL once the image has loaded.
  */
 export async function fetchCatalogueBlob(url: string, signal?: AbortSignal): Promise<string> {
+  const res = await authorisedGet(url, signal);
+  const blob = await res.blob();
+  // A superseded request must not leave a blob URL behind.
+  if (signal?.aborted) throw new ApiError(0, 'ABORTED', 'Đã huỷ.');
+  return URL.createObjectURL(blob);
+}
+
+/** GETs a catalogue URL with the token and parses the JSON body (GetFeatureInfo). */
+export async function fetchCatalogueJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await authorisedGet(url, signal);
+  return (await res.json()) as T;
+}
+
+async function authorisedGet(url: string, signal?: AbortSignal): Promise<Response> {
   const headers: Record<string, string> = {};
   const token = getAuthToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -94,10 +108,7 @@ export async function fetchCatalogueBlob(url: string, signal?: AbortSignal): Pro
     if (res.status === 401) notifyUnauthorized();
     throw new ApiError(res.status, 'HTTP_ERROR', `Request failed (${res.status})`);
   }
-  const blob = await res.blob();
-  // A superseded request must not leave a blob URL behind.
-  if (signal?.aborted) throw new ApiError(0, 'ABORTED', 'Đã huỷ.');
-  return URL.createObjectURL(blob);
+  return res;
 }
 
 /** A legend image for the entry, as a blob URL (token-authorized like the map images). */

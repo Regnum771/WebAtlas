@@ -5,6 +5,10 @@ import {
   refreshCatalogueLayers, removeCatalogueLayer, setCatalogueLayer, useCatalogueStore,
 } from './model/catalogue.store';
 import { syncCatalogueLayers } from './model/catalogueLayers';
+import { setSteps } from '../time-slider/model/timeSlider.store';
+import { unionSteps } from '../time-slider/model/timeSteps';
+import { useCatalogueHover } from './model/useCatalogueHover';
+import './ui/catalogue.css';
 import { useCataloguePickerPresenter } from './model/useCataloguePickerPresenter';
 import { useTimeseriesUploadPresenter } from './model/useTimeseriesUploadPresenter';
 import { CataloguePickerView } from './ui/CataloguePicker.view';
@@ -42,6 +46,14 @@ export default function CatalogueLayersSection({ time = null }: { time?: string 
   useEffect(() => {
     if (map) syncCatalogueLayers(map, layers, time);
   }, [map, layers, time]);
+  // The visible time-series layers supply the steps of the shared time slider.
+  useEffect(() => {
+    setSteps(unionSteps(layers
+      .filter((l) => l.status === 'ok' && l.visible && l.item.kind === 'timeseries')
+      .map((l) => l.item.timeSteps ?? [])));
+  }, [layers]);
+  useEffect(() => () => setSteps([]), []);
+  useCatalogueHover(map);
   // Unmounting the section takes the layers off the map.
   useEffect(() => () => { if (map) syncCatalogueLayers(map, [], null); }, [map]);
   // Entries may have been deleted or unshared since they were added, and signing in or out
