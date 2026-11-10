@@ -32,7 +32,8 @@ export const LAYER_PALETTE: Record<string, LayerPaletteEntry> = {
   // Per-feature fill (rotating pastel palette / hashed hue) carries no single
   // meaningful swatch; this is the constant boundary stroke color instead.
   layer_provinces_2026: { color: '#4338ca' },
-  layer_wards_2026: { color: '#6b7280' },
+  // Indigo, the provinces' hue: the old grey dash read as a footpath on the OSM basemap.
+  layer_wards_2026: { color: '#6366f1' },
 
   // Basemap context layers (raster, rendered by GeoServer from OSM data).
   // SOURCE OF TRUTH for the SLD colours too: packages/atlas-data/tools/basemap/styles.py

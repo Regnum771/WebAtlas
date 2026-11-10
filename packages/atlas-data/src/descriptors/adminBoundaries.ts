@@ -38,6 +38,9 @@ export const adminBoundaries = defineDataset({
         { file: 'seeds/wards-region.geojson', target: 'admin.wards', multiPolygon: true, columns: ADMIN_WARD_COLUMNS },
       ],
     },
+    // The lines the map draws for province boundaries (land borders only, no coast or islands) are
+    // derived from the provinces, so they are rebuilt on every load (API migration 34).
+    { type: 'sql', statement: 'SELECT admin.rebuild_province_borders()' },
   ],
   probe: allOf(
     rowCount('admin.provinces', 'SELECT count(*)::text AS n FROM admin.provinces', 34),

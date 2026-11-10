@@ -51,7 +51,7 @@ export const contours = defineDataset({
       type: 'run',
       in: 'tools',
       argv: ['bash', 'packages/atlas-data/tools/contours/publish-contours.sh', 'seed'],
-      produces: 'GeoWebCache seed tasks for contours_250 (zooms 5-8), contours_100 (9-10), contours_50 (11-12) over the working region (run in the background)',
+      produces: 'GeoWebCache seed tasks for contours_250 (zooms 5-9), contours_100 (10-11), contours_50 (12) over the working region (run in the background)',
       promoteTo: 'publish-geoserver',
       promoteBy: '2027-06-30',
     },

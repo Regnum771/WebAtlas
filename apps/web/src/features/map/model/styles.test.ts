@@ -6,7 +6,10 @@ import {
   makeDamsStyle,
   lakesStyle,
   provincesStyle,
+  provinceLabelStyle,
   wardsStyle,
+  wardLabelStyle,
+  damMarkerScaleAt,
   stationsStyle,
   floodStyle,
   droughtSurveyStyle,
@@ -115,44 +118,24 @@ describe('map styles stay on the shared LAYER_PALETTE (legend/map colour parity)
     expect(floodGenerationStyle.getStroke()?.getColor()).toBe(LAYER_PALETTE.layer_flood_generation.color);
   });
 
-  it('provincesStyle boundary stroke matches LAYER_PALETTE.layer_provinces_2026', () => {
-    const feature = { get: () => undefined, set: () => {}, getGeometry: () => undefined } as any;
-    const outline = provincesStyle(feature) as Style;
-    expect(outline.getStroke()?.getColor()).toBe(LAYER_PALETTE.layer_provinces_2026.color);
+  it('province border lines are stroked in LAYER_PALETTE.layer_provinces_2026', () => {
+    for (const kind of ['province', 'national']) {
+      const border = provincesStyle(fakeFeature({ layer: 'province_borders', kind })) as Style;
+      expect(border.getStroke()?.getColor()).toBe(LAYER_PALETTE.layer_provinces_2026.color);
+    }
   });
 
-  it('rivers get wider as Strahler order increases', () => {
-    const widthFor = (order: number) => {
-      const styles = riversStyle(fakeFeature({ streamOrder: order }), FULL_DETAIL_RESOLUTION);
-      // main (core) stroke is the last style in the paired array
-      const stroke = styles![styles!.length - 1].getStroke();
-      expect(stroke).toBeInstanceOf(Stroke);
-      const width = stroke!.getWidth();
-      expect(width).toBeDefined();
-      return width!;
-    };
-    expect(widthFor(8)).toBeGreaterThan(widthFor(2));
+  it('ward outlines are drawn in LAYER_PALETTE.layer_wards_2026', () => {
+    const [r, g, b] = hexToRgbTuple(LAYER_PALETTE.layer_wards_2026.color);
+    const outline = wardsStyle(fakeFeature({ layer: 'wards' })) as Style;
+    expect(outline.getStroke()?.getColor()).toBe(`rgba(${r}, ${g}, ${b}, 0.75)`);
   });
 });
 
 import { STREAM_ORDER_LABELS } from '@webatlas/shared';
 
-describe('độ rộng nét sông theo hạng OSM', () => {
-  const widthOf = (order: number): number => {
-    const styles = riversStyle({ get: (k: string) => (k === 'streamOrder' ? order : undefined) } as any, FULL_DETAIL_RESOLUTION);
-    // riversStyle always returns the [casing, core] pair when it draws; at
-    // FULL_DETAIL_RESOLUTION no bucket is hidden, so there is a value.
-    const stroke = styles![1].getStroke();
-    return stroke?.getWidth() ?? 0;
-  };
-
-  it('sông chính vẽ đậm hơn kênh, kênh đậm hơn suối, suối đậm hơn mương', () => {
-    expect(widthOf(5)).toBeGreaterThan(widthOf(4));
-    expect(widthOf(4)).toBeGreaterThan(widthOf(2));
-    expect(widthOf(2)).toBeGreaterThanOrEqual(widthOf(1));
-  });
-
-  it('mọi hạng OSM đều có nhãn hiển thị', () => {
+describe('OSM waterway ranks', () => {
+  it('every rank has a display label', () => {
     for (const order of [5, 4, 2, 1]) {
       expect(STREAM_ORDER_LABELS[order]).toBeTruthy();
     }
@@ -172,9 +155,8 @@ describe('provincesStyle / wardsStyle read the new boundary properties (not GADM
     } as any;
   }
 
-  it('provincesStyle draws text only for province_labels points, from the "name" property (not NAME_1)', () => {
-    // A province tile holds the polygons (MVT layer `provinces`) and one label point per province
-    // (`province_labels`): only the point draws the name, so a province cut by tiles is labelled once.
+  it('a province polygon is filled (for hit-testing) but NOT stroked: only the border lines are', () => {
+    // Stroking the polygons outlined the coast and ringed every island at sea.
     const polygon = provincesStyle(fakeBoundaryFeature({
       layer: 'provinces',
       code: '48',
@@ -184,27 +166,43 @@ describe('provincesStyle / wardsStyle read the new boundary properties (not GADM
       areaKm2: 13125.4,
     })) as Style;
     expect(polygon.getText()).toBeNull();
-    expect(polygon.getStroke()?.getWidth()).toBe(2.5);
+    expect(polygon.getStroke()).toBeNull();
     // The transparent fill stays: without it only the outline of a province is clickable.
     expect(polygon.getFill()).not.toBeNull();
-    const label = provincesStyle(fakeBoundaryFeature({ layer: 'province_labels', code: '48', name: 'Đắk Lắk' })) as Style;
+  });
+
+  it('the national land border is drawn heavier than a border between provinces', () => {
+    const width = (kind: string) =>
+      (provincesStyle(fakeBoundaryFeature({ layer: 'province_borders', kind })) as Style).getStroke()!.getWidth()!;
+    expect(width('national')).toBeGreaterThan(width('province'));
+  });
+
+  it('province names come from the label layer style only, from the "name" property (not NAME_1)', () => {
+    // The boundary layer draws no text: the names are drawn by a separate layer above all data.
+    expect(provincesStyle(fakeBoundaryFeature({ layer: 'province_labels', code: '48', name: 'Đắk Lắk' }))).toBeUndefined();
+    expect(provinceLabelStyle(fakeBoundaryFeature({ layer: 'provinces', code: '48', name: 'Đắk Lắk' }))).toBeUndefined();
+    expect(provinceLabelStyle(fakeBoundaryFeature({ layer: 'province_borders', kind: 'province' }))).toBeUndefined();
+    const label = provinceLabelStyle(fakeBoundaryFeature({ layer: 'province_labels', code: '48', name: 'Đắk Lắk' })) as Style;
     const text = label.getText() as Text;
     expect(text.getText()).toBe('Đắk Lắk');
     expect(text.getFont()).toBe('bold 12px Inter, system-ui, sans-serif');
     expect(label.getStroke()).toBeNull();
   });
 
-  it('wardsStyle draws text only for ward_labels points, from the "name" property', () => {
+  it('ward names come from the label layer style; the outline is a visible dash', () => {
     const label = fakeBoundaryFeature({ layer: 'ward_labels', code: '48012', name: 'Xã Ea Tul' });
-    expect((wardsStyle(label) as Style).getText()?.getText()).toBe('Xã Ea Tul');
+    expect(wardsStyle(label)).toBeUndefined();
+    expect((wardLabelStyle(label) as Style).getText()?.getText()).toBe('Xã Ea Tul');
     const polygon = fakeBoundaryFeature({ layer: 'wards', code: '48012', name: 'Xã Ea Tul', fullName: 'Xã Ea Tul' });
+    expect(wardLabelStyle(polygon)).toBeUndefined();
     const outline = wardsStyle(polygon) as Style;
     expect(outline.getText()).toBeNull();
-    expect(outline.getStroke()?.getLineDash()).toEqual([4, 4]);
+    expect(outline.getStroke()?.getLineDash()).toEqual([6, 3]);
+    // The old 1 px dash at 40 % opacity read as a footpath on the OSM basemap.
+    expect(outline.getStroke()!.getWidth()!).toBeGreaterThan(1);
   });
 });
 
-import { minRiverBucketAt } from './styles';
 import { resolutionAtZoom, zoomForScale, REFERENCE_LATITUDE } from './zoomScale';
 
 /** The OL/3857 resolution that renders at a given scale denominator. */
@@ -212,31 +210,21 @@ function resolutionForScale(scale: number): number {
   return resolutionAtZoom(zoomForScale(scale)) / Math.cos((REFERENCE_LATITUDE * Math.PI) / 180);
 }
 
-describe('minRiverBucketAt', () => {
-  it('draws only sông chính when most zoomed out', () => {
-    expect(minRiverBucketAt(resolutionForScale(7_500_000))).toBe(3);
-    expect(minRiverBucketAt(resolutionForScale(1_000_000))).toBe(3);
+describe('dam markers by scale', () => {
+  const radiusAt = (scale: number) => {
+    const style = makeDamsStyle(() => 'all')(fakeFeature({ statusSlug: 'binh_thuong', ratedPower: 2000 }), resolutionForScale(scale));
+    return ((style as Style).getImage() as CircleStyle).getRadius();
+  };
+
+  it('shrink when zoomed out, so far-zoom clusters stay separate dots', () => {
+    expect(radiusAt(4_000_000)).toBeLessThan(radiusAt(1_500_000));
+    expect(radiusAt(1_500_000)).toBeLessThan(radiusAt(100_000));
   });
 
-  it('adds kênh đào from 1:500.000', () => {
-    expect(minRiverBucketAt(resolutionForScale(999_999))).toBe(2);
-    expect(minRiverBucketAt(resolutionForScale(500_000))).toBe(2);
-  });
-
-  it('adds suối from 1:250.000', () => {
-    expect(minRiverBucketAt(resolutionForScale(499_999))).toBe(1);
-    expect(minRiverBucketAt(resolutionForScale(250_000))).toBe(1);
-  });
-
-  it('hides nothing when most zoomed in', () => {
-    expect(minRiverBucketAt(resolutionForScale(249_999))).toBe(0);
-    expect(minRiverBucketAt(resolutionForScale(100_000))).toBe(0);
-  });
-
-  it('never hides sông chính at any scale — the coarsest tier is always drawn', () => {
-    [7_500_000, 1_000_000, 500_000, 250_000, 100_000].forEach((scale) => {
-      expect(minRiverBucketAt(resolutionForScale(scale))).toBeLessThanOrEqual(3);
-    });
+  it('keep their full size when zoomed in, and never drop below 3 px', () => {
+    expect(radiusAt(100_000)).toBe(17);
+    expect(radiusAt(7_500_000)).toBeGreaterThanOrEqual(3);
+    expect(damMarkerScaleAt(undefined)).toBe(1);
   });
 });
 

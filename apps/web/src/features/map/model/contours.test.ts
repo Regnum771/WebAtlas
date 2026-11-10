@@ -12,7 +12,11 @@ import { VIETNAM_EXTENT_4326 } from './zoomScale';
 describe('contourIntervalFor', () => {
   it('is coarse when zoomed out and fine when zoomed in', () => {
     expect(contourIntervalFor(6)).toBe(250);
-    expect(contourIntervalFor(9.5)).toBe(100);
+    // 1:785,000 in the highlands: 100 m lines merged into a brown mesh there.
+    expect(contourIntervalFor(9.5)).toBe(250);
+    expect(contourIntervalFor(10)).toBe(100);
+    expect(contourIntervalFor(11.99)).toBe(100);
+    expect(contourIntervalFor(12)).toBe(50);
     expect(contourIntervalFor(13)).toBe(50);
   });
 

@@ -98,6 +98,8 @@ export const NOT_SNAPPABLE = new Set([
   'layer_rivers_overview', 'layer_assistant_highlight', 'layer_analysis_results',
   // Whole-country admin boundaries: 58k-323k vertices, and not what a user snaps to.
   'layer_provinces_2026', 'layer_wards_2026',
+  // Their names, drawn above the data (createBoundaryLabelLayer): label points, nothing to snap to.
+  'layer_province_labels', 'layer_ward_labels',
 ]);
 
 export function snapSourcesOf(map: Map): VectorSource[] {

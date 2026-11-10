@@ -119,7 +119,8 @@ describe('publish-contours.sh — REST call failures must fail the publish', { t
     const r = run({ STUB_LOG: log }, ['seed']);
     expect(r.status).toBe(0);
     const lines = readFileSync(log, 'utf8').split('\n').filter(Boolean);
-    const expected = { contours_250: [5, 8], contours_100: [9, 10], contours_50: [11, 12] };
+    // The zooms the web app's automatic interval asks each layer for (apps/web contours.ts).
+    const expected = { contours_250: [5, 9], contours_100: [10, 11], contours_50: [12, 12] };
     expect(lines).toHaveLength(3);
     for (const [name, [z0, z1]] of Object.entries(expected)) {
       const line = lines.find((l) =>

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import Feature from 'ol/Feature';
 import { Style } from 'ol/style';
 import VectorTileLayer from 'ol/layer/VectorTile';
-import { applyWaterVersions, createBoundaryTileLayer, createWaterTileLayer, isBoundaryLabel, fetchWaterVersions, waterTileUrl, withHighlight } from './waterTiles';
+import { applyWaterVersions, createBoundaryLabelLayer, createBoundaryTileLayer, createWaterTileLayer, isBoundaryDecoration, fetchWaterVersions, waterTileUrl, withHighlight } from './waterTiles';
 import { API_BASE_URL } from '../../../shared/config';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -84,10 +84,19 @@ describe('boundary tile layers', () => {
     expect(provinces.getSource()!.getUrls()).toEqual([`${API_BASE_URL}/api/tiles/provinces/{z}/{x}/{y}.pbf`]);
   });
 
-  it('tells a label point from a boundary polygon by its MVT layer', () => {
-    expect(isBoundaryLabel({ layer: 'ward_labels', code: '1' })).toBe(true);
-    expect(isBoundaryLabel({ layer: 'province_labels', code: '66' })).toBe(true);
-    expect(isBoundaryLabel({ layer: 'wards', code: '1' })).toBe(false);
-    expect(isBoundaryLabel({ layer: 'provinces', code: '66' })).toBe(false);
+  it('tells a label point or border line from a boundary polygon by its MVT layer', () => {
+    expect(isBoundaryDecoration({ layer: 'ward_labels', code: '1' })).toBe(true);
+    expect(isBoundaryDecoration({ layer: 'province_labels', code: '66' })).toBe(true);
+    expect(isBoundaryDecoration({ layer: 'province_borders', kind: 'province' })).toBe(true);
+    expect(isBoundaryDecoration({ layer: 'wards', code: '1' })).toBe(false);
+    expect(isBoundaryDecoration({ layer: 'provinces', code: '66' })).toBe(false);
+  });
+
+  it('a label layer shares its boundary layer source and starts hidden', () => {
+    const provinces = createBoundaryTileLayer('provinces', 'layer_provinces_2026', () => undefined);
+    const labels = createBoundaryLabelLayer(provinces, 'layer_province_labels', () => undefined);
+    expect(labels.getSource()).toBe(provinces.getSource());
+    expect(labels.getVisible()).toBe(false);
+    expect(labels.get('id')).toBe('layer_province_labels');
   });
 });

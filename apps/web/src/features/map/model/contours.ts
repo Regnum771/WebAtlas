@@ -23,12 +23,13 @@ export interface ContourSettings {
 /**
  * Mức thu phóng -> khoảng cao đều, cho chế độ "Tự động".
  *
- * Ngưỡng theo tỷ lệ chứ không theo cảm tính: dưới zoom 9 (~1:1.100.000) đường 100 m đã dày
- * thành mảng nâu; từ zoom 11 (~1:270.000) đường 50 m mới đủ thưa để đọc.
+ * Thresholds by what reads on screen in the highlands: at zoom 9.5 (~1:785,000) the 100 m lines
+ * merged into a solid brown mesh, so 250 m holds until zoom 10; 100 m holds until zoom 12
+ * (~1:135,000), where 50 m lines are far enough apart to read.
  */
 export function contourIntervalFor(zoom: number): ContourInterval {
-  if (zoom < 9) return 250;
-  if (zoom < 11) return 100;
+  if (zoom < 10) return 250;
+  if (zoom < 12) return 100;
   return 50;
 }
 

@@ -47,6 +47,10 @@
    <Filter xmlns="http://www.opengis.net/ogc"><PropertyIsEqualTo>
      <PropertyName>is_index</PropertyName><Literal>true</Literal>
    </PropertyIsEqualTo></Filter>
+   <!-- Labels from about zoom 9 (GeoServer's 1:1,092,000) in. Farther out they are unreadable, and
+        group=yes below does not stop every case of the NullPointerException: some zoom-7 metatiles
+        still failed with it, so GWC answered 400 and the layer stayed blank at the opening view. -->
+   <MaxScaleDenominator>1500000</MaxScaleDenominator>
    <TextSymbolizer>
     <Label>
      <!-- elevation_m is real (500.0); round() renders it as a whole number (500). -->

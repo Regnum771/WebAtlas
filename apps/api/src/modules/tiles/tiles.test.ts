@@ -106,6 +106,45 @@ describe('GET /api/tiles/:layer/:z/:x/:y.pbf', () => {
     expect(Object.keys(props)).toEqual(expect.arrayContaining(['name_key', 'stream_order']));
   });
 
+  it('gives each river way its parent river Strahler order as riverOrder, the width the map grades by', async () => {
+    const layer = decode((await tile('rivers', BMT.z, BMT.x, BMT.y)).rawPayload, 'rivers');
+    const orders = Array.from({ length: layer.length }, (_, i) => layer.feature(i).properties.riverOrder)
+      .filter((o) => o !== undefined) as number[];
+    expect(orders.length).toBeGreaterThan(0);
+    for (const o of orders) expect(o).toBeGreaterThanOrEqual(1);
+    for (const o of orders) expect(o).toBeLessThanOrEqual(6);
+    // Same answer as the data: the level-1 parent's stream_order.
+    const { rows } = await getPool().query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM water.rivers_detail t
+         JOIN water.rivers_active p ON p.feature_level = 1 AND p.external_id = t.parent_external_id
+        WHERE t.geom && ST_Transform(ST_TileEnvelope($1, $2, $3), 4326)`, [BMT.z, BMT.x, BMT.y]);
+    expect(orders.length).toBeLessThanOrEqual(rows[0].n);
+  });
+
+  it('sends overview rivers their own Strahler order as riverOrder', async () => {
+    const layer = decode((await tile('rivers_overview', 7, 102, 59)).rawPayload, 'rivers_overview');
+    for (let i = 0; i < layer.length; i++) {
+      const p = layer.feature(i).properties;
+      expect(p.riverOrder).toBe(p.stream_order);
+    }
+  });
+
+  it('simplifies the overview to the tile zoom: closer tiles keep more of each meander', async () => {
+    const vertices = (layer: ReturnType<typeof decode>) => {
+      let n = 0;
+      for (let i = 0; i < layer.length; i++) for (const line of layer.feature(i).loadGeometry()) n += line.length;
+      return n;
+    };
+    // Same ground, one zoom apart: the zoom-8 children together carry more detail than the zoom-7 parent.
+    const parent = vertices(decode((await tile('rivers_overview', 7, 102, 59)).rawPayload, 'rivers_overview'));
+    let children = 0;
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+      const res = await tile('rivers_overview', 8, 204 + dx, 118 + dy);
+      if (res.statusCode === 200) children += vertices(decode(res.rawPayload, 'rivers_overview'));
+    }
+    expect(children).toBeGreaterThan(parent);
+  });
+
   it('overview tile holds exactly the rivers the view has in the tile, by name', async () => {
     const res = await tile('rivers_overview', 7, 102, 59);
     const layer = decode(res.rawPayload, 'rivers_overview');
@@ -254,6 +293,59 @@ describe('provinces tiles', () => {
     // Up close the tolerance is half a pixel of a far finer grid, so the outline keeps its shape:
     // the tile still has more than a handful of vertices where the border is detailed.
     expect(vertices(decode((await tile('provinces', BMT.z, BMT.x, BMT.y)).rawPayload, 'provinces'))).toBeGreaterThanOrEqual(4);
+  });
+
+  it('carries the land border lines to stroke: province borders and the national land border, never the coast', async () => {
+    const kindsAt = async (z: number, x: number, y: number) => {
+      const res = await tile('provinces', z, x, y);
+      const layer = res.statusCode === 200 ? decode(res.rawPayload, 'province_borders') : undefined;
+      return new Set(layer ? Array.from({ length: layer.length }, (_, i) => String(layer.feature(i).properties.kind)) : []);
+    };
+    // Around Buon Ma Thuot: borders between provinces, and the Cambodian border to the west.
+    const inland = await kindsAt(P.z, P.x, P.y);
+    expect(inland.has('province')).toBe(true);
+    expect(inland.has('national')).toBe(true);
+    // Zoom 7 tile 103/58 (109.7-112.5 E, 13.9-16.6 N) is sea east of the coast holding part of the
+    // Hoang Sa islands and no mainland: island polygons, but no line to stroke round them.
+    const sea = await tile('provinces', 7, 103, 58);
+    expect(sea.statusCode).toBe(200);
+    expect(decode(sea.rawPayload, 'provinces').length).toBeGreaterThan(0);
+    expect(decode(sea.rawPayload, 'province_borders')).toBeUndefined();
+  });
+
+  it('rebuilds the border lines from the provinces: land border ~4,400 km, shared borders ~7,400 km', async () => {
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT admin.rebuild_province_borders()');
+      const { rows } = await client.query<{ kind: string; km: number }>(
+        `SELECT kind, (sum(ST_Length(geom::geography)) / 1000)::int AS km FROM admin.province_borders GROUP BY kind`);
+      const km = Object.fromEntries(rows.map((r) => [r.kind, r.km]));
+      // Vietnam's land border is ~4,550 km, its coast ~3,260 km: the split took the land side.
+      expect(km.national).toBeGreaterThan(4000);
+      expect(km.national).toBeLessThan(4800);
+      expect(km.province).toBeGreaterThan(7000);
+      expect(km.province).toBeLessThan(7800);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  it('changes the provinces token when only the border lines change (rolled back afterwards)', async () => {
+    resetBoundaryTokenCache();
+    const before = await boundaryVersion(getPool(), 'provinces');
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`DELETE FROM admin.province_borders WHERE kind = 'national'`);
+      resetBoundaryTokenCache();
+      expect(await boundaryVersion(client as never, 'provinces')).not.toBe(before);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+      resetBoundaryTokenCache();
+    }
   });
 
   it('places each label on the largest part of its province, so an island province is labelled on its mainland', async () => {

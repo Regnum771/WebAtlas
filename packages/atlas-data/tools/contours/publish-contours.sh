@@ -5,8 +5,8 @@
 # Run after `npm run contours:generate -w @webatlas/api`. Styles first: styles.py.
 #
 # With the optional first argument `seed` it publishes nothing and instead starts a background GWC
-# seed of the working region: contours_250 zooms 5-8, contours_100 zooms 9-10, contours_50 zooms
-# 11-12 (default style only). Seeding is separate from the truncate above so the publish stage stays
+# seed of the working region: contours_250 zooms 5-9, contours_100 zooms 10-11, contours_50 zoom
+# 12 (default style only), the zooms the web app's automatic interval asks each one for (contours.ts). Seeding is separate from the truncate above so the publish stage stays
 # a pure publish-and-truncate; GWC runs the tasks, so the build does not wait for them.
 #
 # Env:
@@ -23,9 +23,9 @@ STORE="${CONTOUR_STORE:-$BASEMAP_STORE}"
 
 if [ "${1:-}" = seed ]; then
   echo "== seed tile caches over the working region (runs in the background)"
-  gs_seed_region contours_250 5 8
-  gs_seed_region contours_100 9 10
-  gs_seed_region contours_50 11 12
+  gs_seed_region contours_250 5 9
+  gs_seed_region contours_100 10 11
+  gs_seed_region contours_50 12 12
   echo "Done."
   exit 0
 fi

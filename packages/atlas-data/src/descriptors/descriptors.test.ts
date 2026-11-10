@@ -40,7 +40,13 @@ describe('registered datasets', () => {
       expect(byId(id).stages.map((s) => s.type), id).toEqual(['load-geojson', 'publish-geoserver']);
     }
     expect(byId('rivers').stages.map((s) => s.type)).toEqual(['load-geojson', 'publish-geoserver', 'publish-geoserver']);
-    expect(byId('admin_boundaries').stages.map((s) => s.type)).toEqual(['load-geojson']);
+    // The load, then the rebuild of the border lines the map strokes (derived from the provinces).
+    expect(byId('admin_boundaries').stages.map((s) => s.type)).toEqual(['load-geojson', 'sql']);
+  });
+
+  it('rebuilds the province border lines after every boundary load', () => {
+    const last = byId('admin_boundaries').stages.at(-1);
+    expect(last).toEqual({ type: 'sql', statement: 'SELECT admin.rebuild_province_borders()' });
   });
 
   it('every load-geojson file exists, and each versioned layer is an editable layer key', () => {
