@@ -146,7 +146,9 @@ def succeed(conn, job_id, result):
             """
             UPDATE workspace.jobs
                SET status = 'succeeded', result = %s, progress = 100,
-                   finished_at = now(), heartbeat_at = now()
+                   -- clock_timestamp(): this runs in the job's own transaction, where now() is
+                   -- the time the job's first write began, not its end.
+                   finished_at = clock_timestamp(), heartbeat_at = clock_timestamp()
              WHERE id = %s AND status = 'running'
             """,
             (psycopg2.extras.Json(result), str(job_id)),

@@ -14,6 +14,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 import uuid
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -142,6 +143,19 @@ try:
     check("a done step keeps its label and gets its message",
           step(row, "read") == {"key": "read", "label": "Đọc tệp", "status": "done", "message": "Đã đọc 1 lớp."})
     check("steps the handler never started stay pending", step(row, "write")["status"] == "pending")
+
+    # --- finished_at is the wall-clock end of a long job, not the start of its transaction
+    def slow(c, job, steps):
+        insert_layer(c, "slow-layer")  # opens the job's transaction early
+        time.sleep(1.5)
+        return {}
+
+    worker.HANDLERS["import"] = slow
+    job = new_job()
+    worker.run_once(conn, only_ids=[job])
+    row = job_row(job)
+    check("a long job's finished_at is when it ended (not the start of its transaction)",
+          row["status"] == "succeeded" and (row["finished_at"] - row["started_at"]).total_seconds() >= 1.4)
     check("run_once with nothing queued returns False", worker.run_once(conn, only_ids=[job]) is False)
 
     # --- a failing handler rolls back its writes and records the user message
