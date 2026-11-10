@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../../../shared/ui/Button';
 import { fetchCatalogueLegend, type CatalogueItem } from '../api/catalogue.api';
-import type { CatalogueLayer } from '../model/catalogue.store';
+import { markGoneIfDenied, type CatalogueLayer } from '../model/catalogue.store';
 
 export interface CatalogueLayersSectionViewProps {
   layers: CatalogueLayer[];
@@ -16,11 +16,12 @@ function Legend({ item }: { item: CatalogueItem }) {
   useEffect(() => {
     let alive = true;
     let url: string | null = null;
-    fetchCatalogueLegend(item).then(
+    const controller = new AbortController();
+    fetchCatalogueLegend(item, controller.signal).then(
       (u) => { if (alive) { url = u; setSrc(u); } else URL.revokeObjectURL(u); },
-      () => { if (alive) setFailed(true); },
+      (e) => { if (alive) { markGoneIfDenied(item.id, e); setFailed(true); } },
     );
-    return () => { alive = false; if (url) URL.revokeObjectURL(url); };
+    return () => { alive = false; controller.abort(); if (url) URL.revokeObjectURL(url); };
   }, [item]);
   if (failed) return <p className="hint">Không tải được chú giải.</p>;
   return src ? <img src={src} alt={`Chú giải ${item.title}`} /> : null;

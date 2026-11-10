@@ -3,27 +3,48 @@ import ImageLayer from 'ol/layer/Image';
 import ImageWMS from 'ol/source/ImageWMS';
 import type ImageWrapper from 'ol/Image';
 import { catalogueWmsUrl, fetchCatalogueBlob } from '../api/catalogue.api';
-import type { CatalogueLayer } from './catalogue.store';
+import { markGoneIfDenied, type CatalogueLayer } from './catalogue.store';
 
 /** Below the personal layers (800+), above the base data. */
 export const CATALOGUE_Z_BASE = 700;
 export const CATALOGUE_LAYER_PROP = 'catalogueId';
 
+const ABORT_PROP = 'catalogueAbort';
+
 /**
- * Loads a map image through fetch so the Bearer token goes with it (an unpublished entry is
- * visible to its owner only); the blob URL is revoked as soon as the image has loaded or failed.
+ * An image load function for one layer. It loads through fetch so the Bearer token goes with it
+ * (an unpublished entry is visible to its owner only). A new request aborts the previous one, so
+ * a superseded image never lands; the blob URL is revoked once the image has loaded or failed.
+ * A 404/403 marks the layer gone.
  */
-function tokenImageLoad(wrapper: ImageWrapper, src: string): void {
-  const img = wrapper.getImage() as HTMLImageElement;
-  fetchCatalogueBlob(src).then(
-    (blobUrl) => {
-      const revoke = () => URL.revokeObjectURL(blobUrl);
-      img.addEventListener('load', revoke, { once: true });
-      img.addEventListener('error', revoke, { once: true });
-      img.src = blobUrl;
+function createLoader(id: string): { load: (wrapper: ImageWrapper, src: string) => void; abort: () => void } {
+  let current: AbortController | null = null;
+  return {
+    abort: () => { current?.abort(); current = null; },
+    load(wrapper, src) {
+      current?.abort();
+      const controller = new AbortController();
+      current = controller;
+      const img = wrapper.getImage() as HTMLImageElement;
+      fetchCatalogueBlob(src, controller.signal).then(
+        (blobUrl) => {
+          if (controller.signal.aborted) {
+            URL.revokeObjectURL(blobUrl);
+            return;
+          }
+          const revoke = () => URL.revokeObjectURL(blobUrl);
+          img.addEventListener('load', revoke, { once: true });
+          img.addEventListener('error', revoke, { once: true });
+          img.src = blobUrl;
+        },
+        (e) => {
+          if (controller.signal.aborted) return;
+          markGoneIfDenied(id, e);
+          img.dispatchEvent(new Event('error'));
+        },
+      );
     },
-    () => { img.dispatchEvent(new Event('error')); },
-  );
+  };
 }
 
 /**
@@ -38,18 +59,23 @@ export function syncCatalogueLayers(map: Map, layers: CatalogueLayer[], time: st
   }
   const wanted = layers.filter((l) => l.status === 'ok');
   const wantedIds = new Set(wanted.map((l) => l.item.id));
-  for (const [id, layer] of existing) if (!wantedIds.has(id)) map.removeLayer(layer);
+  for (const [id, layer] of existing) {
+    if (wantedIds.has(id)) continue;
+    (layer.get(ABORT_PROP) as (() => void) | undefined)?.();
+    map.removeLayer(layer);
+  }
 
   wanted.forEach(({ item, visible, opacity }, order) => {
     let layer = existing.get(item.id);
     if (!layer) {
+      const loader = createLoader(item.id);
       const source = new ImageWMS({
         url: catalogueWmsUrl(item.id),
         params: { LAYERS: item.layerName },
         ratio: 1,
-        imageLoadFunction: tokenImageLoad,
+        imageLoadFunction: loader.load,
       });
-      layer = new ImageLayer({ source, properties: { [CATALOGUE_LAYER_PROP]: item.id } });
+      layer = new ImageLayer({ source, properties: { [CATALOGUE_LAYER_PROP]: item.id, [ABORT_PROP]: loader.abort } });
       map.addLayer(layer);
     }
     const timeParam = item.kind === 'timeseries' && time ? time : undefined;

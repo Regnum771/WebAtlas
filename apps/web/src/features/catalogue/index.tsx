@@ -37,14 +37,16 @@ export function CataloguePicker() {
 export default function CatalogueLayersSection({ time = null }: { time?: string | null }) {
   const { map } = useMapContext();
   const layers = useCatalogueStore();
+  const { status } = useSession();
 
   useEffect(() => {
     if (map) syncCatalogueLayers(map, layers, time);
   }, [map, layers, time]);
-  // Leaving (e.g. signing out) takes the layers off the map.
+  // Unmounting the section takes the layers off the map.
   useEffect(() => () => { if (map) syncCatalogueLayers(map, [], null); }, [map]);
-  // Entries may have been deleted or unshared since they were added.
-  useEffect(() => { void refreshCatalogueLayers(); }, []);
+  // Entries may have been deleted or unshared since they were added, and signing in or out
+  // changes what is visible (an unpublished entry becomes gone): re-check on mount and on each change.
+  useEffect(() => { void refreshCatalogueLayers(); }, [status]);
 
   return <CatalogueLayersSectionView layers={layers} onChange={setCatalogueLayer} onRemove={removeCatalogueLayer} />;
 }

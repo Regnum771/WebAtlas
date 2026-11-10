@@ -1,8 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import { ApiError } from '../../../shared/api/apiClient';
 import userEvent from '@testing-library/user-event';
 import { CatalogueLayersSectionView } from './CatalogueLayersSection.view';
-import type { CatalogueLayer } from '../model/catalogue.store';
+import { addCatalogueLayer, getCatalogue, resetCatalogue, type CatalogueLayer } from '../model/catalogue.store';
+
+const legend = vi.hoisted(() => vi.fn());
+vi.mock('../api/catalogue.api', () => ({ fetchCatalogueLegend: legend }));
 
 const layer = (id: string, over: Partial<CatalogueLayer> = {}): CatalogueLayer => ({
   item: {
@@ -31,5 +35,15 @@ describe('CatalogueLayersSectionView', () => {
     render(<CatalogueLayersSectionView layers={[layer('a')]} onChange={onChange} onRemove={vi.fn()} />);
     await userEvent.click(screen.getByRole('checkbox', { name: 'Lớp a' }));
     expect(onChange).toHaveBeenCalledWith('a', { visible: false });
+  });
+
+  it('a legend that answers 404 marks the layer gone', async () => {
+    resetCatalogue();
+    const l = layer('a');
+    addCatalogueLayer(l.item);
+    legend.mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'x'));
+    render(<CatalogueLayersSectionView layers={[l]} onChange={vi.fn()} onRemove={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Chú giải' }));
+    await waitFor(() => expect(getCatalogue()[0].status).toBe('gone'));
   });
 });

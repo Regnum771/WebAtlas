@@ -53,3 +53,8 @@ export async function refreshCatalogueLayers(): Promise<void> {
     }
   }));
 }
+
+/** A 404/403 on an entry's image or legend means it was deleted or is no longer visible: mark it gone. */
+export function markGoneIfDenied(id: string, error: unknown): void {
+  if (error instanceof ApiError && (error.status === 404 || error.status === 403)) setCatalogueLayer(id, { status: 'gone' });
+}

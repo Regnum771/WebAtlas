@@ -36,6 +36,7 @@ export function useTimeseriesUploadPresenter() {
   const [area, setArea] = useState('');
   const [fifteen, setFifteen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [added, setAdded] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const handled = useRef<string | null>(null);
@@ -57,13 +58,14 @@ export function useTimeseriesUploadPresenter() {
     handled.current = job.id;
     const id = job.result?.resourceId;
     if (typeof id !== 'string') return;
-    getCatalogueItem(id).then(addCatalogueLayer, () => setError('Đã xử lý xong nhưng chưa mở được mục trong Danh mục.'));
+    getCatalogueItem(id).then((item) => { addCatalogueLayer(item); setAdded(true); }, () => setError('Đã xử lý xong nhưng chưa mở được mục trong Danh mục.'));
   }, [job]);
 
   function setFile(next: File | null) {
     setFileState(next);
     setError(null);
     setJobId(null);
+    setAdded(false);
   }
 
   async function submit(): Promise<void> {
@@ -106,7 +108,7 @@ export function useTimeseriesUploadPresenter() {
   return {
     file, title, titleError, abstract, pattern, csvFile, area, fifteen,
     showPattern, showArea, busy, job,
-    succeeded: job?.status === 'succeeded',
+    succeeded: added,
     error: error ?? jobError,
     setFile,
     setTitle: (v: string) => { setTitle(v); setTitleError(null); },

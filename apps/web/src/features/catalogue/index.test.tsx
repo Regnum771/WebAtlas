@@ -69,6 +69,7 @@ describe('TimeseriesUploadDialog', () => {
     expect(await screen.findByText('Đọc tệp')).toBeInTheDocument();
     await waitFor(() => expect(getCatalogue().map((l) => l.item.id)).toEqual(['r1']), { timeout: 5000 });
     expect(h.getCatalogueItem).toHaveBeenCalledWith('r1');
+    expect(await screen.findByText('Đã thêm chuỗi thời gian vào bản đồ.')).toBeInTheDocument();
   });
 
   it('the CSV time option uploads the csv first and passes timesCsvFileId', async () => {
@@ -93,5 +94,31 @@ describe('TimeseriesUploadDialog', () => {
     await userEvent.type(screen.getByLabelText('Tiêu đề'), 'Mưa');
     await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
     expect(await screen.findByText('Cần đăng nhập một lần (SSO) để đưa dữ liệu lên Danh mục.')).toBeInTheDocument();
+  });
+
+  it('shows the API message on a 413 and keeps Huỷ a non-submitting button', async () => {
+    h.uploadCatalogueFile.mockRejectedValue(new ApiError(413, 'PAYLOAD_TOO_LARGE', 'Tệp lớn hơn 2 GB.'));
+    setup();
+    expect(screen.getByRole('button', { name: 'Huỷ' })).toHaveAttribute('type', 'button');
+    await pick('Tệp dữ liệu', 'a.zip');
+    await userEvent.type(screen.getByLabelText('Tiêu đề'), 'Mưa');
+    await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
+    expect(await screen.findByText('Tệp lớn hơn 2 GB.')).toBeInTheDocument();
+  });
+
+  it('shows the success message only once the layer was added', async () => {
+    h.uploadCatalogueFile.mockResolvedValueOnce({ id: 'f1', originalName: 'a.zip', sizeBytes: 1 });
+    h.createTimeseries.mockResolvedValue({ job: { id: 'j1' } });
+    h.getJob.mockResolvedValue({
+      id: 'j1', status: 'succeeded', progress: 100, steps: [], result: { resourceId: 'r1', alternate: 'x', steps: 2 }, error: null,
+    });
+    h.getCatalogueItem.mockRejectedValue(new ApiError(500, 'X', 'boom'));
+    setup();
+    await pick('Tệp dữ liệu', 'a.zip');
+    await userEvent.type(screen.getByLabelText('Tiêu đề'), 'Mưa');
+    await userEvent.click(screen.getByRole('button', { name: 'Tải lên' }));
+    expect(await screen.findByText('Đã xử lý xong nhưng chưa mở được mục trong Danh mục.')).toBeInTheDocument();
+    expect(screen.queryByText('Đã thêm chuỗi thời gian vào bản đồ.')).toBeNull();
+    expect(getCatalogue()).toHaveLength(0);
   });
 });

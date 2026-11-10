@@ -80,13 +80,13 @@ export function createTimeseries(input: TimeseriesInput): Promise<{ job: Job }> 
  * GETs a catalogue URL with the Bearer token (when signed in) and returns a blob URL for it.
  * The caller revokes the URL once the image has loaded.
  */
-export async function fetchCatalogueBlob(url: string): Promise<string> {
+export async function fetchCatalogueBlob(url: string, signal?: AbortSignal): Promise<string> {
   const headers: Record<string, string> = {};
   const token = getAuthToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   let res: Response;
   try {
-    res = await fetch(url, { headers });
+    res = await fetch(url, { headers, signal });
   } catch (e) {
     throw new ApiError(0, 'NETWORK_ERROR', e instanceof Error ? e.message : 'Network request failed');
   }
@@ -94,13 +94,16 @@ export async function fetchCatalogueBlob(url: string): Promise<string> {
     if (res.status === 401) notifyUnauthorized();
     throw new ApiError(res.status, 'HTTP_ERROR', `Request failed (${res.status})`);
   }
-  return URL.createObjectURL(await res.blob());
+  const blob = await res.blob();
+  // A superseded request must not leave a blob URL behind.
+  if (signal?.aborted) throw new ApiError(0, 'ABORTED', 'Đã huỷ.');
+  return URL.createObjectURL(blob);
 }
 
 /** A legend image for the entry, as a blob URL (token-authorized like the map images). */
-export function fetchCatalogueLegend(item: Pick<CatalogueItem, 'id' | 'layerName'>): Promise<string> {
+export function fetchCatalogueLegend(item: Pick<CatalogueItem, 'id' | 'layerName'>, signal?: AbortSignal): Promise<string> {
   const params = new URLSearchParams({
     SERVICE: 'WMS', VERSION: '1.3.0', REQUEST: 'GetLegendGraphic', FORMAT: 'image/png', LAYER: item.layerName,
   });
-  return fetchCatalogueBlob(`${catalogueWmsUrl(item.id)}?${params}`);
+  return fetchCatalogueBlob(`${catalogueWmsUrl(item.id)}?${params}`, signal);
 }
