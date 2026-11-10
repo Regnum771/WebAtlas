@@ -52,3 +52,10 @@ SELECT format('CREATE ROLE webatlas_orchestrator LOGIN PASSWORD %L', :'orchestra
 SELECT format('ALTER ROLE webatlas_orchestrator LOGIN PASSWORD %L', :'orchestrator_pw') \gexec
 GRANT USAGE ON SCHEMA app TO webatlas_orchestrator;
 GRANT SELECT ON app.dataset_lineage, app.dataset_stage_state TO webatlas_orchestrator;
+
+-- ... and keeps the catalogue (migration 1000000000036_catalogue) in step with GeoNode: it reads and
+-- writes catalogue.resources and gives a new resource its managing unit with
+-- catalogue.unit_for_bbox (SECURITY DEFINER, so no grant on the admin schema is needed).
+GRANT USAGE ON SCHEMA catalogue TO webatlas_orchestrator;
+GRANT SELECT, INSERT, UPDATE ON catalogue.resources TO webatlas_orchestrator;
+GRANT EXECUTE ON FUNCTION catalogue.unit_for_bbox(float8, float8, float8, float8) TO webatlas_orchestrator;

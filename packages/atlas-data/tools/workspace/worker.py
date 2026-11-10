@@ -43,6 +43,7 @@ from workspace_common import (  # noqa: E402,F401
 # The handlers import only workspace_common (never this module), so they load here without a cycle.
 import export_vector  # noqa: E402
 import import_raster  # noqa: E402
+import import_timeseries  # noqa: E402
 import import_vector  # noqa: E402
 
 UNEXPECTED_MESSAGE = "Lỗi không mong đợi khi xử lý tệp."
@@ -268,6 +269,7 @@ def main(argv=None) -> int:
 
 HANDLERS["import"] = run_import
 HANDLERS["export"] = export_vector.run_export
+HANDLERS["timeseries_import"] = import_timeseries.run_timeseries_import
 
 if __name__ == "__main__":
     sys.exit(main())
