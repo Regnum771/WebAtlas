@@ -1,12 +1,16 @@
 import 'dotenv/config';
 
-const base = () => {
+/** GeoServer's root URL (GEOSERVER_URL) without a trailing slash, e.g. http://localhost:8080/geoserver. */
+export function geoserverUrl(): string {
   const url = process.env.GEOSERVER_URL;
   if (!url) throw new Error('GEOSERVER_URL is not set');
-  return `${url.replace(/\/$/, '')}/rest`;
-};
+  return url.replace(/\/$/, '');
+}
 
-function authHeader(): string {
+const base = () => `${geoserverUrl()}/rest`;
+
+/** Basic auth for GeoServer's admin account; it never leaves the API. */
+export function authHeader(): string {
   const user = process.env.GEOSERVER_ADMIN_USER ?? 'admin';
   const pass = process.env.GEOSERVER_ADMIN_PASSWORD ?? '';
   return 'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64');
