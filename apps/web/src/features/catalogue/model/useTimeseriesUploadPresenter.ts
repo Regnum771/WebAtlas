@@ -84,8 +84,10 @@ export function useTimeseriesUploadPresenter({ viewExtent4326 }: TimeseriesUploa
 
   useEffect(() => {
     mounted.current = true;
+    // The clean-up reads the values at unmount on purpose: the upload and the job running then.
     return () => {
       mounted.current = false;
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- a counter: its value at unmount is meant
       run.current++;
       uploadAbort.current?.abort();
       const { jobId: id, job: last } = live.current;
