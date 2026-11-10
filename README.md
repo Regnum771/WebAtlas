@@ -228,7 +228,17 @@ POST   /api/workspace/maps/:mapId/imports|exports → queue an import or export 
 GET|DELETE /api/workspace/jobs[/:jobId[/download]] → job status, download, removal           [auth]
 GET    /api/workspace/share-targets     → users and groups a map can be shared with   [auth]
 GET    /api/workspace/admin/summary     → storage and job summary             [admin]
+GET    /api/catalogue/search?q=&kind=&page= → catalogue entries (GeoNode) the caller may see: published ones, plus their own unpublished uploads
+GET    /api/catalogue/:id               → one entry (404 when the caller may not see it)
+GET    /api/catalogue/:id/wms           → map-image proxy of one entry: GetMap, GetLegendGraphic, GetFeatureInfo only, LAYERS forced to the entry (6000/min)
+POST   /api/catalogue/uploads           → time-series upload: .zip .tif .tiff .nc .hdf up to 2 GB (.csv times table up to 1 MB), outside the quota   [auth, SSO]
+POST   /api/catalogue/timeseries        → queue a timeseries_import job for an upload (worker → ImageMosaic → GeoNode entry)   [auth, SSO]
+POST   /api/catalogue/:id/copy          → "Sao vào Bản của tôi": import a vector or single-raster entry into one of the caller's maps   [auth]
 ```
+
+The catalogue, the time slider and the time-series import are described in
+[docs/runbooks/catalogue-timeseries.md](docs/runbooks/catalogue-timeseries.md); a personal map keeps catalogue
+entries as links (`POST /api/workspace/maps/:mapId/layers` with `kind: 'catalogue'`).
 
 Every dictionary edit carries the entry's `expectedRevision` (served by `GET /api/dictionary/:layer`); a stale
 revision answers 409 `DICTIONARY_CHANGED`. `dictionary.manage` counts only when the holder's jurisdiction includes `VN`;
@@ -385,6 +395,7 @@ The build-out is phased. Each plan produces working, testable software on its ow
 - [x] **Sổ đăng ký dữ liệu — kế hoạch 1, A và B** (`packages/atlas-data`: `atlas:build` / `atlas:status`, dựng lại theo chuỗi phụ thuộc, các stage `run` / `fetch-http` / `publish-geoserver`; ảnh Docker công cụ, `atlas:up` dựng và kiểm chứng mọi thứ từ bản clone mới, `atlas:verify`, `atlas:adopt`). Các [runbook](docs/runbooks/README.md) mô tả từng tập dữ liệu. Kế hoạch C (`packages/versioning`, `load-geojson`, bỏ các lệnh cũ) là bước kế tiếp.
 - [x] **Tải lên, chỉnh sửa và phân quyền — P1 đến P3c** ([đặc tả](docs/superpowers/specs/2026-10-19-map-upload-edit-rbac-design.md)): quyền theo cấp hành chính (nhóm truy cập = phạm vi + bộ quyền; mỗi đối tượng có đơn vị chủ quản); bản nháp bền; bản đồ cá nhân trong schema `workspace` (vẽ, bản sửa của lớp chính thức, chia sẻ, nhập/xuất GPKG, GeoJSON, SHP với WGS 84 hoặc VN-2000 qua worker); mục *Bản của tôi* trên bản đồ; bảng thuộc tính của lớp cá nhân với lọc và chọn hai chiều trên bản đồ ([đặc tả](docs/superpowers/specs/2026-10-24-personal-layer-table-design.md)).
 - [x] **Từ điển dữ liệu — kế hoạch A, B, C** ([đặc tả](docs/superpowers/specs/2026-10-24-data-dictionary-design.md)): tên, định nghĩa, đơn vị lưu và đơn vị hiển thị cho từng lớp, thuộc tính và giá trị; nhãn và đơn vị trong bảng, biểu mẫu, popup, chú giải, số đọc và trợ lý; nút ⓘ trên dòng lớp, trang *Dữ liệu* (`/du-lieu`, `/du-lieu/:lớp` với tệp mẫu CSV/GPKG và bản in); mục *Từ điển dữ liệu* trong Quản lý (`/quan-ly/tu-dien`, cho người có quyền `dictionary.manage` trên cả nước): sửa, khôi phục mặc định, lịch sử, danh sách giá trị mở, hiệu chỉnh đơn vị lưu có ngày hiệu lực. **Còn mở:** khi biểu mẫu tải lại sau một lần lưu khác, phần đang gõ được giữ nhưng không còn gắn với phiên bản đã gõ, nên lần *Lưu* sau có thể ghi đè chỉnh sửa vừa lưu của người khác mà không báo; cần sửa trước khi cán bộ dùng mục này.
+- [x] **S1 — Danh mục lên bản đồ** ([đặc tả](docs/superpowers/specs/2026-11-10-catalogue-live-forecast-design.md), mục 1–2; [sổ tay vận hành](docs/runbooks/catalogue-timeseries.md)): tìm trong Danh mục GeoNode từ *Thêm dữ liệu → Từ Danh mục* và thêm thành lớp; thanh thời gian chung cho các lớp chuỗi thời gian (mưa lưới, độ sâu ngập HEC-RAS) với giá trị khi rê chuột; tải chuỗi thời gian lên (GeoTIFF theo thời gian, NetCDF, HEC-RAS `.hdf`) thành mục chưa duyệt của chính người tải; *Sao vào Bản của tôi* cho mục vector và raster đơn; liên kết Danh mục trong bản đồ cá nhân. Đã chạy đầu cuối với tệp HEC-RAS và MSWEP thật ngày 10/11/2026 (`npm run verify:catalogue -w @webatlas/web`).
 - [ ] **P4 — Nộp, duyệt và xuất bản** (bản đồ cá nhân → đã nộp → đã xuất bản hoặc trả lại) — mốc kế tiếp.
 - [ ] **Tài liệu hoá lại kho** ([docs/superpowers/plans/2026-09-07-repo-redocumentation.md](docs/superpowers/plans/2026-09-07-repo-redocumentation.md)).
 

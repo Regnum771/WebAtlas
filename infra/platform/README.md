@@ -171,6 +171,16 @@ a retry must finish the registration) needs the test hook in `django`, off by de
 with `WEBATLAS_BRIDGE_TEST_HOOKS=1 docker compose ... up -d --no-deps django`, run the check, then
 recreate it again without the variable. With the hook off the check says it skipped that part.
 
+## End-to-end check (S1)
+
+[docs/runbooks/catalogue-timeseries.md](../../docs/runbooks/catalogue-timeseries.md) covers the whole path
+(upload → worker → ImageMosaic → GeoNode → catalogue → map), the browser check
+`npm run verify:catalogue -w @webatlas/web` (SSO sign-in, time slider, hover values, copies into Bản của tôi,
+a second account) with the times and sizes of the first real run (HEC-RAS 1.07 GB: about 38 minutes; MSWEP 7
+days: about 4 minutes), and how to delete an entry (GeoNode delete, then `geoserver.delete_mosaic`). On an
+8 GB machine, start only `keycloak django celery geonode` and the `worker` profile beside `db geoserver redis`
+and keep the Dagster services stopped; run the catalogue sync as a one-off when needed (command in the runbook).
+
 ## Known limits (first pass)
 
 - Signing out of WebATLAS ends the Keycloak session; GeoNode and Dagster keep their own session

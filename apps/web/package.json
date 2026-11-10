@@ -13,7 +13,8 @@
     "verify:shell": "node scripts/verify-shell.mjs",
     "verify:permissions": "node scripts/verify-permissions.mjs",
     "verify:personal-maps": "node scripts/verify-personal-maps.mjs",
-    "verify:dictionary": "node scripts/verify-dictionary.mjs"
+    "verify:dictionary": "node scripts/verify-dictionary.mjs",
+    "verify:catalogue": "node scripts/verify-catalogue.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
