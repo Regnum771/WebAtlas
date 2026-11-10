@@ -24,5 +24,5 @@ export function canView(user: CurrentUser | undefined, row: VisibilityRow): bool
  * as the parameter numbered `param`.
  */
 export function visibleSql(param: number): string {
-  return `(is_published OR (owner_sub IS NOT NULL AND owner_sub = $${param}::text))`;
+  return `(is_published OR (owner_sub IS NOT NULL AND owner_sub = NULLIF($${param}::text, '')))`;
 }

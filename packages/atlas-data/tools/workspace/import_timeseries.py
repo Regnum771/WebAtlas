@@ -337,6 +337,21 @@ def write_row(cur, reg: dict, kind: str, title: str, abstract: str, owner_sub, v
     return cur.fetchone()[0]
 
 
+def keep_uploads(cur, file_id: str, times_csv_path) -> None:
+    """
+    The upload (and the times table, when one was used) is now in the catalogue, so it no longer
+    expires: clear the delete_after the API gave it (3 days, catalogue/uploads.ts). Same rule as
+    worker.keep_imported_original, in the job's transaction so only a committed import clears it.
+    (worker.py imports this module, so the twin lives here.)
+    """
+    cur.execute("UPDATE workspace.files SET delete_after = NULL "
+                "WHERE id = %s::uuid AND kind = 'upload' AND delete_after IS NOT NULL", (file_id,))
+    if isinstance(times_csv_path, str) and times_csv_path:
+        cur.execute("UPDATE workspace.files SET delete_after = NULL "
+                    "WHERE path = %s AND kind = 'upload' AND purpose = 'timeseries' AND delete_after IS NOT NULL",
+                    (times_csv_path,))
+
+
 # --- the handler -----------------------------------------------------------------------------
 
 def run_timeseries_import(conn, job, steps) -> dict:
@@ -438,5 +453,6 @@ def run_timeseries_import(conn, job, steps) -> dict:
         if peak_reg is not None:
             write_row(cur, peak_reg, "raster", f"{title}{PEAK_TITLE_SUFFIX}", abstract, owner.get("sub"),
                       variable, unit, None, bbox)
+        keep_uploads(cur, file_id, params.get("timesCsvPath"))
     steps.done("publish")
     return {"resourceId": resource_id, "alternate": reg["alternate"], "steps": len(time_steps)}

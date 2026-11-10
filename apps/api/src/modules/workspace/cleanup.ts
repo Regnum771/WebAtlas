@@ -131,10 +131,15 @@ async function markArchivedOriginals(client: PoolClient, mapId: string, now: Dat
  * An upload that a queued or running import job reads is not removed, even past its
  * delete_after: the job would fail on a missing file. Once the job succeeds the worker clears the
  * date; once it fails, the next sweep removes the file. `f` is the workspace.files row.
+ * A time-series import reads two files: the series (params.fileId) and, when given, its times
+ * table (params.timesCsvPath, matched on the row's path).
  */
 const BEING_IMPORTED = `(f.kind = 'upload' AND EXISTS (
   SELECT 1 FROM workspace.jobs j
-   WHERE j.kind = 'import' AND j.status IN ('queued', 'running') AND j.params->>'fileId' = f.id::text))`;
+   WHERE j.status IN ('queued', 'running')
+     AND ((j.kind = 'import' AND j.params->>'fileId' = f.id::text)
+       OR (j.kind = 'timeseries_import'
+           AND (j.params->>'fileId' = f.id::text OR j.params->>'timesCsvPath' = f.path)))))`;
 
 /**
  * Remove the files whose delete_after has passed: an export after its 7 days, an archived map's

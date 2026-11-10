@@ -1,10 +1,10 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { AuthError, MALFORMED_UPLOAD, ValidationError } from '../../errors';
+import { AuthError, ConflictError, MALFORMED_UPLOAD, ValidationError } from '../../errors';
 import { validate } from '../../lib/validate';
 import type { CurrentUser } from '../../types/fastify';
 import { catalogueRepository } from './repository';
 import { IdParams, SearchQuery, TimeseriesBody } from './schemas';
-import { catalogueUploadsService } from './uploads';
+import { NEEDS_SSO, catalogueUploadsService } from './uploads';
 
 function userOf(req: FastifyRequest): CurrentUser {
   if (!req.currentUser) throw new AuthError();
@@ -24,6 +24,11 @@ export async function getItem(req: FastifyRequest, reply: FastifyReply) {
 /** One multipart field, `file`. Multipart is registered for the catalogue routes only (server.ts). */
 export async function createUpload(req: FastifyRequest, reply: FastifyReply) {
   const user = userOf(req);
+  if (!user.oidcSubject) {
+    // Refused before the body is read (it is drained, not buffered).
+    req.raw.resume();
+    throw new ConflictError(NEEDS_SSO);
+  }
   if (!req.isMultipart()) throw new ValidationError();
   let part: Awaited<ReturnType<FastifyRequest['file']>>;
   try {

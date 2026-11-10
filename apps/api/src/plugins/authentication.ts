@@ -16,13 +16,13 @@ export default fp(async (app) => {
     } catch {
       throw new AuthError('Invalid or expired token');
     }
-    const repo = usersRepository(app.pg);
-    const user = await repo.findById(payload.sub);
+    const user = await usersRepository(app.pg).findByIdForAuth(payload.sub);
     if (!user || !user.is_active) throw new AuthError('User not found or inactive');
     // Grants are re-read on every request, so a revoked membership applies at once.
-    const [grants, oidcSubject] = await Promise.all([loadGrants(app.pg, user.id), repo.oidcSubjectOf(user.id)]);
+    const grants = await loadGrants(app.pg, user.id);
     request.currentUser = {
-      id: user.id, email: user.email, role: user.role, isAdmin: user.role === 'admin', grants, oidcSubject,
+      id: user.id, email: user.email, role: user.role, isAdmin: user.role === 'admin', grants,
+      oidcSubject: user.oidc_subject,
     };
   }
 

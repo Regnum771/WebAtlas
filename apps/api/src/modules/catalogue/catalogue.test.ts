@@ -11,6 +11,7 @@ import { hashPassword } from '../../lib/password';
 import type { CurrentUser } from '../../types/fastify';
 import { unlinkInStore } from '../workspace/fileStore';
 import { uploadsService } from '../workspace/uploads';
+import { deleteExpiredFiles } from '../workspace/cleanup';
 import { catalogueUploadsService } from './uploads';
 import { canView } from './access';
 
@@ -24,6 +25,7 @@ const email = (who: string) => `s1-cat-${who}@webatlas.test`;
 const OWNER = email('owner');
 const OTHER = email('other');
 const NOSSO = email('nosso');
+const PEND = email('pend');
 const SUB_OWNER = `s1-cat-sub-${randomUUID()}`;
 const SUB_OTHER = `s1-cat-sub-${randomUUID()}`;
 const ids = new Map<string, string>();
@@ -82,7 +84,7 @@ beforeAll(async () => {
   await app.ready();
   await cleanup();
   const repo = usersRepository(getPool());
-  for (const who of [OWNER, OTHER, NOSSO]) {
+  for (const who of [OWNER, OTHER, NOSSO, PEND]) {
     const row = await repo.insert({ email: who, password_hash: await hashPassword(PW), full_name: who, role: 'viewer' });
     ids.set(who, row.id);
   }
@@ -117,6 +119,12 @@ describe('GET /api/catalogue/search', () => {
     expect(got).not.toContain('Bản nháp của tôi');
     expect(got).not.toContain('Bản nháp người khác');
     expect(items.every((i: { mine: boolean }) => i.mine === false)).toBe(true);
+  });
+
+  it('counts only published rows in an anonymous total', async () => {
+    const { rows } = await getPool().query(`SELECT count(*)::int AS n FROM catalogue.resources WHERE is_published`);
+    const res = await app.inject({ method: 'GET', url: '/api/catalogue/search' });
+    expect(res.json().total).toBe(rows[0].n);
   });
 
   it('shows the owner their own unpublished entry with mine: true, and not another user\'s', async () => {
@@ -282,7 +290,7 @@ describe('POST /api/catalogue/timeseries', () => {
 
   it('queues a timeseries_import job carrying the owner subject', async () => {
     const fileId = await uploadFor(OWNER, 'mua.nc');
-    const res = await post(OWNER, { fileId, title: 'Mưa giờ', timePattern: '%Y%m%d' });
+    const res = await post(OWNER, { fileId, title: 'Mưa giờ', timePattern: 'YYYYMMDD' });
     expect(res.statusCode).toBe(202);
     const { job } = res.json();
     expect(job).toMatchObject({ kind: 'timeseries_import', status: 'queued', mapId: null });
@@ -293,7 +301,7 @@ describe('POST /api/catalogue/timeseries', () => {
     const { rows } = await getPool().query(`SELECT params FROM workspace.jobs WHERE id = $1`, [job.id]);
     expect(rows[0].params).toMatchObject({
       fileId, originalName: 'mua.nc', ownerId: ids.get(OWNER), title: 'Mưa giờ', abstract: '', source: 'netcdf',
-      timePattern: '%Y%m%d', timesCsvPath: null, hdfArea: null, every: 4,
+      timePattern: 'YYYYMMDD', timesCsvPath: null, hdfArea: null, every: 4,
       owner: { sub: SUB_OWNER, email: OWNER },
     });
     expect(rows[0].params.path).toMatch(/^uploads\/.+\/original\.nc$/);
@@ -354,5 +362,95 @@ describe('POST /api/catalogue/timeseries', () => {
 
   it('requires sign-in', async () => {
     expect((await post(null, { fileId: randomUUID(), title: 'x' })).statusCode).toBe(401);
+  });
+
+  it('refuses an unknown time pattern', async () => {
+    const fileId = await uploadFor(OWNER, 'p.tif');
+    expect((await post(OWNER, { fileId, title: 'x', timePattern: '%Y%m%d' })).statusCode).toBe(400);
+  });
+});
+
+describe('bounded time-series uploads', () => {
+  const rowOf = async (id: string) =>
+    (await getPool().query(`SELECT delete_after, purpose FROM workspace.files WHERE id = $1`, [id])).rows[0];
+  async function fresh(who: string, name: string, size = 64) {
+    const { upload } = await catalogueUploadsService(getPool()).upload(userFor(who), part(name, size));
+    await track(upload.id);
+    return upload.id;
+  }
+  const queue = async (payload: object) =>
+    app.inject({ method: 'POST', url: '/api/catalogue/timeseries', payload, headers: await auth(OWNER) });
+  const removeUpload = async (id: string) =>
+    app.inject({ method: 'DELETE', url: `/api/workspace/uploads/${id}`, headers: await auth(OWNER) });
+
+  it('refuses an upload from a user with no oidc_subject, before reading the body', async () => {
+    const count = async () =>
+      (await getPool().query(`SELECT count(*)::int AS n FROM workspace.files WHERE owner_id = $1`, [ids.get(NOSSO)])).rows[0].n;
+    const before = await count();
+    const { payload, headers } = multipart('x.tif', Buffer.alloc(2048, 1));
+    const res = await app.inject({ method: 'POST', url: '/api/catalogue/uploads', payload, headers: { ...headers, ...(await auth(NOSSO)) } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toBe('Cần đăng nhập một lần (SSO) để đưa dữ liệu lên Danh mục.');
+    expect(await count()).toBe(before);
+  });
+
+  it('gives a time-series upload a delete_after about 3 days ahead', async () => {
+    const { delete_after, purpose } = await rowOf(await fresh(OWNER, 'd.tif'));
+    expect(purpose).toBe('timeseries');
+    const days = (new Date(delete_after).getTime() - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(2.9);
+    expect(days).toBeLessThan(3.1);
+  });
+
+  it('caps what a user holds in uploads not yet imported', async () => {
+    const svc = catalogueUploadsService(getPool(), { pendingCapBytes: 2048 });
+    const user = userFor(PEND);
+    const first = await svc.upload(user, part('a.tif', 1024));
+    await track(first.upload.id);
+    // Room left is 1024: a larger file is stopped at it and reports the cap.
+    await expect(svc.upload(user, part('b.tif', 1500))).rejects.toMatchObject({
+      statusCode: 413, message: expect.stringContaining('4 GB'),
+    });
+    const second = await svc.upload(user, part('c.tif', 1024));
+    await track(second.upload.id);
+    await expect(svc.upload(user, part('d.tif', 1))).rejects.toMatchObject({ statusCode: 413 });
+    // An imported file (date cleared) no longer counts.
+    await getPool().query(`UPDATE workspace.files SET delete_after = NULL WHERE id = $1`, [first.upload.id]);
+    const third = await svc.upload(user, part('e.tif', 1024));
+    await track(third.upload.id);
+    expect(third.upload.sizeBytes).toBe(1024);
+  });
+
+  it('keeps files a queued timeseries_import reads past their date, and removes them once it is done', async () => {
+    const fileId = await fresh(OWNER, 's.tif');
+    const csvId = await fresh(OWNER, 't.csv');
+    const res = await queue({ fileId, title: 'x', timesCsvFileId: csvId });
+    expect(res.statusCode).toBe(202);
+    const jobId = res.json().job.id;
+    const both = [fileId, csvId];
+    await getPool().query(`UPDATE workspace.files SET delete_after = now() - interval '1 day' WHERE id = ANY($1::uuid[])`, [both]);
+    const scope = { ownerIds: [ids.get(OWNER)!] };
+    await deleteExpiredFiles(getPool(), new Date(), scope);
+    const left = await getPool().query(`SELECT id FROM workspace.files WHERE id = ANY($1::uuid[])`, [both]);
+    expect(left.rows.length).toBe(2);
+    await getPool().query(`UPDATE workspace.jobs SET status = 'failed' WHERE id = $1`, [jobId]);
+    await deleteExpiredFiles(getPool(), new Date(), scope);
+    const gone = await getPool().query(`SELECT id FROM workspace.files WHERE id = ANY($1::uuid[])`, [both]);
+    expect(gone.rows.length).toBe(0);
+    await getPool().query(`DELETE FROM workspace.jobs WHERE id = $1`, [jobId]);
+  });
+
+  it('refuses to remove an upload a queued timeseries_import reads (series and times table)', async () => {
+    const fileId = await fresh(OWNER, 'u.tif');
+    const csvId = await fresh(OWNER, 'u.csv');
+    const res = await queue({ fileId, title: 'x', timesCsvFileId: csvId });
+    expect(res.statusCode).toBe(202);
+    for (const id of [fileId, csvId]) {
+      const refused = await removeUpload(id);
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json().error.message).toBe('Tệp đang được dùng cho một công việc chuỗi thời gian, chưa xoá được.');
+    }
+    await getPool().query(`DELETE FROM workspace.jobs WHERE id = $1`, [res.json().job.id]);
+    expect((await removeUpload(fileId)).statusCode).toBe(204);
   });
 });

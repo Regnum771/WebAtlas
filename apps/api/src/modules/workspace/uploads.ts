@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import type { Pool, PoolClient } from 'pg';
-import { FileTooLargeError, NotFoundError, QuotaExceededError, ValidationError } from '../../errors';
+import { AppError, FileTooLargeError, NotFoundError, QuotaExceededError, ValidationError } from '../../errors';
 import { inTransaction } from '../../lib/transaction';
 import type { CurrentUser } from '../../types/fastify';
 import { resolveInStore, unlinkInStore, writeStream } from './fileStore';
@@ -26,6 +26,7 @@ export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 export const UPLOAD_EXTENSIONS: readonly string[] = ['.gpkg', '.geojson', '.json', '.zip', '.kml', '.tif', '.tiff'];
 
 export const FILE_NOT_FOUND = 'Không tìm thấy tệp.';
+export const FILE_IN_USE = 'Tệp đang được dùng cho một công việc chuỗi thời gian, chưa xoá được.';
 const UNSUPPORTED_FORMAT = 'Định dạng tệp không được hỗ trợ.';
 
 export interface Upload {
@@ -96,16 +97,33 @@ export interface StoreOptions {
   countsToQuota: boolean;
   /** A lower cap for some extensions (lower case, with the dot); the lowest cap applies. */
   extensionMaxBytes?: Record<string, number>;
+  /**
+   * An upload that expires unless something takes it: delete_after = now + deleteAfterDays, and
+   * the owner's uploads of this purpose that still carry a date (not yet imported) may not total
+   * more than pendingCapBytes. The import clears the date (import_timeseries.py keep_uploads).
+   */
+  expiry?: { deleteAfterDays: number; pendingCapBytes: number; overCap: () => Error };
   unsupportedMessage?: string;
   tooLargeMessage?: string | ((ext: string) => string);
 }
 
+/** Bytes of the owner's uploads of a purpose that still expire (not yet imported). */
+async function pendingBytes(q: Queryable, ownerId: string, purpose: string): Promise<number> {
+  const { rows } = await q.query<{ n: string }>(
+    `SELECT COALESCE(sum(size_bytes), 0) AS n FROM workspace.files
+      WHERE owner_id = $1 AND kind = 'upload' AND purpose = $2 AND delete_after IS NOT NULL`,
+    [ownerId, purpose]
+  );
+  return Number(rows[0].n);
+}
+
 /**
  * Stream one multipart file into the store and record it as an upload of `user`. The quota rules
- * in the header apply when `countsToQuota`; otherwise only `maxBytes` caps the file.
+ * in the header apply when `countsToQuota`; otherwise only `maxBytes` (and `expiry`'s pending
+ * cap, when given) limit the file.
  */
 export async function storeUpload(pg: Pool, user: CurrentUser, part: UploadPart, opts: StoreOptions): Promise<{ upload: Upload }> {
-  const { countsToQuota } = opts;
+  const { countsToQuota, expiry } = opts;
   const ext = path.extname(part.filename ?? '').toLowerCase();
   const maxBytes = Math.min(opts.maxBytes, opts.extensionMaxBytes?.[ext] ?? Infinity);
   if (!opts.extensions.includes(ext)) {
@@ -113,16 +131,25 @@ export async function storeUpload(pg: Pool, user: CurrentUser, part: UploadPart,
     throw new ValidationError(opts.unsupportedMessage ?? UNSUPPORTED_FORMAT);
   }
 
-  let room = Infinity;
+  let quotaRoom = Infinity;
   let before = { usageBytes: 0, quotaBytes: 0 };
   if (countsToQuota) {
     before = await usageOf(pg, user.id);
-    room = Math.max(0, before.quotaBytes - before.usageBytes);
-    if (room === 0) {
+    quotaRoom = Math.max(0, before.quotaBytes - before.usageBytes);
+    if (quotaRoom === 0) {
       part.file.resume();
       throw quotaExceeded(before.usageBytes, before.quotaBytes);
     }
   }
+  let pendingRoom = Infinity;
+  if (expiry) {
+    pendingRoom = Math.max(0, expiry.pendingCapBytes - (await pendingBytes(pg, user.id, opts.purpose)));
+    if (pendingRoom === 0) {
+      part.file.resume();
+      throw expiry.overCap();
+    }
+  }
+  const room = Math.min(quotaRoom, pendingRoom);
 
   const fileId = randomUUID();
   const relPath = `uploads/${user.id}/${fileId}/original${ext}`;
@@ -131,8 +158,8 @@ export async function storeUpload(pg: Pool, user: CurrentUser, part: UploadPart,
     sizeBytes = await writeStream(relPath, part.file, Math.min(maxBytes, room));
   } catch (err) {
     if (err instanceof FileTooLargeError) {
-      // Stopped at the room left rather than at the per-file limit: report the quota.
-      if (room < maxBytes) throw quotaExceeded(before.usageBytes, before.quotaBytes);
+      // Stopped at the room left rather than at the per-file limit: report the limit that applied.
+      if (room < maxBytes) throw pendingRoom < quotaRoom ? expiry!.overCap() : quotaExceeded(before.usageBytes, before.quotaBytes);
       if (opts.tooLargeMessage) {
         throw new FileTooLargeError(typeof opts.tooLargeMessage === 'function' ? opts.tooLargeMessage(ext) : opts.tooLargeMessage);
       }
@@ -145,15 +172,18 @@ export async function storeUpload(pg: Pool, user: CurrentUser, part: UploadPart,
       // Lock the owner first so concurrent uploads by the same owner recheck one at a time.
       await client.query(`SELECT 1 FROM app.users WHERE id = $1 FOR UPDATE`, [user.id]);
       const { rows } = await client.query<UploadRow>(
-        `INSERT INTO workspace.files (id, owner_id, kind, path, original_name, content_type, size_bytes, purpose)
-         VALUES ($1, $2, 'upload', $3, $4, $5, $6, $7)
+        `INSERT INTO workspace.files (id, owner_id, kind, path, original_name, content_type, size_bytes, purpose, delete_after)
+         VALUES ($1, $2, 'upload', $3, $4, $5, $6, $7,
+                 CASE WHEN $8::int IS NULL THEN NULL ELSE now() + make_interval(days => $8::int) END)
          RETURNING ${UPLOAD_COLS}`,
-        [fileId, user.id, relPath, part.filename, part.mimetype || 'application/octet-stream', sizeBytes, opts.purpose]
+        [fileId, user.id, relPath, part.filename, part.mimetype || 'application/octet-stream', sizeBytes, opts.purpose,
+         expiry?.deleteAfterDays ?? null]
       );
       if (countsToQuota) {
         const after = await usageOf(client, user.id);
         if (after.usageBytes > after.quotaBytes) throw quotaExceeded(after.usageBytes - sizeBytes, after.quotaBytes);
       }
+      if (expiry && (await pendingBytes(client, user.id, opts.purpose)) > expiry.pendingCapBytes) throw expiry.overCap();
       return rows[0];
     });
     return { upload: toUpload(row) };
@@ -192,12 +222,25 @@ export function uploadsService(pg: Pool, opts: { maxBytes?: number } = {}) {
 
     /** Delete the row, then the file. */
     async remove(user: CurrentUser, fileId: string): Promise<void> {
-      const { rows } = await pg.query<{ path: string }>(
-        `DELETE FROM workspace.files WHERE id = $1 AND owner_id = $2 AND kind = 'upload' RETURNING path`,
-        [fileId, user.id]
-      );
-      if (!rows[0]) throw new NotFoundError(FILE_NOT_FOUND);
-      await unlinkInStore(rows[0].path);
+      // The row is locked first (enqueue locks it too), so a job cannot be queued between the check and the delete.
+      const filePath = await inTransaction(pg, async (client) => {
+        const { rows } = await client.query<{ path: string }>(
+          `SELECT path FROM workspace.files WHERE id = $1 AND owner_id = $2 AND kind = 'upload' FOR UPDATE`,
+          [fileId, user.id]
+        );
+        if (!rows[0]) throw new NotFoundError(FILE_NOT_FOUND);
+        const busy = await client.query(
+          `SELECT 1 FROM workspace.jobs j
+            WHERE j.kind = 'timeseries_import' AND j.status IN ('queued', 'running')
+              AND (j.params->>'fileId' = $1::text OR j.params->>'timesCsvPath' = $2)
+            LIMIT 1`,
+          [fileId, rows[0].path]
+        );
+        if (busy.rowCount) throw new AppError(409, 'FILE_IN_USE', FILE_IN_USE);
+        await client.query(`DELETE FROM workspace.files WHERE id = $1`, [fileId]);
+        return rows[0].path;
+      });
+      await unlinkInStore(filePath);
     },
 
     async original(user: CurrentUser, fileId: string): Promise<{ absPath: string; originalName: string; contentType: string }> {

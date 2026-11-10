@@ -294,6 +294,46 @@ try:
           and listing(left) == [f"{left}_20251025T000000Z.tif", f"{left}_20251026T000000Z.tif"])
     clear_rows()
 
+    # --- the upload and its times table stop expiring once imported; a failed import leaves the date
+    def add_file(fid, rel_path, name):
+        q("""INSERT INTO workspace.files (id, owner_id, kind, path, original_name, content_type, size_bytes,
+                                          purpose, delete_after)
+             VALUES (%s, %s, 'upload', %s, %s, 'application/octet-stream', 1, 'timeseries', now() + interval '3 days')""",
+          (fid, user_id, rel_path, name))
+
+    def pending(fid):
+        return q("SELECT delete_after IS NOT NULL FROM workspace.files WHERE id = %s", (fid,))[0][0]
+
+    reset_calls()
+    keep_id, csv_id = str(uuid.uuid4()), str(uuid.uuid4())
+    csv_rel = f"uploads/{user_id}/{csv_id}/original.csv"
+    add_file(keep_id, "uploads/x/original.zip", "mua.zip")
+    add_file(csv_id, csv_rel, "times.csv")
+    row = run_job(tif_zip(["r_20251025.tif", "r_20251026.tif"]), "mua.zip", "geotiff", file_id=keep_id,
+                  timePattern="YYYYMMDD", timesCsvPath=None)
+    names_made.append(row["name"])
+    check("a succeeded import clears the upload's delete_after", row["status"] == "succeeded" and not pending(keep_id))
+    check("... but not another file's", pending(csv_id))
+    clear_rows()
+    reset_calls()
+    os.makedirs(os.path.dirname(os.path.join(STORE, csv_rel)), exist_ok=True)
+    with open(os.path.join(STORE, csv_rel), "w") as f:
+        f.write("file,time\nr_a.tif,2025-10-25T00:00:00Z\nr_b.tif,2025-10-26T00:00:00Z\n")
+    row = run_job(tif_zip(["r_a.tif", "r_b.tif"]), "mua.zip", "geotiff", file_id=str(uuid.uuid4()),
+                  timesCsvPath=csv_rel)
+    names_made.append(row["name"])
+    check("a succeeded import clears the times table's delete_after too",
+          row["status"] == "succeeded" and not pending(csv_id))
+    clear_rows()
+    reset_calls()
+    fail_id = str(uuid.uuid4())
+    add_file(fail_id, "uploads/x/original2.zip", "mua.zip")
+    row = run_job(tif_zip(["r_20251025.tif", "r_khong_ngay.tif"]), "mua.zip", "geotiff", file_id=fail_id,
+                  timePattern="YYYYMMDD")
+    names_made.append(row["name"])
+    check("a failed import leaves the upload's delete_after", row["status"] == "failed" and pending(fail_id))
+    q("DELETE FROM workspace.files WHERE owner_id = %s", (user_id,))
+
     # --- file names that do not match the pattern: the job fails and writes nothing
     reset_calls()
     row = run_job(tif_zip(["r_20251025.tif", "r_khong_ngay.tif"]), "mua.zip", "geotiff", timePattern="YYYYMMDD")

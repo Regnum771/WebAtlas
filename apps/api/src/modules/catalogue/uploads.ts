@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { Pool } from 'pg';
-import { ConflictError, NotFoundError, ValidationError } from '../../errors';
+import { ConflictError, NotFoundError, QuotaExceededError, ValidationError } from '../../errors';
 import { inTransaction } from '../../lib/transaction';
 import type { CurrentUser } from '../../types/fastify';
 import { insertJob, TIMESERIES_STEPS, type Job, type TimeseriesImportParams } from '../workspace/jobs';
@@ -12,6 +12,11 @@ import { FILE_NOT_FOUND, storeUpload, type Upload, type UploadPart } from '../wo
  * toward the personal quota). POST /timeseries then queues the worker's timeseries_import job.
  */
 
+/** An upload not yet imported expires after this many days; the import clears the date. */
+export const PENDING_DAYS = 3;
+/** The most a user may hold in uploads not yet imported. */
+export const PENDING_CAP_BYTES = 4 * 1024 * 1024 * 1024;
+export const PENDING_CAP_MESSAGE = 'Các tệp chuỗi thời gian chưa đưa lên Danh mục không được vượt quá 4 GB; hãy đưa các tệp đã tải lên Danh mục hoặc xoá bớt.';
 export const TIMESERIES_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 /** The times table of a GeoTIFF series: a small .csv beside the big files. */
 export const TIMES_CSV_MAX_BYTES = 1024 * 1024;
@@ -38,9 +43,10 @@ export interface TimeseriesRequest {
   every: 1 | 4;
 }
 
-export function catalogueUploadsService(pg: Pool, opts: { maxBytes?: number; csvMaxBytes?: number } = {}) {
+export function catalogueUploadsService(pg: Pool, opts: { maxBytes?: number; csvMaxBytes?: number; pendingCapBytes?: number } = {}) {
   const maxBytes = opts.maxBytes ?? TIMESERIES_MAX_BYTES;
   const csvMaxBytes = opts.csvMaxBytes ?? TIMES_CSV_MAX_BYTES;
+  const pendingCapBytes = opts.pendingCapBytes ?? PENDING_CAP_BYTES;
 
   return {
     upload(user: CurrentUser, part: UploadPart): Promise<{ upload: Upload }> {
@@ -50,6 +56,7 @@ export function catalogueUploadsService(pg: Pool, opts: { maxBytes?: number; csv
         purpose: 'timeseries',
         countsToQuota: false,
         unsupportedMessage: UNSUPPORTED_TIMESERIES,
+        expiry: { deleteAfterDays: PENDING_DAYS, pendingCapBytes, overCap: () => new QuotaExceededError(PENDING_CAP_MESSAGE) },
         extensionMaxBytes: { '.csv': csvMaxBytes },
         tooLargeMessage: (ext) => (ext === '.csv' ? TIMES_CSV_TOO_LARGE : TIMESERIES_TOO_LARGE),
       });
@@ -58,17 +65,12 @@ export function catalogueUploadsService(pg: Pool, opts: { maxBytes?: number; csv
     /** Queue a timeseries_import job for one of the caller's time-series uploads. */
     async enqueue(user: CurrentUser, input: TimeseriesRequest): Promise<{ job: Job }> {
       // The job's owner is the Keycloak account that will own the GeoNode dataset.
-      const { rows: owners } = await pg.query<{ oidc_subject: string | null; email: string }>(
-        `SELECT oidc_subject, email FROM app.users WHERE id = $1`, [user.id]
-      );
-      const owner = owners[0];
-      if (!owner) throw new NotFoundError(FILE_NOT_FOUND);
-      const sub = owner.oidc_subject;
+      const sub = user.oidcSubject;
       if (!sub) throw new ConflictError(NEEDS_SSO);
 
       return inTransaction(pg, async (client) => {
         // The row is locked until the job is committed, as workspace imports do, so the cleanup
-        // sweep leaves the file alone while a queued job reads it.
+        // sweep leaves the file alone while a queued job reads it (cleanup.ts BEING_IMPORTED).
         const { rows } = await client.query<{ path: string; original_name: string }>(
           `SELECT path, original_name FROM workspace.files
             WHERE id = $1 AND owner_id = $2 AND kind = 'upload' AND purpose = 'timeseries'
@@ -100,7 +102,7 @@ export function catalogueUploadsService(pg: Pool, opts: { maxBytes?: number; csv
           path: rows[0].path,
           originalName: rows[0].original_name,
           ownerId: user.id,
-          owner: { sub, username: owner.email, email: owner.email },
+          owner: { sub, username: user.email, email: user.email },
           title: input.title,
           abstract: input.abstract ?? '',
           source: SOURCE_BY_EXT[ext] ?? null,

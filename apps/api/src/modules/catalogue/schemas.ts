@@ -14,7 +14,8 @@ export const TimeseriesBody = z.object({
   fileId: z.string().uuid(),
   title: z.string().trim().min(1).max(200),
   abstract: z.string().max(5000).optional(),
-  timePattern: z.string().trim().min(1).max(200).optional(),
+  // Mirrors times.PATTERNS in packages/atlas-data/tools/timeseries/times.py.
+  timePattern: z.enum(['YYYYMMDD', 'YYYYMMDDHHmm', 'YYYYDDD']).optional(),
   timesCsvFileId: z.string().uuid().optional(),
   hdfArea: z.string().trim().min(1).max(200).optional(),
   every: z.union([z.literal(1), z.literal(4)]).default(4),
