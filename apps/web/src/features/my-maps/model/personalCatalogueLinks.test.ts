@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Map from 'ol/Map';
 import View from 'ol/View';
 import type ImageLayer from 'ol/layer/Image';
@@ -24,7 +24,10 @@ vi.mock('../../catalogue/model/catalogueLayers', async (importOriginal) => {
   };
 });
 
+import { act, renderHook } from '@testing-library/react';
 import { CATALOGUE_LAYER_PROP, syncCatalogueLayers } from '../../catalogue/model/catalogueLayers';
+import { addCatalogueLayer, getCatalogue, resetCatalogue } from '../../catalogue/model/catalogue.store';
+import { useCatalogueHover } from '../../catalogue/model/useCatalogueHover';
 import type { CatalogueItem } from '../../catalogue/api/catalogue.api';
 import { setAuthToken } from '../../../shared/api/apiClient';
 import { isPersonalLayer } from '../../map/model/overlayLayers';
@@ -117,6 +120,55 @@ describe('catalogue links in personal maps', () => {
     syncPersonalLayers(map, []);
     expect(linkLayers(map)).toHaveLength(0);
     expect(freeLayers(map)).toHaveLength(1);
+  });
+
+  describe('hover values (useCatalogueHover, both scopes)', () => {
+    const fetchMock = vi.fn();
+    const series = (id: string, unit: string) => ({ ...item(id, 'timeseries', ['2025-10-26T00:00:00Z']), unit });
+    const bareMap = () => new Map({ view: new View({ center: [0, 0], zoom: 5 }) });
+    const move = (map: Map) => map.dispatchEvent({ type: 'pointermove', coordinate: [100, 100], pixel: [5, 5], dragging: false } as never);
+    const tip = (map: Map) => map.getOverlays().getArray()[0].getElement() as HTMLElement;
+    const show = async (map: Map) => { move(map); await vi.advanceTimersByTimeAsync(300); await vi.advanceTimersByTimeAsync(0); };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      resetCatalogue();
+      fetchMock.mockReset().mockResolvedValue({ ok: true, status: 200, json: async () => ({ features: [{ properties: { GRAY_INDEX: 0.3049 } }] }) });
+      vi.stubGlobal('fetch', fetchMock);
+    });
+    afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+    it('a time-series link in a personal map gets the hover value, through its own entry\'s proxy', async () => {
+      const map = bareMap();
+      syncPersonalLayers(map, [entry(link('c1', series('depth', 'm')))], '2025-10-26T05:00:00Z');
+      renderHook(() => useCatalogueHover(map));
+      await show(map);
+      const url = String(fetchMock.mock.calls[0][0]);
+      expect(url).toMatch(/\/api\/catalogue\/depth\/wms\?/);
+      expect(url).toContain('GetFeatureInfo');
+      expect(url).toContain('TIME=2025-10-26T00%3A00%3A00Z');
+      expect(tip(map).hidden).toBe(false);
+      expect(tip(map).textContent).toMatch(/^0,30 m · 26\/10\/2025/);
+    });
+
+    it('the topmost of a link and a free-standing series answers; hiding the link hides the label', async () => {
+      const map = bareMap();
+      addCatalogueLayer(series('rain', 'mm'));
+      syncCatalogueLayers(map, getCatalogue(), '2025-10-26T05:00:00Z');
+      const depth = link('c1', series('depth', 'm'));
+      syncPersonalLayers(map, [entry(depth)], '2025-10-26T05:00:00Z');
+      renderHook(() => useCatalogueHover(map));
+      await show(map);
+      // The personal link draws at 805, above the free-standing layers (700+).
+      expect(String(fetchMock.mock.calls.at(-1)![0])).toMatch(/\/api\/catalogue\/depth\/wms\?/);
+      expect(tip(map).textContent).toMatch(/ m · /);
+
+      act(() => syncPersonalLayers(map, [entry(depth, { visible: false })], '2025-10-26T05:00:00Z'));
+      expect(tip(map).hidden).toBe(true);
+      await show(map);
+      expect(String(fetchMock.mock.calls.at(-1)![0])).toMatch(/\/api\/catalogue\/rain\/wms\?/);
+      expect(tip(map).textContent).toMatch(/ mm · /);
+    });
   });
 
   it('a link image answering 403/404 tells the map to be read again', async () => {

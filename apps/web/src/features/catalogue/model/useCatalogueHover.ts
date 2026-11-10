@@ -5,10 +5,10 @@ import type { MapBrowserEvent } from 'ol';
 import Overlay from 'ol/Overlay';
 import type ImageLayer from 'ol/layer/Image';
 import type ImageWMS from 'ol/source/ImageWMS';
-import { fetchCatalogueJson } from '../api/catalogue.api';
+import { fetchCatalogueJson, type CatalogueItem } from '../api/catalogue.api';
 import { formatStepLocal } from '../../time-slider/model/timeSteps';
 import { getCatalogue, useCatalogueStore } from './catalogue.store';
-import { CATALOGUE_LAYER_PROP } from './catalogueLayers';
+import { CATALOGUE_ITEM_PROP, CATALOGUE_LAYER_PROP } from './catalogueLayers';
 
 const REST_MS = 300;
 /** Raster nodata is written as -9999; anything this low is no value. */
@@ -35,24 +35,35 @@ export function hoverText(info: FeatureInfo, unit: string | null, step: string):
   return null;
 }
 
-/** The topmost visible time-series layer that currently has a TIME. */
+/**
+ * The topmost visible time-series layer that currently has a TIME, of either scope: the
+ * free-standing catalogue layers and the personal maps' catalogue links (catalogueLayers.ts
+ * CatalogueLayerScope). Both carry the entry they show (CATALOGUE_ITEM_PROP); a free-standing
+ * layer must also still be ok and visible in its store, which may run ahead of the next sync.
+ */
 function topSeriesLayer(map: Map): { layer: ImageLayer<ImageWMS>; unit: string | null } | null {
   const store = getCatalogue();
   const found = map.getLayers().getArray()
-    .filter((l) => typeof l.get(CATALOGUE_LAYER_PROP) === 'string' && l.getVisible())
+    .filter((l) => l.get(CATALOGUE_ITEM_PROP) !== undefined && l.getVisible())
     .sort((a, b) => (b.getZIndex() ?? 0) - (a.getZIndex() ?? 0));
   for (const l of found) {
-    const entry = store.find((c) => c.item.id === l.get(CATALOGUE_LAYER_PROP));
-    if (!entry || entry.status !== 'ok' || !entry.visible || entry.item.kind !== 'timeseries') continue;
+    const item = l.get(CATALOGUE_ITEM_PROP) as CatalogueItem;
+    if (item.kind !== 'timeseries') continue;
+    const freeId = l.get(CATALOGUE_LAYER_PROP);
+    if (typeof freeId === 'string') {
+      const entry = store.find((c) => c.item.id === freeId);
+      if (!entry || entry.status !== 'ok' || !entry.visible) continue;
+    }
     const layer = l as ImageLayer<ImageWMS>;
     if (!layer.getSource()?.getParams().TIME) continue;
-    return { layer, unit: entry.item.unit };
+    return { layer, unit: item.unit };
   }
   return null;
 }
 
 /**
- * A small label by the cursor with the value of the topmost visible time-series layer, asked
+ * A small label by the cursor with the value of the topmost visible time-series layer (a
+ * free-standing catalogue layer or a personal map's catalogue link), asked
  * after the pointer rests 300 ms (GetFeatureInfo as JSON, through the authorised proxy).
  * Returns a function that removes the hover.
  */
@@ -105,10 +116,15 @@ export function attachCatalogueHover(map: Map): { hide: () => void; remove: () =
   map.on('pointermove', onMove);
   const viewport = map.getViewport();
   viewport.addEventListener('mouseleave', cancel);
+  // A layer leaving the map (a personal link hidden or its map collapsed, a layer removed) may be
+  // the one the label is about.
+  const layers = map.getLayers();
+  layers.on('remove', cancel);
 
   const remove = () => {
     cancel();
     map.un('pointermove', onMove);
+    layers.un('remove', cancel);
     viewport.removeEventListener('mouseleave', cancel);
     map.removeOverlay(overlay);
   };

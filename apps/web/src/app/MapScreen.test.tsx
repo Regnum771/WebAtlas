@@ -28,6 +28,9 @@ vi.mock('../features/my-maps/model/useMyMapsPanelPresenter', () => ({
     pendingDelete: false, deleteError: null, deleting: false, askDelete: () => {}, cancelDelete: () => {}, confirmDelete: async () => {},
   }),
 }));
+// MapView is mocked, so no OpenLayers map exists: the sections that read the map context (the
+// catalogue layers, their hover) get none, as before the map has mounted.
+vi.mock('./providers/MapProvider', () => ({ useMapContext: () => ({ map: null }) }));
 // The catalogue section's "save into a personal map" reads the user's maps; not under test here.
 vi.mock('../features/catalogue/model/useSaveToMapPresenter', () => ({
   useSaveToMapPresenter: () => ({

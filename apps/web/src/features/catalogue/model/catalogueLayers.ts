@@ -2,7 +2,7 @@ import type Map from 'ol/Map';
 import ImageLayer from 'ol/layer/Image';
 import ImageWMS from 'ol/source/ImageWMS';
 import type ImageWrapper from 'ol/Image';
-import { catalogueWmsUrl, fetchCatalogueBlob } from '../api/catalogue.api';
+import { catalogueWmsUrl, fetchCatalogueBlob, type CatalogueItem } from '../api/catalogue.api';
 import { stepAtOrBefore } from '../../time-slider/model/timeSteps';
 import { markGoneIfDenied, type CatalogueLayer } from './catalogue.store';
 
@@ -75,7 +75,12 @@ export const CATALOGUE_SCOPE: CatalogueLayerScope = { prop: CATALOGUE_LAYER_PROP
  */
 export type DrawnCatalogueLayer = CatalogueLayer & { key?: string; zIndex?: number; properties?: Record<string, unknown> };
 
-const ITEM_PROP = 'catalogueItemId';
+/**
+ * The entry an OL catalogue layer shows, kept current on every sync, in both scopes. The hover
+ * (useCatalogueHover) reads it, so it finds the time-series layers of either scope from the map alone.
+ */
+export const CATALOGUE_ITEM_PROP = 'catalogueItem';
+const itemIdOf = (layer: { get(key: string): unknown }) => (layer.get(CATALOGUE_ITEM_PROP) as CatalogueItem | undefined)?.id;
 
 /**
  * Keeps the scope's catalogue layers on the map in step with `layers`: one image layer per entry,
@@ -94,7 +99,7 @@ export function syncCatalogueLayers(
   const wantedItem = new globalThis.Map(wanted.map((l) => [keyOf(l), l.item.id]));
   for (const [key, layer] of existing) {
     // Kept only while the same key still shows the same entry.
-    if (wantedItem.get(key) === (layer.get(ITEM_PROP) ?? key)) continue;
+    if (wantedItem.get(key) === (itemIdOf(layer) ?? key)) continue;
     (layer.get(ABORT_PROP) as (() => void) | undefined)?.();
     map.removeLayer(layer);
     existing.delete(key);
@@ -114,7 +119,7 @@ export function syncCatalogueLayers(
       });
       layer = new ImageLayer({
         source,
-        properties: { ...entry.properties, [scope.prop]: key, [ITEM_PROP]: item.id, [ABORT_PROP]: loader.abort },
+        properties: { ...entry.properties, [scope.prop]: key, [CATALOGUE_ITEM_PROP]: item, [ABORT_PROP]: loader.abort },
       });
       map.addLayer(layer);
     }
@@ -123,6 +128,8 @@ export function syncCatalogueLayers(
     const isSeries = item.kind === 'timeseries';
     const timeParam = isSeries && time !== null ? (stepAtOrBefore(item.timeSteps ?? [], time) ?? undefined) : undefined;
     const beforeFirst = isSeries && timeParam === undefined;
+    // A refreshed read (new steps, a new unit) replaces the entry the layer carries.
+    if (layer.get(CATALOGUE_ITEM_PROP) !== item) layer.set(CATALOGUE_ITEM_PROP, item);
     const source = layer.getSource() as ImageWMS;
     if (source.getParams().TIME !== timeParam) source.updateParams({ TIME: timeParam });
     layer.setZIndex(entry.zIndex ?? CATALOGUE_Z_BASE + order);
