@@ -40,6 +40,15 @@ def message_of(fn):
     return None
 
 
+def old_cell_index_grid(ras, area, transform, shape):
+    """Reference: the per-cell Python loop the vectorised version replaced."""
+    from rasterio import features
+    from shapely.geometry import Polygon
+    cells, fp = ras._cells(area)
+    shapes = ((Polygon(fp[idx[idx >= 0]]), i) for i, idx in enumerate(cells))
+    return features.rasterize(shapes, out_shape=shape, transform=transform, fill=-1, dtype="int32")
+
+
 tmp = tempfile.mkdtemp()
 wse = np.full((9, 5), 10.0)
 wse[:, 0], wse[:, 1], wse[:, 2] = 10.30, 10.03, 9.0
@@ -89,6 +98,14 @@ with hecras.RasFile(p) as ras:
     check("peak equals per-pixel max",
           np.array_equal(np.nan_to_num(peak.array, nan=-1), np.nan_to_num(ref, nan=-1)))
     check("peak sees cell 3 (2.0 m)", np.allclose(peak.array[:2, 2:], 2.0))
+    old_grid = old_cell_index_grid(ras, "A1", tr, shape)
+    check("vectorised grid equals the per-cell loop", np.array_equal(grid, old_grid))
+    check("vectorised grid equals the loop on a wider grid", np.array_equal(g2, old_cell_index_grid(ras, "A1", wide, (6, 8))))
+    steps_g = list(hecras.depth_steps(ras, "A1", dem, tr, every=4, grid=grid))
+    check("depth_steps with a prebuilt grid is identical",
+          len(steps_g) == len(steps) and all(np.array_equal(a.array, b.array, equal_nan=True) for a, b in zip(steps, steps_g)))
+    peak_g = hecras.peak_depth(ras, "A1", dem, tr, grid=grid)
+    check("peak_depth with a prebuilt grid is identical", np.array_equal(peak.array, peak_g.array, equal_nan=True))
     check("peak time is the last step", peak.time == ras.times[-1])
     check("pick_area on a single-area file", hecras.pick_area(ras, None) == "A1")
 
@@ -129,6 +146,11 @@ if sample:
         t1 = time.time()
         rgrid = hecras.cell_index_grid(ras, area, rtr, rshape)
         print(f"     rasterized in {time.time() - t1:.0f} s, {int((rgrid >= 0).sum())} covered pixels")
+        if os.environ.get("RAS_COMPARE_OLD"):
+            t2 = time.time()
+            old = old_cell_index_grid(ras, area, rtr, rshape)
+            print(f"     old loop took {time.time() - t2:.0f} s")
+            check("real: vectorised grid equals the loop", np.array_equal(rgrid, old))
         check("real: indexes within real cells", int(rgrid.max()) < ras.n_cells(area))
         cmin = ras.cell_min_elevation(area)
         counts = []

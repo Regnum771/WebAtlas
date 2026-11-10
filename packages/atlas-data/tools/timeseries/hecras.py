@@ -1,13 +1,14 @@
 """HEC-RAS 2D results (.hdf, HDF5) -> flood depth steps on a DEM grid in the area's own CRS."""
 import math
+from itertools import chain
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, Optional
 
 import h5py
 import numpy as np
+import shapely
 from affine import Affine
 from rasterio import features
-from shapely.geometry import Polygon
 
 from .model import Step
 from workspace_common import UserFacingError
@@ -120,8 +121,17 @@ def area_grid(ras: RasFile, area: str, res: float = 30.0) -> tuple:
 def cell_index_grid(ras: RasFile, area: str, transform: Affine, shape: tuple) -> np.ndarray:
     """int32 grid with the index of the real cell covering each pixel, -1 outside any cell."""
     cells, fp = ras._cells(area)
-    shapes = ((Polygon(fp[idx[idx >= 0]]), i) for i, idx in enumerate(cells))
-    return features.rasterize(shapes, out_shape=shape, transform=transform, fill=-1, dtype="int32")
+    # Build polygons vectorised, one batch per vertex count (shapely.polygons needs equal-length rings).
+    counts = (cells >= 0).sum(axis=1)
+    pairs = []
+    for k in np.unique(counts):
+        if k < 3:
+            continue
+        ids = np.flatnonzero(counts == k)
+        geoms = shapely.polygons(fp[cells[ids, :k]])
+        pairs.append(zip(geoms, ids.tolist()))
+    return features.rasterize(chain.from_iterable(pairs), out_shape=shape, transform=transform,
+                              fill=-1, dtype="int32")
 
 
 def _depth(wse: np.ndarray, grid: np.ndarray, dem: np.ndarray) -> np.ndarray:
@@ -130,18 +140,22 @@ def _depth(wse: np.ndarray, grid: np.ndarray, dem: np.ndarray) -> np.ndarray:
     return depth
 
 
-def depth_steps(ras: RasFile, area: str, dem: np.ndarray, transform: Affine, every: int = 4) -> Iterator[Step]:
+def depth_steps(ras: RasFile, area: str, dem: np.ndarray, transform: Affine, every: int = 4,
+                grid: Optional[np.ndarray] = None) -> Iterator[Step]:
     """Depth = water surface - DEM for steps 0, every, 2*every, ... (every=4 is hourly for 15-min output)."""
     times = ras.times
-    grid = cell_index_grid(ras, area, transform, dem.shape)
+    if grid is None:
+        grid = cell_index_grid(ras, area, transform, dem.shape)
     for i in range(0, len(times), max(1, every)):
         yield Step(times[i], _depth(ras.water_surface(area, i), grid, dem), transform, ras.crs_wkt)
 
 
-def peak_depth(ras: RasFile, area: str, dem: np.ndarray, transform: Affine) -> Step:
+def peak_depth(ras: RasFile, area: str, dem: np.ndarray, transform: Affine,
+               grid: Optional[np.ndarray] = None) -> Step:
     """Per-pixel maximum depth over every output step; its time is the last step's."""
     times = ras.times
-    grid = cell_index_grid(ras, area, transform, dem.shape)
+    if grid is None:
+        grid = cell_index_grid(ras, area, transform, dem.shape)
     peak = np.full(dem.shape, np.nan, dtype="float32")
     for i in range(len(times)):
         peak = np.fmax(peak, _depth(ras.water_surface(area, i), grid, dem))
