@@ -67,6 +67,16 @@ def missing_since(conn, pk):
 def test_kind():
     check(catalogue_sync.kind_of({"resourceType": "dataset", "subtype": "vector"}) == "vector", "vector")
     check(catalogue_sync.kind_of({"resourceType": "dataset", "subtype": "raster"}) == "raster", "raster")
+    # M15: GeoNode's vector_time covers time-enabled coverages too.
+    check(catalogue_sync.kind_of({"resourceType": "dataset", "subtype": "vector_time", "layerType": "coverage",
+                                  "alternate": "geonode:mua"}) == "raster", "vector_time coverage is raster")
+    check(catalogue_sync.kind_of({"resourceType": "dataset", "subtype": "vector_time", "layerType": "featureType",
+                                  "alternate": "geonode:tram"}) == "vector", "vector_time feature type is vector")
+    check(catalogue_sync.kind_of({"resourceType": "dataset", "subtype": "vector_time",
+                                  "alternate": "geonode:ts_0123456789abcdef"}) == "raster",
+          "vector_time ts_ without layerType is raster")
+    check(catalogue_sync.kind_of({"resourceType": "dataset", "subtype": "vector_time",
+                                  "alternate": "geonode:tram"}) == "vector", "vector_time other without layerType is vector")
     check(catalogue_sync.kind_of({"resourceType": "map"}) == "map", "map")
     check(catalogue_sync.kind_of({"resourceType": "document"}) == "document", "document")
 
@@ -99,6 +109,51 @@ def test_insert_and_update(conn):
     check(row(conn, 900003, "abstract, variable, unit") == ("mô tả", "depth", "m"), "abstract updated, variable/unit kept")
 
 
+def test_alternate_and_ghosts(conn):
+    # M4: an item without an alternate is skipped; the run goes on.
+    rep = catalogue_sync.sync(conn, [item(900050, alternate=None), item(900051, alternate=""), item(900052)], NOW)
+    check(rep.inserted == 1 and row(conn, 900050) is None and row(conn, 900051) is None and row(conn, 900052),
+          f"no alternate skipped {rep}")
+    # I3: a ts_ series with no GeoServer layer and no worker row is skipped ...
+    ghost = item(900053, alternate="geonode:ts_0123456789abcdef", subtype="raster", hasLayer=False)
+    rep = catalogue_sync.sync(conn, [ghost], NOW)
+    check(rep.inserted == 0 and row(conn, 900053) is None, "ghost ts_ skipped")
+    # ... with its layer, it is inserted ...
+    rep = catalogue_sync.sync(conn, [{**ghost, "hasLayer": True}], NOW)
+    check(rep.inserted == 1 and row(conn, 900053), "ts_ with its layer inserted")
+    # ... a worker row is still updated when the layer is reported missing ...
+    put(conn, 900054)
+    rep = catalogue_sync.sync(conn, [item(900054, title="t", hasLayer=False,
+                                          alternate="geonode:ts_900054")], NOW)
+    check(rep.updated == 1 and row(conn, 900054, "title")[0] == "t", "worker row updated without its layer")
+    # ... and a non-ts_ item is never skipped for hasLayer false.
+    rep = catalogue_sync.sync(conn, [item(900055, hasLayer=False)], NOW)
+    check(rep.inserted == 1, "hasLayer false outside ts_ inserted")
+
+
+def test_permissions_and_owner(conn):
+    # I1: GeoNode's anonymous view/download are stored and refreshed; absent means not granted.
+    catalogue_sync.sync(conn, [item(900060, isPublished=True, anonymousView=True, anonymousDownload=True),
+                               item(900061, isPublished=True)], NOW)
+    check(row(conn, 900060, "public_view, public_download") == (True, True), "flags stored")
+    check(row(conn, 900061, "public_view, public_download") == (False, False), "absent flags are false")
+    catalogue_sync.sync(conn, [item(900060, isPublished=True, anonymousView=True, anonymousDownload=False)], NOW)
+    check(row(conn, 900060, "public_view, public_download") == (True, False), "flags refreshed on conflict")
+    # M5: ownership moved in GeoNode moves here, except on the worker's rows.
+    catalogue_sync.sync(conn, [item(900060, ownerSub="sub-2")], NOW)
+    check(row(conn, 900060, "owner_sub")[0] == "sub-2", "owner refreshed")
+    put(conn, 900062)
+    conn.execute("UPDATE catalogue.resources SET owner_sub = 'uploader' WHERE geonode_pk = 900062")
+    catalogue_sync.sync(conn, [item(900062, ownerSub="sub-2", anonymousView=True)], NOW)
+    check(row(conn, 900062, "owner_sub, public_view") == ("uploader", True), "worker row keeps its owner, takes flags")
+
+
+def test_full_listing_due():
+    from . import definitions
+    due = [m for m in range(60) if definitions.full_listing_due(NOW.replace(minute=m))]
+    check(due == [0, 10, 20, 30, 40, 50], f"M6: full listing every 10 minutes {due}")
+
+
 def test_ruling2_incremental_non_processed(conn):
     put(conn, 900005, title="keep")
     rep = catalogue_sync.sync(conn, [item(900005, state="RUNNING", title="changed", isPublished=True)], NOW)
@@ -129,9 +184,11 @@ def test_two_step_deletion(conn):
     # Re-listed: unmarked.
     catalogue_sync.sync(conn, base + [item(900011, state="RUNNING")], LATER, full=True)
     check(row(conn, 900011) and missing_since(conn, 900011) is None, "re-listed row unmarked")
-    # Absent again: marked, then deleted by a later full run.
+    # Absent again: marked, then deleted by a later full run about an hour on, not 10 minutes on.
     catalogue_sync.sync(conn, base, LATER, full=True)
     check(missing_since(conn, 900011) == LATER, "marked again")
+    rep = catalogue_sync.sync(conn, base, LATER + timedelta(minutes=10), full=True)
+    check(rep.removed == 0 and row(conn, 900011), "a full run 10 minutes after the mark does not delete")
     rep = catalogue_sync.sync(conn, base, LATER + timedelta(hours=1), full=True)
     check(rep.removed == 1 and row(conn, 900011) is None and row(conn, 900010), "second full deletes")
 
@@ -229,11 +286,13 @@ def test_plan_and_run(conn):
 def main():
     test_kind()
     test_fetch()
+    test_full_listing_due()
     with registry.connect() as conn:
         clean(conn)
         conn.commit()
         try:
-            for t in (test_insert_and_update, test_ruling2_incremental_non_processed, test_ruling4_full_updates_flags,
+            for t in (test_insert_and_update, test_alternate_and_ghosts, test_permissions_and_owner,
+                      test_ruling2_incremental_non_processed, test_ruling4_full_updates_flags,
                       test_two_step_deletion, test_listing_start_race, test_guards):
                 t(conn)
                 conn.rollback()

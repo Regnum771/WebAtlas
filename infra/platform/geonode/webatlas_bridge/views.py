@@ -17,6 +17,8 @@ from allauth.account.adapter import get_adapter
 from allauth.socialaccount.models import SocialAccount
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError, connection, transaction
 from django.http import JsonResponse
 from django.utils import timezone
@@ -24,7 +26,8 @@ from django.utils.dateparse import parse_datetime
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from guardian.shortcuts import get_user_perms
+from guardian.models import GroupObjectPermission, UserObjectPermission
+from guardian.shortcuts import get_anonymous_user, get_user_perms
 
 from geonode.base import enumerations
 from geonode.base.models import ExtraMetadata, ResourceBase
@@ -50,6 +53,11 @@ _FAIL_HEADER = "X-Webatlas-Bridge-Fail"
 # ExtraMetadata row on a dataset whose registration has not completed yet.
 _PENDING_VALUE = "registration-pending"
 _PENDING = {"webatlas_bridge": _PENDING_VALUE}
+# GeoNode's permissions that make a resource public: anonymous view and anonymous download.
+_VIEW, _DOWNLOAD = "view_resourcebase", "download_resourcebase"
+# GeoNode gives anonymous access through this group (resource/manager.py set_permissions);
+# AnonymousUser's own object permissions are legacy, still read.
+_ANONYMOUS_GROUP = "anonymous"
 
 
 def _test_hooks():
@@ -308,10 +316,73 @@ def _finish(dataset, user, res, name, fail_permissions, created):
     return JsonResponse(_ids(dataset), status=201 if created else 200)
 
 
+def _anonymous_perms(pks):
+    """
+    {pk: {codename}}: which of view_resourcebase / download_resourcebase GeoNode grants anonymous
+    users on each resource, through the anonymous group or AnonymousUser. Two queries per page.
+    GeoNode assigns them on the ResourceBase row (get_self_resource), hence that content type.
+    """
+    if not pks:
+        return {}
+    ct = ContentType.objects.get_for_model(ResourceBase)
+    keys = [str(pk) for pk in pks]
+    perms = (_VIEW, _DOWNLOAD)
+    rows = list(UserObjectPermission.objects.filter(
+        content_type=ct, object_pk__in=keys, user=get_anonymous_user(), permission__codename__in=perms,
+    ).values_list("object_pk", "permission__codename"))
+    group = Group.objects.filter(name=_ANONYMOUS_GROUP).first()
+    if group is not None:
+        rows += list(GroupObjectPermission.objects.filter(
+            content_type=ct, object_pk__in=keys, group=group, permission__codename__in=perms,
+        ).values_list("object_pk", "permission__codename"))
+    out = {}
+    for pk, codename in rows:
+        out.setdefault(int(pk), set()).add(codename)
+    return out
+
+
+def _rest_names(path, outer, inner):
+    """The names GeoServer's REST API lists at `path` ({outer: {inner: [{name}]}}, or "" when empty)."""
+    r = requests.get(f"{ogc_server_settings.LOCATION.rstrip('/')}/rest/{path}",
+                     auth=ogc_server_settings.credentials, headers={"Accept": "application/json"}, timeout=60)
+    r.raise_for_status()
+    listed = (r.json() or {}).get(outer) or {}
+    items = (listed.get(inner) or []) if isinstance(listed, dict) else []
+    return {i["name"] for i in items if isinstance(i, dict) and isinstance(i.get("name"), str)}
+
+
+def _workspace_layers():
+    """
+    (coverages, feature types) of the geonode workspace: two GeoServer calls per page, whatever
+    its size. They tell whether a dataset's GeoServer layer still exists (hasLayer) and of which
+    kind (GeoNode labels a time-enabled coverage `vector_time`, like a time-enabled vector layer).
+    """
+    return (_rest_names(f"workspaces/{WORKSPACE}/coverages.json", "coverages", "coverage"),
+            _rest_names(f"workspaces/{WORKSPACE}/featuretypes.json", "featureTypes", "featureType"))
+
+
+def _layer_of(alternate, coverages, feature_types):
+    """(hasLayer, layerType) of a resource; (None, None) outside the geonode workspace (not looked up)."""
+    prefix = f"{WORKSPACE}:"
+    if not (isinstance(alternate, str) and alternate.startswith(prefix)):
+        return None, None
+    name = alternate[len(prefix):]
+    if name in coverages:
+        return True, "coverage"
+    if name in feature_types:
+        return True, "featureType"
+    return False, None
+
+
 @require_http_methods(["GET"])
 @require_bridge_token
 def list_resources(request):
-    """Every GeoNode resource (published or not) changed at or after `since`, PAGE_SIZE per page."""
+    """
+    Every GeoNode resource (published or not) changed at or after `since`, PAGE_SIZE per page, with
+    GeoNode's anonymous view/download permissions and, for the geonode workspace, whether GeoServer
+    still has the layer (hasLayer) and its kind (layerType: coverage or featureType). A GeoServer
+    that does not answer fails the page (502): the sync then rolls back and tries again.
+    """
     since = None
     if request.GET.get("since"):
         since = parse_datetime(request.GET["since"].replace(" ", "+"))
@@ -335,6 +406,14 @@ def list_resources(request):
     rows = rows[:PAGE_SIZE]
     subs = dict(SocialAccount.objects.filter(provider=_provider(), user_id__in={r.owner_id for r in rows})
                 .order_by("-pk").values_list("user_id", "uid"))
+    anonymous = _anonymous_perms([r.pk for r in rows])
+    coverages = feature_types = set()
+    if any(isinstance(r.alternate, str) and r.alternate.startswith(f"{WORKSPACE}:") for r in rows):
+        try:
+            coverages, feature_types = _workspace_layers()
+        except Exception:  # noqa: BLE001 - logged; a fixed message to the caller
+            logger.exception("webatlas bridge: listing GeoServer's layers failed")
+            return _error(502, "GeoServer không trả lời, chưa liệt kê được dữ liệu.")
     resources = [{
         "pk": r.pk,
         "uuid": str(r.uuid),
@@ -346,6 +425,9 @@ def list_resources(request):
         "ownerSub": subs.get(r.owner_id),
         "isPublished": r.is_published,
         "isApproved": r.is_approved,
+        "anonymousView": _VIEW in anonymous.get(r.pk, ()),
+        "anonymousDownload": _DOWNLOAD in anonymous.get(r.pk, ()),
+        **dict(zip(("hasLayer", "layerType"), _layer_of(r.alternate, coverages, feature_types))),
         # GeoNode's processing state (PROCESSED, RUNNING, INVALID, ...): only PROCESSED is complete.
         "state": r.state,
         "bbox4326": list(r.ll_bbox_polygon.extent) if r.ll_bbox_polygon else None,

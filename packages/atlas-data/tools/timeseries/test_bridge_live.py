@@ -180,6 +180,9 @@ try:
         check("isPublished false, isApproved false",
               item.get("isPublished") is False and item.get("isApproved") is False)
         check("state PROCESSED", item.get("state") == "PROCESSED")
+        check("no anonymous view or download (GeoNode moderation), and GeoServer has its coverage",
+              item.get("anonymousView") is False and item.get("anonymousDownload") is False
+              and item.get("hasLayer") is True and item.get("layerType") == "coverage")
         check("resourceType dataset, subtype raster, alternate, title",
               (item.get("resourceType"), item.get("subtype"), item.get("alternate"), item.get("title"))
               == ("dataset", "raster", alternate, "Độ sâu ngập thử nghiệm"))

@@ -11,15 +11,26 @@ mục 1–2; ngăn xếp nền: [infra/platform/README.md](../../infra/platform/
    lên** và chọn tệp: ZIP hoặc GeoTIFF theo thời gian, NetCDF-4 (`.nc`, hoặc ZIP nhiều `.nc`) hay kết quả
    HEC-RAS 2D (`.hdf`). Tối đa 2 GB một tệp; các tệp này không tính vào hạn mức 1 GB của Bản của tôi.
 2. API lưu tệp thành `workspace.files` (kind `upload`, purpose `timeseries`, tự xoá sau 3 ngày nếu chưa
-   nhập) và xếp việc `timeseries_import` cho worker.
+   nhập) và xếp việc `timeseries_import` cho worker. Một lần nhập không thành công rút hạn xoá của tệp
+   xuống còn một ngày, để các lần thử hỏng không giữ chỗ trong mức 4 GB tệp chưa nhập; bấm **Tải lên** lại
+   với cùng tệp trong hộp thoại thì dùng lại tệp đã tải, không tải lại.
+   Với NetCDF (`.nc`, ZIP nhiều `.nc`), ô **Cắt theo khung bản đồ hiện tại** (bật sẵn) gửi khung nhìn
+   của bản đồ (EPSG:4326) làm `clip4326`; bỏ chọn thì worker đọc cả lưới toàn cầu. Với HEC-RAS (`.hdf`),
+   người dùng chọn đồng hồ của mô hình: **Giờ Việt Nam (UTC+7)** (mặc định) hay **UTC**.
 3. Worker đọc tệp, ghi một COG cho mỗi thời điểm (EPSG:3857, float32, nodata −9999) vào
-   `var/timeseries/ts_<8 ký tự đầu của mã tệp>/`, đăng lên GeoServer của GeoNode thành ImageMosaic
-   `geonode:ts_…` có chiều thời gian, đăng ký thành dataset GeoNode của người tải lên (chưa xuất bản,
-   chưa duyệt) qua cầu nối `webatlas_bridge`, và ghi ngay dòng `catalogue.resources` (người tải lên thấy
+   `var/timeseries/ts_<16 chữ số hex đầu của mã tệp>/` (các mục nhập trước 11/11/2026 dùng 8 ký tự), đăng
+   lên GeoServer của GeoNode thành ImageMosaic `geonode:ts_…` có chiều thời gian (và raster độ sâu lớn
+   nhất, nếu có) trước khi đăng ký gì ở GeoNode, rồi đăng ký thành dataset GeoNode của người tải lên
+   (chưa xuất bản, chưa duyệt) qua cầu nối `webatlas_bridge`, và ghi ngay dòng `catalogue.resources` (người tải lên thấy
    mục ngay, có nhãn **Chưa duyệt**). Một tệp HEC-RAS cho thêm một raster **độ sâu lớn nhất** ở
    `var/timeseries/ts_…_peak/ts_…_peak.tif`, là mục `raster` thứ hai.
-4. Đồng bộ Danh mục của Dagster (`dong_bo_danh_muc`, mỗi phút; mỗi giờ một lần liệt kê đủ) giữ
-   `catalogue.resources` khớp với GeoNode: xuất bản, đổi tên, xoá.
+4. Đồng bộ Danh mục của Dagster (`dong_bo_danh_muc`, mỗi phút; mỗi 10 phút một lần liệt kê đủ) giữ
+   `catalogue.resources` khớp với GeoNode: xuất bản, đổi tên, chủ sở hữu, quyền, xoá. Quyền lấy từ
+   GeoNode: `public_view` khi người dùng ẩn danh (AnonymousUser hoặc nhóm anonymous) có `view_resourcebase`,
+   `public_download` khi có `download_resourcebase`. Mục đã xuất bản chỉ hiện với mọi người khi có
+   `public_view`; *Sao vào Bản của tôi* cần `public_download` hoặc là chủ của mục. Cầu nối báo
+   `hasLayer` cho các mục `geonode:ts_…`; mục `ts_` không còn lớp trên GeoServer (một lần nhập hỏng giữa
+   chừng) và chưa có dòng của worker thì bị bỏ qua.
 5. Trên bản đồ, mục chuỗi thời gian chạy theo thanh thời gian chung; mọi ảnh đi qua proxy
    `GET /api/catalogue/:id/wms` của API (mang token, nên mục chưa xuất bản chỉ chủ của nó xem được).
 
@@ -51,8 +62,15 @@ Chrome cùng lúc, máy thường chỉ còn dưới 100 MB RAM trống), tải 
 *Sao vào Bản của tôi*: raster độ sâu lớn nhất 30–109 s, mục vector nhỏ 5–50 s (tuỳ tải của máy).
 
 Tên mục HEC-RAS là tiêu đề người dùng gõ cộng nhãn ` (nội suy từ .hdf trên FABDEM)`; raster độ sâu lớn
-nhất mang tiêu đề gõ cộng ` – độ sâu lớn nhất`. Thời điểm trong `.hdf` không có múi giờ; worker coi là UTC,
-nên trên trình duyệt giờ Việt Nam thanh thời gian hiện 07:00 cho bước 00:00 của mô hình.
+nhất mang tiêu đề gõ cộng ` – độ sâu lớn nhất`. Thời điểm trong `.hdf` không có múi giờ. Từ 11/11/2026
+worker đọc chúng theo đồng hồ người dùng chọn (`hdfTimeZone`, mặc định `Asia/Ho_Chi_Minh`, tức UTC+7)
+rồi đổi sang UTC: bước 00:00 của mô hình thành `…T170000Z` của ngày hôm trước và hiện 00:00 trên trình
+duyệt giờ Việt Nam. Thời điểm lấy từ tên tệp (mẫu `YYYYMMDD`…, MSWEP) vẫn là UTC.
+
+**Các mục kiểm thử dưới đây được nhập trước bản sửa này, khi worker còn coi giờ `.hdf` là UTC: mục HEC-RAS
+lệch 7 giờ (bước 00:00 của mô hình nằm ở 00:00Z, hiện 07:00 giờ Việt Nam).** Muốn dùng cho căn chỉnh với
+mưa hay mực nước (S4), xoá mục đó (mục *Xoá một mục Danh mục*) rồi nhập lại với *Giờ Việt Nam (UTC+7)*.
+Mục MSWEP cũng nhập trước khi có ô cắt, nên là lưới toàn cầu.
 
 Các mục kiểm thử còn để lại trong Danh mục để chạy lại kiểm chứng (xem mục *Xoá một mục Danh mục*):
 `Kiểm thử S1 — Độ sâu ngập Thu Bồn – Vu Gia, 25–28/10/2025 (nội suy từ .hdf trên FABDEM)` (`geonode:ts_f3770c4d`),
@@ -99,6 +117,12 @@ curl.exe -u "admin:<GEONODE_ADMIN_PASSWORD>" -X PATCH -H "Content-Type: applicat
   --data-binary "@pub.json" http://localhost:8000/api/v2/resources/<pk>  # pub.json: {"is_published":true,"is_approved":true}
 ```
 
+Xuất bản thôi chưa đủ để mục hiện với mọi người trên WebATLAS: GeoNode (có kiểm duyệt) không cho người
+dùng ẩn danh xem mục vừa tải lên, kể cả khi đã xuất bản, và WebATLAS theo đúng quyền đó. Ở trang của dataset
+trong GeoNode, mở phần chia sẻ (Share) và cho *Anyone* quyền xem, và quyền tải về nếu muốn thử *Sao vào Bản
+của tôi*. Mục `kiem_thu_s1_tram_do` (pk 13) để lại từ 10/11/2026 chưa có các quyền này: từ 11/11/2026 nó chỉ
+hiện với chủ của nó cho tới khi được cấp quyền.
+
 rồi chạy đồng bộ Danh mục một lần (ở trên).
 
 ## Xoá một mục Danh mục
@@ -118,7 +142,7 @@ infra/platform/README.md: purge chạy `DROP DATABASE` trên CSDL chỉ mục).
      python3 -c "import sys; sys.path.insert(0, 'packages/atlas-data/tools'); from timeseries import geoserver; geoserver.delete_mosaic('ts_xxxxxxxx')"
    ```
    Với raster độ sâu lớn nhất: `geoserver.delete_mosaic('ts_xxxxxxxx_peak')` (store GeoTIFF đơn, cùng hàm).
-3. Dòng `catalogue.resources` đi theo ở lần đồng bộ liệt kê đủ (mỗi giờ; hai bước: lần đầu đánh dấu
+3. Dòng `catalogue.resources` đi theo ở lần đồng bộ liệt kê đủ (mỗi 10 phút; hai bước: lần đầu đánh dấu
    `missing_since`, lần sau mới xoá). Liên kết tới mục này trong Bản của tôi khi đó hiện *Không có quyền
    xem hoặc đã bị xoá*.
 4. Các tệp bước COG vẫn nằm trong `var/timeseries/ts_xxxxxxxx/`: `delete_mosaic` chỉ gỡ tệp riêng của

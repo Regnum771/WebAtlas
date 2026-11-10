@@ -42,12 +42,22 @@ def _observer(ds: registry.Dataset) -> dg.SourceAsset:
     return _observe
 
 
+def full_listing_due(now: datetime) -> bool:
+    """
+    Every 10th minute: the full listing refreshes what GeoNode's moderation changes without
+    bumping last_updated (publish, unpublish, permissions), so a retracted dataset stops being
+    public within 10 minutes. It also reconciles deletions (catalogue_sync._DELETE_AFTER keeps
+    those about an hour apart).
+    """
+    return now.minute % 10 == 0
+
+
 @dg.op
 def sync_catalogue(context) -> None:
-    """Incremental listing each minute; the full listing (which also deletes) on minute 0 of every hour."""
+    """Incremental listing each minute; the full listing (which also deletes) every 10 minutes."""
     now = datetime.now(timezone.utc)
     with registry.connect() as conn:
-        report = catalogue_sync.run(conn, now, full=now.minute == 0)
+        report = catalogue_sync.run(conn, now, full=full_listing_due(now))
     if report is None:
         context.log.warning("catalogue: another sync is running, skipped")
         return
