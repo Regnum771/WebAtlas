@@ -14,6 +14,7 @@
     "atlas:up": "tsx src/cli/up.ts",
     "atlas:adopt": "tsx src/cli/adopt.ts",
     "atlas:status": "tsx src/cli/status.ts",
+    "atlas:publish": "tsx src/cli/publish.ts",
     "atlas:verify": "tsx src/cli/verify.ts",
     "atlas:seed": "tsx src/cli/seed.ts"
   },

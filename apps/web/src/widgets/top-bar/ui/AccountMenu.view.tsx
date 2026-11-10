@@ -61,6 +61,9 @@ export function AccountMenuView({ email, role, canManageUsers, onLogout }: Accou
       {open && (
         <div id={panelId} className="account-menu float">
           <span className="account-email" title={email}>{email}</span>
+          <Link to="/ho-so" className="account-item" onClick={() => setOpen(false)}>
+            Hồ sơ
+          </Link>
           {canManageUsers && (
             <Link to="/quan-ly/nguoi-dung" className="account-item" onClick={() => setOpen(false)}>
               Người dùng

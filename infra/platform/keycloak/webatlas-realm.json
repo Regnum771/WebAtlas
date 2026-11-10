@@ -1,0 +1,99 @@
+{
+  "realm": "webatlas",
+  "displayName": "WebATLAS",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": true,
+  "internationalizationEnabled": true,
+  "supportedLocales": ["vi", "en"],
+  "defaultLocale": "vi",
+  "roles": {
+    "realm": [
+      { "name": "dieu-phoi", "description": "Opens the orchestration UI (Dagster) behind oauth2-proxy." }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "webatlas-api",
+      "name": "WebATLAS",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KC_WEBATLAS_API_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["${WEBATLAS_API_ORIGIN}/api/auth/oidc/callback"],
+      "webOrigins": ["${WEBATLAS_WEB_ORIGIN}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${WEBATLAS_WEB_ORIGIN}/*"
+      }
+    },
+    {
+      "clientId": "geonode",
+      "name": "Danh mục bản đồ (GeoNode)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KC_GEONODE_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["${GEONODE_ORIGIN}/account/geonode_openid_connect/login/callback/"],
+      "webOrigins": ["${GEONODE_ORIGIN}"],
+      "attributes": {
+        "post.logout.redirect.uris": "${GEONODE_ORIGIN}/*"
+      }
+    },
+    {
+      "clientId": "dagster",
+      "name": "Điều phối dữ liệu (Dagster)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KC_DAGSTER_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["${DAGSTER_ORIGIN}/oauth2/callback"],
+      "webOrigins": ["${DAGSTER_ORIGIN}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${DAGSTER_ORIGIN}/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "dagster-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "dagster",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "${KC_DEV_USERNAME}",
+      "email": "${KC_DEV_EMAIL}",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Quản trị",
+      "lastName": "Thử nghiệm",
+      "realmRoles": ["default-roles-webatlas", "dieu-phoi"],
+      "credentials": [
+        { "type": "password", "value": "${KC_DEV_PASSWORD}", "temporary": false }
+      ]
+    }
+  ]
+}

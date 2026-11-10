@@ -5,17 +5,17 @@ import { MemoryRouter } from 'react-router-dom';
 import { TopBarView, type TopBarViewProps } from './TopBar.view';
 
 const base: TopBarViewProps = {
-  nav: [{ to: '/', label: 'Bản đồ' }],
+  nav: [{ kind: 'route', to: '/ban-do', label: 'Bản đồ' }],
   search: <div>SEARCH_SLOT</div>,
   assistant: null,
   account: <div>ACCOUNT_SLOT</div>,
 };
-const ui = (props: Partial<TopBarViewProps> = {}) => (
-  <MemoryRouter initialEntries={['/']}><TopBarView {...base} {...props} /></MemoryRouter>
+const ui = (props: Partial<TopBarViewProps> = {}, at = '/ban-do') => (
+  <MemoryRouter initialEntries={[at]}><TopBarView {...base} {...props} /></MemoryRouter>
 );
 
 describe('TopBarView', () => {
-  it('shows the wordmark as a link home, the navigation and the search slot', () => {
+  it('shows the wordmark as a link to the hub, the navigation and the search slot', () => {
     render(ui());
     expect(screen.getByRole('link', { name: 'WebATLAS' })).toHaveAttribute('href', '/');
     const nav = screen.getByRole('navigation', { name: 'Điều hướng chính' });
@@ -24,9 +24,27 @@ describe('TopBarView', () => {
     expect(screen.getByText('ACCOUNT_SLOT')).toBeInTheDocument();
   });
 
-  it('marks the current screen', () => {
-    render(ui());
+  it('marks the current screen, and nothing on the hub', () => {
+    const { unmount } = render(ui());
     expect(screen.getByRole('link', { name: 'Bản đồ' })).toHaveAttribute('aria-current', 'page');
+    unmount();
+    render(ui({}, '/'));
+    expect(screen.getByRole('link', { name: 'Bản đồ' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('opens another platform service in a new tab and marks one that is down', () => {
+    render(ui({ nav: [
+      { kind: 'link', href: 'http://localhost:8000/', label: 'Danh mục', down: false },
+      { kind: 'link', href: 'http://localhost:3070/', label: 'Điều phối', down: true },
+    ] }));
+    const catalogue = screen.getByRole('link', { name: /Danh mục/ });
+    expect(catalogue).toHaveAttribute('href', 'http://localhost:8000/');
+    expect(catalogue).toHaveAttribute('target', '_blank');
+    expect(catalogue).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(catalogue).not.toHaveClass('is-down');
+    const ops = screen.getByRole('link', { name: /Điều phối/ });
+    expect(ops).toHaveClass('is-down');
+    expect(ops).toHaveAttribute('title', 'Điều phối: không kết nối được');
   });
 
   it('shows no Trợ lý button when given none', () => {

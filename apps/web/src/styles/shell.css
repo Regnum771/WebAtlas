@@ -551,6 +551,11 @@
   border-bottom: 3px solid transparent;
 }
 
+.top-nav-link svg { margin-left: 2px; }
+
+/* A platform service the API could not reach: still a link, dimmed, with the reason in its title. */
+.top-nav-link.is-down { opacity: 0.6; text-decoration: line-through; }
+
 .top-nav-link[aria-current="page"] {
   color: var(--on-green);
   font-weight: 650;

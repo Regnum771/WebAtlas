@@ -18,10 +18,12 @@ export interface LoginModalViewProps {
   /** Returns the first field in error (nothing was sent), or null. */
   onSubmit: () => LoginField | null;
   onClose: () => void;
+  /** Set when the platform's single sign-on is configured: it leads, the password form follows. */
+  onSso?: () => void;
 }
 
 export function LoginModalView(props: LoginModalViewProps) {
-  const { open, values, errors, formError, loading, onField, onBlur, onSubmit, onClose } = props;
+  const { open, values, errors, formError, loading, onField, onBlur, onSubmit, onClose, onSso } = props;
   const [shown, setShown] = useState(false);
   // A closed dialog forgets Hiện, so reopening never shows the password in clear text.
   useEffect(() => { if (!open) setShown(false); }, [open]);
@@ -38,6 +40,12 @@ export function LoginModalView(props: LoginModalViewProps) {
 
   return (
     <Dialog open={open} title="Đăng nhập" onClose={onClose}>
+      {onSso && (
+        <div className="form-stack login-sso">
+          <Button variant="solid" onClick={onSso}>Đăng nhập một lần</Button>
+          <p className="login-sso-or">Hoặc dùng tài khoản WebATLAS</p>
+        </div>
+      )}
       <form className="form-stack" noValidate onSubmit={handleSubmit}>
         <TextField
           ref={inputs.email}
@@ -71,7 +79,7 @@ export function LoginModalView(props: LoginModalViewProps) {
             {formError.body}
           </Message>
         )}
-        <Button type="submit" variant="solid" busy={loading} busyLabel="Đang đăng nhập">
+        <Button type="submit" variant={onSso ? 'outline' : 'solid'} busy={loading} busyLabel="Đang đăng nhập">
           Đăng nhập
         </Button>
       </form>

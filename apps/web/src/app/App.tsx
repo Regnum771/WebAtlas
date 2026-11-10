@@ -6,6 +6,7 @@ import PrintRoute from '../pages/print';
 import MapScreen from './MapScreen';
 import DynamicPopup from '../components/DynamicPopup';
 import ProposedEdit from '../features/feature-editing/ProposedEdit';
+import HubRoute from '../pages/trang-chu';
 import '../styles/main.css';
 
 // The Quản lý area is rarely visited: keep it out of the main bundle.
@@ -19,6 +20,9 @@ const TuDien = lazy(() => import('../pages/quan-ly/sections/TuDien'));
 // The data dictionary pages are rarely visited too.
 const DuLieuRoute = lazy(() => import('../pages/du-lieu'));
 const LayerPage = lazy(() => import('../pages/du-lieu/LayerPage'));
+
+const ProfileRoute = lazy(() => import('../pages/ho-so'));
+const SsoCallbackRoute = lazy(() => import('../pages/dang-nhap/SsoCallback'));
 
 const loading = (
   <div className="quan-ly-route"><Spinner label="Đang tải…" /></div>
@@ -39,8 +43,11 @@ function App() {
           <ProposedEdit />
 
           <Routes>
-            <Route path="/" element={null} />
+            <Route path="/" element={<HubRoute />} />
+            <Route path="/ban-do" element={null} />
             <Route path="/print" element={<PrintRoute />} />
+            <Route path="/ho-so" element={<Suspense fallback={loading}><ProfileRoute /></Suspense>} />
+            <Route path="/dang-nhap/xong" element={<Suspense fallback={loading}><SsoCallbackRoute /></Suspense>} />
             <Route path="/du-lieu" element={<Suspense fallback={loading}><DuLieuRoute /></Suspense>} />
             <Route path="/du-lieu/:key" element={<Suspense fallback={loading}><LayerPage /></Suspense>} />
             <Route path="/admin/users" element={<Navigate to="/quan-ly/nguoi-dung" replace />} />

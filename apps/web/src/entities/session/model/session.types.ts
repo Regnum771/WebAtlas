@@ -11,6 +11,13 @@ export interface CurrentUser {
   grants: Grant[];
 }
 
+export type SignInMethod = 'local' | 'sso';
+
+/** GET /api/auth/config. `sso` is null when the API has no single sign-on configured. */
+export interface AuthConfig {
+  sso: { loginPath: string; endSessionUrl: string } | null;
+}
+
 export interface LoginCredentials {
   email: string;
   password: string;

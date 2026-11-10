@@ -56,7 +56,7 @@ describe('useDictionaryListPresenter', () => {
   it('rows link to the layer page and the page links back to the map', () => {
     dictionary = DICTIONARY;
     render(<Harness />);
-    expect(screen.getByRole('link', { name: 'Về bản đồ' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: 'Về bản đồ' })).toHaveAttribute('href', '/ban-do');
   });
 
   it('exposes setQuery for the search box', () => {

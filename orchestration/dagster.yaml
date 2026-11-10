@@ -1,0 +1,9 @@
+# Instance config. Storage is SQLite under DAGSTER_HOME (a Compose volume), shared by the
+# webserver and the daemon: enough for one host. Move to Postgres storage before running more.
+telemetry:
+  enabled: false
+run_coordinator:
+  module: dagster.core.run_coordinator
+  class: QueuedRunCoordinator
+  config:
+    max_concurrent_runs: 1

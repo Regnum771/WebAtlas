@@ -51,7 +51,7 @@ export default function PrintRoute() {
           )}
         </section>
       ) : null}
-      onDownload={p.downloadPng} onPrint={p.print} onClose={() => navigate('/')}
+      onDownload={p.downloadPng} onPrint={p.print} onClose={() => navigate('/ban-do')}
     />
   );
 }
