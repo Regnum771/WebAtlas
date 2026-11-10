@@ -492,8 +492,8 @@ describe('sharing a personal map', () => {
   it('a recipient sees a catalogue link with their own visibility, never the owner\'s', async () => {
     const insert = async (pk: number, title: string, published: boolean) => (await getPool().query<{ id: string }>(
       `INSERT INTO catalogue.resources (geonode_pk, geonode_uuid, alternate, kind, title, owner_sub, managing_unit,
-                                        is_published, is_approved, origin)
-       VALUES ($1, $2, $3, 'vector', $4, $5, 'VN', $6, $6, 'pipeline') RETURNING id`,
+                                        is_published, is_approved, public_view, origin)
+       VALUES ($1, $2, $3, 'vector', $4, $5, 'VN', $6, $6, true, 'pipeline') RETURNING id`,
       [pk, randomUUID(), `geonode:p3a_sharing_${pk}`, title, SUB_O, published]
     )).rows[0].id;
     const publishedId = await insert(LINK_PK.published, 'Trạm đo mưa', true);

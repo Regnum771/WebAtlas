@@ -23,7 +23,7 @@ const SUB_OWNER = `s1-px-sub-${randomUUID()}`;
 const SUB_OTHER = `s1-px-sub-${randomUUID()}`;
 
 // Fixture pks are far above anything GeoNode hands out (catalogue.test.ts uses 9000xx).
-const PK = { pub: 900101, draft: 900102, otherWs: 900103 };
+const PK = { pub: 900101, draft: 900102, otherWs: 900103, map: 900104, doc: 900105, restricted: 900106 };
 const FIXTURE_PKS = Object.values(PK);
 const resourceIds = new Map<number, string>();
 const LAYER = (pk: number) => `geonode:s1_px_${pk}`;
@@ -50,14 +50,17 @@ async function auth(who: string) {
   return { authorization: `Bearer ${token}` };
 }
 
-async function insertResource(pk: number, o: { published: boolean; sub: string | null; alternate?: string }) {
+async function insertResource(pk: number, o: {
+  published: boolean; sub: string | null; alternate?: string; kind?: string; view?: boolean;
+}) {
+  // GeoNode's anonymous view defaults to granted here (public_view); the restricted fixture has none.
   const { rows } = await getPool().query<{ id: string }>(
     `INSERT INTO catalogue.resources (geonode_pk, geonode_uuid, alternate, kind, title, abstract, owner_sub, managing_unit,
-                                      is_published, is_approved, variable, unit, time_steps, bbox4326, origin)
-     VALUES ($1, $2, $3, 'timeseries', $4, '', $5, 'VN', $6, $6, 'mưa', 'mm',
+                                      is_published, is_approved, public_view, variable, unit, time_steps, bbox4326, origin)
+     VALUES ($1, $2, $3, $7, $4, '', $5, 'VN', $6, $6, $8, 'mưa', 'mm',
              ARRAY['2026-10-01T00:00:00Z']::timestamptz[], ARRAY[102,8,110,24]::float8[], 'pipeline')
      RETURNING id`,
-    [pk, randomUUID(), o.alternate ?? LAYER(pk), `Proxy ${pk}`, o.sub, o.published]
+    [pk, randomUUID(), o.alternate ?? LAYER(pk), `Proxy ${pk}`, o.sub, o.published, o.kind ?? 'timeseries', o.view ?? true]
   );
   resourceIds.set(pk, rows[0].id);
 }
@@ -82,6 +85,9 @@ beforeAll(async () => {
   await insertResource(PK.pub, { published: true, sub: SUB_OTHER });
   await insertResource(PK.draft, { published: false, sub: SUB_OWNER });
   await insertResource(PK.otherWs, { published: true, sub: null, alternate: 'thuyvan:s1_px_mua' });
+  await insertResource(PK.map, { published: true, sub: null, kind: 'map' });
+  await insertResource(PK.doc, { published: true, sub: SUB_OWNER, kind: 'document' });
+  await insertResource(PK.restricted, { published: true, sub: SUB_OWNER, view: false });
   setGeoserverFetch(fakeFetch);
 });
 
@@ -157,6 +163,66 @@ describe('GET /api/catalogue/:id/wms', () => {
     const res = await app.inject({ method: 'GET', url: wms(PK.pub, `${GETMAP}&TIME=2026-10-01T01:00:00Z`) });
     expect(res.statusCode).toBe(200);
     expect(calls[0].url.searchParams.get('TIME')).toBe('2026-10-01T01:00:00Z');
+    const ms = await app.inject({ method: 'GET', url: wms(PK.pub, `${GETMAP}&TIME=2026-10-01T01:00:00.000Z`) });
+    expect(ms.statusCode).toBe(200);
+  });
+
+  it('refuses a TIME that is not one ISO instant (range, list, current) with 400', async () => {
+    for (const t of ['1900/2100', '2026-10-01T00:00:00Z/2026-10-02T00:00:00Z', '2026-10-01,2026-10-02', 'current', '2026-13-45']) {
+      const res = await app.inject({ method: 'GET', url: wms(PK.pub, `${GETMAP}&TIME=${encodeURIComponent(t)}`) });
+      expect(res.statusCode, t).toBe(400);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('allows only image formats on GetMap and PNG on GetLegendGraphic', async () => {
+    for (const f of ['image/png8', 'image/jpeg', 'image/webp', 'IMAGE/PNG']) {
+      const res = await app.inject({ method: 'GET', url: wms(PK.pub, GETMAP.replace('FORMAT=image/png', `FORMAT=${f}`)) });
+      expect(res.statusCode, f).toBe(200);
+    }
+    expect(calls.map((c) => c.url.searchParams.get('FORMAT'))).toEqual(['image/png8', 'image/jpeg', 'image/webp', 'image/png']);
+    calls = [];
+    for (const f of ['application/vnd.google-earth.kml+xml', 'application/openlayers', 'image/geotiff', 'application/rss+xml', 'text/html']) {
+      const res = await app.inject({ method: 'GET', url: wms(PK.pub, GETMAP.replace('FORMAT=image/png', `FORMAT=${encodeURIComponent(f)}`)) });
+      expect(res.statusCode, f).toBe(400);
+    }
+    const legend = await app.inject({ method: 'GET', url: wms(PK.pub, 'SERVICE=WMS&REQUEST=GetLegendGraphic&FORMAT=image/jpeg') });
+    expect(legend.statusCode).toBe(400);
+    expect(calls).toHaveLength(0);
+    // No FORMAT: PNG is asked for, never GeoServer's own default.
+    const none = await app.inject({ method: 'GET', url: wms(PK.pub, GETMAP.replace('&FORMAT=image/png', '')) });
+    expect(none.statusCode).toBe(200);
+    expect(calls[0].url.searchParams.get('FORMAT')).toBe('image/png');
+  });
+
+  it('allows only JSON and plain text as INFO_FORMAT', async () => {
+    const info = (f: string) => app.inject({
+      method: 'GET',
+      url: wms(PK.pub, `${GETMAP.replace('GetMap', 'GetFeatureInfo')}&QUERY_LAYERS=a:b&I=10&J=20&INFO_FORMAT=${encodeURIComponent(f)}`),
+    });
+    expect((await info('text/plain')).statusCode).toBe(200);
+    for (const f of ['text/html', 'application/vnd.ogc.gml', 'text/xml']) expect((await info(f)).statusCode, f).toBe(400);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('answers 404 for a map or document entry, without calling GeoServer', async () => {
+    expect((await app.inject({ method: 'GET', url: wms(PK.map, GETMAP) })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: wms(PK.doc, GETMAP), headers: await auth(OWNER) })).statusCode).toBe(404);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('hides a published entry GeoNode does not let anonymous users view, except from its owner', async () => {
+    expect((await app.inject({ method: 'GET', url: wms(PK.restricted, GETMAP) })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: wms(PK.restricted, GETMAP), headers: await auth(OTHER) })).statusCode).toBe(404);
+    expect(calls).toHaveLength(0);
+    const own = await app.inject({ method: 'GET', url: wms(PK.restricted, GETMAP), headers: await auth(OWNER) });
+    expect(own.statusCode).toBe(200);
+    expect(own.headers['cache-control']).toBe('private, max-age=300');
+  });
+
+  it('varies the cached answer by Authorization', async () => {
+    const res = await app.inject({ method: 'GET', url: wms(PK.pub, GETMAP) });
+    expect(String(res.headers.vary)).toMatch(/(^|,\s*)Authorization(\s*,|$)/);
   });
 
   it('drops parameters outside the list (SLD_BODY, SLD, EXCEPTIONS, ...)', async () => {
@@ -250,6 +316,17 @@ describe('GET /api/catalogue/:id/wms', () => {
     const res = await app.inject({ method: 'GET', url: wms(PK.pub, GETMAP) });
     expect(res.statusCode).toBe(502);
     expect(res.body).not.toContain('ServiceExceptionReport');
+  });
+
+  it('turns a 200 WMS 1.3.0 exception (text/xml) into the same 502', async () => {
+    respond = () => new Response('<ServiceExceptionReport>/opt/geoserver/data</ServiceExceptionReport>', {
+      status: 200, headers: { 'content-type': 'text/xml;charset=UTF-8' },
+    });
+    const res = await app.inject({ method: 'GET', url: wms(PK.pub, GETMAP.replace('1.1.1', '1.3.0')) });
+    expect(res.statusCode).toBe(502);
+    expect(res.body).not.toContain('ServiceExceptionReport');
+    const legend = await app.inject({ method: 'GET', url: wms(PK.pub, 'SERVICE=WMS&REQUEST=GetLegendGraphic&FORMAT=image/png') });
+    expect(legend.statusCode).toBe(502);
   });
 
   it('turns an unreachable GeoServer into 502', async () => {

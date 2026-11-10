@@ -268,6 +268,12 @@ try:
         share, n = sample_match(cog_path, store(src_name), "EPSG:4326")
         check(f"the COG samples the source at the right place ({share:.4f} of {n} pixels)", share > 0.99 and n > 3000)
 
+    # --- M12: a catalogue copy passes its title, which names the layer verbatim
+    row = run_import(user_id, map_id, src_name, "Mưa 25_10.tif", title="Mưa 25/10: đợt 1")
+    titled = [l["title"] for l in layers(map_id)]
+    check("an import with params.title names the layer after it verbatim",
+          row["status"] == "succeeded" and "Mưa 25/10: đợt 1" in titled)
+
     # --- a tiff without crs needs a source crs
     user_id, map_id = new_map("nocrs")
     to_tm3 = Transformer.from_crs("EPSG:4326", VN2000_TM3_DA_NANG, always_xy=True)

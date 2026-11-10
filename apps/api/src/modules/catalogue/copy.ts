@@ -25,6 +25,9 @@ import { geoserverGet, workspaceOf } from './proxy';
 
 export const LINK_ONLY = 'Mục này chỉ thêm được dạng liên kết.';
 export const COPY_FAILED = 'Không đọc được dữ liệu từ máy chủ bản đồ, hãy thử lại sau.';
+export const NO_DOWNLOAD = 'Dữ liệu này không cho phép tải về nên không sao được; hãy lưu dạng liên kết.';
+/** How long the copy waits on GeoServer for the whole download. */
+export const COPY_TIMEOUT_MS = 10 * 60_000;
 
 export const CopyBody = z.object({ mapId: z.string().uuid() });
 
@@ -53,7 +56,7 @@ function sourceOf(item: CatalogueItem): Source {
 
 /**
  * The stored file's name: the entry's title with the characters a file name cannot hold replaced
- * by '_' (the import names the new layer after it).
+ * by '_'. The new layer is named after the title itself (passed to the import).
  */
 export function copyFileName(title: string, ext: string): string {
   const base = title
@@ -72,6 +75,8 @@ export function catalogueCopyService(pg: Pool) {
     async copy(user: CurrentUser, id: string, mapId: string): Promise<{ job: Job }> {
       const item = await catalogueRepository(pg).get(user, id); // 404 when not visible
       if (item.kind !== 'vector' && item.kind !== 'raster') throw new ValidationError(LINK_ONLY);
+      // GeoNode's download permission (or ownership): the read below uses the admin account.
+      if (!item.downloadable) throw new ForbiddenError(NO_DOWNLOAD);
       // The import's own owner check, made before anything is read, so a refused copy costs nothing.
       const role = await mapRole(pg, mapId, user.id);
       if (role === null) throw new NotFoundError(MAP_NOT_FOUND);
@@ -80,7 +85,7 @@ export function catalogueCopyService(pg: Pool) {
       const source = sourceOf(item);
       let res: Response;
       try {
-        res = await geoserverGet(source.url);
+        res = await geoserverGet(source.url, AbortSignal.timeout(COPY_TIMEOUT_MS));
       } catch {
         throw upstreamFailed();
       }
@@ -104,7 +109,8 @@ export function catalogueCopyService(pg: Pool) {
       }
 
       try {
-        return await jobsService(pg).enqueueImport(user, mapId, { fileId: uploadId });
+        // The layer is named after the entry verbatim, not after the sanitised file name.
+        return await jobsService(pg).enqueueImport(user, mapId, { fileId: uploadId, title: item.title });
       } catch (err) {
         // The map went away (or changed hands) since the check: the copy is of no use.
         await uploads.remove(user, uploadId).catch(() => undefined);

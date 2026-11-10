@@ -13,7 +13,7 @@ import { unlinkInStore } from '../workspace/fileStore';
 import { uploadsService } from '../workspace/uploads';
 import { deleteExpiredFiles } from '../workspace/cleanup';
 import { catalogueUploadsService } from './uploads';
-import { canView } from './access';
+import { canDownload, canView } from './access';
 
 const previousStoreDir = process.env.WORKSPACE_FILES_DIR;
 const STORE = mkdtempSync(path.join(os.tmpdir(), 's1-catalogue-'));
@@ -31,7 +31,7 @@ const SUB_OTHER = `s1-cat-sub-${randomUUID()}`;
 const ids = new Map<string, string>();
 
 // Fixture pks are far above anything GeoNode hands out.
-const PK = { pub: 900001, mine: 900002, theirs: 900003, raster: 900004 };
+const PK = { pub: 900001, mine: 900002, theirs: 900003, raster: 900004, restricted: 900005, minePublished: 900006 };
 const FIXTURE_PKS = Object.values(PK);
 const NOT_FOUND = { error: { code: 'NOT_FOUND', message: 'Không tìm thấy dữ liệu trong Danh mục.' } };
 
@@ -59,13 +59,16 @@ function multipart(filename: string, body: Buffer) {
 const userFor = (who: string): CurrentUser => ({ id: ids.get(who)!, email: who, role: 'viewer', isAdmin: false, grants: [] });
 const part = (filename: string, size: number) => ({ filename, mimetype: 'application/octet-stream', file: Readable.from([Buffer.alloc(size, 1)]) });
 
-async function insertResource(pk: number, o: { title: string; published: boolean; sub: string | null; kind?: string; abstract?: string }) {
+async function insertResource(pk: number, o: {
+  title: string; published: boolean; sub: string | null; kind?: string; abstract?: string; view?: boolean;
+}) {
+  // GeoNode's anonymous view defaults to granted here (public_view); `view: false` withdraws it.
   await getPool().query(
     `INSERT INTO catalogue.resources (geonode_pk, geonode_uuid, alternate, kind, title, abstract, owner_sub, managing_unit,
-                                      is_published, is_approved, variable, unit, time_steps, bbox4326, origin)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'VN', $8, $8, 'mưa', 'mm',
+                                      is_published, is_approved, public_view, variable, unit, time_steps, bbox4326, origin)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'VN', $8, $8, $9, 'mưa', 'mm',
              ARRAY['2026-10-01T00:00:00Z', '2026-10-01T01:00:00Z']::timestamptz[], ARRAY[102,8,110,24]::float8[], 'pipeline')`,
-    [pk, randomUUID(), `geonode:s1_cat_${pk}`, o.kind ?? 'timeseries', o.title, o.abstract ?? '', o.sub, o.published]
+    [pk, randomUUID(), `geonode:s1_cat_${pk}`, o.kind ?? 'timeseries', o.title, o.abstract ?? '', o.sub, o.published, o.view ?? true]
   );
 }
 
@@ -94,6 +97,8 @@ beforeAll(async () => {
   await insertResource(PK.mine, { title: 'Bản nháp của tôi', published: false, sub: SUB_OWNER });
   await insertResource(PK.theirs, { title: 'Bản nháp người khác', published: false, sub: SUB_OTHER });
   await insertResource(PK.raster, { title: 'Độ cao', published: true, sub: null, kind: 'raster', abstract: 'Mô hình số' });
+  await insertResource(PK.restricted, { title: 'Chia sẻ riêng nhóm', published: true, sub: SUB_OTHER, view: false });
+  await insertResource(PK.minePublished, { title: 'Của tôi, riêng nhóm', published: true, sub: SUB_OWNER, view: false });
 });
 
 afterAll(async () => {
@@ -122,7 +127,7 @@ describe('GET /api/catalogue/search', () => {
   });
 
   it('counts only published rows in an anonymous total', async () => {
-    const { rows } = await getPool().query(`SELECT count(*)::int AS n FROM catalogue.resources WHERE is_published`);
+    const { rows } = await getPool().query(`SELECT count(*)::int AS n FROM catalogue.resources WHERE is_published AND public_view`);
     const res = await app.inject({ method: 'GET', url: '/api/catalogue/search' });
     expect(res.json().total).toBe(rows[0].n);
   });
@@ -186,6 +191,21 @@ describe('GET /api/catalogue/:id', () => {
     expect(res.json()).toMatchObject({ title: 'Lũ tháng 10', mine: false });
   });
 
+  it('hides a published entry without GeoNode\'s anonymous view from everyone but its owner', async () => {
+    const id = await idOf(PK.restricted);
+    expect((await app.inject({ method: 'GET', url: `/api/catalogue/${id}` })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: `/api/catalogue/${id}`, headers: await auth(OWNER) })).statusCode).toBe(404);
+    const theirs = await app.inject({ method: 'GET', url: `/api/catalogue/${id}`, headers: await auth(OTHER) });
+    expect(theirs.statusCode).toBe(200);
+    expect(theirs.json()).toMatchObject({ mine: true, isPublished: true, isPublic: false });
+
+    const anon = fixtureItems((await app.inject({ method: 'GET', url: '/api/catalogue/search' })).json().items);
+    expect(anon.map((i) => i.title)).not.toContain('Chia sẻ riêng nhóm');
+    const own = fixtureItems((await app.inject({ method: 'GET', url: '/api/catalogue/search', headers: await auth(OWNER) })).json().items);
+    expect(own.map((i) => i.title)).toContain('Của tôi, riêng nhóm');
+    expect(own.map((i) => i.title)).not.toContain('Chia sẻ riêng nhóm');
+  });
+
   it('returns an unpublished entry to its owner only', async () => {
     const id = await idOf(PK.mine);
     const own = await app.inject({ method: 'GET', url: `/api/catalogue/${id}`, headers: await auth(OWNER) });
@@ -208,12 +228,27 @@ describe('GET /api/catalogue/:id', () => {
 describe('access.canView', () => {
   it('follows the visibility rule', () => {
     const owner = { ...userFor(OWNER), oidcSubject: 'sub-a' };
-    expect(canView(undefined, { is_published: true, owner_sub: 'sub-a' })).toBe(true);
-    expect(canView(undefined, { is_published: false, owner_sub: 'sub-a' })).toBe(false);
-    expect(canView(owner, { is_published: false, owner_sub: 'sub-a' })).toBe(true);
-    expect(canView(owner, { is_published: false, owner_sub: 'sub-b' })).toBe(false);
-    expect(canView(owner, { is_published: false, owner_sub: null })).toBe(false);
-    expect(canView(userFor(OWNER), { is_published: false, owner_sub: null })).toBe(false);
+    expect(canView(undefined, { is_published: true, public_view: true, owner_sub: 'sub-a' })).toBe(true);
+    expect(canView(undefined, { is_published: false, public_view: true, owner_sub: 'sub-a' })).toBe(false);
+    expect(canView(owner, { is_published: false, public_view: true, owner_sub: 'sub-a' })).toBe(true);
+    expect(canView(owner, { is_published: false, public_view: true, owner_sub: 'sub-b' })).toBe(false);
+    expect(canView(owner, { is_published: false, public_view: true, owner_sub: null })).toBe(false);
+    expect(canView(userFor(OWNER), { is_published: false, public_view: true, owner_sub: null })).toBe(false);
+    // GeoNode's anonymous view counts: published without it is the owner's alone.
+    expect(canView(undefined, { is_published: true, public_view: false, owner_sub: 'sub-a' })).toBe(false);
+    expect(canView(owner, { is_published: true, public_view: false, owner_sub: 'sub-a' })).toBe(true);
+  });
+
+  it('allows a copy with GeoNode\'s anonymous download, or to the owner', () => {
+    const owner = { ...userFor(OWNER), oidcSubject: 'sub-a' };
+    const row = (o: Partial<{ is_published: boolean; public_view: boolean; public_download: boolean; owner_sub: string | null }>) => ({
+      is_published: true, public_view: true, public_download: true, owner_sub: 'sub-b', ...o,
+    });
+    expect(canDownload(owner, row({}))).toBe(true);
+    expect(canDownload(owner, row({ public_download: false }))).toBe(false);
+    expect(canDownload(owner, row({ public_view: false }))).toBe(false);
+    expect(canDownload(owner, row({ is_published: false }))).toBe(false);
+    expect(canDownload(owner, row({ owner_sub: 'sub-a', is_published: false, public_view: false, public_download: false }))).toBe(true);
   });
 });
 
@@ -303,6 +338,7 @@ describe('POST /api/catalogue/timeseries', () => {
       fileId, originalName: 'mua.nc', ownerId: ids.get(OWNER), title: 'Mưa giờ', abstract: '', source: 'netcdf',
       timePattern: 'YYYYMMDD', timesCsvPath: null, hdfArea: null, every: 4,
       owner: { sub: SUB_OWNER, email: OWNER },
+      clip4326: null, hdfTimeZone: 'Asia/Ho_Chi_Minh',
     });
     expect(rows[0].params.path).toMatch(/^uploads\/.+\/original\.nc$/);
     await getPool().query(`DELETE FROM workspace.jobs WHERE id = $1`, [job.id]);
@@ -338,6 +374,30 @@ describe('POST /api/catalogue/timeseries', () => {
     const { upload } = await uploadsService(getPool()).upload(userFor(OWNER), part('plain.tif', 16));
     await track(upload.id);
     expect((await post(OWNER, { fileId, title: 'x', timesCsvFileId: upload.id })).statusCode).toBe(404);
+  });
+
+  it('carries a NetCDF clip extent and a HEC-RAS time zone into the job', async () => {
+    const fileId = await uploadFor(OWNER, 'mswep.nc');
+    const res = await post(OWNER, { fileId, title: 'Mưa', clip4326: [107.2, 14.8, 108.9, 16.2] });
+    expect(res.statusCode).toBe(202);
+    const { rows } = await getPool().query(`SELECT params FROM workspace.jobs WHERE id = $1`, [res.json().job.id]);
+    expect(rows[0].params.clip4326).toEqual([107.2, 14.8, 108.9, 16.2]);
+    await getPool().query(`DELETE FROM workspace.jobs WHERE id = $1`, [res.json().job.id]);
+
+    const hdf = await uploadFor(OWNER, 'run2.hdf');
+    const utc = await post(OWNER, { fileId: hdf, title: 'HEC', hdfTimeZone: 'UTC' });
+    expect(utc.statusCode).toBe(202);
+    const { rows: r2 } = await getPool().query(`SELECT params FROM workspace.jobs WHERE id = $1`, [utc.json().job.id]);
+    expect(r2[0].params.hdfTimeZone).toBe('UTC');
+    await getPool().query(`DELETE FROM workspace.jobs WHERE id = $1`, [utc.json().job.id]);
+  });
+
+  it('refuses a clip extent off the globe, inverted, not finite or not four numbers, and an unknown time zone', async () => {
+    const fileId = await uploadFor(OWNER, 'bad.nc');
+    for (const clip of [[-181, 0, 10, 10], [0, -91, 10, 10], [10, 0, 5, 10], [0, 10, 10, 5], [0, 0, 10], [0, 0, 'a', 10], [0, 0, 0, 10]]) {
+      expect((await post(OWNER, { fileId, title: 'x', clip4326: clip })).statusCode, JSON.stringify(clip)).toBe(400);
+    }
+    expect((await post(OWNER, { fileId, title: 'x', hdfTimeZone: 'Europe/Paris' })).statusCode).toBe(400);
   });
 
   it('refuses every other than 1 or 4', async () => {
@@ -410,6 +470,10 @@ describe('bounded time-series uploads', () => {
     // Room left is 1024: a larger file is stopped at it and reports the cap.
     await expect(svc.upload(user, part('b.tif', 1500))).rejects.toMatchObject({
       statusCode: 413, message: expect.stringContaining('4 GB'),
+    });
+    // The user cannot see failed attempts' uploads: the message says they go away by themselves.
+    await expect(svc.upload(user, part('b2.tif', 1500))).rejects.toMatchObject({
+      message: expect.stringContaining('tự xoá trong vòng một ngày'),
     });
     const second = await svc.upload(user, part('c.tif', 1024));
     await track(second.upload.id);

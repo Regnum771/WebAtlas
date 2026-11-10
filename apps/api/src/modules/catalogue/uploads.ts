@@ -16,7 +16,8 @@ import { FILE_NOT_FOUND, storeUpload, type Upload, type UploadPart } from '../wo
 export const PENDING_DAYS = 3;
 /** The most a user may hold in uploads not yet imported. */
 export const PENDING_CAP_BYTES = 4 * 1024 * 1024 * 1024;
-export const PENDING_CAP_MESSAGE = 'Các tệp chuỗi thời gian chưa đưa lên Danh mục không được vượt quá 4 GB; hãy đưa các tệp đã tải lên Danh mục hoặc xoá bớt.';
+export const PENDING_CAP_MESSAGE =
+  'Các tệp chuỗi thời gian chưa đưa lên Danh mục không được vượt quá 4 GB. Tệp của lần đưa lên không thành công sẽ tự xoá trong vòng một ngày; hãy thử lại sau.';
 export const TIMESERIES_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 /** The times table of a GeoTIFF series: a small .csv beside the big files. */
 export const TIMES_CSV_MAX_BYTES = 1024 * 1024;
@@ -41,6 +42,8 @@ export interface TimeseriesRequest {
   timesCsvFileId?: string;
   hdfArea?: string;
   every: 1 | 4;
+  clip4326?: [number, number, number, number];
+  hdfTimeZone?: 'Asia/Ho_Chi_Minh' | 'UTC';
 }
 
 export function catalogueUploadsService(pg: Pool, opts: { maxBytes?: number; csvMaxBytes?: number; pendingCapBytes?: number } = {}) {
@@ -110,7 +113,9 @@ export function catalogueUploadsService(pg: Pool, opts: { maxBytes?: number; csv
           timesCsvPath,
           hdfArea: input.hdfArea ?? null,
           every: input.every,
-          clip4326: null,
+          // Only a NetCDF series is cut (netcdf_series.read_cf); other sources ignore it.
+          clip4326: input.clip4326 ?? null,
+          hdfTimeZone: input.hdfTimeZone ?? 'Asia/Ho_Chi_Minh',
         };
         return { job: await insertJob(client, user.id, null, 'timeseries_import', params, TIMESERIES_STEPS) };
       });

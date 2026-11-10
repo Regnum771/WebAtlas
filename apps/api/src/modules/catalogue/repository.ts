@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import { NotFoundError } from '../../errors';
 import type { CurrentUser } from '../../types/fastify';
-import { isOwner, visibleSql } from './access';
+import { canDownload, isOwner, isPublic, visibleSql } from './access';
 
 export const PAGE_SIZE = 20;
 export const ITEM_NOT_FOUND = 'Không tìm thấy dữ liệu trong Danh mục.';
@@ -13,7 +13,11 @@ export interface CatalogueItem {
   abstract: string;
   managingUnit: string;
   isPublished: boolean;
+  /** Seen by everyone: published, and GeoNode lets anonymous users view it. */
+  isPublic: boolean;
   mine: boolean;
+  /** The caller may copy its data (GeoNode's anonymous download, or the caller owns it). */
+  downloadable: boolean;
   variable: string | null;
   unit: string | null;
   timeSteps: string[] | null;
@@ -29,6 +33,8 @@ interface ResourceRow {
   abstract: string;
   managing_unit: string;
   is_published: boolean;
+  public_view: boolean;
+  public_download: boolean;
   owner_sub: string | null;
   variable: string | null;
   unit: string | null;
@@ -37,7 +43,7 @@ interface ResourceRow {
   alternate: string;
 }
 
-const COLS = `id, kind, title, abstract, managing_unit, is_published, owner_sub, variable, unit,
+const COLS = `id, kind, title, abstract, managing_unit, is_published, public_view, public_download, owner_sub, variable, unit,
               time_steps, bbox4326::float8[] AS bbox4326, alternate`;
 
 function toItem(row: ResourceRow, user: CurrentUser | undefined): CatalogueItem {
@@ -48,7 +54,9 @@ function toItem(row: ResourceRow, user: CurrentUser | undefined): CatalogueItem 
     abstract: row.abstract,
     managingUnit: row.managing_unit,
     isPublished: row.is_published,
+    isPublic: isPublic(row),
     mine: isOwner(user, row),
+    downloadable: canDownload(user, row),
     variable: row.variable,
     unit: row.unit,
     timeSteps: row.time_steps ? row.time_steps.map((d) => d.toISOString()) : null,

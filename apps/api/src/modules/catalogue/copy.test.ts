@@ -11,7 +11,7 @@ import { resolveInStore, unlinkInStore } from '../workspace/fileStore';
 import { IMPORT_MAX_ROWS, IMPORT_STEPS } from '../workspace/jobs';
 import { MAP_NOT_FOUND } from '../workspace/access';
 import { setGeoserverFetch, type GeoserverFetch } from './proxy';
-import { COPY_FAILED, LINK_ONLY } from './copy';
+import { COPY_FAILED, LINK_ONLY, NO_DOWNLOAD } from './copy';
 
 /*
  * "Sao vào Bản của tôi", POST /api/catalogue/:id/copy. GeoServer is a fake fetch
@@ -31,9 +31,13 @@ const email = (who: string) => `s1-cp-${who}@webatlas.test`;
 const OWNER = email('owner');
 const OTHER = email('other');
 const SUB_OTHER = `s1-cp-sub-${randomUUID()}`;
+const SUB_OWNER = `s1-cp-sub-${randomUUID()}`;
 const ids = new Map<string, string>();
 
-const PK = { vector: 900201, raster: 900202, series: 900203, draft: 900204, map: 900205 };
+const PK = {
+  vector: 900201, raster: 900202, series: 900203, draft: 900204, map: 900205,
+  noDownload: 900206, mineNoDownload: 900207, noView: 900208,
+};
 const FIXTURE_PKS = Object.values(PK);
 const resourceIds = new Map<number, string>();
 const LAYER = (pk: number) => `geonode:s1_cp_${pk}`;
@@ -45,6 +49,7 @@ const GEOJSON = JSON.stringify({
 const TIFF = Buffer.from([0x49, 0x49, 0x2a, 0x00, 8, 0, 0, 0, 1, 2, 3]);
 
 let calls: URL[] = [];
+let signals: (AbortSignal | undefined)[] = [];
 let respond: (url: URL) => Response = defaultRespond;
 function defaultRespond(url: URL): Response {
   if (url.searchParams.get('service') === 'WCS') return new Response(TIFF, { status: 200, headers: { 'content-type': 'image/tiff' } });
@@ -54,6 +59,7 @@ const fakeFetch: GeoserverFetch = async (url, init) => {
   expect(init.headers.Authorization).toMatch(/^Basic /);
   const u = new URL(url);
   calls.push(u);
+  signals.push(init.signal);
   return respond(u);
 };
 
@@ -69,13 +75,16 @@ async function auth(who: string) {
   return { authorization: `Bearer ${token}` };
 }
 
-async function insertResource(pk: number, o: { kind: string; title: string; published: boolean; sub: string | null }) {
+async function insertResource(pk: number, o: {
+  kind: string; title: string; published: boolean; sub: string | null; view?: boolean; download?: boolean;
+}) {
+  // GeoNode's anonymous view/download default to granted here; the permission tests turn them off.
   const { rows } = await getPool().query<{ id: string }>(
     `INSERT INTO catalogue.resources (geonode_pk, geonode_uuid, alternate, kind, title, abstract, owner_sub, managing_unit,
-                                      is_published, is_approved, bbox4326, origin)
-     VALUES ($1, $2, $3, $4, $5, '', $6, 'VN', $7, $7, ARRAY[102,8,110,24]::float8[], 'pipeline')
+                                      is_published, is_approved, public_view, public_download, bbox4326, origin)
+     VALUES ($1, $2, $3, $4, $5, '', $6, 'VN', $7, $7, $8, $9, ARRAY[102,8,110,24]::float8[], 'pipeline')
      RETURNING id`,
-    [pk, randomUUID(), LAYER(pk), o.kind, o.title, o.sub, o.published]
+    [pk, randomUUID(), LAYER(pk), o.kind, o.title, o.sub, o.published, o.view ?? true, o.download ?? true]
   );
   resourceIds.set(pk, rows[0].id);
 }
@@ -126,11 +135,15 @@ beforeAll(async () => {
     ids.set(who, row.id);
   }
   await getPool().query(`UPDATE app.users SET oidc_subject = $2 WHERE id = $1`, [ids.get(OTHER), SUB_OTHER]);
+  await getPool().query(`UPDATE app.users SET oidc_subject = $2 WHERE id = $1`, [ids.get(OWNER), SUB_OWNER]);
   await insertResource(PK.vector, { kind: 'vector', title: 'Trạm đo mưa / 2026', published: true, sub: SUB_OTHER });
   await insertResource(PK.raster, { kind: 'raster', title: 'Độ cao', published: true, sub: null });
   await insertResource(PK.series, { kind: 'timeseries', title: 'Mưa giờ', published: true, sub: null });
   await insertResource(PK.draft, { kind: 'vector', title: 'Bản nháp', published: false, sub: SUB_OTHER });
   await insertResource(PK.map, { kind: 'map', title: 'Bản đồ GeoNode', published: true, sub: null });
+  await insertResource(PK.noDownload, { kind: 'vector', title: 'Chỉ xem', published: true, sub: SUB_OTHER, download: false });
+  await insertResource(PK.mineNoDownload, { kind: 'raster', title: 'Của tôi', published: true, sub: SUB_OWNER, view: false, download: false });
+  await insertResource(PK.noView, { kind: 'vector', title: 'Riêng nhóm', published: true, sub: SUB_OTHER, view: false, download: true });
   ownerMap = await createMap(OWNER, 'Bản của tôi');
   otherMap = await createMap(OTHER, 'Bản người khác');
   setGeoserverFetch(fakeFetch);
@@ -148,6 +161,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   calls = [];
+  signals = [];
   respond = defaultRespond;
 });
 
@@ -180,6 +194,10 @@ describe('POST /api/catalogue/:id/copy', () => {
     const { rows } = await getPool().query(`SELECT owner_id, kind, params FROM workspace.jobs WHERE id = $1`, [job.id]);
     expect(rows[0]).toMatchObject({ owner_id: ids.get(OWNER), kind: 'import' });
     expect(rows[0].params).toMatchObject({ fileId: upload.id, path: upload.path, mapId: ownerMap, maxRows: IMPORT_MAX_ROWS });
+    // M12: the layer takes the entry's title verbatim, not the sanitised file name.
+    expect(rows[0].params.title).toBe('Trạm đo mưa / 2026');
+    // M8: the GeoServer read cannot hang the request for ever.
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
   });
 
   it('copies a raster entry over WCS as a GeoTIFF', async () => {
@@ -226,6 +244,27 @@ describe('POST /api/catalogue/:id/copy', () => {
     expect(calls).toHaveLength(0);
     expect(await uploadsOf(OWNER)).toHaveLength(before);
     expect((await copy(PK.vector, randomUUID())).statusCode).toBe(404);
+  });
+
+  it('refuses with 403 an entry GeoNode does not let anonymous users download, before reading anything', async () => {
+    const before = (await uploadsOf(OWNER)).length;
+    const res = await copy(PK.noDownload, ownerMap);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toBe(NO_DOWNLOAD);
+    expect(calls).toHaveLength(0);
+    expect(await uploadsOf(OWNER)).toHaveLength(before);
+  });
+
+  it('lets the owner copy an entry without anonymous view or download', async () => {
+    const res = await copy(PK.mineNoDownload, ownerMap);
+    expect(res.statusCode).toBe(202);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('answers 404 for a published entry GeoNode does not let anonymous users view', async () => {
+    const res = await copy(PK.noView, ownerMap);
+    expect(res.statusCode).toBe(404);
+    expect(calls).toHaveLength(0);
   });
 
   it('answers 404 for an entry the caller cannot see', async () => {

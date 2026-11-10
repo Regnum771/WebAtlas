@@ -76,6 +76,11 @@ export interface ImportParams {
   ownerId: string;
   maxRows: number;
   sourceCrs: CrsParam | null;
+  /**
+   * The new layer's title, when the server knows a better one than the file name (a catalogue
+   * copy passes the entry's title verbatim). Absent for an upload's import.
+   */
+  title?: string;
 }
 
 /** One layer of an export job. */
@@ -132,7 +137,10 @@ export interface TimeseriesImportParams {
   timesCsvPath: string | null;
   hdfArea: string | null;
   every: 1 | 4;
-  clip4326: null;
+  /** [minLon, minLat, maxLon, maxLat] in EPSG:4326; NetCDF grids are cut to it. */
+  clip4326: [number, number, number, number] | null;
+  /** The clock of a HEC-RAS file's time stamps (hecras.parse_stamp). */
+  hdfTimeZone: 'Asia/Ho_Chi_Minh' | 'UTC';
 }
 
 const WARN_SHP_STYLE = 'Shapefile không giữ kiểu hiển thị.';
@@ -335,7 +343,7 @@ export function jobsService(pg: Pool) {
      * the job appends its layers and bumps the map's revision itself, and the client refreshes.
      */
     async enqueueImport(
-      user: CurrentUser, mapId: string, input: { fileId: string; sourceCrs?: string | null }
+      user: CurrentUser, mapId: string, input: { fileId: string; sourceCrs?: string | null; title?: string }
     ): Promise<{ job: Job }> {
       const sourceCrs = input.sourceCrs ? crsParam(input.sourceCrs) : null;
       const role = await mapRole(pg, mapId, user.id);
@@ -370,6 +378,7 @@ export function jobsService(pg: Pool) {
           ownerId: user.id,
           maxRows: IMPORT_MAX_ROWS,
           sourceCrs,
+          ...(input.title?.trim() ? { title: input.title.trim() } : {}),
         };
         return { job: await insertJob(client, user.id, mapId, 'import', params, IMPORT_STEPS) };
       });

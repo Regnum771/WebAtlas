@@ -306,6 +306,12 @@ try:
     check("multi-layer gpkg: a UTM layer is reprojected and records EPSG:32649",
           fs and fs[0]["source_crs"] == "EPSG:32649" and 100 < fs[0]["x"] < 120 and -1 < fs[0]["y"] < 1)
 
+    # --- M12: a catalogue copy passes its title, which names the one layer verbatim
+    user_id, map_id = new_map("titled")
+    row = run_import(user_id, map_id, "ho_chua.geojson", "Hồ chứa _ 2026.geojson", title="Hồ chứa / 2026")
+    check("an import with params.title names its one layer after it verbatim",
+          row["status"] == "succeeded" and [l["title"] for l in layers(map_id)] == ["Hồ chứa / 2026"])
+
     # --- too many rows fails and writes nothing
     user_id, map_id = new_map("toomany")
     rev0 = revision(map_id)

@@ -309,7 +309,8 @@ def run_import_raster(conn, job, steps) -> dict:
         cur.execute(
             """INSERT INTO workspace.map_layers (map_id, kind, title, position, file_id, raster)
                VALUES (%s, 'raster', %s, %s, %s, %s) RETURNING id::text""",
-            (map_id, layer_title(file_stem(original_name), original_name), position, file_id,
+            # params.title: a catalogue copy names the layer after the entry, verbatim (copy.ts).
+            (map_id, layer_title(params.get("title"), file_stem(original_name), original_name), position, file_id,
              psycopg2.extras.Json(raster)),
         )
         layer_id = cur.fetchone()[0]

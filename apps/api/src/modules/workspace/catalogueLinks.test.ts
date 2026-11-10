@@ -45,8 +45,8 @@ async function call(who: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', ur
 async function insertResource(pk: number, o: { kind: string; title: string; published: boolean; sub: string | null; steps?: string[] }) {
   const { rows } = await getPool().query<{ id: string }>(
     `INSERT INTO catalogue.resources (geonode_pk, geonode_uuid, alternate, kind, title, abstract, owner_sub, managing_unit,
-                                      is_published, is_approved, bbox4326, origin, time_steps)
-     VALUES ($1, $2, $3, $4, $5, '', $6, 'VN', $7, $7, ARRAY[102,8,110,24]::float8[], 'pipeline', $8::timestamptz[])
+                                      is_published, is_approved, public_view, bbox4326, origin, time_steps)
+     VALUES ($1, $2, $3, $4, $5, '', $6, 'VN', $7, $7, true, ARRAY[102,8,110,24]::float8[], 'pipeline', $8::timestamptz[])
      RETURNING id`,
     [pk, randomUUID(), `geonode:s1_links_${pk}`, o.kind, o.title, o.sub, o.published, o.steps ?? null]
   );
