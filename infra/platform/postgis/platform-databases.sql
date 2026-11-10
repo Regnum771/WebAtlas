@@ -1,7 +1,8 @@
 -- Databases and roles the platform stack needs in the shared PostGIS (lean stack: one database
--- server). Idempotent: safe to run again, and running it again resets the three passwords.
+-- server). Idempotent: safe to run again, and running it again resets the four passwords.
 --
---   psql -v geonode_pw=... -v geonode_data_pw=... -v orchestrator_pw=... -f platform-databases.sql
+--   psql -v geonode_pw=... -v geonode_data_pw=... -v orchestrator_pw=... -v mosaic_pw=... \
+--     -f platform-databases.sql
 --
 -- Run as the cluster's superuser (POSTGRES_USER), connected to the webatlas database.
 
@@ -25,6 +26,24 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 \connect geonode_data
 CREATE EXTENSION IF NOT EXISTS postgis;
 GRANT ALL ON SCHEMA public TO geonode_data;
+
+-- The ImageMosaic granule index (packages/atlas-data/tools/timeseries): its own database, owned
+-- by the cluster superuser running this script, and a role that owns no database and cannot
+-- create one. GeoTools' ImageMosaic runs DROP DATABASE on its index when a store is deleted
+-- with `purge`; only an owner may drop a database, so here that always fails.
+\connect webatlas
+SELECT format('CREATE ROLE webatlas_mosaic LOGIN NOCREATEDB NOCREATEROLE NOSUPERUSER PASSWORD %L', :'mosaic_pw')
+ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'webatlas_mosaic') \gexec
+SELECT format('ALTER ROLE webatlas_mosaic LOGIN NOCREATEDB NOCREATEROLE NOSUPERUSER PASSWORD %L', :'mosaic_pw') \gexec
+SELECT 'CREATE DATABASE webatlas_mosaic_index'
+ WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'webatlas_mosaic_index') \gexec
+SELECT format('ALTER DATABASE webatlas_mosaic_index OWNER TO %I', current_user) \gexec
+REVOKE ALL ON DATABASE webatlas_mosaic_index FROM PUBLIC;
+GRANT CONNECT ON DATABASE webatlas_mosaic_index TO webatlas_mosaic;
+\connect webatlas_mosaic_index
+CREATE EXTENSION IF NOT EXISTS postgis;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+GRANT USAGE, CREATE ON SCHEMA public TO webatlas_mosaic;
 
 -- Dagster reads the dataset registry and nothing else.
 \connect webatlas

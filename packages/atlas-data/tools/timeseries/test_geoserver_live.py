@@ -1,7 +1,7 @@
 """
 Live check for publishing a time series to GeoServer as an ImageMosaic with a time dimension.
 
-Opt-in (needs the platform stack: GeoNode's GeoServer and the geonode_data database). Runs in the
+Opt-in (needs the platform stack: GeoNode's GeoServer and the webatlas_mosaic_index database). Runs in the
 atlas-tools image, which shares the Compose network:
 
     docker compose -p webatlas -f infra/docker-compose.yml -f infra/docker-compose.platform.yml \
@@ -29,6 +29,7 @@ from timeseries.model import Step  # noqa: E402
 
 import numpy as np  # noqa: E402
 import psycopg2  # noqa: E402
+import psycopg2.sql  # noqa: E402
 import rasterio  # noqa: E402
 import requests  # noqa: E402
 from affine import Affine  # noqa: E402
@@ -48,11 +49,15 @@ GS = os.environ["GEOSERVER_URL"].rstrip("/")
 ADMIN = (os.environ["GEOSERVER_ADMIN_USER"], os.environ["GEOSERVER_ADMIN_PASSWORD"])
 
 
-def index_table_exists(table):
-    conn = psycopg2.connect(
+def index_conn():
+    return psycopg2.connect(
         host=os.environ["TIMESERIES_INDEX_DB_HOST"], port=os.environ["TIMESERIES_INDEX_DB_PORT"],
         dbname=os.environ["TIMESERIES_INDEX_DB_NAME"], user=os.environ["TIMESERIES_INDEX_DB_USER"],
         password=os.environ["TIMESERIES_INDEX_DB_PASSWORD"])
+
+
+def index_table_exists(table):
+    conn = index_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT to_regclass(%s)",
@@ -108,6 +113,37 @@ try:
     r = requests.get(f"{GS}/rest/workspaces/geonode/coveragestores/{name}/coverages/{name}.json",
                      auth=ADMIN, timeout=30)
     check("coverage exists in workspace geonode", r.status_code == 200)
+
+    # URL check: GeoServer matches the whole URL against the rule's regex (Matcher.matches()).
+    r = requests.get(f"{GS}/rest/urlchecks/{geoserver.URL_CHECK}.json", auth=ADMIN, timeout=30)
+    rule = r.json().get("regexUrlCheck", {}) if r.status_code == 200 else {}
+    regex = rule.get("regex", "")
+    check("URL check rule installed and enabled",
+          regex == geoserver.url_check_regex() and str(rule.get("enabled")).lower() == "true")
+    gs_dir = f"{os.environ['GEOSERVER_TIMESERIES_DIR']}/{name}"
+    granule = f"{gs_dir}/{cog.step_filename(name, step_times[0])}"
+    accepted = [f"file://{gs_dir}", f"file:{gs_dir}", f"file://{gs_dir}/", f"file://{granule}",
+                f"file:{granule}"]
+    refused = [f"file://{gs_dir}/datastore.properties", f"file:{gs_dir}/indexer.properties",
+               f"file://{gs_dir}/{name}.properties", f"file://{gs_dir}/sample_image.dat",
+               f"file://{os.environ['GEOSERVER_TIMESERIES_DIR']}/../etc/x.tif",
+               f"file://{gs_dir}/../{name}/datastore.properties", f"file://{gs_dir}/sub/x.tif",
+               f"file://{os.environ['GEOSERVER_TIMESERIES_DIR']}", "file:///etc/passwd"]
+    check("URL check accepts the mosaic directory and its granules",
+          all(re.fullmatch(regex, u) for u in accepted))
+    check("URL check refuses .properties, other files, `..` and other folders",
+          not any(re.fullmatch(regex, u) for u in refused))
+    # And GeoServer itself refuses to open datastore.properties (it exists, so this is the check).
+    check("datastore.properties is there", os.path.isfile(os.path.join(folder, "datastore.properties")))
+    probe = f"{name}_probe"
+    try:
+        r = requests.put(f"{GS}/rest/workspaces/geonode/coveragestores/{probe}/external.geotiff",
+                         params={"configure": "none"}, data=f"file://{gs_dir}/datastore.properties".encode(),
+                         headers={"Content-Type": "text/plain"}, auth=ADMIN, timeout=60)
+        check("GeoServer refuses an external upload of datastore.properties",
+              r.status_code == 400 and "Failed to locate the input file" in r.text)
+    finally:
+        geoserver.delete_mosaic(probe)
     r = requests.get(f"{GS}/rest/layers/geonode:{name}.json", auth=ADMIN, timeout=30)
     check("default style is webatlas_depth",
           r.status_code == 200 and r.json()["layer"]["defaultStyle"]["name"] in
@@ -201,8 +237,31 @@ finally:
     geoserver.delete_mosaic(name)
 check("second delete drops the index table again", not index_table_exists(name))
 
-# A database GeoServer's purge would drop must still be there.
-check("geonode_data database still exists", index_table_exists("spatial_ref_sys"))
+check("index database still there", index_table_exists("spatial_ref_sys"))
+
+# The index role cannot drop the index database (what a GeoTools purge would try). Attempted only
+# once the catalog shows the role owns no database and is no superuser, so it cannot succeed.
+conn = index_conn()
+conn.autocommit = True
+try:
+    with conn.cursor() as cur:
+        cur.execute("""SELECT r.rolsuper, r.rolcreatedb,
+                              (SELECT count(*) FROM pg_database d WHERE d.datdba = r.oid)
+                         FROM pg_roles r WHERE r.rolname = current_user""")
+        superuser, createdb, owned = cur.fetchone()
+        check("index role: no superuser, no CREATEDB, owns no database",
+              not superuser and not createdb and owned == 0)
+        if not superuser and owned == 0:
+            code = None
+            try:
+                cur.execute(psycopg2.sql.SQL("DROP DATABASE {}").format(
+                    psycopg2.sql.Identifier(os.environ["TIMESERIES_INDEX_DB_NAME"])))
+            except psycopg2.Error as e:
+                code = e.pgcode
+            check("DROP DATABASE as the index role fails with insufficient privilege", code == "42501")
+finally:
+    conn.close()
+check("index database survives", index_table_exists("spatial_ref_sys"))
 
 if failures:
     print(f"\n{len(failures)} failed")

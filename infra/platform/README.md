@@ -19,14 +19,14 @@ and GeoNode runs two web workers. Give Docker about 5.5 GB (`%UserProfile%\.wslc
 1. Secrets. Add these to `infra/.env` (any random values; see `infra/.env.example`):
    `KC_ADMIN_PASSWORD KC_WEBATLAS_API_SECRET KC_GEONODE_SECRET KC_DAGSTER_SECRET KC_DEV_USERNAME
    KC_DEV_EMAIL KC_DEV_PASSWORD GEONODE_DB_PASSWORD GEONODE_DATA_DB_PASSWORD GEONODE_SECRET_KEY
-   GEONODE_ADMIN_PASSWORD ORCHESTRATOR_DB_PASSWORD OAUTH2_PROXY_COOKIE_SECRET` (the last exactly 32
+   GEONODE_ADMIN_PASSWORD ORCHESTRATOR_DB_PASSWORD MOSAIC_INDEX_DB_PASSWORD OAUTH2_PROXY_COOKIE_SECRET` (the last exactly 32
    characters). `KC_DEV_EMAIL` should be the email of an existing WebATLAS admin: the first SSO
    sign-in links the two by that verified email.
 2. Databases and roles in the shared PostGIS (idempotent):
    ```sh
    docker exec -i webatlas-db-1 psql -U webatlas -d webatlas \
      -v geonode_pw=$GEONODE_DB_PASSWORD -v geonode_data_pw=$GEONODE_DATA_DB_PASSWORD \
-     -v orchestrator_pw=$ORCHESTRATOR_DB_PASSWORD -f - < infra/platform/postgis/platform-databases.sql
+     -v orchestrator_pw=$ORCHESTRATOR_DB_PASSWORD -v mosaic_pw=$MOSAIC_INDEX_DB_PASSWORD \n     -f - < infra/platform/postgis/platform-databases.sql
    ```
 3. Start everything (GeoNode's first start migrates and collects statics: allow 10–20 minutes):
    ```sh
@@ -51,7 +51,9 @@ workspace **`geonode`** (never `webatlas`, whose GeoFence rule is public). The w
 `/repo/var/timeseries/<name>/` (repo `var/timeseries/`, git-ignored; create it before the first
 start); GeoServer reads the same folder through the bind mount
 `../var/timeseries:/webatlas-timeseries`. The granule index is one PostGIS table per mosaic in
-`geonode_data` (as role `geonode_data`). After changing the mount, recreate only GeoServer:
+its own database `webatlas_mosaic_index`, as role `webatlas_mosaic`. That database belongs to the
+cluster superuser; the role can connect and create tables in `public`, owns no database and has no
+CREATEDB. After changing the mount, recreate only GeoServer:
 `docker compose -p webatlas -f infra/docker-compose.yml -f infra/docker-compose.platform.yml up -d geoserver`.
 
 From the `tools` or `worker` container (`packages/atlas-data/tools` on `sys.path`):
@@ -65,11 +67,15 @@ geoserver.delete_mosaic("lu_2025")             # removes store + layer, drops th
 ```
 
 - **Never delete a time-series store with `purge`** (REST `?purge=metadata|all`): GeoTools'
-  ImageMosaic then runs the PostGIS factory's `dropDatabase`, i.e. `DROP DATABASE geonode_data`
-  (it fails only while other sessions are connected). GeoNode itself skips purge for ImageMosaic
-  stores. `delete_mosaic` deletes without purge and drops the one index table itself.
+  ImageMosaic then deletes the granule files and runs the PostGIS factory's `dropDatabase`, i.e.
+  `DROP DATABASE` on the whole index database. That is why the index has its own database and a
+  role that owns none (the drop fails with "must be owner"); in `geonode_data`, which its role
+  owns, the drop failed only because other sessions were connected. GeoNode itself skips purge
+  for ImageMosaic stores. `delete_mosaic` deletes without purge and drops the one index table.
 - GeoServer's URL checks refuse every `file://` URL by default ("Failed to locate the input file");
-  publishing adds the URL check `webatlas-timeseries` for `file:///webatlas-timeseries/...` only.
+  publishing adds the URL check `webatlas-timeseries`, which allows only a mosaic directory
+  `file:///webatlas-timeseries/<name>` and the `.tif` files in it, never `datastore.properties`
+  (it holds the index password).
 - The time dimension uses backward-only nearest match: a TIME between steps shows the step before,
   and one before the first step gives an empty image instead of an `InvalidDimensionValue` error.
 

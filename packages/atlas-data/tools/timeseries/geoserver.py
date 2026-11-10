@@ -10,8 +10,9 @@ Environment (worker and tools services, infra/docker-compose.yml):
   TIMESERIES_DIR            the folder of mosaics as this process sees it (/repo/var/timeseries)
   GEOSERVER_TIMESERIES_DIR  the same folder as GeoServer sees it (/webatlas-timeseries)
   TIMESERIES_INDEX_DB_HOST/PORT/NAME/SCHEMA/USER/PASSWORD
-                            the PostGIS granule index (GeoNode's geonode_data), as GeoServer
-                            reaches it; this process uses the same address to drop the table
+                            the PostGIS granule index (database webatlas_mosaic_index, role
+                            webatlas_mosaic, which owns no database), as GeoServer reaches it;
+                            this process uses the same address to drop a mosaic's table
 """
 import os
 import re
@@ -93,17 +94,28 @@ def _drop_index_table(name):
 URL_CHECK = "webatlas-timeseries"
 
 
-def ensure_url_check():
+def url_check_regex():
     """
-    Let `external` REST uploads read GEOSERVER_TIMESERIES_DIR. GeoServer's URL checks are on with
-    no rules, so it refuses every file:// URL (reported as "Failed to locate the input file").
-    Path segments must start with a letter or digit: no `..` out of the folder.
+    What GeoServer may open under GEOSERVER_TIMESERIES_DIR: a mosaic directory
+    (<root>/<name>, a time-series name, so no dots) or a .tif in one (<root>/<name>/<file>.tif).
+    Never anything else: datastore.properties beside the granules holds the index password.
+    Segments start with a letter or digit, so no `..`. Java's file URLs print as file:/..., hence
+    one to three slashes. GeoServer matches the whole URL (Matcher.matches()).
     """
     root = re.escape(os.environ["GEOSERVER_TIMESERIES_DIR"].strip("/"))
-    seg = r"[A-Za-z0-9][A-Za-z0-9_.-]*"
+    name = r"[A-Za-z0-9][A-Za-z0-9_-]*"
+    tif = r"[A-Za-z0-9][A-Za-z0-9_.-]*\.tif"
+    return f"^file:/{{1,3}}{root}/{name}(/?|/{tif})$"
+
+
+def ensure_url_check():
+    """
+    Let `external` REST uploads read the time-series folders. GeoServer's URL checks are on with
+    no rules, so it refuses every file:// URL (reported as "Failed to locate the input file").
+    """
     body = (f"<regexUrlCheck><name>{URL_CHECK}</name>"
             f"<description>WebATLAS time series (packages/atlas-data/tools/timeseries)</description>"
-            f"<enabled>true</enabled><regex>^file:/{{1,3}}{root}(/{seg})*/?$</regex></regexUrlCheck>")
+            f"<enabled>true</enabled><regex>{url_check_regex()}</regex></regexUrlCheck>")
     xml = {"Content-Type": "application/xml"}
     if _exists(f"/urlchecks/{URL_CHECK}.json"):
         _request("PUT", f"/urlchecks/{URL_CHECK}", data=body.encode(), headers=xml)
@@ -215,8 +227,9 @@ def publish_coverage(name, gs_file, variable):
 
 def _delete_store(name):
     # Never with `purge`: ImageMosaicReader.delete() then calls GranuleCatalog.drop(), which runs
-    # the PostGIS factory's dropDatabase, i.e. DROP DATABASE geonode_data (it only fails while other
-    # sessions are connected). GeoNode avoids purging ImageMosaic stores for the same reason (#8671).
+    # the PostGIS factory's dropDatabase, i.e. DROP DATABASE on the whole index database. The index
+    # role owns no database so that fails, but the purge would still take the granules with it.
+    # GeoNode avoids purging ImageMosaic stores for the same reason (#8671).
     _request("DELETE", f"/workspaces/{WORKSPACE}/coveragestores/{name}",
              ok=(200, 404), params={"recurse": "true"})
 
