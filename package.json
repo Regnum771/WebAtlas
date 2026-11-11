@@ -28,6 +28,8 @@
     "atlas:status": "npm run atlas:status -w @webatlas/atlas-data --",
     "atlas:publish": "npm run atlas:publish -w @webatlas/atlas-data --",
     "atlas:verify": "npm run atlas:verify -w @webatlas/atlas-data --",
-    "atlas:seed": "npm run atlas:seed -w @webatlas/atlas-data --"
+    "atlas:seed": "npm run atlas:seed -w @webatlas/atlas-data --",
+    "generate:theme": "npm run generate -w @webatlas/theme",
+    "test:theme": "npm run test -w @webatlas/theme"
   }
 }
