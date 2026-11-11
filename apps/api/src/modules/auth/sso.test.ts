@@ -25,6 +25,8 @@ const EMAIL_DOMAIN = '@sso.webatlas.test';
 const OIDC_ENV = ['OIDC_ISSUER_URL', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_REDIRECT_URI', 'WEB_ORIGIN'] as const;
 
 beforeAll(async () => {
+  // A developer's apps/api/.env may configure the real Keycloak; every test starts unconfigured.
+  for (const k of OIDC_ENV) delete process.env[k];
   const pair = await generateKeyPair('RS256', { extractable: true });
   privateKey = pair.privateKey;
   jwk = { ...(await exportJWK(pair.publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
