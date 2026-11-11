@@ -26,6 +26,14 @@ describe('contrast', () => {
     expect(contrastFailures(loadTokens())).toEqual([]);
   });
 
+  it('checks every text colour the artboards put on a surface', () => {
+    // The spec asks for every text/surface pair: links, green action text and error text too.
+    const pairs = loadTokens().contrast.map(([fg, bg]) => `${fg}/${bg}`);
+    for (const pair of ['water/surface-2', 'brand/surface', 'brand/surface-2', 'alert/surface', 'alert-ink/surface']) {
+      expect(pairs).toContain(pair);
+    }
+  });
+
   it('order does not matter', () => {
     expect(contrastRatio('#14532D', '#E3EFE6')).toBe(contrastRatio('#E3EFE6', '#14532D'));
   });

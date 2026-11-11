@@ -1,7 +1,7 @@
 import type { Tokens } from '../tokens';
 import { block, cssValues } from './css';
 
-// Tailwind v4 theme namespaces; size and motion have none, so they stay custom names.
+// Tailwind v4 theme namespaces. Sizes go to spacing (h-row, w-row, gap-gap); motion has none.
 const NAMESPACE: Record<keyof Tokens, string> = {
   color: 'color',
   colorDark: 'color-dark',
@@ -9,7 +9,7 @@ const NAMESPACE: Record<keyof Tokens, string> = {
   shadow: 'shadow',
   font: 'font',
   text: 'text',
-  size: 'size',
+  size: 'spacing',
   motion: 'motion',
   contrast: '',
 };

@@ -42,12 +42,12 @@
   --text-num: 12.5px;
   --text-panel: 14px;
   --text-page: 20px;
-  --size-row: 30px;
-  --size-group-row: 32px;
-  --size-control-sm: 28px;
-  --size-control: 32px;
-  --size-header: 44px;
-  --size-gap: 8px;
+  --spacing-row: 30px;
+  --spacing-group-row: 32px;
+  --spacing-control-sm: 28px;
+  --spacing-control: 32px;
+  --spacing-header: 44px;
+  --spacing-gap: 8px;
   --motion-fast: 120ms;
   --motion-base: 200ms;
 }

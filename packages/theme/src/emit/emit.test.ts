@@ -40,6 +40,14 @@ describe('emitters', () => {
     expect(css).toContain('--shadow-pop: 0 4px 12px rgb(20 27 45 / 12%);');
   });
 
+  it('sizes land in the spacing namespace, so h-row, w-row and gap-gap exist', () => {
+    // --size-* would only feed the size-* utility (width and height together).
+    const css = emitTailwindTheme(tokens);
+    expect(css).toContain('--spacing-row: 30px;');
+    expect(css).toContain('--spacing-header: 44px;');
+    expect(css).not.toContain('--size-');
+  });
+
   it('output is deterministic and LF', () => {
     for (const emit of [emitTokensCss, emitTailwindTheme]) {
       const first = emit(tokens);
