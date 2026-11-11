@@ -6,6 +6,7 @@ import { usersRepository } from '../users/repository';
 import { hashPassword } from '../../lib/password';
 import { runSync, todayInVietnam } from './sync';
 import { PREVIEW_SOURCES } from './storedUnit';
+import { isBuiltHere } from '../../test/externallyBuilt';
 
 /*
  * The stored-unit correction (Plan C Task 6, Ruling 6) on dams.wattage_mw (stored in MW). afterEach
@@ -209,6 +210,8 @@ describe('the preview sources', () => {
     for (const ft of withUnits) {
       const { relation, id } = PREVIEW_SOURCES[ft.key]!;
       expect([ft.table, `${ft.table}_active`]).toContain(relation);
+      // A table a tool outside migrate/seed builds is checked only where it was built.
+      if (!(await isBuiltHere(getPool(), ft.table!))) continue;
       const [schema, name] = relation.split('.');
       const { rows } = await getPool().query<{ column_name: string }>(
         `SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2`, [schema, name]);
