@@ -97,10 +97,21 @@ export async function ensureSeeded(pool: Pool, datasets: Dataset[] = ALL_DATASET
   // Once a non-versioned load (the boundaries) has been replaced, every layer after it is re-stamped.
   let restamp = false;
   for (const d of topologicalOrder(datasets)) {
+    // A sql stage after a load derives data from it (the province border lines from the
+    // provinces), so it runs whenever an earlier load of the same dataset changed the data.
+    let changed = false;
     for (const stage of d.stages) {
+      if (stage.type === 'sql') {
+        if (!changed) continue;
+        await pool.query(stage.statement);
+        const last = out[out.length - 1];
+        last.detail += `; then ${stage.statement}`;
+        continue;
+      }
       if (stage.type !== 'load-geojson') continue;
       const seeded = await seedOne(pool, stage, restamp);
       if (seeded.action === 'replaced') restamp = true;
+      if (seeded.action === 'loaded' || seeded.action === 'replaced') changed = true;
       out.push({ id: d.id, ...seeded });
     }
   }

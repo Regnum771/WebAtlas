@@ -60,6 +60,13 @@ describe.skipIf(!DB)('ensureSeeded', () => {
     expect(await count()).toBe(before);
   }, 600_000);
 
+  it('runs the sql stages derived from a load: a seeded database has the province border lines', async () => {
+    await ensureSeeded(pool);
+    const { rows } = await pool.query<{ kind: string }>(
+      `SELECT DISTINCT kind FROM admin.province_borders ORDER BY kind`);
+    expect(rows.map((r) => r.kind)).toEqual(['national', 'province']);
+  }, 600_000);
+
   it('ignores datasets with no load-geojson stage', async () => {
     const out = await ensureSeeded(pool, ALL_DATASETS.filter((d) => ['demo', 'basemap', 'dem'].includes(d.id)));
     expect(out).toEqual([]);
