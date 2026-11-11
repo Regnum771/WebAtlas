@@ -59,6 +59,23 @@ describe('useMyMapsPanelPresenter', () => {
     await waitFor(() => expect(result.current.usage).toEqual({ usageBytes: 2048, quotaBytes: 1073741824 }));
   });
 
+  it('a catalogue link row: labelled as a link, gone when the reader cannot see its entry', async () => {
+    const linkLayer = (id: string, position: number, catalogue: unknown) => ({
+      id, kind: 'catalogue', title: `Liên kết ${id}`, position, style: {}, geometryType: null, fields: [],
+      layerKey: null, draftId: null, featureCount: null, raster: null, catalogue,
+    });
+    getMap.mockImplementation(async (id: string) => ({
+      ...(id === 'm1' ? MINE : SHARED),
+      layers: [linkLayer('c1', 0, { id: 'r1', kind: 'vector', title: 'Mưa', layerName: 'geonode:r1' }), linkLayer('c2', 1, null)],
+    }));
+    expandMap('m2');
+    const { result } = setup();
+    await waitFor(() => expect(result.current.shared[0].layers).toHaveLength(2));
+    const [seen, hidden] = result.current.shared[0].layers!;
+    expect(seen).toMatchObject({ id: 'c1', kindLabel: 'Liên kết Danh mục', gone: false });
+    expect(hidden).toMatchObject({ id: 'c2', kindLabel: 'Liên kết Danh mục', gone: true });
+  });
+
   it('creating a map adds it to Của tôi and expands it', async () => {
     const created = { ...MINE, id: 'm3', title: 'Mới', revision: 1, layerCount: 0, layers: [] };
     createMap.mockResolvedValue(created);

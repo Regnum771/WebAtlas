@@ -1,9 +1,10 @@
 import { apiRequest } from '../../../shared/api/apiClient';
+import type { CatalogueItem } from '../../catalogue/api/catalogue.api';
 
 // Types mirror apps/api/src/modules/workspace (dates arrive as ISO strings over JSON).
 
 export type MapRole = 'owner' | 'recipient';
-export type LayerKind = 'free' | 'edit_copy' | 'raster' | 'annotation';
+export type LayerKind = 'free' | 'edit_copy' | 'raster' | 'annotation' | 'catalogue';
 export type GeometryType = 'point' | 'line' | 'polygon';
 
 export interface FieldDef {
@@ -27,6 +28,8 @@ export interface LayerSummary {
   draftId: string | null;
   featureCount: number | null;
   raster: Record<string, unknown> | null;
+  /** A catalogue link's entry as the reader sees it; null when they may not see it or it was deleted, and for other kinds. */
+  catalogue: CatalogueItem | null;
 }
 
 export interface MapSummary {
@@ -204,6 +207,13 @@ export function addEditCopy(
   input: { layerKey: string; title?: string; expectedRevision: number }
 ): Promise<{ layer: LayerSummary; revision: number }> {
   return apiRequest(`${BASE}/maps/${mapId}/layers`, json('POST', { kind: 'edit_copy', ...input }));
+}
+/** Links a catalogue entry into the map (a layer of kind 'catalogue'); the title defaults to the entry's. */
+export function addCatalogueLink(
+  mapId: string,
+  input: { resourceId: string; title?: string; expectedRevision: number }
+): Promise<{ layer: LayerSummary; revision: number }> {
+  return apiRequest(`${BASE}/maps/${mapId}/layers`, json('POST', { kind: 'catalogue', ...input }));
 }
 export function updateLayer(
   mapId: string,

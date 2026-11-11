@@ -69,7 +69,7 @@ import { getTableState, openTable, resetTableStore, select } from './table.store
 
 const layer = (over: Partial<LayerSummary>): LayerSummary => ({
   id: 'l', kind: 'free', title: 'Lớp', position: 0, style: {}, geometryType: 'point', fields: [],
-  layerKey: null, draftId: null, featureCount: 0, raster: null, ...over,
+  layerKey: null, draftId: null, featureCount: 0, raster: null, catalogue: null, ...over,
 });
 const FIELDS = [
   { name: 'Tên', type: 'text' as const }, { name: 'Độ sâu', type: 'number' as const }, { name: 'Ngày', type: 'date' as const },

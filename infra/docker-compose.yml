@@ -71,6 +71,21 @@ services:
       GEOSERVER_DB_NAME: ${POSTGRES_DB}
       GEOSERVER_DB_USER: ${POSTGRES_USER}
       GEOSERVER_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Time series (packages/atlas-data/tools/timeseries): the same env as the worker below, so
+      # the live check can publish from here.
+      TIMESERIES_DIR: /repo/var/timeseries
+      GEOSERVER_TIMESERIES_DIR: /webatlas-timeseries
+      TIMESERIES_INDEX_DB_HOST: db
+      TIMESERIES_INDEX_DB_PORT: "5432"
+      TIMESERIES_INDEX_DB_NAME: webatlas_mosaic_index
+      TIMESERIES_INDEX_DB_SCHEMA: public
+      TIMESERIES_INDEX_DB_USER: webatlas_mosaic
+      TIMESERIES_INDEX_DB_PASSWORD: ${MOSAIC_INDEX_DB_PASSWORD:-}
+      # GeoNode bridge (timeseries/geonode_bridge.py), as the worker; the admin password only for
+      # the live check's clean-up through GeoNode's API.
+      GEONODE_BRIDGE_URL: http://django:8000
+      WEBATLAS_BRIDGE_TOKEN: ${WEBATLAS_BRIDGE_TOKEN:-}
+      GEONODE_ADMIN_PASSWORD: ${GEONODE_ADMIN_PASSWORD:-}
 
   # The workspace import/export worker (packages/atlas-data/tools/workspace/worker.py): claims the
   # jobs the API queues in workspace.jobs. Same image as `tools`. Behind its own profile, so a plain
@@ -89,6 +104,24 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       # The file store the API writes uploads to and serves exports from (the repo's var/ via the mount).
       WORKSPACE_FILES_DIR: /repo/var/workspace-files
+      # Time series: the worker writes ImageMosaic folders under TIMESERIES_DIR; GeoNode's GeoServer
+      # (docker-compose.platform.yml) sees the same folder as GEOSERVER_TIMESERIES_DIR. The granule
+      # index goes in its own database webatlas_mosaic_index (role webatlas_mosaic, which owns no
+      # database: a GeoTools purge cannot drop it), reached as db:5432 from GeoServer too.
+      TIMESERIES_DIR: /repo/var/timeseries
+      GEOSERVER_TIMESERIES_DIR: /webatlas-timeseries
+      GEOSERVER_URL: http://geoserver:8080/geoserver
+      GEOSERVER_ADMIN_USER: ${GEOSERVER_ADMIN_USER}
+      GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD}
+      TIMESERIES_INDEX_DB_HOST: db
+      TIMESERIES_INDEX_DB_PORT: "5432"
+      TIMESERIES_INDEX_DB_NAME: webatlas_mosaic_index
+      TIMESERIES_INDEX_DB_SCHEMA: public
+      TIMESERIES_INDEX_DB_USER: webatlas_mosaic
+      TIMESERIES_INDEX_DB_PASSWORD: ${MOSAIC_INDEX_DB_PASSWORD:-}
+      # Registers published time series in GeoNode (timeseries/geonode_bridge.py, platform stack).
+      GEONODE_BRIDGE_URL: http://django:8000
+      WEBATLAS_BRIDGE_TOKEN: ${WEBATLAS_BRIDGE_TOKEN:-}
     command: ["python3", "packages/atlas-data/tools/workspace/worker.py"]
     depends_on:
       db:

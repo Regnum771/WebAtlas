@@ -66,7 +66,7 @@ export function MapCardView({ card, onToggle, onRename, onDelete, onUpload, onEx
               onVisible={(v) => onLayerVisible(layer.id, v)}
               onOpacity={(o) => onLayerOpacity(layer.id, o)}
               onSettings={card.canWrite ? () => onLayerSettings(layer.id) : undefined}
-              onTable={layer.kind === 'raster' ? undefined : () => onLayerTable(layer.id)}
+              onTable={layer.kind === 'raster' || layer.kind === 'catalogue' ? undefined : () => onLayerTable(layer.id)}
             />
           ))}
           {card.canWrite && (

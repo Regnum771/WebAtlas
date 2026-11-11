@@ -510,8 +510,10 @@ def run_import_vector(conn, job, steps) -> dict:
                       for row in zip(*values)] if columns else ["{}"] * int(keep.sum())
 
         meta = metadata.get(s.layer) or {}
-        title = layer_title(meta.get("title"), file_stem(original_name) if single else s.layer,
-                       s.layer, file_stem(original_name), original_name)
+        # params.title: a catalogue copy names its one layer after the entry, verbatim (copy.ts).
+        title = layer_title(params.get("title") if single else None, meta.get("title"),
+                            file_stem(original_name) if single else s.layer,
+                            s.layer, file_stem(original_name), original_name)
         prepared.append(Prepared(
             title=title,
             style=meta.get("style") or {},

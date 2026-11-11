@@ -43,6 +43,7 @@ from workspace_common import (  # noqa: E402,F401
 # The handlers import only workspace_common (never this module), so they load here without a cycle.
 import export_vector  # noqa: E402
 import import_raster  # noqa: E402
+import import_timeseries  # noqa: E402
 import import_vector  # noqa: E402
 
 UNEXPECTED_MESSAGE = "Lỗi không mong đợi khi xử lý tệp."
@@ -116,6 +117,8 @@ class Steps:
 # Handlers by job kind. A handler writes only through `conn` (never commits it, never writes
 # workspace.jobs on it) and reports through `steps`; it returns the job's result.
 HANDLERS: dict[str, Callable[[connection, dict, Steps], dict]] = {}
+# What to do after a job of a kind failed and its transaction was rolled back (may commit `conn`).
+ON_FAILURE: dict[str, Callable[[connection, dict], None]] = {}
 
 UNSUPPORTED_FORMAT_MESSAGE = UNSUPPORTED
 # Upload extensions by import path (Global Constraints: the formats read).
@@ -207,6 +210,13 @@ def run_once(conn: connection, only_ids=None) -> bool:
                 print(f"job {job_id}: failed unexpectedly", flush=True)
                 traceback.print_exc(file=sys.stdout)
             steps.fail(message)
+            after = ON_FAILURE.get(job["kind"])
+            if after is not None:
+                try:
+                    after(conn, job)
+                except Exception:  # best effort: the job is failed already
+                    conn.rollback()
+                    traceback.print_exc(file=sys.stdout)
         except BaseException:
             # Stopped mid-job (SIGTERM, Ctrl-C): say so now rather than after the stale timeout.
             conn.rollback()
@@ -268,6 +278,8 @@ def main(argv=None) -> int:
 
 HANDLERS["import"] = run_import
 HANDLERS["export"] = export_vector.run_export
+HANDLERS["timeseries_import"] = import_timeseries.run_timeseries_import
+ON_FAILURE["timeseries_import"] = import_timeseries.expire_failed_upload
 
 if __name__ == "__main__":
     sys.exit(main())

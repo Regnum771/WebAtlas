@@ -25,7 +25,7 @@ export function DictionaryListView({ query, onQuery, groups, empty }: Props) {
     <div className="quan-ly-section dictionary-list">
       <header className="dictionary-list-head">
         <h2>Dữ liệu</h2>
-        <Link className="link" to="/">Về bản đồ</Link>
+        <Link className="link" to="/ban-do">Về bản đồ</Link>
       </header>
       <input
         type="search"

@@ -551,6 +551,11 @@
   border-bottom: 3px solid transparent;
 }
 
+.top-nav-link svg { margin-left: 2px; }
+
+/* A platform service the API could not reach: still a link, dimmed, with the reason in its title. */
+.top-nav-link.is-down { opacity: 0.6; text-decoration: line-through; }
+
 .top-nav-link[aria-current="page"] {
   color: var(--on-green);
   font-weight: 650;
@@ -634,4 +639,158 @@
 
 .account-item:hover {
   background: var(--paper);
+}
+
+/* Thêm dữ liệu tabs and the catalogue picker / catalogue layers section */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tabs .tab {
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: inherit;
+  cursor: pointer;
+}
+
+.tabs .tab.on {
+  border-bottom-color: currentColor;
+  font-weight: 650;
+}
+
+.catalogue-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.catalogue-results,
+.catalogue-layers ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.catalogue-result,
+.catalogue-layer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.catalogue-result-head {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex: 1 1 100%;
+}
+
+.catalogue-result .badge {
+  font-size: var(--text-xs);
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+}
+
+.catalogue-layer-name {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.catalogue-layer img {
+  max-width: 100%;
+}
+
+/* The section sits in the side panel between Bản của tôi and the layer panel: the same gutters as
+   .layers-panel, and a rule below it (the panel draws none there). */
+.catalogue-layers {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.catalogue-layers .tool-heading {
+  margin-bottom: var(--space-2);
+}
+
+.catalogue-layer {
+  font-size: var(--text-sm);
+}
+
+.catalogue-layer-name input {
+  margin-top: 3px;
+  flex: none;
+}
+
+.catalogue-layer > input[type='range'] {
+  flex: 1 1 72px;
+  max-width: 120px;
+}
+
+.catalogue-layer.gone > span:first-child,
+.catalogue-layer.gone > .hint {
+  flex: 1 1 100%;
+}
+
+/* The two save actions, then the map picker of one of them, each on a line of its own. */
+.catalogue-layer-save {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.catalogue-save {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+  padding: var(--space-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+
+.catalogue-save label {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+}
+
+.catalogue-save select {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+.catalogue-save > :not(label):not(button) {
+  flex: 1 1 100%;
+}
+
+/* A personal map's catalogue link the reader may not see: title and kind, then the reason below. */
+.my-maps-layer.gone .layer-label {
+  flex: 1 1 0;
+  min-width: 0;
+  cursor: default;
+}
+
+.my-maps-layer.gone .hint {
+  flex: 1 1 100%;
 }

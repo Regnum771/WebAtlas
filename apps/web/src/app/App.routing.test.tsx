@@ -24,15 +24,33 @@ vi.mock('../pages/quan-ly/sections/NhomQuyen', () => ({ default: () => <div>NHOM
 vi.mock('../pages/quan-ly/sections/ChuaGan', () => ({ default: () => <div>CHUA_GAN</div> }));
 
 vi.mock('../pages/du-lieu', () => ({ default: () => <div>DU_LIEU</div> }));
+vi.mock('../pages/trang-chu', () => ({ default: () => <div>HUB</div> }));
+vi.mock('../pages/ho-so', () => ({ default: () => <div>HO_SO</div> }));
 
 import App from './App';
 
 describe('App routing', () => {
-  it('renders the map and no Quản lý area at /', () => {
+  it('renders the hub over a live map at /', () => {
     window.history.pushState({}, '', '/');
     render(<App />);
+    expect(screen.getByText('HUB')).toBeInTheDocument();
     expect(screen.getByText('MAP_VIEW')).toBeInTheDocument();
     expect(screen.queryByText('QUAN_LY')).not.toBeInTheDocument();
+  });
+
+  it('renders the map alone at /ban-do', () => {
+    window.history.pushState({}, '', '/ban-do');
+    render(<App />);
+    expect(screen.getByText('MAP_VIEW')).toBeInTheDocument();
+    expect(screen.queryByText('HUB')).not.toBeInTheDocument();
+  });
+
+  it('renders the profile at /ho-so, lazily', async () => {
+    window.history.pushState({}, '', '/ho-so');
+    render(<App />);
+    expect(await screen.findByText('HO_SO')).toBeInTheDocument();
+    const source = readFileSync(resolve(__dirname, 'App.tsx'), 'utf8');
+    expect(source).toMatch(/lazy\(\(\) => import\('\.\.\/pages\/ho-so'\)\)/);
   });
 
   it('renders the Người dùng section at /quan-ly/nguoi-dung', async () => {

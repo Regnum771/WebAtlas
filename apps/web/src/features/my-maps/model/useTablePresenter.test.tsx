@@ -57,7 +57,7 @@ import { getTableState, openTable, relocate, resetTableStore, select, setFilter 
 
 const LAYER: LayerSummary = {
   id: 'l1', kind: 'free', title: 'Điểm đo', position: 0, style: {}, geometryType: 'point', fields: [],
-  layerKey: null, draftId: null, featureCount: 151, raster: null,
+  layerKey: null, draftId: null, featureCount: 151, raster: null, catalogue: null,
 };
 const DETAIL = {
   id: 'm1', title: 'Lũ', description: '', ownerId: 'u1', ownerName: 'Tôi', revision: 1,

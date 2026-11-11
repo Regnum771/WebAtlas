@@ -15,6 +15,22 @@ import { getPool, closePool } from '../db/pool';
  *  không đổi mà số đỉnh giảm 5,9 lần. */
 const SIMPLIFY_TOLERANCE_DEG = 0.0002;
 
+/**
+ * Chaikin smoothing passes after simplifying. ST_Contour traces the DEM's 30 m cells, and the
+ * simplified lines keep their corners: at 1:35,000 the contours showed as right-angled stair steps.
+ * Two passes round each corner (each pass cuts every corner at 1/4 and 3/4 of its edges) and move a
+ * line by less than a cell. End points are kept, so lines still meet across the 1-degree cell seams.
+ */
+export const SMOOTHING_PASSES = 2;
+
+/**
+ * Smoothing quadruples the vertices, most of them on gentle curves where they add nothing visible,
+ * and GeoServer's render time grows with them (a zoom-12 metatile went from seconds to tens of
+ * seconds). Simplifying again by 0.00005 degree (~5 m, under a pixel at the closest zoom) keeps the
+ * rounded shape and brings the count back to ~1.75x the unsmoothed lines.
+ */
+const POST_SMOOTH_TOLERANCE_DEG = 0.00005;
+
 /** Phần đệm quanh mỗi ô khi cắt DEM. ST_Contour chạy trên từng ô rời nhau sẽ để lại khe
  *  hở tại đường ghép; cắt rộng ra rồi cắt đường trở lại đúng ranh ô thì hai bên gặp nhau.
  *  0,01 độ ~ 1,1 km, thừa sức so với bước lưới. */
@@ -98,10 +114,11 @@ async function main(): Promise<void> {
          SELECT $3, elevation_m,
                 abs(mod(abs(elevation_m)::numeric, ($3 * 5)::numeric)) < 0.001
                   OR ($3 * 5) - abs(mod(abs(elevation_m)::numeric, ($3 * 5)::numeric)) < 0.001,
-                ST_Multi(ST_SimplifyPreserveTopology(geom, $4))
+                ST_Multi(ST_SimplifyPreserveTopology(
+                  ST_ChaikinSmoothing(ST_SimplifyPreserveTopology(geom, $4), $6::int, true), $7))
            FROM clipped
           WHERE NOT ST_IsEmpty(geom) AND ST_GeometryType(geom) IN ('ST_LineString', 'ST_MultiLineString')`,
-        [lon, lat, intervalM, SIMPLIFY_TOLERANCE_DEG, CELL_OVERLAP_DEG]
+        [lon, lat, intervalM, SIMPLIFY_TOLERANCE_DEG, CELL_OVERLAP_DEG, SMOOTHING_PASSES, POST_SMOOTH_TOLERANCE_DEG]
       );
       inserted += rowCount ?? 0;
       process.stdout.write(`\r  ${intervalM} m: ${inserted} đường`);

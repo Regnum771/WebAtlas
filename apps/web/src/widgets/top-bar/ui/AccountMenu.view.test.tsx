@@ -49,6 +49,12 @@ describe('AccountMenuView', () => {
     expect(screen.queryByRole('link', { name: 'Người dùng' })).toBeNull();
   });
 
+  it('offers Hồ sơ to every signed-in user', async () => {
+    renderMenu('viewer');
+    await userEvent.click(screen.getByRole('button', { name: 'Người xem' }));
+    expect(screen.getByRole('link', { name: 'Hồ sơ' })).toHaveAttribute('href', '/ho-so');
+  });
+
   it('Đăng xuất calls onLogout', async () => {
     const onLogout = vi.fn();
     renderMenu('viewer', onLogout);

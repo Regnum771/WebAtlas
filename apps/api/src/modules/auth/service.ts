@@ -9,7 +9,8 @@ export type LoginUser = UserRow & { isAdmin: boolean; grants: Grant[] };
 
 export async function login(app: FastifyInstance, email: string, password: string): Promise<{ token: string; user: LoginUser }> {
   const row = await usersRepository(app.pg).findByEmailWithHash(email);
-  if (!row || !row.is_active) throw new AuthError('Invalid credentials');
+  // An account made by a single sign-on has no WebAtlas password: it signs in through the provider only.
+  if (!row || !row.is_active || row.password_hash === null) throw new AuthError('Invalid credentials');
   const ok = await verifyPassword(row.password_hash, password);
   if (!ok) throw new AuthError('Invalid credentials');
   const { password_hash, ...user } = row;

@@ -1,0 +1,312 @@
+# The data platform next to WebATLAS: Keycloak (single sign-on), GeoNode 5 with its own GeoServer
+# (which REPLACES the standalone `geoserver` service of docker-compose.yml) and Dagster behind
+# oauth2-proxy. Lean on purpose: it shares the `db` PostGIS and caps every Java heap, to fit a
+# Docker VM of ~5.5 GB. Design: docs/superpowers/specs/2026-11-09-platform-shell-sso-design.md.
+#
+#   docker compose -p webatlas -f infra/docker-compose.yml -f infra/docker-compose.platform.yml up -d
+#
+# First run only: create GeoNode's databases and the orchestrator's role (infra/platform/README.md).
+#
+# Browser addresses: Keycloak http://localhost:8180, GeoNode http://localhost:8000,
+# Dagster http://localhost:3070. Every port is bound to 127.0.0.1.
+
+x-geonode-env: &geonode-env
+  DJANGO_SETTINGS_MODULE: webatlas_geonode_settings
+  PYTHONPATH: /usr/src/webatlas
+  DEBUG: "False"
+  DOCKER_ENV: production
+  SECRET_KEY: ${GEONODE_SECRET_KEY}
+  SITEURL: http://localhost:8000/
+  ALLOWED_HOSTS: "['django', 'geonode', 'localhost', '127.0.0.1']"
+  HTTP_HOST: localhost
+  HTTP_PORT: "8000"
+  HTTPS_HOST: ""
+  HTTPS_PORT: "443"
+  # The shared PostGIS (lean stack). GeoNode's two databases come from infra/platform/postgis.
+  DATABASE_HOST: db
+  DATABASE_PORT: "5432"
+  POSTGRES_USER: ${POSTGRES_USER}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  GEONODE_DATABASE: geonode
+  GEONODE_DATABASE_USER: geonode
+  GEONODE_DATABASE_PASSWORD: ${GEONODE_DB_PASSWORD}
+  GEONODE_GEODATABASE: geonode_data
+  GEONODE_GEODATABASE_USER: geonode_data
+  GEONODE_GEODATABASE_PASSWORD: ${GEONODE_DATA_DB_PASSWORD}
+  GEONODE_GEODATABASE_SCHEMA: public
+  DATABASE_URL: postgis://geonode:${GEONODE_DB_PASSWORD}@db:5432/geonode
+  GEODATABASE_URL: postgis://geonode_data:${GEONODE_DATA_DB_PASSWORD}@db:5432/geonode_data
+  DEFAULT_BACKEND_DATASTORE: datastore
+  GEONODE_DB_CONN_MAX_AGE: "0"
+  BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+  ASYNC_SIGNALS: "True"
+  GEONODE_LB_HOST_IP: django
+  GEONODE_LB_PORT: "8000"
+  GEOSERVER_LB_HOST_IP: geoserver
+  GEOSERVER_LB_PORT: "8080"
+  GEOSERVER_LOCATION: http://geoserver:8080/geoserver/
+  GEOSERVER_PUBLIC_LOCATION: http://localhost:8000/geoserver/
+  GEOSERVER_WEB_UI_LOCATION: http://localhost:8000/geoserver/
+  NGINX_BASE_URL: http://localhost:8000
+  GEOSERVER_ADMIN_USER: ${GEOSERVER_ADMIN_USER}
+  GEOSERVER_ADMIN_PASSWORD: ${GEOSERVER_ADMIN_PASSWORD}
+  # GeoServer <-> GeoNode OAuth2 (GeoNode's own provider, not Keycloak).
+  OAUTH2_CLIENT_ID: geoserver
+  OAUTH2_CLIENT_SECRET: ${GEONODE_SECRET_KEY}
+  ADMIN_USERNAME: admin
+  ADMIN_PASSWORD: ${GEONODE_ADMIN_PASSWORD}
+  ADMIN_EMAIL: admin@webatlas.local
+  STATIC_ROOT: /mnt/volumes/statics/static/
+  MEDIA_ROOT: /mnt/volumes/statics/uploaded/
+  GEOIP_PATH: /mnt/volumes/statics/geoip.db
+  # Accounts come from Keycloak; there is no GeoNode sign-up form.
+  ACCOUNT_OPEN_SIGNUP: "False"
+  ACCOUNT_EMAIL_VERIFICATION: none
+  SOCIALACCOUNT_OIDC_PROVIDER_ENABLED: "True"
+  SOCIALACCOUNT_AUTO_SIGNUP: "True"
+  KEYCLOAK_PUBLIC_REALM_URL: http://localhost:8180/realms/webatlas
+  KEYCLOAK_INTERNAL_REALM_URL: http://keycloak:8080/realms/webatlas
+  KEYCLOAK_GEONODE_CLIENT_ID: geonode
+  KEYCLOAK_GEONODE_SECRET: ${KC_GEONODE_SECRET}
+  WEBATLAS_WEB_URL: http://localhost:5173
+  # Bearer token of the bridge routes (platform/geonode/webatlas_bridge), shared with the worker.
+  WEBATLAS_BRIDGE_TOKEN: ${WEBATLAS_BRIDGE_TOKEN}
+  # 1 only to run the bridge's forced-failure live check (infra/platform/README.md); off by default.
+  WEBATLAS_BRIDGE_TEST_HOOKS: ${WEBATLAS_BRIDGE_TEST_HOOKS:-0}
+  MONITORING_ENABLED: "False"
+  C_FORCE_ROOT: "1"
+  FORCE_REINIT: "false"
+  # The entrypoint's tasks print the whole environment, secrets included: keep them in its own log file.
+  INVOKE_LOG_STDOUT: "false"
+  # Lean: two web workers (platform/geonode/uwsgi.ini), one Celery worker.
+  CELERY__WORKER_CONCURRENCY: "1"
+  CELERY__HARVESTER_CONCURRENCY: "1"
+  CELERY__HARVESTER_AUTOSCALE_VALUES: "1,1"
+  CELERY__AUTOSCALE_VALUES: "1,1"
+
+x-geonode-volumes: &geonode-volumes
+  - geonode_statics:/mnt/volumes/statics
+  - geonode_geoserver_data:/geoserver_data/data
+  - geonode_data:/data
+  - geonode_tmp:/tmp
+  - ./platform/geonode/webatlas_geonode_settings.py:/usr/src/webatlas/webatlas_geonode_settings.py:ro
+  - ./platform/geonode/webatlas-init.py:/usr/src/webatlas/webatlas-init.py:ro
+  - ./platform/geonode/webatlas_bridge:/usr/src/webatlas/webatlas_bridge:ro
+  - ./platform/geonode/uwsgi.ini:/usr/src/geonode/uwsgi.ini:ro
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: ["start-dev", "--import-realm"]
+    restart: unless-stopped
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
+      # The issuer is the browser address everywhere; containers reach the token, user-info and
+      # key endpoints through keycloak:8080 (dynamic back channel).
+      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx384m"
+      # Placeholders in platform/keycloak/webatlas-realm.json (read at the first import only).
+      KC_WEBATLAS_API_SECRET: ${KC_WEBATLAS_API_SECRET}
+      KC_GEONODE_SECRET: ${KC_GEONODE_SECRET}
+      KC_DAGSTER_SECRET: ${KC_DAGSTER_SECRET}
+      KC_DEV_USERNAME: ${KC_DEV_USERNAME}
+      KC_DEV_EMAIL: ${KC_DEV_EMAIL}
+      KC_DEV_PASSWORD: ${KC_DEV_PASSWORD}
+      WEBATLAS_API_ORIGIN: http://localhost:3001
+      WEBATLAS_WEB_ORIGIN: http://localhost:5173
+      GEONODE_ORIGIN: http://localhost:8000
+      DAGSTER_ORIGIN: http://localhost:3070
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./platform/keycloak/webatlas-realm.json:/opt/keycloak/data/import/webatlas-realm.json:ro
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb"]
+
+  # Seeds GeoNode's GeoServer data directory into the named volume, then exits.
+  geoserver-data-dir:
+    image: geonode/geoserver_data:2.28.5-latest
+    command: ["true"]
+    volumes:
+      - geonode_geoserver_data:/geoserver_data/data
+
+  # GeoNode's GeoServer, under the name the WebATLAS map, the API and atlas-data already use.
+  geoserver:
+    image: geonode/geoserver:2.28.5-latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      geoserver-data-dir:
+        condition: service_completed_successfully
+    environment:
+      <<: *geonode-env
+      GEOSERVER_JAVA_OPTS: >-
+        -Djava.awt.headless=true -Dgwc.context.suffix=gwc -Xms256m -Xmx1g
+        -Dfile.encoding=UTF8 -Djavax.servlet.request.encoding=UTF-8 -Djavax.servlet.response.encoding=UTF-8
+        -Duser.timezone=GMT -Dorg.geotools.shapefile.datetime=false -DGEOSERVER_CSRF_DISABLED=true
+        -DPRINT_BASE_URL=http://localhost:8000/geoserver/pdf
+        -Xbootclasspath/a:/usr/local/tomcat/webapps/geoserver/WEB-INF/lib/marlin-0.9.3.jar
+        -Dsun.java2d.renderer=org.marlin.pisces.MarlinRenderingEngine
+      # The WebATLAS map fetches WFS and tiles from the browser.
+      GEOSERVER_CORS_ENABLED: "True"
+      GEOSERVER_CORS_ALLOWED_ORIGINS: "*"
+      GEOSERVER_CORS_ALLOWED_METHODS: GET,POST,PUT,DELETE,HEAD,OPTIONS
+      GEOSERVER_CORS_ALLOWED_HEADERS: "*"
+    # Same entry as docker-compose.yml: Compose appends port lists, so a different one would bind twice.
+    ports:
+      - "${GEOSERVER_PORT:-8080}:8080"
+    volumes:
+      - geonode_geoserver_data:/geoserver_data/data
+      - geonode_statics:/mnt/volumes/statics
+      # Time-series ImageMosaic folders: the worker writes /repo/var/timeseries/<name>, GeoServer
+      # reads the same folder as /webatlas-timeseries/<name> (packages/atlas-data/tools/timeseries).
+      - ../var/timeseries:/webatlas-timeseries
+
+  django:
+    image: geonode/geonode:5.0.3
+    restart: unless-stopped
+    # The image has no entrypoint of its own; this one migrates, loads fixtures and collects statics.
+    entrypoint: ["/usr/src/geonode/entrypoint.sh"]
+    command: ["uwsgi", "--ini", "/usr/src/geonode/uwsgi.ini"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      <<: *geonode-env
+      IS_CELERY: "False"
+    volumes: *geonode-volumes
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:8000/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 120s
+
+  celery:
+    image: geonode/geonode:5.0.3
+    restart: unless-stopped
+    entrypoint: ["/usr/src/geonode/entrypoint.sh"]
+    # The image ships celery-cmd without the execute bit ("Permission denied", restart loop).
+    command: ["bash", "/usr/src/geonode/celery-cmd"]
+    depends_on:
+      django:
+        condition: service_healthy
+    environment:
+      <<: *geonode-env
+      IS_CELERY: "True"
+    volumes: *geonode-volumes
+
+  # Registers Keycloak as GeoNode's sign-in app and adds the WebATLAS links; exits when done.
+  geonode-init:
+    image: geonode/geonode:5.0.3
+    working_dir: /usr/src/geonode
+    command: ["python", "manage.py", "shell", "-c", "exec(open('/usr/src/webatlas/webatlas-init.py').read())"]
+    depends_on:
+      django:
+        condition: service_healthy
+    environment:
+      <<: *geonode-env
+    volumes: *geonode-volumes
+
+  geonode:
+    image: geonode/nginx:1.31.6-latest
+    restart: unless-stopped
+    depends_on:
+      - django
+      - geoserver
+    environment:
+      HTTP_HOST: localhost
+      HTTP_PORT: "8000"
+      HTTPS_HOST: ""
+      HTTPS_PORT: "443"
+      LETSENCRYPT_MODE: disabled
+      RESOLVER: 127.0.0.11
+      STATIC_ROOT: /mnt/volumes/statics/static/
+      MEDIA_ROOT: /mnt/volumes/statics/uploaded/
+    ports:
+      - "127.0.0.1:8000:80"
+    volumes:
+      - geonode_statics:/mnt/volumes/statics
+
+  dagster-webserver:
+    build:
+      context: ../orchestration
+    image: webatlas-orchestration
+    restart: unless-stopped
+    command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-w", "/opt/dagster/app/workspace.yaml"]
+    environment: &dagster-env
+      WEBATLAS_DATABASE_URL: postgresql://webatlas_orchestrator:${ORCHESTRATOR_DB_PASSWORD}@db:5432/${POSTGRES_DB}
+      GEONODE_BRIDGE_URL: http://django:8000
+      WEBATLAS_BRIDGE_TOKEN: ${WEBATLAS_BRIDGE_TOKEN}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - dagster_home:/opt/dagster/home/storage
+    # No published port: the only way in is oauth2-proxy below.
+
+  dagster-daemon:
+    image: webatlas-orchestration
+    restart: unless-stopped
+    command: ["dagster-daemon", "run", "-w", "/opt/dagster/app/workspace.yaml"]
+    environment: *dagster-env
+    depends_on:
+      - dagster-webserver
+    volumes:
+      - dagster_home:/opt/dagster/home/storage
+
+  # Dagster has no sign-in of its own: Keycloak, realm role `dieu-phoi`, in front of it.
+  dagster-auth:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    restart: unless-stopped
+    depends_on:
+      - keycloak
+      - dagster-webserver
+    command:
+      - --http-address=0.0.0.0:4180
+      - --upstream=http://dagster-webserver:3000
+      - --provider=keycloak-oidc
+      - --client-id=dagster
+      - --redirect-url=http://localhost:3070/oauth2/callback
+      - --oidc-issuer-url=http://localhost:8180/realms/webatlas
+      # Discovery would hand back browser addresses; the container reaches Keycloak by name.
+      - --skip-oidc-discovery=true
+      - --login-url=http://localhost:8180/realms/webatlas/protocol/openid-connect/auth
+      - --redeem-url=http://keycloak:8080/realms/webatlas/protocol/openid-connect/token
+      - --oidc-jwks-url=http://keycloak:8080/realms/webatlas/protocol/openid-connect/certs
+      - --validate-url=http://keycloak:8080/realms/webatlas/protocol/openid-connect/userinfo
+      - --backend-logout-url=http://keycloak:8080/realms/webatlas/protocol/openid-connect/logout?id_token_hint={id_token}
+      - --code-challenge-method=S256
+      - --scope=openid email profile
+      - --email-domain=*
+      - --allowed-role=dieu-phoi
+      - --cookie-name=_webatlas_dagster
+      - --cookie-secure=false
+      - --skip-provider-button=true
+      # The hub's health probe (WebATLAS API) needs no sign-in.
+      - --skip-auth-route=GET=^/server_info$
+    environment:
+      OAUTH2_PROXY_CLIENT_SECRET: ${KC_DAGSTER_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
+    ports:
+      - "127.0.0.1:3070:4180"
+
+volumes:
+  keycloak_data:
+  geonode_statics:
+  geonode_geoserver_data:
+  geonode_data:
+  geonode_tmp:
+  dagster_home:

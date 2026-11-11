@@ -1,0 +1,87 @@
+/* The shared time bar along the bottom of the map stage; it moves above the flood dock when that is open. */
+.time-slider {
+  position: absolute;
+  left: 12px;
+  right: calc(var(--scale-column) + 24px);
+  bottom: var(--toast-band-bottom);
+  z-index: 10;
+  max-width: 920px;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+
+/* --flood-dock-height is the dock's measured height, set on the stage (time-slider/model/floodDockHeight.ts). */
+.map-stage-map:has(.flood-dock) .time-slider {
+  bottom: calc(var(--toast-band-bottom) + var(--flood-dock-height, 232px) + 8px);
+}
+
+.map-stage:has(.time-slider) .toast-host {
+  bottom: calc(var(--toast-band-bottom) + 56px);
+}
+
+.map-stage:has(.time-slider):has(.flood-dock) .toast-host {
+  bottom: calc(var(--toast-band-bottom) + var(--flood-dock-height, 232px) + 8px + 56px);
+}
+
+.time-slider-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  background: var(--ink);
+  color: var(--sheet);
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.time-slider-speeds { display: flex; flex: none; }
+
+.time-slider-speeds button {
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 3px 6px;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--ink-2);
+  margin-left: -1px;
+  cursor: pointer;
+}
+
+.time-slider-speeds button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--sheet);
+  border-color: var(--ink);
+}
+
+.time-slider-range {
+  flex: 1;
+  min-width: 120px;
+  accent-color: var(--ink);
+}
+
+/* Shrinks last, with an ellipsis, so a narrow stage (768 px) never pushes it through the box border. */
+.time-slider-time {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  .time-slider { gap: var(--space-2); padding-inline: var(--space-2); }
+  .time-slider-range { min-width: 64px; }
+}

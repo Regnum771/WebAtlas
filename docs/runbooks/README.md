@@ -69,6 +69,8 @@ docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps
 ```
 
 For map users: [Vùng phân tích](vung-phan-tich.md) explains choosing an ROI and the analysis tools.
+Catalogue time series (uploads, where the files go, the browser check, deleting an entry):
+[catalogue-timeseries.md](catalogue-timeseries.md).
 
 ## Notes on each step
 

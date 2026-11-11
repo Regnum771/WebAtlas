@@ -13,7 +13,7 @@ import type VectorSource from 'ol/source/Vector';
 import type VectorTileLayer from 'ol/layer/VectorTile';
 import { fromLonLat, transformExtent } from 'ol/proj';
 import { createWfsVectorSource } from './wfsSource';
-import { applyWaterVersions, createBoundaryTileLayer, createWaterTileLayer, fetchWaterVersions, withHighlight, type ApiTileLayer } from './waterTiles';
+import { applyWaterVersions, createBoundaryLabelLayer, createBoundaryTileLayer, createWaterTileLayer, fetchWaterVersions, withHighlight, type ApiTileLayer } from './waterTiles';
 import { GEOSERVER_URL } from '../../../shared/config';
 import { BASEMAP_CONTEXT_LAYER_STATE_IDS, TERRAIN_LAYER_STATE_IDS, type ContourInterval } from '@webatlas/shared';
 import {
@@ -28,7 +28,9 @@ import { MIN_ZOOM, MAX_ZOOM, VIETNAM_EXTENT_4326, INITIAL_CENTER_4326, INITIAL_Z
 import { WATER_MIN_ZOOM, WARDS_MIN_ZOOM } from './zoomLoadGate';
 import {
   provincesStyle,
+  provinceLabelStyle,
   wardsStyle,
+  wardLabelStyle,
   riversStyle,
   lakesStyle,
   stationsStyle,
@@ -142,6 +144,9 @@ export class MapModel {
   private moveendHandler: (() => void) | null = null;
   /** The far-zoom river overview layer — see riverOverview.ts. */
   private riversOverviewLayer: VectorTileLayer | null = null;
+  /** Boundary names drawn above all data (createBoundaryLabelLayer), keyed by the boundary layer's
+   *  state id. Not in `layers`: they follow their boundary layer rather than having a panel entry. */
+  private boundaryLabelLayers: Record<string, VectorTileLayer> = {};
   private contourLayer: TileLayer<XYZ> | null = null;
   /** The interval on display, so the source is not reset when it need not be. */
   private contourInterval: ContourInterval | null = null;
@@ -284,6 +289,9 @@ export class MapModel {
     const wardsLayer = createBoundaryTileLayer('wards', 'layer_wards_2026', wardsStyle);
     this.layers['layer_wards_2026'] = wardsLayer;
     this.waterLayers.wards = wardsLayer;
+    const provinceLabelsLayer = createBoundaryLabelLayer(provincesLayer, 'layer_province_labels', provinceLabelStyle);
+    const wardLabelsLayer = createBoundaryLabelLayer(wardsLayer, 'layer_ward_labels', wardLabelStyle);
+    this.boundaryLabelLayers = { layer_provinces_2026: provinceLabelsLayer, layer_wards_2026: wardLabelsLayer };
 
     // 3. The map.
     this.mousePosition = createMousePosition();
@@ -305,7 +313,10 @@ export class MapModel {
         stationsLayer,
         droughtSurveyLayer,
         saltwaterIntrusionLayer,
-        floodGenerationLayer
+        floodGenerationLayer,
+        // Boundary names last, so no river line or dam marker covers them.
+        wardLabelsLayer,
+        provinceLabelsLayer,
       ],
       view: new View({
         // Open on the WORK AREA, not the whole country: thematic data only exists
@@ -454,6 +465,13 @@ export class MapModel {
     // leave both representations drawing at once.
     const riversOn = this.layerStates.find((l) => l.id === 'layer_rivers')?.visible ?? true;
     this.riversOverviewLayer?.setVisible(this.waterVersionsSettled && riverOverviewVisibleAt(currentZoom) && riversOn);
+
+    // Each boundary's names follow the boundary layer exactly, in the same pass.
+    for (const [boundaryId, labels] of Object.entries(this.boundaryLabelLayers)) {
+      const boundary = this.layers[boundaryId];
+      labels.setVisible(Boolean(boundary?.getVisible()));
+      labels.setOpacity(boundary?.getOpacity() ?? 1);
+    }
   }
 
   getMap(): Map | null {
@@ -645,6 +663,7 @@ export class MapModel {
     this.layers = {};
     this.waterLayers = {};
     this.riversOverviewLayer = null;
+    this.boundaryLabelLayers = {};
     this.highlightedRiverId = null;
     this.waterVersionsSettled = false;
     if (this.waterVersionsTimer !== null) clearTimeout(this.waterVersionsTimer);

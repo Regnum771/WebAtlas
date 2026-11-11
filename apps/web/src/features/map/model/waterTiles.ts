@@ -17,6 +17,8 @@ export type ApiTileLayer = WaterTileLayer | BoundaryTileLayer;
 /** MVT layer names of the boundary label points (the polygons are the `wards` and `provinces` MVT layers). */
 export const WARD_LABEL_LAYER = 'ward_labels';
 export const PROVINCE_LABEL_LAYER = 'province_labels';
+/** MVT layer of the land-boundary lines a province tile carries (the lines the map strokes). */
+export const PROVINCE_BORDER_LAYER = 'province_borders';
 
 /** The rivers version also keys the overview: both are drawn from the rivers layer's active version. */
 const VERSION_OF: Record<ApiTileLayer, keyof WaterVersions> = {
@@ -67,9 +69,30 @@ export function createBoundaryTileLayer(layer: BoundaryTileLayer, stateId: strin
   });
 }
 
-/** True for a boundary tile's label point (it carries only `code` and `name`, not the unit's attributes). */
-export function isBoundaryLabel(props: Record<string, unknown>): boolean {
-  return props.layer === WARD_LABEL_LAYER || props.layer === PROVINCE_LABEL_LAYER;
+/**
+ * The names of a boundary layer, drawn ABOVE all data. A boundary layer sits low in the stack (under
+ * rivers and dams), and its labels drawn there were cut through by river lines and hidden by dam
+ * markers. This layer shares the boundary layer's source, so no tile is fetched twice, and draws
+ * only the label points; the owner keeps its visibility and opacity in step with the boundary layer.
+ * Not hit-tested by anything that needs attributes: label points carry only `code` and `name`.
+ */
+export function createBoundaryLabelLayer(boundary: VectorTileLayer, stateId: string, style: StyleLike | StyleFunction): VectorTileLayer {
+  return new VectorTileLayer({
+    source: boundary.getSource() ?? undefined,
+    style,
+    renderMode: 'hybrid',
+    visible: false,
+    declutter: false,
+    properties: { id: stateId },
+  });
+}
+
+/**
+ * True for a boundary tile's drawing aid: a label point (only `code` and `name`) or a border line
+ * (only `kind`). Neither carries the unit's attributes; the polygon does.
+ */
+export function isBoundaryDecoration(props: Record<string, unknown>): boolean {
+  return props.layer === WARD_LABEL_LAYER || props.layer === PROVINCE_LABEL_LAYER || props.layer === PROVINCE_BORDER_LAYER;
 }
 
 export async function fetchWaterVersions(): Promise<WaterVersions> {

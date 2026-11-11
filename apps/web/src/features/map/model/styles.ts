@@ -14,79 +14,17 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// Bucket (from riverBucket, by OSM waterway rank) -> [casing width, core width]. The higher the bucket, the wider.
-// Bucket 0 is the thin default for "ditch / everything else".
-const RIVER_WIDTHS: Record<number, [number, number]> = {
-  3: [7, 3.5],   // main river
-  2: [5, 2.2],   // canal
-  1: [3, 1.2],   // stream
-  0: [1.5, 0.5], // ditch / unknown
-};
-
-// Rank by OSM kind (see packages/shared/src/osm-water.ts):
-// 5 = main river, 4 = canal, 2 = stream, 1 = ditch.
-function riverBucket(order: number): 0 | 1 | 2 | 3 {
-  if (order >= 5) return 3;
-  if (order === 4) return 2;
-  if (order === 3 || order === 2) return 1;
-  return 0;
-}
-
-// Precompute the 4 style arrays once at module load.
-const RIVER_STYLES: Record<number, Style[]> = Object.fromEntries(
-  ([0, 1, 2, 3] as const).map((b) => {
-    const [borderWidth, mainWidth] = RIVER_WIDTHS[b];
-    return [
-      b,
-      [
-        new Style({ stroke: new Stroke({ color: '#1e3a8a', width: borderWidth }) }),
-        new Style({ stroke: new Stroke({ color: LAYER_PALETTE.layer_rivers.color, width: mainWidth }) }),
-      ],
-    ];
-  })
-);
+// The river network's style lives in riverStyle.ts (size classes, zoom-graded widths, draw order).
+import { riversStyle, makeRiverSelectStyle, minRiverClassAt } from './riverStyle';
+export { riversStyle, makeRiverSelectStyle, minRiverClassAt };
 
 /**
- * A ">= threshold" comparison with a tolerance, because the three thresholds below
- * (1,000,000, 500,000 and 250,000) sit EXACTLY on three stops of the slider. Going
- * round through zoomForScale -> resolution -> scaleAtResolution, the denominator
- * 1,000,000 comes back as 999,999.9999..., so a strict comparison would give a
- * different level of detail at a stop the user can click to: behaviour that depends
- * on floating-point noise. A thousandth of a denominator unit is far below anything
- * meaningful and far above the rounding error (~1e-4 at the 1e6 scale).
+ * A ">= threshold" comparison with a tolerance: thresholds sit exactly on stops of the scale slider,
+ * and the round trip zoom -> resolution -> scale returns 999,999.9999... for 1,000,000.
  */
 function atLeast(scale: number, threshold: number): boolean {
   return scale >= threshold - 0.001;
 }
-
-/**
- * The smallest bucket still drawn at a resolution. The higher the bucket, the larger
- * the river, and the buckets shown are always one unbroken run from the top down, so
- * a single number expresses the whole threshold table: no Set is allocated in a style
- * function that runs for every feature on every frame.
- *
- * A LARGER denominator means MORE zoomed out.
- */
-export function minRiverBucketAt(resolution: number): 0 | 1 | 2 | 3 {
-  const scale = scaleAtResolution(resolution);
-  if (atLeast(scale, 1_000_000)) return 3; // main rivers only
-  if (atLeast(scale, 500_000)) return 2; // + canals
-  if (atLeast(scale, 250_000)) return 1; // + streams
-  return 0; // + ditches, unknown
-}
-
-// The style of the river network, by river rank — cached, no per-frame allocation.
-// Returns undefined for buckets below the current zoom's threshold: OpenLayers reads
-// "no style" as "do not draw the feature". It must be undefined, not null: ol's
-// StyleFunction type is declared to return Style | Style[] | void, so null breaks the
-// type-check where the style is assigned to the layer (MapModel.ts).
-// This is DISPLAY level of detail: the data is still all there, only the drawing is lighter.
-export const riversStyle = (feature: any, resolution: number) => {
-  const cap = feature.get('streamOrder') || 6;
-  const bucket = riverBucket(cap);
-  if (bucket < minRiverBucketAt(resolution)) return undefined;
-  return RIVER_STYLES[bucket];
-};
 
 export const stationsStyle = new Style({
   image: new CircleStyle({
@@ -133,51 +71,84 @@ export const floodGenerationStyle = new Style({
 // which holds provinceColors[] and the hashCode() function that picks a colour from the ward code.
 
 
-// Province boundaries (after the 2025 merger). A tile holds the polygons (MVT layer `provinces`) and
-// one label point per province (MVT layer `province_labels`, placed by the API on the province's
-// largest part): only the points draw text, so a province cut by several tiles is labelled once.
-const PROVINCE_OUTLINE = new Style({
-  // A TRANSPARENT fill, not none: the decorative pastel fills are gone (see the ARCHIVED note above),
-  // but OpenLayers needs a fill to hit-test the INSIDE of a polygon; without one a province could
-  // only be clicked exactly on its outline.
-  fill: new Fill({ color: 'rgba(0,0,0,0)' }),
-  stroke: new Stroke({ color: LAYER_PALETTE.layer_provinces_2026.color, width: 2.5 }),
+// Province boundaries (after the 2025 merger). A tile holds three MVT layers:
+//  - `provinces`: the polygons, drawn with a transparent fill and NO stroke. The fill stays (not none)
+//    because OpenLayers needs one to hit-test the INSIDE of a polygon. Stroking them would outline the
+//    coast and ring every island at sea;
+//  - `province_borders`: the land boundaries the map strokes (API migration 34), kind 'province'
+//    (between two provinces) or 'national' (the land border with China, Laos and Cambodia);
+//  - `province_labels`: one point per province on its largest part, so a province is labelled once.
+// Labels are drawn by a separate layer above all data (boundaryLabels.ts), so these styles split
+// into the lines (provincesStyle) and the text (provinceLabelStyle).
+const PROVINCE_AREA = new Style({ fill: new Fill({ color: 'rgba(0,0,0,0)' }) });
+const PROVINCE_BORDER = new Style({
+  stroke: new Stroke({ color: LAYER_PALETTE.layer_provinces_2026.color, width: 2 }),
+});
+const NATIONAL_BORDER = new Style({
+  stroke: new Stroke({ color: LAYER_PALETTE.layer_provinces_2026.color, width: 3 }),
 });
 
-export const provincesStyle = (feature: any) => {
-  if (feature.get('layer') !== 'province_labels') return PROVINCE_OUTLINE;
-  return new Style({
-    text: new Text({
-      text: feature.get('name') || '',
-      font: 'bold 12px Inter, system-ui, sans-serif',
-      fill: new Fill({ color: '#312e81' }),
-      stroke: new Stroke({ color: '#ffffff', width: 4 }),
-    }),
-  });
+export const provincesStyle = (feature: any): Style | undefined => {
+  const layer = feature.get('layer');
+  if (layer === 'province_labels') return undefined;
+  if (layer === 'province_borders') return feature.get('kind') === 'national' ? NATIONAL_BORDER : PROVINCE_BORDER;
+  return PROVINCE_AREA;
+};
+
+const provinceLabelCache = new Map<string, Style>();
+export const provinceLabelStyle = (feature: any): Style | undefined => {
+  if (feature.get('layer') !== 'province_labels') return undefined;
+  const name = feature.get('name') || '';
+  let style = provinceLabelCache.get(name);
+  if (!style) {
+    style = new Style({
+      text: new Text({
+        text: name,
+        font: 'bold 12px Inter, system-ui, sans-serif',
+        fill: new Fill({ color: '#312e81' }),
+        stroke: new Stroke({ color: '#ffffff', width: 4 }),
+      }),
+    });
+    provinceLabelCache.set(name, style);
+  }
+  return style;
 };
 
 
-// Ward boundaries (after the 2025 merger): dashed, faint outline. A tile holds the polygons
-// (MVT layer `wards`) and one label point per ward (MVT layer `ward_labels`): only the points draw text,
-// so a ward cut by several tiles is labelled once.
+// Ward boundaries (after the 2025 merger). A tile holds the polygons (MVT layer `wards`) and one label
+// point per ward (`ward_labels`), so a ward cut by several tiles is labelled once. The outline used to
+// be a 1 px grey dash at 40 % opacity, which read as a footpath on the OSM basemap (its tracks are grey
+// dashes too); it is now an indigo dash, the provinces' hue, so the two boundary levels read as a family.
 const WARD_OUTLINE = new Style({
-  // Transparent — see the note on PROVINCE_OUTLINE for why the fill stays.
+  // Transparent fill: see PROVINCE_AREA for why it stays.
   fill: new Fill({ color: 'rgba(0,0,0,0)' }),
-  stroke: new Stroke({ color: hexToRgba(LAYER_PALETTE.layer_wards_2026.color, 0.4), width: 1, lineDash: [4, 4] }),
+  stroke: new Stroke({ color: hexToRgba(LAYER_PALETTE.layer_wards_2026.color, 0.75), width: 1.4, lineDash: [6, 3] }),
 });
 
-export const wardsStyle = (feature: any) => {
-  if (feature.get('layer') !== 'ward_labels') return WARD_OUTLINE;
-  return new Style({
-    text: new Text({
-      text: feature.get('name') || '',
-      font: 'normal 10.5px Inter, system-ui, sans-serif',
-      fill: new Fill({ color: '#374151' }),
-      stroke: new Stroke({ color: '#ffffff', width: 2.5 }),
-      overflow: false,
-      padding: [1, 2, 1, 2]
-    })
-  });
+export const wardsStyle = (feature: any): Style | undefined => {
+  if (feature.get('layer') === 'ward_labels') return undefined;
+  return WARD_OUTLINE;
+};
+
+const wardLabelCache = new Map<string, Style>();
+export const wardLabelStyle = (feature: any): Style | undefined => {
+  if (feature.get('layer') !== 'ward_labels') return undefined;
+  const name = feature.get('name') || '';
+  let style = wardLabelCache.get(name);
+  if (!style) {
+    style = new Style({
+      text: new Text({
+        text: name,
+        font: 'normal 10.5px Inter, system-ui, sans-serif',
+        fill: new Fill({ color: '#374151' }),
+        stroke: new Stroke({ color: '#ffffff', width: 2.5 }),
+        overflow: false,
+        padding: [1, 2, 1, 2],
+      }),
+    });
+    wardLabelCache.set(name, style);
+  }
+  return style;
 };
 
 // Cache CircleStyle by `${slug}|${radius}` — bounded (3 slugs x ~13 integer radii).
@@ -191,7 +162,8 @@ function damStyle(slug: DamStatusSlug, radius: number): Style {
       image: new CircleStyle({
         radius,
         fill: new Fill({ color: DAM_STATUS_DISPLAY[slug].color }),
-        stroke: new Stroke({ color: '#ffffff', width: 2 }),
+        // A 2 px rim would swallow a far-zoom marker of radius 3-4.
+        stroke: new Stroke({ color: '#ffffff', width: radius < 5 ? 1 : 2 }),
       }),
     });
     damStyleCache.set(key, style);
@@ -199,40 +171,33 @@ function damStyle(slug: DamStatusSlug, radius: number): Style {
   return style;
 }
 
+/**
+ * How much of its full size a dam marker keeps at a resolution. At 1:4,000,000 full-size markers
+ * (6-18 px) piled into solid clusters over the highland provinces; far out they shrink so each
+ * dam stays a separate dot. A LARGER denominator is MORE zoomed out.
+ */
+export function damMarkerScaleAt(resolution: number | undefined): number {
+  if (resolution === undefined) return 1;
+  const scale = scaleAtResolution(resolution);
+  if (atLeast(scale, 2_000_000)) return 0.45;
+  if (atLeast(scale, 1_000_000)) return 0.65;
+  if (atLeast(scale, 500_000)) return 0.85;
+  return 1;
+}
+
 // Cartodiagram: size ~ ratedPower, color ~ operational status (real DB slug, stamped at load).
 // Reads the pre-computed statusSlug (Task 4); does NOT mutate the feature or derive status from id.
 export function makeDamsStyle(getReservoirFilter: () => ReservoirFilterType) {
-  return (feature: any): Style | undefined => {
+  return (feature: any, resolution?: number): Style | undefined => {
     const slug = toDamStatusSlug(feature.get('statusSlug'));
 
     const currentFilter = getReservoirFilter();
     if (currentFilter !== 'all' && currentFilter !== slug) return undefined;
 
     const wattage = feature.get('ratedPower') || 50;
-    const radius = Math.round(Math.max(6, Math.min(18, 6 + wattage / 180)));
+    const full = Math.max(6, Math.min(18, 6 + wattage / 180));
+    const radius = Math.max(3, Math.round(full * damMarkerScaleAt(resolution)));
     return damStyle(slug, radius);
-  };
-}
-
-// Highlight styles (cached) for ol/interaction/Select on rivers.
-const RIVER_SELECT_STYLES: Record<number, Style[]> = Object.fromEntries(
-  ([0, 1, 2, 3] as const).map((b) => {
-    const [borderWidth, mainWidth] = RIVER_WIDTHS[b];
-    return [
-      b,
-      [
-        new Style({ stroke: new Stroke({ color: '#fde047', width: borderWidth + 4 }) }),
-        new Style({ stroke: new Stroke({ color: '#ef4444', width: mainWidth + 2 }) }),
-      ],
-    ];
-  })
-);
-
-// The highlight style of a clicked river segment (applied through withHighlight in waterTiles.ts).
-export function makeRiverSelectStyle() {
-  return (feature: any) => {
-    const cap = feature.get('streamOrder') || 6;
-    return RIVER_SELECT_STYLES[riverBucket(cap)];
   };
 }
 

@@ -4,6 +4,10 @@ import userEvent from '@testing-library/user-event';
 
 const sessionValue = { status: 'anonymous', currentUser: null, login: vi.fn(), logout: vi.fn() };
 vi.mock('../../entities/session/model/session.store', () => ({ useSession: () => sessionValue }));
+let mockSso: { loginPath: string; endSessionUrl: string } | null = null;
+vi.mock('../../entities/session/model/useAuthConfig', () => ({ useAuthConfig: () => ({ sso: mockSso }) }));
+const startSsoLogin = vi.fn();
+vi.mock('../../entities/session/api/session.api', () => ({ startSsoLogin: (...a: unknown[]) => startSsoLogin(...a) }));
 
 import AuthWidget from './index';
 import { ApiError } from '../../shared/api/apiClient';
@@ -74,5 +78,27 @@ describe('AuthWidget', () => {
     expect(sessionValue.login).toHaveBeenCalledWith({ email: 'a@b.vn', password: 'bi-mat-1' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await expectCleanReopen(user);
+  });
+
+  it('offers no single sign-on when the API has none configured', async () => {
+    mockSso = null;
+    render(<AuthWidget />);
+    await userEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+    expect(screen.queryByRole('button', { name: 'Đăng nhập một lần' })).toBeNull();
+  });
+
+  it('leads with single sign-on, returning to the current page, and keeps the password form', async () => {
+    mockSso = { loginPath: '/api/auth/oidc/login', endSessionUrl: 'http://kc/logout' };
+    window.history.replaceState(null, '', '/du-lieu?q=ho');
+    try {
+      render(<AuthWidget />);
+      await userEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Đăng nhập một lần' }));
+      expect(startSsoLogin).toHaveBeenCalledWith('/api/auth/oidc/login', '/du-lieu?q=ho');
+      expect(screen.getByLabelText('Email')).toBeInTheDocument();
+    } finally {
+      mockSso = null;
+      window.history.replaceState(null, '', '/');
+    }
   });
 });

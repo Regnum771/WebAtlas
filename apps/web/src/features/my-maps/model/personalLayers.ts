@@ -8,6 +8,8 @@ import { bbox as bboxStrategy } from 'ol/loadingstrategy';
 import { transformExtent, type ProjectionLike } from 'ol/proj';
 import VectorSource from 'ol/source/Vector';
 import { Circle, Stroke, Style } from 'ol/style';
+import { ApiError } from '../../../shared/api/apiClient';
+import { syncCatalogueLayers, type CatalogueLayerScope } from '../../catalogue/model/catalogueLayers';
 import { isMapNotFound } from './queries';
 import { listFeatures, type GeoJsonGeometry, type LayerSummary, type PersonalFeature } from '../api/workspace.api';
 import {
@@ -34,6 +36,11 @@ export interface PersonalLayerEntry {
   onTruncated: (layerId: string, n: number | null) => void;
   /** A read answered the map's own 404: the map was unshared or deleted. */
   onMapGone?: (mapId: string) => void;
+  /**
+   * A catalogue link's image answered 403/404: the entry was deleted or hidden since the map was
+   * read. The caller reads the map again, whose summary then carries `catalogue: null`.
+   */
+  onCatalogueGone?: (mapId: string) => void;
 }
 
 interface Drawn {
@@ -297,11 +304,59 @@ function syncRasters(map: Map, rasters: globalThis.Map<string, DrawnRaster>, ent
 }
 
 /**
+ * The OL layer property of a personal map's catalogue link (its layer id). Distinct from the
+ * free-standing catalogue layers' `catalogueId`, so the two syncs never remove each other's layers.
+ */
+export const PERSONAL_CATALOGUE_PROP = 'personalCatalogueLayerId';
+
+/** Per map, while it shows links: the latest link entries by layer id, and their scope. */
+const linkScopes = new WeakMap<Map, { latest: globalThis.Map<string, PersonalLayerEntry>; scope: CatalogueLayerScope }>();
+
+/**
+ * The visible catalogue links, drawn by the catalogue's own layer code (catalogueLayers.ts): the
+ * same token-carrying WMS proxy and the same time-slider rule. A link whose entry the reader may
+ * not see (`catalogue: null`) draws nothing; its row says so. An image failing with 403/404 goes
+ * to the latest entry's onCatalogueGone.
+ */
+function syncCatalogueLinks(map: Map, entries: PersonalLayerEntry[], time: string | null): void {
+  const links = entries.filter((e) => e.visible && e.layer.kind === 'catalogue' && e.layer.catalogue !== null);
+  let rec = linkScopes.get(map);
+  if (!rec) {
+    if (links.length === 0) return; // none drawn before, none now
+    const latest = new globalThis.Map<string, PersonalLayerEntry>();
+    rec = {
+      latest,
+      scope: {
+        prop: PERSONAL_CATALOGUE_PROP,
+        onDenied: (layerId, error) => {
+          const e = latest.get(layerId);
+          if (e && error instanceof ApiError && (error.status === 403 || error.status === 404)) e.onCatalogueGone?.(e.mapId);
+        },
+      },
+    };
+    linkScopes.set(map, rec);
+  }
+  rec.latest.clear();
+  for (const e of links) rec.latest.set(e.layer.id, e);
+  syncCatalogueLayers(map, links.map((e) => ({
+    item: e.layer.catalogue!,
+    visible: e.visible,
+    opacity: e.opacity,
+    status: 'ok' as const,
+    key: e.layer.id,
+    zIndex: e.zIndex,
+    properties: { id: `ws:${e.layer.id}`, [PERSONAL_LAYER_PROP]: true, mapId: e.mapId, layerId: e.layer.id },
+  })), time, rec.scope);
+  if (links.length === 0) linkScopes.delete(map);
+}
+
+/**
  * Puts the visible entries on the map (vector layers read by viewport, rasters as WebGL tiles) and
  * takes everything else off: a hidden layer, a collapsed map, a deleted layer. A repeat sync keeps
  * each layer (and its loaded features) and only updates style, opacity and order.
  */
-export function syncPersonalLayers(map: Map, entries: PersonalLayerEntry[]): void {
+export function syncPersonalLayers(map: Map, entries: PersonalLayerEntry[], time: string | null = null): void {
+  syncCatalogueLinks(map, entries, time);
   let registry = registries.get(map);
   if (!registry) {
     if (entries.length === 0) return;

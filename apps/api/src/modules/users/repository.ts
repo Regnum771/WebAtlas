@@ -16,8 +16,40 @@ const COLS = `${PLAIN}, ${QUOTA()}`;
 
 export function usersRepository(pg: Pool) {
   return {
-    async findByEmailWithHash(email: string): Promise<(UserRow & { password_hash: string }) | null> {
+    /** password_hash is null for an account created by a single sign-on. */
+    async findByEmailWithHash(email: string): Promise<(UserRow & { password_hash: string | null }) | null> {
       const { rows } = await pg.query(`SELECT ${COLS}, password_hash FROM app.users WHERE email = $1`, [email]);
+      return rows[0] ?? null;
+    },
+    async findByOidcSubject(subject: string): Promise<UserRow | null> {
+      const { rows } = await pg.query(`SELECT ${COLS} FROM app.users WHERE oidc_subject = $1`, [subject]);
+      return rows[0] ?? null;
+    },
+    /** Case-insensitive, with the provider link it already has (if any). */
+    async findByEmailForSso(email: string): Promise<(UserRow & { oidc_subject: string | null }) | null> {
+      const { rows } = await pg.query(`SELECT ${COLS}, oidc_subject FROM app.users WHERE lower(email) = lower($1)`, [email]);
+      return rows[0] ?? null;
+    },
+    /** Links only an account that has no provider link yet; null when another link got there first. */
+    async linkOidcSubject(id: string, subject: string): Promise<UserRow | null> {
+      const { rows } = await pg.query(
+        `UPDATE app.users SET oidc_subject = $2, updated_at = now() WHERE id = $1 AND oidc_subject IS NULL RETURNING ${COLS}`,
+        [id, subject],
+      );
+      return rows[0] ?? null;
+    },
+    /** A reader with no WebAtlas password; an admin grants groups afterwards. */
+    async insertSso(u: { email: string; full_name: string | null; oidc_subject: string }): Promise<UserRow> {
+      const { rows } = await pg.query(
+        `INSERT INTO app.users (email, password_hash, full_name, role, oidc_subject)
+         VALUES ($1, NULL, $2, 'viewer', $3) RETURNING ${COLS}`,
+        [u.email, u.full_name, u.oidc_subject],
+      );
+      return rows[0];
+    },
+    /** findById with the provider link, for the authentication plugin (one query per request). */
+    async findByIdForAuth(id: string): Promise<(UserRow & { oidc_subject: string | null }) | null> {
+      const { rows } = await pg.query(`SELECT ${COLS}, oidc_subject FROM app.users WHERE id = $1`, [id]);
       return rows[0] ?? null;
     },
     async findById(id: string): Promise<UserRow | null> {

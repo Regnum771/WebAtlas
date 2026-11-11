@@ -39,6 +39,44 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 });
 
+const OptionalUrl = z.string().url().optional().or(z.literal('').transform(() => undefined));
+
+/**
+ * Single sign-on (Keycloak, OIDC code flow). Enabled only when all four are set, so tests, CI and a
+ * machine without the platform stack keep the password sign-in alone. Read on every call, like
+ * workspaceFilesDir(), so tests can switch it on.
+ */
+const OidcEnv = z.object({
+  /** The issuer as browsers and tokens see it, e.g. http://localhost:8180/realms/webatlas. */
+  OIDC_ISSUER_URL: OptionalUrl,
+  OIDC_CLIENT_ID: z.string().optional(),
+  OIDC_CLIENT_SECRET: z.string().optional(),
+  /** This API's callback, registered on the client: http://localhost:3001/api/auth/oidc/callback. */
+  OIDC_REDIRECT_URI: OptionalUrl,
+  /** The web app's origin: where the callback hands the token over and sign-out returns to. */
+  WEB_ORIGIN: z.string().url().default('http://localhost:5173'),
+});
+
+export interface OidcConfig {
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  webOrigin: string;
+}
+
+export function oidcConfig(env: NodeJS.ProcessEnv = process.env): OidcConfig | null {
+  const e = OidcEnv.parse(env);
+  if (!e.OIDC_ISSUER_URL || !e.OIDC_CLIENT_ID || !e.OIDC_CLIENT_SECRET || !e.OIDC_REDIRECT_URI) return null;
+  return {
+    issuer: e.OIDC_ISSUER_URL.replace(/\/+$/, ''),
+    clientId: e.OIDC_CLIENT_ID,
+    clientSecret: e.OIDC_CLIENT_SECRET,
+    redirectUri: e.OIDC_REDIRECT_URI,
+    webOrigin: e.WEB_ORIGIN.replace(/\/+$/, ''),
+  };
+}
+
 export type AppConfig = z.infer<typeof EnvSchema>;
 
 export const config: AppConfig = EnvSchema.parse(process.env);

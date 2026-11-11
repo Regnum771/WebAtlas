@@ -14,6 +14,7 @@ export function layerKindLabel(layer: Pick<LayerSummary, 'kind' | 'fields' | 'la
     case 'free': return layer.fields.length > 0 ? 'Lớp vẽ' : 'Lớp từ tệp';
     case 'edit_copy': return `Sửa lớp ${officialName(layer.layerKey)}`;
     case 'raster': return 'Ảnh';
+    case 'catalogue': return 'Liên kết Danh mục';
     default: return 'Ghi chú';
   }
 }

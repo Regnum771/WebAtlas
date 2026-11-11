@@ -10,6 +10,9 @@ import BasemapTool from '../features/map/ui/BasemapTool';
 import AddData from '../features/add-data';
 import FeatureEditing from '../features/feature-editing';
 import MyMaps, { PersonalTable } from '../features/my-maps';
+import CatalogueLayersSection from '../features/catalogue';
+import TimeSlider from '../features/time-slider';
+import { useTimeSlider } from '../features/time-slider/model/timeSlider.store';
 import LayersPanel from '../features/layers-panel';
 import Legend from '../features/legend';
 import Assistant from '../features/assistant';
@@ -38,6 +41,7 @@ export default function MapScreen() {
   const roi = useRoi();
   const analysis = useAnalysisTools();
   const flood = useFloodScenario();
+  const slider = useTimeSlider();
   // Update and review on a common unit (shared canSaveDirectly), or admin.
   const canEdit = useCanSaveDirectly();
   // A feature drawing or edit-existing mode is active in Biên tập.
@@ -122,6 +126,7 @@ export default function MapScreen() {
         <SidePanelView footer={<Link to="/print" className="link">In và xuất</Link>}>
           <MyMaps />
           {status === 'authenticated' && <hr className="side-panel-rule" />}
+          <CatalogueLayersSection time={slider.time} />
           <LayersPanel />
           <hr className="side-panel-rule" />
           <Legend />
@@ -146,6 +151,7 @@ export default function MapScreen() {
             />
             <ScaleSlider />
             <FloodScenario />
+            <TimeSlider />
             <ToastHost />
           </div>
           <PersonalTable />

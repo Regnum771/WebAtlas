@@ -12,6 +12,7 @@ import { editCopyRowsArgs } from '../layers/repository';
 import { MAP_NOT_FOUND, OWNER_ONLY, assertCanRead, mapRole, type Queryable } from './access';
 import { resolveInStore } from './fileStore';
 import { LAYER_NOT_FOUND } from './freeLayers';
+import type { LayerKind } from './maps';
 import { FILE_NOT_FOUND } from './uploads';
 
 /*
@@ -37,7 +38,7 @@ export const IMPORT_MAX_ROWS = 200_000;
 /** The newest jobs a list returns. */
 export const JOB_LIST_LIMIT = 50;
 
-export type JobKind = 'import' | 'export';
+export type JobKind = 'import' | 'export' | 'timeseries_import';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type ExportFormat = 'gpkg' | 'geojson' | 'shp';
 type GeometryFamily = 'point' | 'line' | 'polygon';
@@ -75,6 +76,11 @@ export interface ImportParams {
   ownerId: string;
   maxRows: number;
   sourceCrs: CrsParam | null;
+  /**
+   * The new layer's title, when the server knows a better one than the file name (a catalogue
+   * copy passes the entry's title verbatim). Absent for an upload's import.
+   */
+  title?: string;
 }
 
 /** One layer of an export job. */
@@ -112,10 +118,35 @@ const pending = (steps: Array<[string, string]>): JobStep[] =>
 
 export const IMPORT_STEPS = pending([['read', 'Đọc tệp'], ['transform', 'Chuyển hệ toạ độ'], ['write', 'Ghi vào bản đồ']]);
 export const EXPORT_STEPS = pending([['read', 'Đọc dữ liệu'], ['write', 'Ghi tệp'], ['package', 'Đóng gói']]);
+// Keys and labels as import_timeseries.py reports them.
+export const TIMESERIES_STEPS = pending([
+  ['read', 'Đọc tệp'], ['transform', 'Tạo các bước thời gian'], ['publish', 'Đưa lên Danh mục'],
+]);
+
+/** params of a time-series import job (TimeseriesImportParams in import_timeseries.py). */
+export interface TimeseriesImportParams {
+  fileId: string;
+  path: string; // store-relative
+  originalName: string;
+  ownerId: string;
+  owner: { sub: string; username: string; email: string };
+  title: string;
+  abstract: string;
+  source: 'geotiff' | 'netcdf' | 'hecras' | null; // null for a zip: the worker looks inside
+  timePattern: string | null;
+  timesCsvPath: string | null;
+  hdfArea: string | null;
+  every: 1 | 4;
+  /** [minLon, minLat, maxLon, maxLat] in EPSG:4326; NetCDF grids are cut to it. */
+  clip4326: [number, number, number, number] | null;
+  /** The clock of a HEC-RAS file's time stamps (hecras.parse_stamp). */
+  hdfTimeZone: 'Asia/Ho_Chi_Minh' | 'UTC';
+}
 
 const WARN_SHP_STYLE = 'Shapefile không giữ kiểu hiển thị.';
 const WARN_SHP_SPLIT = 'Mỗi loại hình học được ghi thành một tệp riêng.';
 const WARN_RASTER = 'Lớp ảnh không được xuất; tải ảnh riêng từ lớp đó.';
+const WARN_CATALOGUE_LINK = 'Lớp liên kết Danh mục không được xuất.';
 const WARN_GEOJSON_CRS = 'GeoJSON ngoài WGS 84 không theo chuẩn RFC 7946.';
 const warnDraftGone = (title: string) => `Lớp "${title}" không còn bản nháp nên không được xuất.`;
 
@@ -192,7 +223,7 @@ function toJob(row: JobRow): Job {
 
 interface MapLayerRow {
   id: string;
-  kind: 'free' | 'edit_copy' | 'raster' | 'annotation';
+  kind: LayerKind;
   title: string;
   style: Record<string, unknown>;
   geometryType: GeometryFamily | null;
@@ -205,14 +236,16 @@ type ExportableRow = MapLayerRow & { kind: 'free' | 'edit_copy' };
 interface ExportSelection {
   layers: ExportableRow[];
   rasterSkipped: boolean;
+  /** A catalogue link was among them: it holds no data of its own to write. */
+  linkSkipped: boolean;
   /** Titles of the edit copies left out because their draft has been discarded. */
   draftsGone: string[];
 }
 
 /**
  * The layers an export writes, in map order: those named in `layerIds`, or every layer of the
- * map. Only free layers and edit copies are written. A raster layer among them is skipped and
- * reported, and so is an edit copy whose draft is gone (draft_id NULL): there is nothing left to
+ * map. Only free layers and edit copies are written. A raster layer or a catalogue link among them
+ * is skipped and reported, and so is an edit copy whose draft is gone (draft_id NULL): there is nothing left to
  * read. The reserved kinds are left out. A named layer that is not in the map is 404.
  */
 async function exportLayers(
@@ -235,6 +268,7 @@ async function exportLayers(
   return {
     layers: selected.filter((r): r is ExportableRow => (r.kind === 'free' || r.kind === 'edit_copy') && !gone(r)),
     rasterSkipped: selected.some((r) => r.kind === 'raster'),
+    linkSkipped: selected.some((r) => r.kind === 'catalogue'),
     draftsGone: selected.filter(gone).map((r) => r.title),
   };
 }
@@ -244,6 +278,7 @@ function exportWarnings(input: { format: ExportFormat }, crs: CrsParam, selectio
   const warnings: string[] = [];
   if (input.format === 'shp') warnings.push(WARN_SHP_STYLE, WARN_SHP_SPLIT);
   if (selection.rasterSkipped) warnings.push(WARN_RASTER);
+  if (selection.linkSkipped) warnings.push(WARN_CATALOGUE_LINK);
   for (const title of selection.draftsGone) warnings.push(warnDraftGone(title));
   if (input.format === 'geojson' && !isWgs84(crs)) warnings.push(WARN_GEOJSON_CRS);
   return warnings;
@@ -277,8 +312,9 @@ function isWgs84(crs: CrsParam): boolean {
   return crs.proj4 === crsParam(DEFAULT_CRS_ID).proj4;
 }
 
-async function insertJob(
-  q: Queryable, ownerId: string, mapId: string, kind: JobKind, params: ImportParams | ExportParams, steps: JobStep[]
+export async function insertJob(
+  q: Queryable, ownerId: string, mapId: string | null, kind: JobKind,
+  params: ImportParams | ExportParams | TimeseriesImportParams, steps: JobStep[]
 ): Promise<Job> {
   const { rows } = await q.query<JobRow>(
     `INSERT INTO workspace.jobs (owner_id, map_id, kind, params, steps)
@@ -307,7 +343,7 @@ export function jobsService(pg: Pool) {
      * the job appends its layers and bumps the map's revision itself, and the client refreshes.
      */
     async enqueueImport(
-      user: CurrentUser, mapId: string, input: { fileId: string; sourceCrs?: string | null }
+      user: CurrentUser, mapId: string, input: { fileId: string; sourceCrs?: string | null; title?: string }
     ): Promise<{ job: Job }> {
       const sourceCrs = input.sourceCrs ? crsParam(input.sourceCrs) : null;
       const role = await mapRole(pg, mapId, user.id);
@@ -325,7 +361,7 @@ export function jobsService(pg: Pool) {
         // queued or running import reads.
         const { rows } = await client.query<{ path: string; original_name: string }>(
           `SELECT path, original_name FROM workspace.files
-            WHERE id = $1 AND owner_id = $2 AND kind = 'upload'
+            WHERE id = $1 AND owner_id = $2 AND kind = 'upload' AND purpose = 'map'
               AND (delete_after IS NULL OR delete_after > now())
             FOR UPDATE`,
           [input.fileId, user.id]
@@ -342,6 +378,7 @@ export function jobsService(pg: Pool) {
           ownerId: user.id,
           maxRows: IMPORT_MAX_ROWS,
           sourceCrs,
+          ...(input.title?.trim() ? { title: input.title.trim() } : {}),
         };
         return { job: await insertJob(client, user.id, mapId, 'import', params, IMPORT_STEPS) };
       });

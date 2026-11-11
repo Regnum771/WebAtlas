@@ -5,7 +5,7 @@ import { resetMyMapsStore, setLayerVisible } from './myMaps.store';
 
 const layer = (over: Partial<LayerSummary>): LayerSummary => ({
   id: 'l', kind: 'free', title: 'T', position: 0, style: {}, geometryType: 'point', fields: [],
-  layerKey: null, draftId: null, featureCount: 0, raster: null, ...over,
+  layerKey: null, draftId: null, featureCount: 0, raster: null, catalogue: null, ...over,
 });
 const detail = (layers: LayerSummary[]): MapDetail => ({
   id: 'm', title: 'M', description: '', ownerId: 'u', ownerName: 'Tôi', revision: 1,

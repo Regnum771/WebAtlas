@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { NotFoundError, ValidationError } from '../../errors';
 import { inTransaction } from '../../lib/transaction';
 import type { CurrentUser } from '../../types/fastify';
+import { visibleItems } from '../catalogue/repository';
 import { assertValidGeoJsonInPg, geoJsonToGeomSql } from '../layers/geometry';
 import { assertCanRead, bumpMap, lockMapForWrite, type Queryable } from './access';
 import type { LayerSummary } from './maps';
@@ -33,12 +34,34 @@ const TYPE_WORD: Record<FieldType, string> = { text: 'chữ', number: 'số', da
 
 interface FreeLayerRow { id: string; geometryType: GeometryType | null; fields: FieldDef[] }
 
-const LAYER_COLUMNS = `l.id, l.kind, l.title, l.position, l.style, l.geometry_type AS "geometryType", l.fields,
+/**
+ * The columns of a LayerSummary, from `workspace.map_layers l`. "catalogueResourceId" is internal:
+ * withCatalogue turns it into the summary's `catalogue` and drops it.
+ */
+export const LAYER_COLUMNS = `l.id, l.kind, l.title, l.position, l.style, l.geometry_type AS "geometryType", l.fields,
   l.layer_key AS "layerKey", l.draft_id AS "draftId",
   CASE WHEN l.kind = 'free'
        THEN (SELECT count(*)::int FROM workspace.features f WHERE f.layer_id = l.id)
   END AS "featureCount",
-  CASE WHEN l.kind = 'raster' THEN l.raster END AS raster`;
+  CASE WHEN l.kind = 'raster' THEN l.raster END AS raster,
+  CASE WHEN l.kind = 'catalogue' THEN l.catalogue_resource_id END AS "catalogueResourceId"`;
+
+export type LayerRow = Omit<LayerSummary, 'catalogue'> & { catalogueResourceId: string | null };
+
+/**
+ * Layer rows as `viewer` sees them: a catalogue link carries its entry when the viewer may see it,
+ * and null when the viewer may not or the entry is gone (its id went NULL with the row). The
+ * viewer is whoever reads the map, so a recipient gets their own visibility, never the owner's.
+ * One query for all the links, whatever their number.
+ */
+export async function withCatalogue(q: Queryable, viewer: CurrentUser, rows: LayerRow[]): Promise<LayerSummary[]> {
+  const linked = rows.flatMap((r) => (r.catalogueResourceId ? [r.catalogueResourceId] : []));
+  const items = await visibleItems(q, viewer, linked);
+  return rows.map(({ catalogueResourceId, ...layer }) => ({
+    ...layer,
+    catalogue: catalogueResourceId ? items.get(catalogueResourceId) ?? null : null,
+  }));
+}
 
 /** A free layer of this map; 404 when the id is not in this map or is not a free layer. */
 async function loadFreeLayer(q: Queryable, mapId: string, layerId: string): Promise<FreeLayerRow> {
@@ -54,11 +77,12 @@ async function loadFreeLayer(q: Queryable, mapId: string, layerId: string): Prom
 /** The position after the map's last layer, for an INSERT whose `$1` is the map id. */
 export const NEXT_POSITION = `(SELECT COALESCE(max(position), -1) + 1 FROM workspace.map_layers WHERE map_id = $1)`;
 
-export async function loadSummary(q: Queryable, layerId: string): Promise<LayerSummary> {
-  const { rows } = await q.query<LayerSummary>(
+/** One layer's summary as `viewer` sees it. */
+export async function loadSummary(q: Queryable, layerId: string, viewer: CurrentUser): Promise<LayerSummary> {
+  const { rows } = await q.query<LayerRow>(
     `SELECT ${LAYER_COLUMNS} FROM workspace.map_layers l WHERE l.id = $1`, [layerId]
   );
-  return rows[0];
+  return (await withCatalogue(q, viewer, rows))[0];
 }
 
 export function checkStyle(style: Record<string, unknown>): void {
@@ -195,7 +219,7 @@ export function freeLayersService(pg: Pool) {
           [mapId, input.title, JSON.stringify(style), input.geometryType, JSON.stringify(input.fields)]
         );
         const revision = await bumpMap(client, mapId);
-        return { layer: await loadSummary(client, rows[0].id), revision };
+        return { layer: await loadSummary(client, rows[0].id, user), revision };
       });
     },
 
@@ -211,7 +235,7 @@ export function freeLayersService(pg: Pool) {
         if (input.fields !== undefined) await applyFieldEdits(client, layer, input.fields);
         await patchLayerRow(client, mapId, layerId, input);
         const revision = await bumpMap(client, mapId);
-        return { layer: await loadSummary(client, layerId), revision };
+        return { layer: await loadSummary(client, layerId, user), revision };
       });
     },
 

@@ -97,7 +97,7 @@ export function rastersService(pg: Pool) {
         if (!rows[0]) throw new NotFoundError(LAYER_NOT_FOUND);
         await patchLayerRow(client, mapId, layerId, input);
         const revision = await bumpMap(client, mapId);
-        return { layer: await loadSummary(client, layerId), revision };
+        return { layer: await loadSummary(client, layerId, user), revision };
       });
     },
 

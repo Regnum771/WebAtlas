@@ -21,6 +21,22 @@ function propertiesSql(layer: 'rivers' | 'lakes' | 'rivers_overview'): string {
 }
 
 /**
+ * The Strahler order (1-6, from HydroRIVERS) of the level-1 river a way belongs to, as `riverOrder`.
+ * A way's own stream_order is its OSM waterway rank, and OSM tags most mountain streams
+ * waterway=river, so the rank alone draws nearly every line as a main river. The web style grades
+ * line width by this order instead (apps/web riverStyle.ts). NULL for a way with no level-1 parent.
+ */
+const RIVER_ORDER_JOIN = `
+  LEFT JOIN (SELECT external_id, stream_order FROM water.rivers_active WHERE feature_level = 1) p
+         ON p.external_id = t.parent_external_id`;
+
+/**
+ * Half a screen pixel at tile zoom $1, in degrees: a tile is drawn 512 px wide, so a pixel is
+ * 360 / (512 * 2^z) degrees. Simplifying by it removes only vertices nobody can see.
+ */
+const HALF_PIXEL_DEG = '180.0 / (512 * 2 ^ $1::int)';
+
+/**
  * One tile: $1 z, $2 x, $3 y. ST_AsMVTGeom clips to the tile (64-unit buffer, so line joins and
  * polygon edges do not show seams) and simplifies to its 4096-unit grid. The bounding-box test is
  * on the stored 4326 geometry, so the views' partial GiST index (migration 22) serves it.
@@ -29,11 +45,12 @@ export function tileSql(layer: TileLayer): string {
   if (layer === 'wards') return wardsTileSql();
   if (layer === 'provinces') return provincesTileSql();
   if (layer === 'rivers_overview') return overviewTileSql();
+  const rivers = layer === 'rivers';
   return `
     WITH bounds AS (SELECT ST_TileEnvelope($1, $2, $3) AS b),
     features AS (
-      SELECT ST_AsMVTGeom(ST_Transform(t.geom, 3857), bounds.b, 4096, 64, true) AS geom, ${propertiesSql(layer)}
-        FROM ${SOURCE[layer]} t, bounds
+      SELECT ST_AsMVTGeom(ST_Transform(t.geom, 3857), bounds.b, 4096, 64, true) AS geom, ${propertiesSql(layer)}${rivers ? ', p.stream_order AS "riverOrder"' : ''}
+        FROM ${SOURCE[layer]} t${rivers ? RIVER_ORDER_JOIN : ''}, bounds
        WHERE t.geom && ST_Transform(bounds.b, 4326)
     )
     SELECT ST_AsMVT(features.*, '${layer}', 4096, 'geom') AS tile FROM features WHERE geom IS NOT NULL`;
@@ -43,16 +60,18 @@ export function tileSql(layer: TileLayer): string {
  * Far-zoom rivers. Deliberately NOT read from water.rivers_overview: that view simplifies every river
  * before any filter, which defeats the bounding-box index and costs seconds per tile. This selects the
  * same rows (level-1 rivers having a level-3 way of stream order 5, as in migration 1000000000020) from
- * the active view and filters by the tile envelope first. Only the surviving rivers are simplified (0.01 degree,
- * like the view; plain ST_Simplify, since the topology-preserving variant is several times slower and a
- * tile does not need it), then clipped and quantised by ST_AsMVTGeom.
+ * the active view and filters by the tile envelope first. Only the surviving rivers are simplified, to
+ * half a pixel of the tile's zoom (a fixed 0.01 degree, ~1.1 km, cut meanders into straight chords at
+ * zooms 7-8), with plain ST_Simplify, since the topology-preserving variant is several times slower and a
+ * tile does not need it; then clipped and quantised by ST_AsMVTGeom. A level-1 river's own stream_order is
+ * its Strahler order, so it is also sent as `riverOrder`, the property the web style grades widths by.
  */
 function overviewTileSql(): string {
   return `
     WITH bounds AS (SELECT ST_TileEnvelope($1, $2, $3) AS b),
     features AS (
-      SELECT ST_AsMVTGeom(ST_Transform(ST_Simplify(t.geom, 0.01), 3857), bounds.b, 4096, 64, true) AS geom,
-             COALESCE(t.name, '') AS name_key, t.name, t.stream_order
+      SELECT ST_AsMVTGeom(ST_Transform(ST_Simplify(t.geom, ${HALF_PIXEL_DEG}), 3857), bounds.b, 4096, 64, true) AS geom,
+             COALESCE(t.name, '') AS name_key, t.name, t.stream_order, t.stream_order AS "riverOrder"
         FROM ${SOURCE.rivers_overview} t, bounds
        WHERE t.feature_level = 1
          AND t.geom && ST_Transform(bounds.b, 4326)
@@ -73,6 +92,8 @@ function overviewTileSql(): string {
  */
 function boundaryTileSql(o: {
   table: string; polyLayer: string; labelLayer: string; source: string; columns: string; labelPoint: string; polyGeom?: string;
+  /** Extra MVT layers' SQL (each yields one bytea), appended to the tile. */
+  extraLayers?: string[];
 }): string {
   return `
     WITH bounds AS (SELECT ST_TileEnvelope($1, $2, $3) AS b),
@@ -95,8 +116,23 @@ function boundaryTileSql(o: {
          AND ST_Y(pts.p) > ST_YMin(bounds.b) AND ST_Y(pts.p) <= ST_YMax(bounds.b)
     )
     SELECT (SELECT COALESCE(ST_AsMVT(polys.*, '${o.polyLayer}', 4096, 'geom'), ''::bytea) FROM polys WHERE geom IS NOT NULL)
-        || (SELECT COALESCE(ST_AsMVT(labels.*, '${o.labelLayer}', 4096, 'geom'), ''::bytea) FROM labels WHERE geom IS NOT NULL) AS tile`;
+        || (SELECT COALESCE(ST_AsMVT(labels.*, '${o.labelLayer}', 4096, 'geom'), ''::bytea) FROM labels WHERE geom IS NOT NULL)${
+          (o.extraLayers ?? []).map((sql) => `\n        || (${sql})`).join('')} AS tile`;
 }
+
+/**
+ * The `province_borders` MVT layer: the land boundaries the map strokes (admin.province_borders,
+ * migration 34), with `kind` 'province' or 'national'. The province polygons stay in the tile, unstroked,
+ * for hit-testing; drawing their outlines would stroke the coast and ring every island.
+ */
+const PROVINCE_BORDERS_LAYER_SQL = `
+  SELECT COALESCE(ST_AsMVT(borders.*, 'province_borders', 4096, 'geom'), ''::bytea)
+    FROM (
+      SELECT ST_AsMVTGeom(ST_Transform(ST_Simplify(pb.geom, ${HALF_PIXEL_DEG}), 3857), bounds.b, 4096, 64, true) AS geom, pb.kind
+        FROM admin.province_borders pb, bounds
+       WHERE pb.geom && ST_Transform(bounds.b, 4326)
+    ) borders
+   WHERE geom IS NOT NULL`;
 
 /** Ward boundaries: the `wards` polygons and the `ward_labels` points (a point on the ward's surface). */
 function wardsTileSql(): string {
@@ -129,7 +165,8 @@ export function largestPartPointSql(geom: string): string {
  */
 function provincesTileSql(): string {
   return boundaryTileSql({
-    polyGeom: 'ST_Simplify(h.geom, 180.0 / (512 * 2 ^ $1::int))',
+    polyGeom: `ST_Simplify(h.geom, ${HALF_PIXEL_DEG})`,
+    extraLayers: [PROVINCE_BORDERS_LAYER_SQL],
     table: 'admin.provinces', polyLayer: 'provinces', labelLayer: 'province_labels',
     source: 't.code, t.name, t.name_en, t.full_name, t.area_km2, t.geom',
     columns: `h.code, h.name, h.name_en AS "nameEn", h.full_name AS "fullName",
@@ -173,9 +210,14 @@ export function resetBoundaryTokenCache(): void { boundaryTokens.clear(); }
 export async function boundaryVersion(db: Pool, layer: BoundaryLayer): Promise<string | null> {
   const cached = boundaryTokens.get(layer);
   if (cached && Date.now() - cached.at < BOUNDARY_TOKEN_TTL_MS) return cached.value;
+  // A province tile also carries the derived border lines (migration 34), so their digest is part of
+  // the provinces token: rebuilding them, or first adding them, must change the tile URLs.
+  const borders = layer === 'provinces'
+    ? ` || ':' || coalesce((SELECT md5(string_agg(kind || md5(ST_AsEWKB(geom)), ',' ORDER BY id)) FROM admin.province_borders), '')`
+    : '';
   const { rows } = await db.query<{ token: string | null }>(
     `SELECT md5(string_agg(code || ':' || name || ':' || coalesce(full_name, '') || ':' || md5(ST_AsEWKB(geom))
-                             || ':' || coalesce(area_km2::text, ''), ',' ORDER BY code)) AS token
+                             || ':' || coalesce(area_km2::text, ''), ',' ORDER BY code)${borders}) AS token
        FROM ${BOUNDARY_TABLE[layer]}`);
   const value = rows[0]?.token ?? null;
   boundaryTokens.set(layer, { value, at: Date.now() });

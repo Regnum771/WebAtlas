@@ -13,7 +13,7 @@ import { setRoi } from '../features/roi/model/roi.store';
 import { isPersonalFeatureLayer, isPersonalLayer, OVERLAY_LAYER_IDS, PERSONAL_HIT_TOLERANCE } from '../features/map/model/overlayLayers';
 import { getMyMaps } from '../features/my-maps/model/myMaps.store';
 import { useMapEditing } from '../features/map/model/mapEditing';
-import { isBoundaryLabel } from '../features/map/model/waterTiles';
+import { isBoundaryDecoration } from '../features/map/model/waterTiles';
 import { ManagingUnitRow } from './ManagingUnitRow';
 
 interface PopupData {
@@ -157,14 +157,15 @@ const DynamicPopup: React.FC = () => {
         // must not shadow the ward/province/thematic feature underneath.
         if (OVERLAY_LAYER_IDS.has(layer?.get('id'))) return undefined;
         const p = f.getProperties();
+        // A boundary label point or border line carries no unit attributes: the polygon under it does.
+        if (isBoundaryDecoration(p)) return undefined;
         if (!feature) feature = f;
         // The normalized props carry `id` for CRUD; fall back to the WFS feature id
         // ("rivers.<uuid>") so a layer that does not set it still offers its feature.
         if (!thematic && p.layerKey) thematic = { ...p, id: p.id ?? String(f.getId() ?? '').split('.').pop() };
         const layerId = layer?.get('id');
-        // The label points of a boundary tile carry only code and name: the polygon has the full attributes.
-        if (!province && layerId === 'layer_provinces_2026' && !isBoundaryLabel(p)) province = p;
-        if (!ward && layerId === 'layer_wards_2026' && !isBoundaryLabel(p)) ward = p;
+        if (!province && layerId === 'layer_provinces_2026') province = p;
+        if (!ward && layerId === 'layer_wards_2026') ward = p;
         return undefined; // keep iterating
       });
       const zoom = map.getView().getZoom() ?? 0;

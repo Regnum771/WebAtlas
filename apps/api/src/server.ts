@@ -21,8 +21,11 @@ import { closeAssistantPool } from './modules/assistant/sql/pool';
 import { closeAnalysisPool } from './modules/analysis/pool';
 import scenariosRoutes from './modules/scenarios/routes';
 import workspaceRoutes from './modules/workspace/routes';
+import platformRoutes from './modules/platform/routes';
 import multipart from '@fastify/multipart';
 import { MAX_UPLOAD_BYTES } from './modules/workspace/uploads';
+import catalogueRoutes from './modules/catalogue/routes';
+import { TIMESERIES_MAX_BYTES } from './modules/catalogue/uploads';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -57,6 +60,7 @@ export function buildApp(): FastifyInstance {
   app.register(roiRoutes, { prefix: '/api' });
   app.register(assistantRoutes, { prefix: '/api' });
   app.register(scenariosRoutes, { prefix: '/api' });
+  app.register(platformRoutes, { prefix: '/api' });
   // Multipart is parsed for the workspace routes only (uploads), inside their own scope. The
   // file limit is one byte over the per-file maximum so that a file over it is seen as too large
   // (uploads.ts) rather than silently truncated at exactly the maximum. POST /uploads reads one
@@ -70,6 +74,15 @@ export function buildApp(): FastifyInstance {
     });
     await workspace.register(workspaceRoutes);
   }, { prefix: '/api/workspace' });
+
+  // The catalogue: time-series uploads up to 2 GiB, in their own multipart scope (same one-part
+  // rules as the workspace uploads above).
+  app.register(async (catalogue) => {
+    await catalogue.register(multipart, {
+      limits: { fileSize: TIMESERIES_MAX_BYTES + 1, files: 1, fields: 0, fieldSize: 1024, parts: 2 },
+    });
+    await catalogue.register(catalogueRoutes);
+  }, { prefix: '/api/catalogue' });
 
   // The assistant's read-only pool is a SEPARATE pg.Pool from app.pg (deliberately
   // — see modules/assistant/sql/pool.ts), so plugins/db.ts's onClose hook does not
