@@ -1,6 +1,7 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { BOOKKEEPING_COLUMNS, DICTIONARY, type DictFeatureType } from '@webatlas/shared';
 import { getPool, closePool } from '../../db/pool';
+import { isBuiltHere } from '../../test/externallyBuilt';
 
 // Read-only: compares the code dictionary with the live dev database's catalogue.
 afterAll(async () => { await closePool(); });
@@ -9,6 +10,13 @@ afterAll(async () => { await closePool(); });
 const keyed: DictFeatureType[] = Object.values(DICTIONARY).filter((ft) => ft.table !== undefined);
 const vectors = keyed.filter((ft) => ft.kind === 'vector');
 const rasters = keyed.filter((ft) => ft.kind === 'raster');
+
+// Entries whose table a tool outside migrate/seed builds are checked only where it was built.
+async function builtHere(fts: DictFeatureType[]): Promise<DictFeatureType[]> {
+  const out: DictFeatureType[] = [];
+  for (const ft of fts) if (await isBuiltHere(getPool(), ft.table!)) out.push(ft);
+  return out;
+}
 
 function splitTable(table: string): { schema: string; name: string } {
   const [schema, name] = table.split('.');
@@ -75,7 +83,7 @@ describe('dictionary matches the database schema', () => {
 
   it('every non-bookkeeping column of each table has an attribute', async () => {
     const missing: string[] = [];
-    for (const ft of keyed) {
+    for (const ft of await builtHere(keyed)) {
       const columns = await tableColumns(ft.table!);
       expect(columns.length, `${ft.table} has no columns (does it exist?)`).toBeGreaterThan(0);
       const spatial = await spatialColumns(ft.table!);
@@ -90,7 +98,7 @@ describe('dictionary matches the database schema', () => {
 
   it('no column attribute names a missing column', async () => {
     const extra: string[] = [];
-    for (const ft of keyed) {
+    for (const ft of await builtHere(keyed)) {
       const columns = new Set(await tableColumns(ft.table!));
       for (const a of ft.attributes) {
         if (a.source === 'column' && !columns.has(a.name)) extra.push(`${ft.key}.${a.name}`);
@@ -101,7 +109,7 @@ describe('dictionary matches the database schema', () => {
 
   it('geometry type and SRID match the table', async () => {
     const wrong: string[] = [];
-    for (const ft of vectors) {
+    for (const ft of await builtHere(vectors)) {
       const geoms = await geometryColumns(ft.table!);
       if (geoms.length !== 1) {
         wrong.push(`${ft.key}: expected one geometry column, found ${geoms.length}`);
@@ -125,7 +133,7 @@ describe('dictionary matches the database schema', () => {
 
   it('raster entries with a table point at a raster column', async () => {
     const wrong: string[] = [];
-    for (const ft of rasters) {
+    for (const ft of await builtHere(rasters)) {
       const { schema, name } = splitTable(ft.table!);
       const { rows } = await getPool().query<{ srid: number; num_bands: number; nodata_values: number[] | null }>(
         `SELECT srid, num_bands, nodata_values FROM raster_columns
