@@ -18,6 +18,8 @@ jobs:
       - run: npm ci
       - run: npm run build:shared
       - run: npm run test:shared
+      - run: npx tsc -p packages/theme/tsconfig.json --noEmit
+      - run: npm run test:theme
 
   web:
     runs-on: ubuntu-latest
