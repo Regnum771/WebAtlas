@@ -104,3 +104,26 @@ describe('cascade layers', () => {
     expect(app).toMatch(/:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--color-mark\);[^}]*outline-offset:\s*0;[^}]*box-shadow:\s*0 0 0 3px var\(--color-ink\)/);
   });
 });
+
+// Review finding: `revert` in legacy-compat beats the R9 rule in the lower `base` layer.
+describe('focus ring and toast band (K2 final review)', () => {
+  const here = import.meta.dirname;
+  it('legacy-compat leaves focus and invalid styling to R9, in Firefox too', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const compat = readFileSync(resolve(here, '../styles/legacy-compat.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(compat).not.toMatch(/-moz-focusring|-moz-ui-invalid/);
+  });
+  it('the toast band spans the map stage and the toast list is sized from it, not the viewport', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const shell = readFileSync(resolve(here, '../styles/shell.css'), 'utf8');
+    const band = /\.toast-host \{([^}]*)\}/.exec(shell)?.[1] ?? '';
+    expect(band).toMatch(/left:\s*12px/);
+    expect(band).toMatch(/right:\s*12px/);
+    expect(band).not.toMatch(/max-content/);
+    const host = readFileSync(resolve(here, '../shared/ui/ToastHost.tsx'), 'utf8');
+    expect(host).toMatch(/LIST_WIDTH = 'min\(560px, 100%\)'/);
+    expect(host).not.toMatch(/100vw/);
+  });
+});

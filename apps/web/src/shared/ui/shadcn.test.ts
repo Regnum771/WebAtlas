@@ -16,4 +16,10 @@ describe('shadcn components', () => {
       .filter((f) => /focus-visible:|outline-none|ring-/.test(readFileSync(resolve(dir, f), 'utf8')));
     expect(offenders).toEqual([]);
   });
+  it('never import the npm package "cn" the shadcn CLI keeps installing', () => {
+    const importers = readdirSync(dir).filter((f) => /from ["']cn["']/.test(readFileSync(resolve(dir, f), 'utf8')));
+    expect(importers).toEqual([]);
+    const pkg = JSON.parse(readFileSync(resolve(dir, '../../../../package.json'), 'utf8'));
+    expect(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })).not.toContain('cn');
+  });
 });

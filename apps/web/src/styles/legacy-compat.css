@@ -100,11 +100,6 @@
   border-collapse: revert;
 }
 
-/* Restores the browser's focus ring in Firefox (preflight sets `outline: auto`). */
-:where(:-moz-focusring:where(:not(iframe))):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
-  outline: revert;
-}
-
 /* Restores the browser's progress alignment (preflight sets baseline). */
 :where(progress):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
   vertical-align: revert;
@@ -222,11 +217,6 @@
 /* Restores the browser's line-height of the datalist marker (preflight sets 1). */
 :where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-calendar-picker-indicator {
   line-height: revert;
-}
-
-/* Restores the browser's invalid-field shadow in Firefox (preflight removes it). */
-:where(:-moz-ui-invalid):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
-  box-shadow: revert;
 }
 
 /* Restores the native appearance of buttons (preflight sets `appearance: button`). */

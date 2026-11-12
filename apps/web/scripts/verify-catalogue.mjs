@@ -382,7 +382,7 @@ async function search(page, query) {
   await sleep(300);
   await page.waitForFunction(() => {
     const p = document.querySelector('.catalogue-picker');
-    return p && !p.querySelector('.spin') && (p.querySelector('.catalogue-results') || p.textContent.includes('Không có dữ liệu phù hợp.') || p.textContent.includes('Không kết nối được'));
+    return p && !p.querySelector('[data-slot="spinner"]') && (p.querySelector('.catalogue-results') || p.textContent.includes('Không có dữ liệu phù hợp.') || p.textContent.includes('Không kết nối được'));
   }, { timeout: 20000 });
   await sleep(300);
   return page.evaluate(() => [...document.querySelectorAll('.catalogue-result')].map((li) => ({

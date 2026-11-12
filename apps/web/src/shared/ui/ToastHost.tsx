@@ -55,8 +55,8 @@ function ToastItem({ toast }: { toast: Toast }) {
  */
 const ITEM_STYLE: CSSProperties = { left: 0, right: 0, marginInline: 'auto', width: 'fit-content', maxWidth: '100%' };
 
-/** As wide as the old band allowed: the map stage beside the data panel, less a 12 px margin each side. */
-const LIST_WIDTH = 'min(560px, calc(100vw - var(--panel-width) - 24px))';
+/** Of the band (.toast-host spans the map stage less 12 px each side), so a toast never leaves the map. */
+const LIST_WIDTH = 'min(560px, 100%)';
 
 /**
  * Renders the popup store through Sonner. The store keeps the policy (dedupe, MAX_TOASTS,
