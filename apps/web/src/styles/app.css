@@ -5,6 +5,7 @@
 @import "@webatlas/theme/tailwind-theme.css";
 @import "tailwindcss/preflight.css" layer(base);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
+/* legacy-compat.css must be imported before the legacy files: the minifier drops the @layer statement, so the built layer order comes from first appearance. */
 @import "./legacy-compat.css" layer(legacy-compat);
 @import "ol/ol.css" layer(legacy);
 @import "../index.css" layer(legacy);

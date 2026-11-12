@@ -1117,7 +1117,7 @@ body {
 .upload-progress p { margin: 4px 0 0; font-size: var(--text-sm); }
 /* File picker: the native input is visually hidden; its label is drawn as the button and shows its focus. */
 .file-pick { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.file-pick input:focus-visible + .file-pick-button { outline: 3px solid var(--mark); outline-offset: 2px; box-shadow: 0 0 0 1px var(--ink); }
+.file-pick input:focus-visible + .file-pick-button { outline: 2px solid var(--mark); outline-offset: 0; box-shadow: 0 0 0 3px var(--ink); }
 .file-pick-button.disabled { opacity: 0.5; cursor: default; }
 .file-pick-name { min-width: 0; overflow-wrap: anywhere; font-size: var(--text-sm); }
 .job-progress { display: grid; gap: var(--space-2); }

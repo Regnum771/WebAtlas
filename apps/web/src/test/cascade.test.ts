@@ -60,16 +60,36 @@ describe('cascade layers', () => {
     expect(lastImport).toBeLessThan(firstRule);
   });
 
-  it('only main.tsx imports CSS, and only app.css', () => {
+  it('only main.tsx imports CSS, and only the bare app.css', () => {
     const src = resolve(here, '..');
-    const offenders: string[] = [];
-    for (const file of sourceFiles(src)) {
-      if (file.endsWith('main.tsx')) continue;
-      if (/^\s*import\s[^;\n]*['"][^'"]+\.css['"]/m.test(readFileSync(file, 'utf8'))) offenders.push(file);
-    }
+    const mainPath = resolve(src, 'main.tsx');
+    // Static imports (also across lines, with ?query suffixes) and dynamic import('...css').
+    const cssImport = /(?:(?<![@\w])import\s*(?:[^'"()]*?\bfrom\s*)?|(?<![@\w])import\s*\(\s*)['"][^'"]+\.css(?:\?[^'"]*)?['"]/;
+    const offenders = sourceFiles(src)
+      .filter((file) => resolve(file) !== mainPath && resolve(file) !== resolve(here, 'cascade.test.ts'))
+      .filter((file) => cssImport.test(readFileSync(file, 'utf8')));
     expect(offenders).toEqual([]);
-    const cssImports = [...read('../main.tsx').matchAll(/import\s+['"]([^'"]+\.css)['"]/g)].map((m) => m[1]);
-    expect(cssImports).toEqual(['./styles/app.css']);
+    const main = readFileSync(mainPath, 'utf8');
+    const statements = main.match(new RegExp(cssImport.source, 'g')) ?? [];
+    expect(statements.map((s) => s.replace(/\s+/g, ' '))).toEqual([`import './styles/app.css'`]);
+    expect(main).toMatch(/^import '\.\/styles\/app\.css'\s*;?\s*$/m);
+  });
+
+  it('detects CSS imports in every form the check must catch', () => {
+    const cssImport = /(?:(?<![@\w])import\s*(?:[^'"()]*?\bfrom\s*)?|(?<![@\w])import\s*\(\s*)['"][^'"]+\.css(?:\?[^'"]*)?['"]/;
+    for (const text of [`import './a.css';`, `import x from\n'./a.css';`, `import u from './a.css?url';`,
+      `import r from "./a.css?raw"`, `const m = import('./a.css')`, `import './a.css?inline'`]) {
+      expect(cssImport.test(text), text).toBe(true);
+    }
+    expect(cssImport.test(`import { a } from './a.ts';`)).toBe(false);
+  });
+
+  it('gives every compat rule the dialog-aware primitive exclusion', () => {
+    const compat = read('../styles/legacy-compat.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    const exclusion = ':not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)';
+    const selectors = [...compat.matchAll(/([^{}]+)\{/g)].flatMap((m) => m[1].split(/,\s*\n/)).map((s) => s.trim()).filter(Boolean);
+    expect(selectors.length).toBeGreaterThan(30);
+    for (const selector of selectors) expect(selector, selector).toContain(exclusion);
   });
 
   it('keeps shared custom properties equal between the legacy tokens and the theme package', () => {
