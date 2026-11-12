@@ -102,7 +102,7 @@ function trackTiles(page) {
 
 /** Waits until no spinner is on the page, so a loading state is never snapshotted. */
 const spinnersGone = (page) =>
-  page.waitForFunction(() => !document.querySelector('.spin, [aria-busy="true"]'), { timeout: SETTLE_CAP_MS });
+  page.waitForFunction(() => !document.querySelector('.spin, [data-slot="spinner"], [aria-busy="true"]'), { timeout: SETTLE_CAP_MS });
 
 /** Reads the computed style of every element outside [data-slot] subtrees and the toast host. */
 async function snapshotPage(page, prefix) {
@@ -153,7 +153,7 @@ async function openPage(page, settle, route) {
   const probed = page.waitForResponse((r) => r.url().includes('/api/platform/services'), { timeout: SETTLE_CAP_MS });
   await page.goto(`${BASE_URL}${route}`, { waitUntil: 'load' });
   await probed;
-  await settle();
+  if (!(await settle())) throw new Error(`tile requests still in flight after ${SETTLE_CAP_MS / 1000} s on ${route}`);
   await spinnersGone(page);
   await page.evaluate(() => document.fonts.ready);
   await structureStable(page);

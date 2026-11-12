@@ -35,4 +35,11 @@ describe('PROPERTIES', () => {
     expect(PROPERTIES).toContain('border-bottom-color');
     expect(PROPERTIES).toContain('appearance');
   });
+
+  it('covers layout and visual style, but not layout results', () => {
+    for (const name of ['gap', 'align-items', 'border-top-left-radius', 'box-shadow', 'overflow-y', 'opacity', 'z-index', 'letter-spacing', 'white-space', 'text-transform', 'grid-template-columns']) {
+      expect(PROPERTIES).toContain(name);
+    }
+    for (const name of ['width', 'height', 'top', 'left', 'right', 'bottom']) expect(PROPERTIES).not.toContain(name);
+  });
 });
