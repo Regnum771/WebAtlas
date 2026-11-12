@@ -43,7 +43,7 @@ export function StatusBarView({ scale, scaleLineRef, coordinatesRef, elevation, 
         className={`${DIVIDER} min-w-[204px] font-num text-num whitespace-nowrap`}
       />
       <div data-readout="elevation" className="hidden @[960px]:block">{elevation}</div>
-      <div data-readout="crs" className={`${DIVIDER} ml-auto min-w-0`}>{crs}</div>
+      <div data-readout="crs" className={`${DIVIDER} ml-auto flex min-w-0 shrink [&>select]:w-full`}>{crs}</div>
       <output
         data-readout="selection"
         className={`${DIVIDER} whitespace-nowrap`}

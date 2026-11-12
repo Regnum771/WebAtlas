@@ -11,7 +11,7 @@ describe('design tokens and base styles', () => {
   it.each([
     ['--green', '#14532D'], ['--ink', '#18213A'], ['--ink-2', '#55607A'], ['--rule', '#C8CEDA'],
     ['--paper', '#F3F5F4'], ['--sheet', '#FFFFFF'], ['--mark', '#FFD928'], ['--alert', '#B3261E'],
-    ['--topbar-height', '44px'], ['--panel-width', '348px'], ['--radius', '3px'],
+    ['--topbar-height', '44px'], ['--panel-width', '312px'], ['--radius', '3px'],
     ['--text-xs', '11.5px'], ['--text-sm', '13px'], ['--text-md', '14px'], ['--text-lg', '16px'], ['--text-xl', '21px'],
   ])('token %s is %s', (name, value) => {
     expect(tokens).toMatch(new RegExp(`${name}:\\s*${value}\\s*;`, 'i'));

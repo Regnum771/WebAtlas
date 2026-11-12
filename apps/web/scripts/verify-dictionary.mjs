@@ -298,15 +298,15 @@ function installPageHelpers() {
     },
     /** The official layer's checkbox in Quản lý dữ liệu (not a personal layer's). */
     officialBox(name) {
-      const label = [...document.querySelectorAll('.layers-panel:not(.my-maps) label.layer-label')]
-        .find((l) => l.querySelector('span') && text(l.querySelector('span')) === name);
-      return label?.querySelector('input[type="checkbox"]') ?? null;
+      const row = [...document.querySelectorAll('[data-slot="layers-panel"] [data-slot="layer-row"]')]
+        .find((r) => r.querySelector('label') && text(r.querySelector('label')) === name);
+      return row?.querySelector('[role="checkbox"]') ?? null;
     },
     /** The legend section of a layer: its entry labels, or null while it is not shown. */
     legend(name) {
-      const layer = [...document.querySelectorAll('.legend-panel .legend-layer')]
-        .find((l) => l.querySelector('.legend-layer-title') && text(l.querySelector('.legend-layer-title')) === name);
-      return layer ? [...layer.querySelectorAll('.legend-entry')].map(text) : null;
+      const layer = [...document.querySelectorAll('[data-slot="legend"] [data-legend-layer]')]
+        .find((l) => l.querySelector('h3') && text(l.querySelector('h3')) === name);
+      return layer ? [...layer.querySelectorAll('li')].map(text) : null;
     },
   };
 }
@@ -574,7 +574,8 @@ async function stepLegend(session, vp, ctx) {
   const setOfficial = (on) => page.evaluate((name, want) => {
     const box = window.__dd.officialBox(name);
     if (!box) return false;
-    if (box.checked !== want) box.click();
+    // A Radix checkbox: a button carrying aria-checked.
+    if ((box.getAttribute('aria-checked') === 'true') !== want) box.click();
     return true;
   }, DAMS_DISPLAY, on);
   if (!(await setOfficial(false))) throw new Error(`no row "${DAMS_DISPLAY}" in Quản lý dữ liệu`);
@@ -587,8 +588,8 @@ async function stepLegend(session, vp, ctx) {
     if (!entries.includes(wanted)) problems.push(`the legend has no "${wanted}": ${entries.join(' | ')}`);
   }
   await page.evaluate((n) => {
-    const layer = [...document.querySelectorAll('.legend-panel .legend-layer')]
-      .find((l) => window.__dd.text(l.querySelector('.legend-layer-title')) === n);
+    const layer = [...document.querySelectorAll('[data-slot="legend"] [data-legend-layer]')]
+      .find((l) => window.__dd.text(l.querySelector('h3')) === n);
     layer?.scrollIntoView({ block: 'center' });
   }, DAMS_DISPLAY);
   await shot(session, vp, 'chu-giai');

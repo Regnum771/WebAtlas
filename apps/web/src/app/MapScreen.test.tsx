@@ -110,6 +110,12 @@ const menuOf = (tool: string) =>
 beforeEach(() => { signOut(); resetShell(); resetRoiStore(); });
 
 describe('MapScreen', () => {
+  it('floats the contents panel inside the map box, not in a grid column of its own', () => {
+    const { container } = renderScreen();
+    const panel = screen.getByRole('complementary', { name: 'Bảng bản đồ' });
+    expect(panel.parentElement).toBe(container.querySelector('.map-stage-map'));
+  });
+
   it('shows the layer list and the legend together in the side panel', () => {
     renderScreen();
     const panel = screen.getByRole('complementary', { name: 'Bảng bản đồ' });

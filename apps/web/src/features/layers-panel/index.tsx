@@ -1,4 +1,5 @@
-import { useLayersPanel } from './model/useLayersPanel';
+import { useState } from 'react';
+import { filterPanelGroups, useLayersPanel } from './model/useLayersPanel';
 import { LayersPanelView } from './ui/LayersPanel.view';
 import { useDictionarySheetPresenter } from '../dictionary/model/useDictionarySheetPresenter';
 import { DictionarySheetView } from '../dictionary/ui/DictionarySheet.view';
@@ -7,13 +8,18 @@ import { useMapContext } from '../../app/providers/MapProvider';
 
 export default function LayersPanel() {
   const zoom = useMapZoom();
-  const { groups, missingDisplay, toggleLayerVisibility, setLayerOpacity } = useLayersPanel(zoom);
+  const { groups, onCount, turnAllOff, missingDisplay, toggleLayerVisibility, setLayerOpacity } = useLayersPanel(zoom);
+  const [query, setQuery] = useState('');
   const { contourSettings, setContourSettings } = useMapContext();
   const { sheet, openSheet, close } = useDictionarySheetPresenter();
   return (
     <>
     <LayersPanelView
-      groups={groups}
+      groups={filterPanelGroups(groups, query)}
+      onCount={onCount}
+      onTurnAllOff={turnAllOff}
+      query={query}
+      onQuery={setQuery}
       missingDisplay={missingDisplay}
       onToggle={toggleLayerVisibility}
       onOpacity={setLayerOpacity}

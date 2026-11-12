@@ -36,7 +36,7 @@ import { primeAdminUnits } from '../entities/admin-unit/adminUnits.store';
 import { ConnectionStrip } from '../shared/ui/ConnectionStrip';
 import { ToastHost } from '../shared/ui/ToastHost';
 
-/** The map page: one grid holding the top bar, the docked panel, the map stage and the assistant. */
+/** The map page: one grid holding the top bar, the map stage (with the floating contents panel) and the assistant. */
 export default function MapScreen() {
   const { status } = useSession();
   const { assistantOpen, tool } = useShell();
@@ -124,17 +124,6 @@ export default function MapScreen() {
   return (
     <AppShellView
       topBar={<TopBar />}
-      panel={(
-        <SidePanelView footer={<Link to="/print" className="link">In và xuất</Link>}>
-          <MyMaps />
-          {status === 'authenticated' && <hr className="side-panel-rule" />}
-          <CatalogueLayersSection time={slider.time} />
-          <LayersPanel />
-          <hr className="side-panel-rule" />
-          <Legend />
-          <FloodLegend />
-        </SidePanelView>
-      )}
       strip={<ConnectionStrip />}
       stage={(
         <>
@@ -145,6 +134,15 @@ export default function MapScreen() {
                 /quan-ly overlays a live map instead of unmounting it. */}
             <MapView />
             <MapLoadingBar />
+            {/* The contents panel floats over the map's top-left corner (SidePanel.view.tsx). */}
+            <SidePanelView footer={<Link to="/print" className="link">In và xuất</Link>}>
+              <MyMaps />
+              {status === 'authenticated' && <hr className="side-panel-rule" />}
+              <CatalogueLayersSection time={slider.time} />
+              <LayersPanel />
+              <Legend />
+              <FloodLegend />
+            </SidePanelView>
             <ToolGroupView
               tools={tools}
               open={tool}

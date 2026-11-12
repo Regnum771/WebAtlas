@@ -2,8 +2,9 @@
    assistant column.
 
    z-index scale, shared by every layer of the interface:
-     10   floats in the map stage (tool group, loading bar, scale slider) and the docked
+     10   floats in the map stage (tool group, tool stacks, loading bar) and the docked
           personal-layer table under them
+     15   contents panel floating over the map's top-left corner
      20   open tool menu
      30   toast host
      40   feature popup
@@ -23,27 +24,11 @@
   height: 100%;
   display: grid;
   grid-template-rows: var(--topbar-height) minmax(0, 1fr);
-  grid-template-columns: var(--panel-width) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .app-shell.with-assistant {
-  grid-template-columns: var(--panel-width) minmax(0, 1fr) var(--assistant-width);
-}
-
-.side-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--sheet);
-  color: var(--ink);
-  border-right: 1px solid var(--ink);
-  font-stretch: 92%;
-}
-
-.side-panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  grid-template-columns: minmax(0, 1fr) var(--assistant-width);
 }
 
 .side-panel-rule {
@@ -52,11 +37,6 @@
   margin: 0;
 }
 
-.side-panel-footer {
-  flex: none;
-  padding: 10px 14px;
-  border-top: 1px solid var(--rule);
-}
 
 .map-column {
   display: flex;
@@ -73,6 +53,9 @@
   /* The toast band's bottom edge: 12px above the status bar (32px, StatusBar.view.tsx), the
      only thing along the stage's bottom edge. 32px + 12px = 44px. */
   --toast-band-bottom: 44px;
+  /* The contents panel floats 8px from the stage's left edge and is --panel-width wide
+     (SidePanel.view.tsx); floats that start at the left keep 8px clear of it. */
+  --panel-clear: calc(var(--panel-width) + 16px);
   /* A two-line toast: two lines of 13px text at 1.35 (35.1px), 18px padding and
      a 2px border on each side = 57.1px, rounded up. */
   --toast-band-height: 58px;
@@ -108,8 +91,9 @@
 .toast-host {
   position: absolute;
   bottom: var(--toast-band-bottom);
-  /* Spans the stage less a margin, so the toast list inside is sized from the map, not the window. */
-  left: 12px;
+  /* Spans the stage right of the contents panel less a margin, so the toast list inside is sized
+     from the map, not the window. */
+  left: var(--panel-clear);
   right: 12px;
   z-index: 30;
   display: flex;
@@ -166,12 +150,12 @@
 .tool-dock {
   position: absolute;
   top: 12px;
-  left: 12px;
+  left: var(--panel-clear);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
-  max-width: calc(100% - 12px - var(--scale-column) - 24px);
+  max-width: calc(100% - var(--panel-clear) - var(--scale-column) - 12px);
   max-height: calc(100% - 12px - var(--toast-band-bottom) - var(--toast-band-height) - 12px);
   pointer-events: none;
 }
@@ -355,14 +339,14 @@
 @media (max-width: 1099px) {
   /* Too narrow for three columns: the assistant floats over the map's right edge. */
   .app-shell.with-assistant {
-    grid-template-columns: var(--panel-width) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
   .assistant-dock {
     position: absolute;
     top: var(--topbar-height);
     right: 0;
     bottom: 0;
-    width: min(var(--assistant-width), calc(100vw - var(--panel-width)));
+    width: min(var(--assistant-width), calc(100vw - var(--panel-width) - 16px));
     /* Above routed pages (90), so Trợ lý also works on /print and /quan-ly. */
     z-index: 95;
   }

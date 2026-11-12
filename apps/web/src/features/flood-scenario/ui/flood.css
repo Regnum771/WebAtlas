@@ -4,7 +4,7 @@
    right; toasts move up above it while it is open. */
 .flood-dock {
   position: absolute;
-  left: 12px;
+  left: var(--panel-clear);
   right: calc(var(--scale-column) + 24px);
   bottom: var(--toast-band-bottom);
   z-index: 10;

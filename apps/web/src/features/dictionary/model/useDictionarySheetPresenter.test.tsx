@@ -33,7 +33,11 @@ describe('useDictionarySheetPresenter', () => {
     return (
       <MemoryRouter>
         <LayersPanelView
-          groups={[{ name: 'G', layers: [{ id: 'layer_dams', name: 'Đập', visible: false, opacity: 1, gated: false }] }]}
+          groups={[{ name: 'G', on: 0, total: 1, layers: [{ id: 'layer_dams', name: 'Đập', visible: false, opacity: 1, gated: false }] }]}
+          onCount={0}
+          onTurnAllOff={vi.fn()}
+          query=""
+          onQuery={vi.fn()}
           missingDisplay={[]}
           onToggle={vi.fn()}
           onOpacity={vi.fn()}
@@ -79,7 +83,7 @@ describe('useDictionarySheetPresenter', () => {
     await userEvent.click(info);
     expect(screen.getByRole('region', { name: 'Đập — thuộc tính' })).toBeInTheDocument();
     await userEvent.keyboard('{Escape}');
-    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Đập — thuộc tính' })).not.toBeInTheDocument();
     expect(info).toHaveFocus();
   });
 });

@@ -6,7 +6,7 @@ const CrsSelect: React.FC = () => {
   const [crsId, setCrsId] = useCrsPreference();
   return (
     <select
-      className="map-crs-select h-6 max-w-[200px] min-w-0 cursor-pointer truncate rounded-md border border-line bg-surface-2 px-1.5 text-label text-ink"
+      className="map-crs-select h-6 w-[200px] max-w-full min-w-0 cursor-pointer truncate rounded-md border border-line bg-surface-2 px-1.5 text-label text-ink"
       value={crsId}
       onChange={(e) => setCrsId(e.target.value)}
       aria-label="Hệ quy chiếu hiển thị toạ độ"

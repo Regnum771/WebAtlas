@@ -39,3 +39,20 @@ describe('LegendView', () => {
     expect(screen.getByText('© OpenStreetMap contributors (ODbL)')).toBeInTheDocument();
   });
 });
+
+describe('LegendView in the contents panel', () => {
+  it('is a converted scope with one block per layer, and links an OpenStreetMap notice to its source', () => {
+    const { container } = render(
+      <LegendView
+        layers={[
+          { layerStateId: 'layer_lakes', name: 'Hồ', sections: [{ title: 'Mặt nước', entries: [{ swatch: '#60a5fa', shape: 'box', label: 'Hồ' }] }], attribution: '© OpenStreetMap contributors (ODbL)' },
+          { layerStateId: 'layer_contours', name: 'Đường đồng mức', sections: [], attribution: 'FABDEM' },
+        ]}
+      />
+    );
+    expect(screen.getByRole('region', { name: 'Chú giải' })).toHaveAttribute('data-slot', 'legend');
+    expect(container.querySelectorAll('[data-legend-layer]')).toHaveLength(2);
+    expect(screen.getByRole('link', { name: '© OpenStreetMap contributors (ODbL)' })).toHaveAttribute('href', 'https://www.openstreetmap.org/copyright');
+    expect(screen.getByText('FABDEM').closest('a')).toBeNull();
+  });
+});

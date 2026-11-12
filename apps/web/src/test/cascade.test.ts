@@ -114,12 +114,13 @@ describe('focus ring and toast band (K2 final review)', () => {
     const compat = readFileSync(resolve(here, '../styles/legacy-compat.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     expect(compat).not.toMatch(/-moz-focusring|-moz-ui-invalid/);
   });
-  it('the toast band spans the map stage and the toast list is sized from it, not the viewport', async () => {
+  it('the toast band spans the map stage right of the contents panel, and the toast list is sized from it, not the viewport', async () => {
     const { readFileSync } = await import('node:fs');
     const { resolve } = await import('node:path');
     const shell = readFileSync(resolve(here, '../styles/shell.css'), 'utf8');
     const band = /\.toast-host \{([^}]*)\}/.exec(shell)?.[1] ?? '';
-    expect(band).toMatch(/left:\s*12px/);
+    // K3: it starts right of the floating contents panel (--panel-clear).
+    expect(band).toMatch(/left:\s*var\(--panel-clear\)/);
     expect(band).toMatch(/right:\s*12px/);
     expect(band).not.toMatch(/max-content/);
     const host = readFileSync(resolve(here, '../shared/ui/ToastHost.tsx'), 'utf8');
