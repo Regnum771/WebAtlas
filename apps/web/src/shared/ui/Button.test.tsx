@@ -51,4 +51,26 @@ describe('Button', () => {
     render(<Button>Ok</Button>);
     expect(screen.getByRole('button')).toHaveAttribute('type', 'button');
   });
+
+  it('marks its variant and size, outline and md by default', () => {
+    render(<Button>Ok</Button>);
+    const b = screen.getByRole('button');
+    expect(b).toHaveAttribute('data-slot', 'button');
+    expect(b).toHaveAttribute('data-variant', 'outline');
+    expect(b).toHaveAttribute('data-size', 'md');
+  });
+
+  it('a danger button says so', () => {
+    render(<Button variant="danger">Xoá</Button>);
+    expect(screen.getByRole('button')).toHaveAttribute('data-variant', 'danger');
+  });
+
+  it('an inverse toggle on the green bar stays pressable while pressed', async () => {
+    const onClick = vi.fn();
+    render(<Button variant="inverse" aria-pressed="true" onClick={onClick}>Lớp</Button>);
+    const b = screen.getByRole('button', { name: 'Lớp', pressed: true });
+    expect(b).toHaveAttribute('data-variant', 'inverse');
+    await userEvent.click(b);
+    expect(onClick).toHaveBeenCalledOnce();
+  });
 });

@@ -78,28 +78,6 @@ button.link {
   cursor: default;
 }
 
-/* Spinner */
-.spin {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  box-sizing: border-box;
-  border: 2px solid var(--rule);
-  border-top-color: var(--ink);
-  border-radius: 50%;
-  animation: spin 0.9s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .spin {
-    animation: none;
-  }
-}
-
 /* Vertical stack of fields and a closing action */
 .form-stack {
   display: grid;

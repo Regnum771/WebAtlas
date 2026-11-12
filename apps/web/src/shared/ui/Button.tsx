@@ -1,8 +1,10 @@
 import type { ButtonHTMLAttributes, MouseEvent } from 'react';
+import { Button as ShadcnButton } from './shadcn/button';
 import { Spinner } from './Spinner';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'outline' | 'solid' | 'quiet' | 'danger';
+  /** `inverse` is for buttons on the green top bar: white outline, white fill when pressed. */
+  variant?: 'outline' | 'solid' | 'quiet' | 'danger' | 'inverse';
   size?: 'md' | 'sm';
   busy?: boolean;
   /** Shown in place of children while busy. */
@@ -16,14 +18,10 @@ export function Button({
   busy = false,
   busyLabel,
   type = 'button',
-  className,
   children,
   onClick,
   ...rest
 }: ButtonProps) {
-  const classes = ['btn', variant === 'outline' ? null : variant, size === 'sm' ? 'sm' : null, className]
-    .filter(Boolean)
-    .join(' ');
   const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
     if (busy) {
       event.preventDefault();
@@ -32,11 +30,11 @@ export function Button({
     onClick?.(event);
   };
   return (
-    <button
+    <ShadcnButton
       {...rest}
-      data-slot="button"
+      variant={variant}
+      size={size}
       type={type}
-      className={classes}
       onClick={handleClick}
       aria-busy={busy ? true : undefined}
       aria-disabled={busy ? true : undefined}
@@ -49,6 +47,6 @@ export function Button({
       ) : (
         children
       )}
-    </button>
+    </ShadcnButton>
   );
 }

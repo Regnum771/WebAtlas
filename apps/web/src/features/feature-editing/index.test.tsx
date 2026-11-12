@@ -85,7 +85,7 @@ describe('FeatureEditing: deleting', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Xoá đối tượng' }));
     const dialog = screen.getByRole('dialog', { name: 'Xoá đối tượng này?' });
     expect(within(dialog).getByText('Không khôi phục được.')).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Xoá' })).toHaveClass('danger');
+    expect(within(dialog).getByRole('button', { name: 'Xoá' })).toHaveAttribute('data-variant', 'danger');
     expect(within(dialog).getByRole('button', { name: 'Huỷ' })).toBeInTheDocument();
   });
 });

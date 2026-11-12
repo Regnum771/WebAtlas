@@ -8,12 +8,12 @@ const base = { open: true, title: 'Xoá đối tượng', message: 'Không hoàn
 describe('ConfirmDialog', () => {
   it('a reversible confirm button is not red', () => {
     render(<ConfirmDialog {...base} confirmLabel="Lưu" />);
-    expect(screen.getByRole('button', { name: 'Lưu' })).not.toHaveClass('danger');
+    expect(screen.getByRole('button', { name: 'Lưu' })).toHaveAttribute('data-variant', 'solid');
   });
 
   it('an irreversible confirm button is red and repeats the verb', () => {
     render(<ConfirmDialog {...base} confirmLabel="Xoá" irreversible />);
-    expect(screen.getByRole('button', { name: 'Xoá' })).toHaveClass('danger');
+    expect(screen.getByRole('button', { name: 'Xoá' })).toHaveAttribute('data-variant', 'danger');
   });
 
   it('offers Huỷ, first in the DOM', async () => {
