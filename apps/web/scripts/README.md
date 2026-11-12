@@ -101,3 +101,19 @@ dòng `FAIL` nào.
 **`SKIPPED` không phải là đạt.** Thiếu `VERIFY_EMAIL` hoặc `VERIFY_PASSWORD` thì các kiểm tra
 đã đăng nhập in `SKIPPED` và script vẫn thoát 0 — lần chạy đó chưa chứng minh được bố cục
 khi đã đăng nhập. Chỉ coi là kiểm chứng xong khi mọi dòng đều là `PASS`.
+
+# Ảnh chụp kiểu dáng phần cũ
+
+`verify-legacy-styles.mjs` chứng minh các màn hình cũ không đổi giao diện khi chuyển sang
+Tailwind và shadcn: nó đọc kiểu dáng tính toán (`getComputedStyle`) của mọi phần tử trên các
+trang cũ ở 1440×900, rồi so với ảnh chụp đã lưu. Bỏ qua mọi phần tử `[data-slot]` cùng cây con
+của nó (các thành phần mới được phép đổi) và `.toast-host`. Trang chưa đăng nhập: `/`,
+`/ban-do`, `/du-lieu`; đã đăng nhập (cần `VERIFY_EMAIL`, `VERIFY_PASSWORD`, nếu không in
+`SKIPPED`): `/ban-do`, `/ho-so`, `/quan-ly/nhom-quyen`, `/quan-ly/tu-dien`.
+
+```bash
+npm run verify:legacy-styles -w @webatlas/web -- --save ../../.superpowers/k2-legacy-baseline.json
+npm run verify:legacy-styles -w @webatlas/web -- --compare ../../.superpowers/k2-legacy-baseline.json
+```
+
+Thoát với mã 1 khi có khác biệt (in tối đa 50 dòng). Cần Docker stack, API và `npm run dev:web`.

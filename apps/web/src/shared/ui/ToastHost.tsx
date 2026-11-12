@@ -7,6 +7,7 @@ function ToastItem({ toast }: { toast: Toast }) {
   return (
     <div
       className={bad ? 'toast bad' : 'toast'}
+      data-slot="toast"
       role={bad ? 'alert' : 'status'}
       onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); dismissToast(toast.id); } }}
     >

@@ -34,6 +34,7 @@ export function Button({
   return (
     <button
       {...rest}
+      data-slot="button"
       type={type}
       className={classes}
       onClick={handleClick}

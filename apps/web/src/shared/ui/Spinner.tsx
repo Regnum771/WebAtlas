@@ -2,11 +2,11 @@
 export function Spinner({ label }: { label?: string }) {
   if (label) {
     return (
-      <span role="status" aria-label={label}>
+      <span role="status" aria-label={label} data-slot="spinner">
         <span className="spin" aria-hidden="true" />
         <span className="visually-hidden">{label}</span>
       </span>
     );
   }
-  return <span className="spin" aria-hidden="true" />;
+  return <span className="spin" aria-hidden="true" data-slot="spinner" />;
 }

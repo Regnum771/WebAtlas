@@ -29,7 +29,7 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
     />
   );
   return (
-    <div className="field">
+    <div className="field" data-slot="text-field">
       <label htmlFor={id}>{label}</label>
       {trailing ? (
         <div className="input-wrap">

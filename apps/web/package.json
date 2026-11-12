@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "profile": "node scripts/profile-map.mjs",
     "test": "vitest run",
+    "verify:legacy-styles": "node scripts/verify-legacy-styles.mjs",
     "verify:shell": "node scripts/verify-shell.mjs",
     "verify:permissions": "node scripts/verify-permissions.mjs",
     "verify:personal-maps": "node scripts/verify-personal-maps.mjs",

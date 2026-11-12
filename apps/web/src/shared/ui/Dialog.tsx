@@ -47,11 +47,13 @@ export function Dialog({ open, title, onClose, children }: DialogProps) {
   return createPortal(
     <div
       className="dialog-backdrop"
+      data-slot="dialog-overlay"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         ref={panelRef}
         className="dialog"
+        data-slot="dialog-content"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
