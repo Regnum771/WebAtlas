@@ -83,9 +83,9 @@ describe('FeatureEditing: deleting', () => {
       isoProps: { id: 'f1', layerKey: 'dams', geographicalName: 'Hồ A' },
     }));
     fireEvent.click(screen.getByRole('button', { name: 'Xoá đối tượng' }));
-    const dialog = screen.getByRole('dialog', { name: 'Xoá đối tượng này?' });
+    const dialog = screen.getByRole('alertdialog', { name: 'Xoá đối tượng này?' });
     expect(within(dialog).getByText('Không khôi phục được.')).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Xoá' })).toHaveClass('danger');
+    expect(within(dialog).getByRole('button', { name: 'Xoá' })).toHaveAttribute('data-variant', 'danger');
     expect(within(dialog).getByRole('button', { name: 'Huỷ' })).toBeInTheDocument();
   });
 });
@@ -147,7 +147,7 @@ describe('FeatureEditing: per-feature gating for an officer', () => {
       { unit: '51', permission: 'submission.review', allowed: ['48'] }));
     selectDam('48');
     fireEvent.click(screen.getByRole('button', { name: 'Xoá đối tượng' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Xoá đối tượng này?' })).getByRole('button', { name: 'Xoá' }));
+    fireEvent.click(within(screen.getByRole('alertdialog', { name: 'Xoá đối tượng này?' })).getByRole('button', { name: 'Xoá' }));
     expect(await screen.findByText('Đối tượng thuộc Quảng Ngãi; nhóm của anh/chị chỉ có quyền trong Đà Nẵng.')).toBeInTheDocument();
     expect(screen.getByText('Thiếu quyền duyệt và xuất bản.')).toBeInTheDocument();
     expect(screen.queryByText('Chưa xoá được. Thử lại.')).toBeNull();

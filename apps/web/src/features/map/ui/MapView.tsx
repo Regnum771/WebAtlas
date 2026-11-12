@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from 'react';
-import 'ol/ol.css';
 import { useMapContext } from '../../../app/providers/MapProvider';
 import { useMapEditing } from '../model/mapEditing';
 import { MapModel } from '../model/MapModel';

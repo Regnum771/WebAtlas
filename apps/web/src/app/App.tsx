@@ -7,7 +7,6 @@ import MapScreen from './MapScreen';
 import DynamicPopup from '../components/DynamicPopup';
 import ProposedEdit from '../features/feature-editing/ProposedEdit';
 import HubRoute from '../pages/trang-chu';
-import '../styles/main.css';
 
 // The Quản lý area is rarely visited: keep it out of the main bundle.
 const QuanLyRoute = lazy(() => import('../pages/quan-ly'));

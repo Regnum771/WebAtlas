@@ -1,0 +1,8 @@
+/* Clear Tailwind's default theme namespaces so only the @webatlas/theme tokens exist. */
+@theme {
+  --color-*: initial;
+  --font-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --text-*: initial;
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Dictionary, DictFeatureType } from '@webatlas/shared';
@@ -473,7 +473,9 @@ describe('dictionary editor', () => {
       await dialog.findByText('Không có giá trị mẫu để xem trước.');
       await userEvent.type(dialog.getByLabelText('Áp dụng từ ngày'), '2026-10-01');
       await userEvent.click(dialog.getByRole('checkbox'));
-      await userEvent.click(screen.getByRole('button', { name: /Tên tiếng Anh/ }));
+      // The modal hides and blocks the page behind it; this drives the presenter's rule that
+      // switching attribute closes the dialog, so the click is dispatched directly.
+      fireEvent.click(screen.getByRole('button', { name: /Tên tiếng Anh/, hidden: true }));
       expect(screen.queryByRole('dialog')).toBeNull();
       await userEvent.click(screen.getByRole('button', { name: /Diện tích/ }));
       expect(screen.queryByRole('dialog')).toBeNull();

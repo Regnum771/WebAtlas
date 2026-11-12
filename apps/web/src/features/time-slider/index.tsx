@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { pause, play, setSpeed, setTime, stepBy, useTimeSlider } from './model/timeSlider.store';
 import { watchFloodDock } from './model/floodDockHeight';
 import { TimeSliderView } from './ui/TimeSlider.view';
-import './ui/time-slider.css';
 
 /** The shared time bar; nothing while no visible time-series layer supplies steps. */
 export default function TimeSlider() {

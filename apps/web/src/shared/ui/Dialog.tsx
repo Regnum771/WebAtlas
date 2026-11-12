@@ -1,10 +1,6 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
-
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-/** Open dialogs, oldest first; only the last one reacts to Escape. */
-const openDialogs: object[] = [];
+import type { ReactNode } from 'react';
+import { Dialog as DialogRoot, DialogContent, DialogTitle } from './shadcn/dialog';
+import { useReturnFocus } from './useReturnFocus';
 
 export interface DialogProps {
   open: boolean;
@@ -13,54 +9,24 @@ export interface DialogProps {
   children: ReactNode;
 }
 
-/** The one modal. Rendered into document.body so no stacking context of its opener can cover it. */
+/**
+ * The one modal, on Radix Dialog: portalled to document.body, focus trapped and returned to
+ * the opener, only the topmost dialog of a stack reacts to Escape.
+ */
 export function Dialog({ open, title, onClose, children }: DialogProps) {
-  const titleId = useId();
-  const panelRef = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  useEffect(() => {
-    if (!open) return;
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const first = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? panelRef.current)?.focus();
-
-    // Capture phase on document: Escape closes the topmost dialog and never reaches a menu or popup behind it.
-    const token = {};
-    openDialogs.push(token);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || openDialogs[openDialogs.length - 1] !== token) return;
-      event.stopImmediatePropagation();
-      event.preventDefault();
-      onCloseRef.current();
-    };
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown, true);
-      openDialogs.splice(openDialogs.indexOf(token), 1);
-      opener?.focus();
-    };
-  }, [open]);
-
-  if (!open) return null;
-  return createPortal(
-    <div
-      className="dialog-backdrop"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        ref={panelRef}
-        className="dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
+  const returnFocus = useReturnFocus(open);
+  return (
+    <DialogRoot open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent
+        aria-describedby={undefined}
+        // Radix listens in the capture phase on document; stopping here keeps Escape from
+        // reaching a menu or popup behind the dialog.
+        onEscapeKeyDown={(event) => event.stopImmediatePropagation()}
+        onCloseAutoFocus={returnFocus}
       >
-        <h2 id={titleId} className="dialog-title">{title}</h2>
+        <DialogTitle>{title}</DialogTitle>
         {children}
-      </div>
-    </div>,
-    document.body,
+      </DialogContent>
+    </DialogRoot>
   );
 }

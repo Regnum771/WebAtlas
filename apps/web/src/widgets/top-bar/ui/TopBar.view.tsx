@@ -40,7 +40,7 @@ export function TopBarView({ nav, search, assistant, account }: TopBarViewProps)
       <div className="top-bar-search">{search}</div>
       {assistant && (
         <Button
-          className="on-green"
+          variant="inverse"
           aria-pressed={assistant.open}
           onClick={assistant.onToggle}
         >

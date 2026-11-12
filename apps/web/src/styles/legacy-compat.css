@@ -1,0 +1,243 @@
+/* Mirror of Tailwind preflight, minus margin, padding and box-sizing (legacy sets those itself).
+   Each rule reverts to the pre-Tailwind browser value in a layer below `legacy`, so every legacy declaration still wins.
+   Dialog containers count as legacy scope; nested primitives (own data-slot) do not.
+   Not mirrored: preflight's `[hidden] { display: none !important }`, an important declaration in the lower base layer cannot be reverted from here. */
+
+/* Restores the browser's border (preflight sets `0 solid`) on every legacy element and its pseudo-elements. */
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::before,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::after,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::backdrop,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::file-selector-button {
+  border: revert;
+}
+
+/* Restores the root line-height, font and text settings (preflight sets its own on html). */
+:where(html):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  line-height: revert;
+  -webkit-text-size-adjust: revert;
+  tab-size: revert;
+  font-family: revert;
+  font-feature-settings: revert;
+  font-variation-settings: revert;
+  -webkit-tap-highlight-color: revert;
+}
+
+/* Restores the browser's rule colour, height and top border width (preflight inherits the colour, sets height 0 and 1px). */
+:where(hr):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  height: revert;
+  color: revert;
+  border-top-width: revert;
+}
+
+/* Restores the browser's underline on abbreviations with a title (preflight sets a dotted one). */
+:where(abbr[title]):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  text-decoration: revert;
+}
+
+/* Restores the browser's heading size and weight (preflight makes headings inherit them). */
+:where(h1):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(h2):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(h3):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(h4):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(h5):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(h6):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  font-size: revert;
+  font-weight: revert;
+}
+
+/* Restores the browser's link colour and underline (preflight makes links inherit both). */
+:where(a):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  color: revert;
+  text-decoration: revert;
+}
+
+/* Restores the browser's weight for b and strong (preflight sets `bolder`). */
+:where(b):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(strong):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  font-weight: revert;
+}
+
+/* Restores the browser's monospace font and size for code elements (preflight sets its own font stack). */
+:where(code):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(kbd):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(samp):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(pre):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  font-family: revert;
+  font-feature-settings: revert;
+  font-variation-settings: revert;
+  font-size: revert;
+}
+
+/* Restores the browser's size for small text (preflight sets 80%). */
+:where(small):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  font-size: revert;
+}
+
+/* Restores the browser's sub and sup sizing and position (preflight sets size, line-height, position and alignment). */
+:where(sub):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(sup):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  font-size: revert;
+  line-height: revert;
+  position: revert;
+  vertical-align: revert;
+}
+
+/* Restores the browser's offset of sub (preflight sets `bottom`). */
+:where(sub):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  bottom: revert;
+}
+
+/* Restores the browser's offset of sup (preflight sets `top`). */
+:where(sup):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  top: revert;
+}
+
+/* Restores the browser's table indent, border colour and border model (preflight sets all three). */
+:where(table):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  text-indent: revert;
+  border-color: revert;
+  border-collapse: revert;
+}
+
+/* Restores the browser's focus ring in Firefox (preflight sets `outline: auto`). */
+:where(:-moz-focusring:where(:not(iframe))):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  outline: revert;
+}
+
+/* Restores the browser's progress alignment (preflight sets baseline). */
+:where(progress):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  vertical-align: revert;
+}
+
+/* Restores the browser's display of summary (preflight sets list-item). */
+:where(summary):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  display: revert;
+}
+
+/* Restores the browser's list markers on lists and menus (preflight removes them). */
+:where(ol):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(ul):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(menu):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  list-style: revert;
+}
+
+/* Restores the inline default of replaced elements (preflight makes them block and middle-aligned). */
+:where(img):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(svg):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(video):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(canvas):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(audio):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(iframe):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(embed):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(object):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  display: revert;
+  vertical-align: revert;
+}
+
+/* Restores the browser's image and video sizing (preflight sets max-width 100% and height auto). */
+:where(img):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(video):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  max-width: revert;
+  height: revert;
+}
+
+/* Restores the browser's form-control face (preflight inherits font, color and letter-spacing and clears background, radius and opacity). */
+:where(button):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(input):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(select):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(optgroup):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(textarea):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::file-selector-button {
+  font: revert;
+  font-feature-settings: revert;
+  font-variation-settings: revert;
+  letter-spacing: revert;
+  color: revert;
+  border-radius: revert;
+  background-color: revert;
+  opacity: revert;
+}
+
+/* Restores the browser's optgroup weight in multi-selects (preflight sets bolder). */
+:where(select:is([multiple], [size])):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) optgroup {
+  font-weight: revert;
+}
+
+/* Restores the browser's option indent in multi-selects (preflight sets 20px). */
+:where(select:is([multiple], [size])):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) optgroup option {
+  padding-inline-start: revert;
+}
+
+/* Restores the browser's gap after the file-selector button (preflight sets 4px). */
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::file-selector-button {
+  margin-inline-end: revert;
+}
+
+/* Restores the browser's placeholder colour and opacity (preflight sets a mixed colour and opacity 1). */
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::placeholder {
+  color: revert;
+  opacity: revert;
+}
+
+/* Restores the browser's textarea resize handle (preflight allows vertical only). */
+:where(textarea):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  resize: revert;
+}
+
+/* Restores the native search-field decoration (preflight removes it). */
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-search-decoration {
+  -webkit-appearance: revert;
+}
+
+/* Restores the browser's date/time value box (preflight sets min-height and text-align). */
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-date-and-time-value {
+  min-height: revert;
+  text-align: revert;
+}
+
+/* Restores the browser's date/time edit display (preflight sets inline-flex). */
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-datetime-edit {
+  display: revert;
+}
+
+/* Restores the browser's padding of the date/time fields wrapper (preflight sets 0). */
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-datetime-edit-fields-wrapper {
+  padding: revert;
+}
+
+/* Restores the browser's block padding of the date/time field parts (preflight sets 0). */
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-datetime-edit,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-datetime-edit-year-field,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-datetime-edit-month-field,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-datetime-edit-day-field,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-datetime-edit-hour-field,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-datetime-edit-minute-field,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-datetime-edit-second-field,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-datetime-edit-millisecond-field,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-datetime-edit-meridiem-field {
+  padding-block: revert;
+}
+
+/* Restores the browser's line-height of the datalist marker (preflight sets 1). */
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-calendar-picker-indicator {
+  line-height: revert;
+}
+
+/* Restores the browser's invalid-field shadow in Firefox (preflight removes it). */
+:where(:-moz-ui-invalid):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *) {
+  box-shadow: revert;
+}
+
+/* Restores the native appearance of buttons (preflight sets `appearance: button`). */
+:where(button):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(input:where([type='button'], [type='reset'], [type='submit'])):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *),
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::file-selector-button {
+  appearance: revert;
+}
+
+/* Restores the browser's spin-button height in Safari (preflight sets auto). */
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-inner-spin-button,
+:where(*):not([data-slot]:not([data-slot*="dialog"]), [data-slot]:not([data-slot*="dialog"]) *)::-webkit-outer-spin-button {
+  height: revert;
+}

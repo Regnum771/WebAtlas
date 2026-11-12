@@ -356,7 +356,7 @@ async function press(page, selector, label) {
 }
 
 const dialogText = (page) => page.evaluate(() => {
-  const all = document.querySelectorAll('.dialog');
+  const all = document.querySelectorAll(':is([role="dialog"],[role="alertdialog"])');
   return all.length ? window.__dd.text(all[all.length - 1]) : '';
 });
 
@@ -420,7 +420,7 @@ async function stepEditCopy(session, vp, ctx) {
   await click(page, { selector: '.my-maps-buttons' }, 'Bản đồ mới');
   await page.waitForSelector('#my-map-title', { visible: true, timeout: 5000 });
   await page.type('#my-map-title', MAP_TITLE);
-  await click(page, { selector: '.dialog' }, 'Tạo');
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Tạo');
   await page.waitForFunction((t, g) => {
     const card = window.__dd.card(t, g);
     return card?.querySelector('.my-map-head')?.getAttribute('aria-expanded') === 'true' && card.querySelector('.my-map-actions');
@@ -433,9 +433,9 @@ async function stepEditCopy(session, vp, ctx) {
   await click(page, OWN, 'Sửa một lớp chính thức');
   await page.waitForSelector('#edit-copy-layer', { visible: true, timeout: 5000 });
   await page.select('#edit-copy-layer', LAYER_KEY);
-  await click(page, { selector: '.dialog' }, 'Tạo bản sửa');
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Tạo bản sửa');
   try {
-    await page.waitForFunction(() => !document.querySelector('.dialog'), { timeout: 15000 });
+    await page.waitForFunction(() => !document.querySelector(':is([role="dialog"],[role="alertdialog"])'), { timeout: 15000 });
   } catch {
     throw new Error(`Sửa một lớp chính thức did not close: ${(await dialogText(page)).slice(-300)}`);
   }

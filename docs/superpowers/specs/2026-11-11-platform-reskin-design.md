@@ -21,6 +21,7 @@ These are the user's decisions from 2026-11-11 and are binding.
 | R6 | No soft-card look. The user preferred the original layout over the four surface alternatives (A–D). |
 | R7 | It must not look like an iOS consumer app. It must read as an analytical application (see "Visual system"). |
 | R8 | **The bottom edge of the map is the scale bar, always.** The time slider appears as a second row above it only while a time layer is on. |
+| R9 | (2026-11-12) **Focus ring = 2 px `mark` ring plus a 1 px `ink` outline.** `mark` alone is 1.38:1 on white, below WCAG 1.4.11's 3:1; the `ink` outline carries the contrast on light panels and on the map. |
 
 Still binding from earlier tracks:
 - The scale slider keeps the 11 stops of `ZOOM_SCALE_LEVELS` (1:12.800.000 to 1:25.000); only its look changes.
@@ -49,7 +50,7 @@ Still binding from earlier tracks:
 | `water` | `#0F6E8C` | links, river names |
 | `surface` / `surface-2` | `#FFFFFF` / `#F7F8F5` | panels; panel headers, inputs, page ground |
 | `line` / `line-2` / `line-3` | `#CDD3CA` / `#E3E6E0` / `#EEF0EC` | panel border; section divider; row divider |
-| `mark` | `#FFD928` | selected feature, focus ring |
+| `mark` | `#FFD928` | selected feature, focus ring (always with a 1 px `ink` outline, R9) |
 | `alert` | `#B3261E` | failures, irreversible actions, alarm breached |
 | `series-1` / `series-2` | `#1F7FB8` / `#D2691E` | forecast / observed (validated: worst CVD ΔE 21.0). Dark surface: `#3F8FD0` / `#D9702F` |
 | `alarm-1..3` | `#C99A06` / `#D9773F` / `#C0392B` | BĐ1–BĐ3 lines, always with a text label |
@@ -131,7 +132,7 @@ Motion:
 
 ### Keycloak sign-in, artboard 5
 
-A split layout: the dark contour hero on the left, the form on the right. The form has 36 px inputs and a 40 px button, the wrong-password state (bordered alert), the focus ring in `mark`, and Vietnamese messages.
+A split layout: the dark contour hero on the left, the form on the right. The form has 36 px inputs and a 40 px button, the wrong-password state (bordered alert), the focus ring in `mark` with its `ink` outline (R9), and Vietnamese messages.
 
 ### Dagster, artboard 6
 

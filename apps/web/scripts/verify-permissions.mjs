@@ -182,7 +182,7 @@ async function signIn(page, { email, password }) {
       { timeout: 20000 },
     );
   } catch {
-    const message = await page.$eval('.dialog', (el) => el.innerText.replace(/\s+/g, ' ')).catch(() => '');
+    const message = await page.$eval(':is([role="dialog"],[role="alertdialog"])', (el) => el.innerText.replace(/\s+/g, ' ')).catch(() => '');
     throw new Error(`sign-in did not finish: ${message}`);
   }
   // The session is settled once the top bar stops changing; the tools list follows the user's groups.
@@ -232,8 +232,8 @@ async function deleteTestGroups(page) {
     await page.$$eval('.user-table tbody tr', (rows, i) => {
       [...rows[i].querySelectorAll('button')].find((b) => b.textContent.trim() === 'Xoá')?.click();
     }, index);
-    await page.waitForSelector('.dialog', { visible: true, timeout: 5000 });
-    await clickText(page, '.dialog button', 'Xoá');
+    await page.waitForSelector(':is([role="dialog"],[role="alertdialog"])', { visible: true, timeout: 5000 });
+    await clickText(page, ':is([role="dialog"],[role="alertdialog"]) button', 'Xoá');
     await page.waitForFunction((n, before) => document.querySelectorAll('.user-table tbody tr').length < before
       || !document.querySelector('.user-table'), { timeout: 10000 }, names[index], names.length);
     await sleep(300);

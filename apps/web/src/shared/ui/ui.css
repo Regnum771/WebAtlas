@@ -36,12 +36,6 @@ button.link {
   border: 0;
 }
 
-:focus-visible {
-  outline: 3px solid var(--mark);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 1px var(--ink);
-}
-
 /* Button */
 .btn {
   display: inline-flex;
@@ -82,28 +76,6 @@ button.link {
   background: var(--paper);
   color: var(--ink-2);
   cursor: default;
-}
-
-/* Spinner */
-.spin {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  box-sizing: border-box;
-  border: 2px solid var(--rule);
-  border-top-color: var(--ink);
-  border-radius: 50%;
-  animation: spin 0.9s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .spin {
-    animation: none;
-  }
 }
 
 /* Vertical stack of fields and a closing action */
@@ -189,31 +161,6 @@ button.link {
 }
 
 /* Dialog */
-.dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 200; /* dialog, on the z-index scale in shell.css */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(24, 33, 58, 0.4);
-}
-.dialog {
-  box-sizing: border-box;
-  min-width: 320px;
-  max-width: 90vw;
-  max-height: 90vh;
-  overflow: auto;
-  padding: 14px;
-  background: var(--sheet);
-  color: var(--ink);
-  border: 1px solid var(--ink);
-  border-radius: var(--radius);
-}
-.dialog-title {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-lg);
-}
 .dialog-message {
   margin: 0 0 14px;
 }
@@ -221,34 +168,4 @@ button.link {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
-}
-
-/* Toast */
-.toast {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 9px 10px 9px 14px;
-  background: var(--ink);
-  color: var(--sheet);
-  border: 1px solid var(--ink);
-  border-radius: var(--radius);
-  font-size: var(--text-sm);
-}
-.toast .btn {
-  background: transparent;
-  color: var(--sheet);
-  border-color: var(--sheet);
-}
-.toast.bad {
-  background: var(--sheet);
-  color: var(--ink);
-  border: 2px solid var(--alert);
-}
-.toast.bad > svg {
-  color: var(--alert);
-}
-.toast.bad .btn {
-  color: var(--ink);
-  border-color: var(--ink);
 }

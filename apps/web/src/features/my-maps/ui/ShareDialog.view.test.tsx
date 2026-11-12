@@ -47,8 +47,10 @@ describe('ShareDialogView', () => {
   });
 
   it('the revoke confirmation names the person and explains', () => {
-    render(<ShareDialogView {...base({ shares: [LAN], pendingRevoke: { id: 's1', name: 'Lan' } })} />);
-    const confirm = screen.getByRole('dialog', { name: 'Thu hồi chia sẻ với Lan?' });
+    // As in the app: the confirmation opens over an already open share dialog.
+    const { rerender } = render(<ShareDialogView {...base({ shares: [LAN] })} />);
+    rerender(<ShareDialogView {...base({ shares: [LAN], pendingRevoke: { id: 's1', name: 'Lan' } })} />);
+    const confirm = screen.getByRole('alertdialog', { name: 'Thu hồi chia sẻ với Lan?' });
     expect(within(confirm).getByText('Người này sẽ không còn xem được bản đồ. Bản sao họ đã tạo vẫn là của họ.')).toBeInTheDocument();
     expect(within(confirm).getByRole('button', { name: 'Thu hồi' })).toBeInTheDocument();
   });

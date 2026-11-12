@@ -84,7 +84,9 @@ describe('Dialog', () => {
     await user.click(screen.getByRole('button', { name: 'Mở A' }));
     const openB = screen.getByRole('button', { name: 'Mở B' });
     await user.click(openB);
-    expect(screen.getAllByRole('dialog')).toHaveLength(2);
+    // Both are open; A is hidden from assistive technology while B is on top of it.
+    expect(screen.getAllByRole('dialog', { hidden: true })).toHaveLength(2);
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'B' })).not.toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: 'A' })).toBeInTheDocument();

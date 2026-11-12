@@ -569,18 +569,6 @@
   flex-shrink: 1;
 }
 
-/* Buttons on the green bar: white outline, white text; pressed is a white fill. */
-.btn.on-green {
-  background: transparent;
-  border-color: var(--on-green);
-  color: var(--on-green);
-}
-
-.btn.on-green[aria-pressed="true"] {
-  background: var(--on-green);
-  color: var(--green);
-}
-
 .account {
   position: relative;
 }

@@ -383,7 +383,7 @@ async function signIn(page) {
       { timeout: 20000 },
     );
   } catch {
-    const message = await page.$eval('.dialog', (el) => el.innerText.replace(/\s+/g, ' ')).catch(() => '');
+    const message = await page.$eval(':is([role="dialog"],[role="alertdialog"])', (el) => el.innerText.replace(/\s+/g, ' ')).catch(() => '');
     throw new Error(`sign-in did not finish: ${message}`);
   }
 }
@@ -471,10 +471,10 @@ async function toastClearsMenu(page, shot) {
   await page.type('#wms-url', 'http://127.0.0.1:9/wms');
   await page.type('#wms-layer', 'kiem_tra:khong_co');
   await page.$eval('#wms-url', (el) => el.form.requestSubmit());
-  await page.waitForSelector('.toast-host > .toast.bad', { visible: true, timeout: 15000 });
+  await page.waitForSelector('.toast-host [data-slot="toast"][role="alert"]', { visible: true, timeout: 15000 });
   await sleep(300);
-  const problems = await present(page, ['.toast-host > .toast.bad', ...TOAST_REQUIRED]);
-  problems.push(...(await overlaps(page, ['.toast-host > *'], TOAST_AVOIDS)));
+  const problems = await present(page, ['.toast-host [data-slot="toast"][role="alert"]', ...TOAST_REQUIRED]);
+  problems.push(...(await overlaps(page, ['.toast-host [data-sonner-toast]'], TOAST_AVOIDS)));
   await page.screenshot({ path: shot });
   // Leave the page as it was: the sticky toast dismissed, the menu closed.
   await page.$$eval('.toast-host button[aria-label="Đóng thông báo"]', (buttons) => buttons.forEach((b) => b.click()));

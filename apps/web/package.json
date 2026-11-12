@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "profile": "node scripts/profile-map.mjs",
     "test": "vitest run",
+    "verify:legacy-styles": "node scripts/verify-legacy-styles.mjs",
     "verify:shell": "node scripts/verify-shell.mjs",
     "verify:permissions": "node scripts/verify-permissions.mjs",
     "verify:personal-maps": "node scripts/verify-personal-maps.mjs",
@@ -19,14 +20,21 @@
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
     "@webatlas/shared": "*",
+    "@webatlas/theme": "*",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "lucide-react": "^1.22.0",
     "ol": "^10.9.0",
     "proj4": "^2.22.0",
+    "radix-ui": "^1.8.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.1"
+    "react-router-dom": "^7.18.1",
+    "sonner": "^2.0.8",
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "4.3.5",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",
@@ -38,6 +46,7 @@
     "jsdom": "^25.0.1",
     "oxlint": "^1.69.0",
     "puppeteer-core": "^24.0.0",
+    "tailwindcss": "4.3.5",
     "typescript": "~6.0.2",
     "vite": "^8.1.0",
     "vitest": "^3.0.0"

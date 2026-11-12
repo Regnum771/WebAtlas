@@ -64,7 +64,7 @@ export function AttributeFieldView({
         disabled={disabled}
         list={suggestions ? listId : undefined}
         aria-describedby={unitSymbol ? unitId : undefined}
-        trailing={unitSymbol ? <span id={unitId} className="attr-unit">{unitSymbol}</span> : undefined}
+        after={unitSymbol ? <span id={unitId} className="attr-unit">{unitSymbol}</span> : undefined}
         onChange={(e) => onChange(e.target.value)}
       />
       {suggestions && (
