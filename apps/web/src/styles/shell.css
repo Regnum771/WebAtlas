@@ -87,7 +87,7 @@
 }
 
 /* A band at the bottom of the stage, centred, directly above every bottom-corner
-   readout; the tool dock keeps clear of it (see .tool-dock). */
+   readout. */
 .toast-host {
   position: absolute;
   bottom: var(--toast-band-bottom);
@@ -134,84 +134,11 @@
   cursor: pointer;
 }
 
-/* Tool group: labelled buttons at the map's top-left corner, each opening a menu
-   just under them; one menu is open at a time. .tool-dock is one column holding
-   the buttons and then the menus, so an open menu follows however many rows the
-   buttons wrap onto.
-   Width: the column keeps 12px (its left), the scale control's column and 24px
-   (that column's right gutter and a gap) of the stage free, so neither the
-   buttons, which wrap, nor a menu can reach the slider or the readout.
-   Height: 12px above; below, the bottom-corner readouts and the toast band above
-   them (--toast-band-bottom, then a two-line toast, --toast-band-height) stay
-   clear, plus a 12px gap; the open menu scrolls inside that.
-   The column itself takes no pointer events (it would cover map between its
-   children); it creates no stacking context, so the group (10) and the menu (20)
-   stack by the scale above. */
-.tool-dock {
-  position: absolute;
-  top: 12px;
-  left: var(--panel-clear);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  max-width: calc(100% - var(--panel-clear) - var(--scale-column) - 12px);
-  max-height: calc(100% - 12px - var(--toast-band-bottom) - var(--toast-band-height) - 12px);
-  pointer-events: none;
-}
-
-.tool-dock > * {
-  pointer-events: auto;
-}
-
-.tool-group {
-  z-index: 10;
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  max-width: 100%;
-}
-
-.tool-btn {
-  height: 30px;
-  padding: 0 10px;
-  background: transparent;
-  color: var(--ink);
-  border: 0;
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.tool-btn + .tool-btn {
-  border-left: 1px solid var(--rule);
-}
-
-.tool-btn.is-on {
-  background: var(--ink);
-  color: var(--sheet);
-}
-
-/* Lifts the focused button so its neighbours do not paint over the focus ring. */
-.tool-btn:focus-visible {
-  position: relative;
-  z-index: 1;
-}
-
-/* Its height is bounded by .tool-dock; min-height: 0 lets it shrink and scroll. */
+/* A tool's menu (ToolGroup.view.tsx draws its box): the legacy body inside is a column of sections. */
 .tool-menu {
-  z-index: 20;
-  width: min(320px, 100%);
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-3);
-  color: var(--ink);
 }
 
 /* Closed menus stay mounted; `display: flex` above would otherwise undo `hidden`. */

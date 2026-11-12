@@ -182,11 +182,14 @@ describe('MapScreen', () => {
 });
 
 describe('MapScreen tool group', () => {
-  it('offers the five reader tools, in order, with every menu closed', () => {
+  it('offers the reader tools in their stacks, in order, with every menu closed', () => {
     const { container } = renderScreen();
     const group = container.querySelector('.tool-group') as HTMLElement;
-    expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'Đo', 'Vùng phân tích', 'Thêm dữ liệu', 'Nền bản đồ', 'Kịch bản lũ',
+    // The zoom stack (mocked here) comes first; then measure, analysis, profile, print; the data
+    // tools; the basemap.
+    expect(within(group).getByText('ZOOM_CONTROLS')).toBeInTheDocument();
+    expect(within(group).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Đo', 'Vùng phân tích', 'Trắc diện độ cao', 'In và xuất', 'Thêm dữ liệu', 'Kịch bản lũ', 'Nền bản đồ',
     ]);
     expect(screen.queryAllByRole('region')).toHaveLength(0);
     expect(getShell().tool).toBeNull();
@@ -272,11 +275,11 @@ describe('MapScreen tool group', () => {
     signIn('admin');
     renderScreen();
     const button = screen.getByRole('button', { name: 'Biên tập' });
-    expect(button).not.toHaveClass('is-on');
+    expect(button).not.toHaveAttribute('data-on', 'true');
     act(() => { editing.onBusyChange?.(true); });
-    expect(button).toHaveClass('is-on');
+    expect(button).toHaveAttribute('data-on', 'true');
     act(() => { editing.onBusyChange?.(false); });
-    expect(button).not.toHaveClass('is-on');
+    expect(button).not.toHaveAttribute('data-on', 'true');
   });
 
   it('does not let a user without review rights open Biên tập', () => {
@@ -327,10 +330,10 @@ describe('MapScreen tool group', () => {
     setRoiResolver(() => Promise.resolve(RESOLVED));
     renderScreen();
     const button = screen.getByRole('button', { name: 'Vùng phân tích' });
-    expect(button).not.toHaveClass('is-on');
+    expect(button).not.toHaveAttribute('data-on', 'true');
     await act(async () => { await setRoi(PROVINCE, { fit: true }); });
     act(() => { closeTool(); });
-    expect(button).toHaveClass('is-on');
+    expect(button).toHaveAttribute('data-on', 'true');
     expect(getRoiState().resolved).toBe(RESOLVED);
   });
 

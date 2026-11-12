@@ -1,8 +1,9 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { cn } from '@/shared/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './shadcn/tooltip';
 
-export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+/** Button props, `ref` included (React 19 passes it as a prop). */
+export interface IconButtonProps extends Omit<ComponentProps<'button'>, 'children'> {
   /** The accessible name, also shown as the tooltip. */
   label: string;
   /** The icon, decorative (aria-hidden). */
