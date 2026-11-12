@@ -1194,7 +1194,7 @@ async function stepShare(owner, recipientSession, vp, ctx) {
   await shot(recipientSession, vp, 'nguoi-nhan');
 
   await menuSelect(rp, SHARED(), 'Tạo bản sao');
-  const toast = await rp.waitForFunction(() => [...document.querySelectorAll('.toast-host .toast')]
+  const toast = await rp.waitForFunction(() => [...document.querySelectorAll('.toast-host [data-slot="toast"]')]
     .map((t) => t.textContent.trim()).find((t) => t.startsWith('Đã tạo bản sao')) ?? false, { timeout: 20000 });
   const said = await toast.jsonValue();
   const copies = (await listMaps(ctx.recipientToken)).mine.filter((m) => m.title.includes(MAP_TITLE));
@@ -1231,7 +1231,7 @@ async function stepRevoke(owner, recipientSession, vp, ctx) {
   // The next read: a zoom out makes every vector layer read the larger view.
   await rp.click('button[aria-label="Thu nhỏ"]');
   try {
-    await rp.waitForFunction((copy) => [...document.querySelectorAll('.toast-host .toast')]
+    await rp.waitForFunction((copy) => [...document.querySelectorAll('.toast-host [data-slot="toast"]')]
       .some((t) => t.textContent.includes(copy)), { timeout: 20000 }, MAP_GONE);
   } catch {
     problems.push(`no toast "${MAP_GONE}" after the next read`);
@@ -1261,7 +1261,7 @@ async function layoutFits(page) {
       out.push(`the side panel is ${body.scrollWidth}px wide in ${body.clientWidth}px (too wide: ${wide.join(', ')})`);
     }
     const coverers = ['.tool-group', '.tool-menu:not([hidden])', '.scale-slider', '.scale-readout', '.side-panel',
-      '.personal-feature-card', '.toast-host > *', ':is([role="dialog"],[role="alertdialog"])'];
+      '.personal-feature-card', '.toast-host [data-sonner-toast]', ':is([role="dialog"],[role="alertdialog"])'];
     const box = (el) => el.getBoundingClientRect();
     for (const selector of ['.map-scaleline', '.map-mouseposition']) {
       const el = document.querySelector(selector);

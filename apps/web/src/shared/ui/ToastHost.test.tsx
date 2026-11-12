@@ -94,4 +94,15 @@ describe('ToastHost', () => {
     });
     expect(screen.queryByText('Một')).toBeNull();
   });
+
+  it('is not a tab stop of its own: only its buttons take focus', async () => {
+    const { container } = render(<ToastHost />);
+    act(() => { showToast({ tone: 'warning', title: 'Còn thiếu đơn vị' }); });
+    await screen.findByRole('status');
+    await waitFor(() => {
+      const items = [...container.querySelectorAll('[data-sonner-toast]')];
+      expect(items.length).toBeGreaterThan(0);
+      for (const li of items) expect(li).toHaveAttribute('tabindex', '-1');
+    });
+  });
 });
