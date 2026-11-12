@@ -169,33 +169,3 @@ button.link {
   justify-content: flex-end;
   gap: var(--space-2);
 }
-
-/* Toast */
-.toast {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 9px 10px 9px 14px;
-  background: var(--ink);
-  color: var(--sheet);
-  border: 1px solid var(--ink);
-  border-radius: var(--radius);
-  font-size: var(--text-sm);
-}
-.toast .btn {
-  background: transparent;
-  color: var(--sheet);
-  border-color: var(--sheet);
-}
-.toast.bad {
-  background: var(--sheet);
-  color: var(--ink);
-  border: 2px solid var(--alert);
-}
-.toast.bad > svg {
-  color: var(--alert);
-}
-.toast.bad .btn {
-  color: var(--ink);
-  border-color: var(--ink);
-}
