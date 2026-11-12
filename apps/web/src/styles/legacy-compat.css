@@ -1,1 +1,40 @@
-/* Restores browser defaults that Tailwind preflight removes; empty while the style comparison reports no differences. */
+/* Restores the browser's border (preflight sets `0 solid`) on every legacy element and its pseudo-elements. */
+:where(*):not([data-slot], [data-slot] *),
+:where(*):not([data-slot], [data-slot] *)::before,
+:where(*):not([data-slot], [data-slot] *)::after {
+  border: revert;
+}
+
+/* Restores the inline default of replaced elements (preflight makes them block and middle-aligned). */
+:where(svg, img, canvas, video):not([data-slot], [data-slot] *) {
+  display: revert;
+  vertical-align: revert;
+}
+
+/* Restores the browser's form-control face (preflight inherits font, color and line-height and clears background and radius). */
+:where(button, input, select, optgroup, textarea):not([data-slot], [data-slot] *),
+:where(button, input, select, optgroup, textarea):not([data-slot], [data-slot] *)::file-selector-button {
+  font: revert;
+  letter-spacing: revert;
+  color: revert;
+  background-color: revert;
+  border-radius: revert;
+  opacity: revert;
+}
+
+/* Restores the native appearance of buttons (preflight sets `appearance: button`). */
+:where(button, input:where([type='button'], [type='reset'], [type='submit'])):not([data-slot], [data-slot] *) {
+  appearance: revert;
+}
+
+/* Restores the browser's heading size and weight (preflight makes headings inherit them). */
+:where(h1, h2, h3, h4, h5, h6):not([data-slot], [data-slot] *) {
+  font-size: revert;
+  font-weight: revert;
+}
+
+/* Restores the browser's rule colour and height (preflight inherits the colour and sets height 0). */
+:where(hr):not([data-slot], [data-slot] *) {
+  color: revert;
+  height: revert;
+}

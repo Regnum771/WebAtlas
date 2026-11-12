@@ -1,19 +1,20 @@
-@layer theme, base, legacy, components, utilities;
+@layer theme, base, legacy-compat, legacy, components, utilities;
 
 @import "tailwindcss/theme.css" layer(theme);
 @import "./theme-reset.css" layer(theme);
 @import "@webatlas/theme/tailwind-theme.css";
 @import "tailwindcss/preflight.css" layer(base);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
+@import "./legacy-compat.css" layer(legacy-compat);
 @import "ol/ol.css" layer(legacy);
 @import "../index.css" layer(legacy);
 @import "./main.css" layer(legacy);
 @import "../features/catalogue/ui/catalogue.css" layer(legacy);
 @import "../features/flood-scenario/ui/flood.css" layer(legacy);
 @import "../features/time-slider/ui/time-slider.css" layer(legacy);
-@import "./legacy-compat.css" layer(legacy);
 
 @source "../shared/ui";
+@source not "../shared/ui/**/*.test.*";
 
 @theme inline {
   --default-font-family: var(--font-ui);

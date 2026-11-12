@@ -25,25 +25,31 @@ const sourceFiles = (dir: string): string[] =>
 describe('cascade layers', () => {
   it('declares the layer order as the first statement', () => {
     const first = app.replace(/\/\*[\s\S]*?\*\//g, '').trim().split(';')[0] + ';';
-    expect(first).toBe('@layer theme, base, legacy, components, utilities;');
+    expect(first).toBe('@layer theme, base, legacy-compat, legacy, components, utilities;');
   });
 
   it('imports Tailwind and the theme in the ruled order', () => {
     const list = imports(app);
-    expect(list.slice(0, 5).map((s) => s.replace(/\s+/g, ' '))).toEqual([
+    expect(list.slice(0, 6).map((s) => s.replace(/\s+/g, ' '))).toEqual([
       '@import "tailwindcss/theme.css" layer(theme);',
       '@import "./theme-reset.css" layer(theme);',
       '@import "@webatlas/theme/tailwind-theme.css";',
       '@import "tailwindcss/preflight.css" layer(base);',
       '@import "tailwindcss/utilities.css" layer(utilities) source(none);',
+      '@import "./legacy-compat.css" layer(legacy-compat);',
     ]);
   });
 
-  it('puts every legacy stylesheet in the legacy layer, compat sheet last', () => {
+  it('puts every legacy stylesheet in the legacy layer, below which the compat sheet has its own layer', () => {
     const legacy = ['ol/ol.css', '../index.css', './main.css', '../features/catalogue/ui/catalogue.css',
-      '../features/flood-scenario/ui/flood.css', '../features/time-slider/ui/time-slider.css', './legacy-compat.css'];
-    const list = imports(app).slice(5);
+      '../features/flood-scenario/ui/flood.css', '../features/time-slider/ui/time-slider.css'];
+    const list = imports(app).slice(6);
     expect(list.map((s) => s.replace(/\s+/g, ' '))).toEqual(legacy.map((p) => `@import "${p}" layer(legacy);`));
+  });
+
+  it('keeps test files out of the Tailwind source scan', () => {
+    expect(app).toContain('@source "../shared/ui";');
+    expect(app).toContain('@source not "../shared/ui/**/*.test.*";');
   });
 
   it('puts every @import before any other rule', () => {
