@@ -31,19 +31,41 @@ vi.mock('../features/roi/ui/RoiDrawButtons', () => ({ default: () => <div>ROI_DR
 vi.mock('../widgets/top-bar', () => ({ default: () => <div>TOP_BAR</div> }));
 vi.mock('../entities/admin-unit/adminUnits.store', () => ({ primeAdminUnits: vi.fn(() => Promise.resolve()) }));
 
-type MockRole = 'admin' | 'editor' | 'viewer';
+type MockRole = 'admin' | 'viewer' | 'officer' | 'reader' | 'split';
 let mockStatus: 'authenticated' | 'anonymous' = 'anonymous';
-let mockUser: { role: MockRole } | null = null;
+let mockUser: { role: 'admin' | 'viewer'; isAdmin: boolean; grants: { permission: string; unit: string }[] } | null = null;
 vi.mock('../entities/session/model/session.store', () => ({
   useSession: () => ({ status: mockStatus, currentUser: mockUser }),
 }));
+// Biên tập needs update and review on a common unit of the tree (shared canSaveDirectly).
+vi.mock('../entities/session/model/useUnitTree', async () => {
+  const shared = await import('@webatlas/shared');
+  const tree = shared.buildUnitTree([
+    { code: 'VN', level: 'country', parent: null, name: 'Việt Nam' },
+    { code: '48', level: 'province', parent: 'VN', name: 'Đà Nẵng' },
+    { code: '51', level: 'province', parent: 'VN', name: 'Quảng Ngãi' },
+  ]);
+  return { useUnitTree: () => tree };
+});
 
 import MapScreen from './MapScreen';
 import { resetShell, toggleAssistant, getShell, openTool, closeTool } from '../features/shell/model/shell.store';
 import { getRoiState, resetRoiStore, setRoi, setRoiHint, setRoiResolver, startDrawing } from '../features/roi/model/roi.store';
 
 const renderScreen = () => render(<MemoryRouter><MapScreen /></MemoryRouter>);
-const signIn = (role: MockRole) => { mockStatus = 'authenticated'; mockUser = { role }; };
+const grantsOf = (...permissions: string[]) => permissions.map((permission) => ({ permission, unit: '48' }));
+// 'officer' holds update + review in a province, 'reader' only update, 'split' update in one
+// province and review in another, 'viewer' nothing.
+const signIn = (role: MockRole) => {
+  mockStatus = 'authenticated';
+  mockUser = {
+    role: role === 'admin' ? 'admin' : 'viewer', isAdmin: role === 'admin',
+    grants: role === 'officer' ? grantsOf('feature.update', 'submission.review')
+      : role === 'reader' ? grantsOf('feature.update')
+      : role === 'split' ? [{ permission: 'feature.update', unit: '48' }, { permission: 'submission.review', unit: '51' }]
+      : [],
+  };
+};
 const signOut = () => { mockStatus = 'anonymous'; mockUser = null; };
 
 const PROVINCE = { source: 'admin', level: 'province', code: '66' } as const;
@@ -146,14 +168,19 @@ describe('MapScreen tool group', () => {
     expect(screen.getByText('MEASURE:false')).toBeInTheDocument();
   });
 
-  it('shows Biên tập to an admin only', () => {
+  it('shows Biên tập to an admin or to a user who may update and review', () => {
     signIn('admin');
     const { unmount } = renderScreen();
     expect(screen.getByRole('button', { name: 'Biên tập' })).toBeInTheDocument();
     expect(within(menuOf('Biên tập')).getByText(/^FEATURE_EDITING/)).toBeInTheDocument();
     unmount();
 
-    for (const role of ['viewer', 'editor'] as const) {
+    signIn('officer');
+    const officerView = renderScreen();
+    expect(screen.getByRole('button', { name: 'Biên tập' })).toBeInTheDocument();
+    officerView.unmount();
+
+    for (const role of ['viewer', 'reader', 'split'] as const) {
       signIn(role);
       const view = renderScreen();
       expect(screen.queryByRole('button', { name: 'Biên tập' })).toBeNull();
@@ -201,8 +228,8 @@ describe('MapScreen tool group', () => {
     expect(button).not.toHaveClass('is-on');
   });
 
-  it('does not let a non-admin open Biên tập', () => {
-    signIn('editor');
+  it('does not let a user without review rights open Biên tập', () => {
+    signIn('reader');
     renderScreen();
     act(() => { openTool('edit'); });
     expect(getShell().tool).toBeNull();

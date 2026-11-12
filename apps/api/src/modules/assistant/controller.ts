@@ -1,10 +1,11 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { BASEMAP_TYPES, EDITABLE_LAYER_KEYS } from '@webatlas/shared';
+import { BASEMAP_TYPES, EDITABLE_LAYER_KEYS, canSaveDirectly } from '@webatlas/shared';
 import { validate } from '../../lib/validate';
 import { AppError, AuthError } from '../../errors';
 import { config } from '../../config/env';
 import { runAssistant, budget } from './service';
+import { getUnitTree } from '../../authz/unitTree';
 
 const MapContextSchema = z.object({
   bbox: z.tuple([z.number(), z.number(), z.number(), z.number()]),
@@ -67,7 +68,8 @@ export async function postMessage(req: FastifyRequest, reply: FastifyReply) {
     message,
     mapContext,
     logger: req.log,
-    role: req.currentUser.role,
+    // Admin always may; anyone else needs update and review on a common unit (shared rule).
+    canProposeEdits: req.currentUser.isAdmin || canSaveDirectly(req.currentUser.grants, await getUnitTree(req.server.pg)),
   });
   reply.send(result);
 }

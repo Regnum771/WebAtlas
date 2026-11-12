@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { EDITABLE_LAYER_KEYS, LAYER_GEOMETRY, type EditableLayerKey, type OgcGeometryType } from '@webatlas/shared';
+import { EDITABLE_LAYER_KEYS, LAYER_GEOMETRY, UNIT_CODE_RE, type EditableLayerKey, type OgcGeometryType } from '@webatlas/shared';
 import { NotFoundError } from '../errors';
 
 export interface LayerDef {
@@ -22,34 +22,45 @@ export interface LayerDef {
 const nullableStr = z.string().nullable().optional();
 const nullableNum = z.coerce.number().nullable().optional();
 const nullableDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected an ISO date (YYYY-MM-DD)').nullable().optional();
+// Every layer carries its managing unit (migration 25). Not nullable: a feature always has one,
+// and leaving it out on create means "suggest it from the geometry" (featuresService).
+const managingUnit = z.string().regex(UNIT_CODE_RE, 'Mã đơn vị không hợp lệ').optional();
 
 const ATTRS: Record<EditableLayerKey, z.ZodObject<z.ZodRawShape>> = {
   dams: z.object({
     name: nullableStr, name_en: nullableStr, wattage_mw: nullableNum,
     annual_output: nullableNum, year_launched: nullableStr,
     year_operational: nullableStr, status: nullableStr,
+    managing_unit: managingUnit,
   }),
   rivers: z.object({
     name: nullableStr, code: nullableStr, stream_order: nullableNum, length_m: nullableNum,
+    managing_unit: managingUnit,
   }),
   lakes: z.object({
     name: nullableStr, lake_type: nullableStr, area_km2: nullableNum,
     volume_mcm: nullableNum, shore_len_km: nullableNum,
+    managing_unit: managingUnit,
   }),
   stations: z.object({
     name: nullableStr, station_type: nullableStr, status: nullableStr, value: nullableStr,
+    managing_unit: managingUnit,
   }),
   flood_zones: z.object({
     name: nullableStr, hazard_type: nullableStr, area: nullableStr, risk_level: nullableStr,
+    managing_unit: managingUnit,
   }),
   drought_points: z.object({
     name: nullableStr, risk_level: nullableStr, status: nullableStr, survey_date: nullableDate,
+    managing_unit: managingUnit,
   }),
   saltwater_intrusion: z.object({
     name: nullableStr, salinity: nullableStr, risk_level: nullableStr, status: nullableStr,
+    managing_unit: managingUnit,
   }),
   flood_generation: z.object({
     name: nullableStr, risk_level: nullableStr, area: nullableStr, flow_rate: nullableStr,
+    managing_unit: managingUnit,
   }),
 };
 

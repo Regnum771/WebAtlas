@@ -28,6 +28,14 @@ describe('toast store', () => {
     expect(getToasts()).toHaveLength(0);
   });
 
+  it('keeps a warning toast until it is dismissed', () => {
+    const id = showToast({ tone: 'warning', title: 'Hình nằm ngoài đơn vị chủ quản' });
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(getToasts()).toHaveLength(1);
+    dismissToast(id);
+    expect(getToasts()).toHaveLength(0);
+  });
+
   it('does not stack the same failure twice', () => {
     const a = showToast({ tone: 'error', title: 'Không lưu được thay đổi', body: 'Máy chủ không phản hồi.' });
     const b = showToast({ tone: 'error', title: 'Không lưu được thay đổi', body: 'Máy chủ không phản hồi.' });

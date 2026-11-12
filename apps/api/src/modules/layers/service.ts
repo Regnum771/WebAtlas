@@ -5,9 +5,44 @@ import { assertGeometry, assertValidInPg } from './geometry';
 import { auditService, type EditSource } from '../audit/service';
 import { versionsService, StaleDraftError } from '@webatlas/versioning';
 import { validate } from '../../lib/validate';
-import { ConflictError, NotFoundError } from '../../errors';
+import { ConflictError, NotFoundError, ValidationError } from '../../errors';
+import { COUNTRY_UNIT, type Permission, type UnitTree } from '@webatlas/shared';
+import { assertCan } from '../../authz/assert';
+import { suggestManagingUnit } from '../admin-units/repository';
+import type { CurrentUser } from '../../types/fastify';
 
 type FeatureInput = { geometry?: unknown; properties?: Record<string, unknown>; source?: EditSource };
+
+/** Who is writing, and the unit tree their grants are resolved against. */
+export interface Access { user: CurrentUser; tree: UnitTree }
+
+export interface FeatureWarning { code: 'OUTSIDE_MANAGING_UNIT'; message: string }
+export interface FeatureResult { feature: FeatureRow; warnings: FeatureWarning[] }
+
+// Same shape as a zod flatten(), so a client shows it next to the field like any other.
+function fieldError(field: string, message: string): ValidationError {
+  return new ValidationError('Validation failed', { formErrors: [], fieldErrors: { [field]: [message] } });
+}
+
+function assertKnownUnit(tree: UnitTree, unit: string): void {
+  if (!tree.has(unit)) throw fieldError('managing_unit', 'Mã đơn vị không hợp lệ');
+}
+
+/**
+ * Direct publish until P4 (global constraints): every write publishes at once, so it needs the
+ * operation's permission AND submission.review on the managing unit.
+ */
+function authorize(access: Access, permission: Permission, unit: string): void {
+  assertCan(access.user, permission, unit, access.tree);
+  assertCan(access.user, 'submission.review', unit, access.tree);
+}
+
+// A row without a unit predates the column's backfill or activation; treat it as national, the
+// strictest reading, so a missing value never widens what a regional officer may touch.
+function unitOf(row: FeatureRow): string {
+  const unit = row.properties.managing_unit;
+  return typeof unit === 'string' ? unit : COUNTRY_UNIT;
+}
 
 async function prepare(pg: Pool, def: LayerDef, input: FeatureInput, geometryRequired: boolean) {
   const attrs = validate(def.attributeSchema, input.properties ?? {}) as Record<string, unknown>;
@@ -90,10 +125,23 @@ export function featuresService(pg: Pool) {
       draftId: () => draftId,
       isSettled: () => settled,
 
-      async create(input: FeatureInput): Promise<FeatureRow> {
+      // `access` is given on every request path (the single-change helpers below); without it
+      // the session performs no permission check, which only internal callers and tests rely on.
+      async create(input: FeatureInput, access?: Access): Promise<FeatureRow> {
         assertOpen();
         try {
           const { attrs, geometryJson } = await prepare(pg, def, input, true);
+          // Every feature has a managing unit: given, or suggested from the geometry. Neither
+          // is possible without a geometry, so the caller has to choose one.
+          if (attrs.managing_unit === undefined) {
+            if (typeof geometryJson !== 'string') throw fieldError('managing_unit', 'Chọn đơn vị chủ quản');
+            attrs.managing_unit = await suggestManagingUnit(client, geometryJson);
+          }
+          if (access) {
+            const unit = attrs.managing_unit as string;
+            assertKnownUnit(access.tree, unit);
+            authorize(access, 'feature.create', unit);
+          }
           const row = await repo.insertIntoVersion(client, def, draftId, {
             attrs, geometryJson: geometryJson ?? null, actorId,
           });
@@ -102,7 +150,7 @@ export function featuresService(pg: Pool) {
         } catch (e) { return fail(e); }
       },
 
-      async update(id: string, input: FeatureInput): Promise<FeatureRow> {
+      async update(id: string, input: FeatureInput, access?: Access): Promise<FeatureRow> {
         assertOpen();
         try {
           // Apply the edit on the feature's current state, not on the (possibly outdated)
@@ -111,7 +159,16 @@ export function featuresService(pg: Pool) {
           const source = await repo.resolveEditSource(client, def, draftId, id);
           const before = await repo.findByIdOnClient(client, def, source.rowId);
           if (!before) throw new NotFoundError('Feature not found');
+          // Checked on the current row's unit, not the named row's: another user may have
+          // moved the feature to a unit outside this user's jurisdiction meanwhile.
+          const current = unitOf(before);
+          if (access) authorize(access, 'feature.update', current);
           const { attrs, geometryJson } = await prepare(pg, def, input, false);
+          const next = attrs.managing_unit as string | undefined;
+          if (access && next !== undefined && next !== current) {
+            assertKnownUnit(access.tree, next);
+            authorize(access, 'feature.update', next);
+          }
           const after = await repo.upsertChangeInVersion(client, def, draftId, source, { attrs, geometryJson, actorId });
           // feature_id is the id the request named; before.id / after.id are the rows actually
           // read and written; the stable feature key is external_id.
@@ -120,16 +177,34 @@ export function featuresService(pg: Pool) {
         } catch (e) { return fail(e); }
       },
 
-      async remove(id: string): Promise<void> {
+      async remove(id: string, access?: Access): Promise<void> {
         assertOpen();
         try {
           const source = await repo.resolveEditSource(client, def, draftId, id);
           const before = await repo.findByIdOnClient(client, def, source.rowId);
           if (!before) throw new NotFoundError('Feature not found');
+          if (access) authorize(access, 'feature.delete', unitOf(before));
           await repo.tombstoneInVersion(client, def, draftId, source);
           // feature_id is the id the request named; before.id / after.id are the rows actually
           // read and written; the stable feature key is external_id.
           await audit.record({ userId: actorId, action: 'delete', tableName: def.table, featureId: id, before }, client);
+        } catch (e) { return fail(e); }
+      },
+
+      // A warning, never a refusal: the saved geometry lies wholly outside its managing unit.
+      // The unit is left as it is (it is never recomputed from geometry once set); VN, which
+      // covers everything, never warns.
+      async placementWarnings(row: FeatureRow, tree: UnitTree): Promise<FeatureWarning[]> {
+        assertOpen();
+        try {
+          const unit = unitOf(row);
+          if (unit === COUNTRY_UNIT || row.geometry === null) return [];
+          if (!(await repo.isOutsideUnit(client, def, row.id, unit))) return [];
+          const name = tree.get(unit)?.name ?? unit;
+          return [{
+            code: 'OUTSIDE_MANAGING_UNIT',
+            message: `Đối tượng không còn nằm trong ${name}. Kiểm tra lại đơn vị chủ quản.`,
+          }];
         } catch (e) { return fail(e); }
       },
 
@@ -216,14 +291,22 @@ export function featuresService(pg: Pool) {
 
     // Single-change helpers: each opens a session, applies one change, and commits — so
     // no caller writes the active version in place. Each publishes its own edit-version.
-    async create(key: string, input: FeatureInput, actorId?: string): Promise<FeatureRow> {
-      return singleChange(key, actorId, (s) => s.create(input));
+    // The jurisdiction checks run inside the session, on its client, before any write; on a
+    // stale retry they run again against the fresh state.
+    async create(key: string, input: FeatureInput, actor: CurrentUser, tree: UnitTree): Promise<FeatureResult> {
+      return singleChange(key, actor.id, async (s) => {
+        const feature = await s.create(input, { user: actor, tree });
+        return { feature, warnings: await s.placementWarnings(feature, tree) };
+      });
     },
-    async update(key: string, id: string, input: FeatureInput, actorId?: string): Promise<FeatureRow> {
-      return singleChange(key, actorId, (s) => s.update(id, input));
+    async update(key: string, id: string, input: FeatureInput, actor: CurrentUser, tree: UnitTree): Promise<FeatureResult> {
+      return singleChange(key, actor.id, async (s) => {
+        const feature = await s.update(id, input, { user: actor, tree });
+        return { feature, warnings: await s.placementWarnings(feature, tree) };
+      });
     },
-    async remove(key: string, id: string, actorId?: string): Promise<void> {
-      return singleChange(key, actorId, (s) => s.remove(id));
+    async remove(key: string, id: string, actor: CurrentUser, tree: UnitTree): Promise<void> {
+      return singleChange(key, actor.id, (s) => s.remove(id, { user: actor, tree }));
     },
   };
 }

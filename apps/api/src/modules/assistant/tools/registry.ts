@@ -99,9 +99,9 @@ export function buildTools(ctx: ToolContext) {
   // Advertising a tool that always answers "not configured" wastes cached
   // prefix tokens on every turn and teaches the model to try it anyway.
   const factories = config.ASSISTANT_DATABASE_URL ? [...FACTORIES, runSqlTool] : [...FACTORIES];
-  // Admin-only and LAST, so admin and non-admin each keep one stable cached
-  // prefix. Offering it to others would only teach the model to promise edits
-  // the API will refuse.
-  if (ctx.role === 'admin') factories.push(proposeFeatureUpdateTool);
+  // Offered only to users who can save directly, and LAST, so the two kinds of user each keep
+  // one stable cached prefix. Offering it to others would only teach the model to promise
+  // edits the API will refuse.
+  if (ctx.canProposeEdits) factories.push(proposeFeatureUpdateTool);
   return factories.map((factory) => guardToolErrors(factory(ctx) as never));
 }

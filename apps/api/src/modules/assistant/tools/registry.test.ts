@@ -14,7 +14,7 @@ const ctx: ToolContext = {
   } satisfies MapContext,
   collect: vi.fn(),
   provenance: vi.fn(),
-  role: 'viewer',
+  canProposeEdits: false,
 };
 
 describe('buildTools', () => {
@@ -78,17 +78,17 @@ describe('buildTools', () => {
   });
 });
 
-describe('propose_feature_update is admin-only', () => {
-  it('is offered to admin, last', () => {
-    const names = buildTools({ ...ctx, role: 'admin' }).map((t) => (t as { name: string }).name);
+describe('propose_feature_update is offered by edit rights', () => {
+  const namesFor = (canProposeEdits: boolean) =>
+    buildTools({ ...ctx, canProposeEdits }).map((t) => (t as { name: string }).name);
+
+  it('is offered when the user can propose edits, last', () => {
+    const names = namesFor(true);
     expect(names[names.length - 1]).toBe('propose_feature_update');
   });
 
-  it('is never offered to editor or viewer', () => {
-    for (const role of ['editor', 'viewer'] as const) {
-      const names = buildTools({ ...ctx, role }).map((t) => (t as { name: string }).name);
-      expect(names).not.toContain('propose_feature_update');
-    }
+  it('is not offered otherwise', () => {
+    expect(namesFor(false)).not.toContain('propose_feature_update');
   });
 });
 

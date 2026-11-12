@@ -11,6 +11,7 @@ import { setRoi } from '../features/roi/model/roi.store';
 import { OVERLAY_LAYER_IDS } from '../features/map/model/overlayLayers';
 import { useMapEditing } from '../features/map/model/mapEditing';
 import { isBoundaryLabel } from '../features/map/model/waterTiles';
+import { ManagingUnitRow } from './ManagingUnitRow';
 
 interface PopupData {
   coordinate: number[];
@@ -512,6 +513,7 @@ const DynamicPopup: React.FC = () => {
         
         <div className="popup-content">
           {renderPopupContent()}
+          <ManagingUnitRow unit={props.managingAuthority} />
         </div>
         <RoiCandidatesView
           candidates={candidates}

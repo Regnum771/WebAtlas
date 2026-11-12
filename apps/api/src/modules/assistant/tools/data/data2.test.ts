@@ -39,7 +39,7 @@ function makeCtx() {
     mapContext: MAP_CONTEXT,
     collect: vi.fn(),
     provenance: vi.fn((p: Provenance) => records.push(p)),
-    role: 'viewer',
+    canProposeEdits: false,
   } satisfies ToolContext;
   return { ctx, records };
 }

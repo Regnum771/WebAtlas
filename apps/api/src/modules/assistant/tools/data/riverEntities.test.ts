@@ -39,7 +39,7 @@ afterAll(async () => { await closePool(); await closeAnalysisPool(); });
 function makeCtx() {
   const ctx = {
     pool, mapContext: MAP_CONTEXT, collect: vi.fn(),
-    provenance: vi.fn((_p: Provenance) => undefined), role: 'viewer',
+    provenance: vi.fn((_p: Provenance) => undefined), canProposeEdits: false,
   } satisfies ToolContext;
   return ctx;
 }

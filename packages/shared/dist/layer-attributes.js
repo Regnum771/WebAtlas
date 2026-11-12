@@ -4,6 +4,7 @@ export const LAYER_ATTRIBUTE_MAP = {
         layerStateId: 'layer_dams',
         attributes: {
             external_id: 'localId',
+            managing_unit: 'managingAuthority',
             name: 'geographicalName',
             name_en: 'geographicalNameEn',
             wattage_mw: 'ratedPower',
@@ -18,6 +19,7 @@ export const LAYER_ATTRIBUTE_MAP = {
         layerStateId: 'layer_rivers',
         attributes: {
             external_id: 'localId',
+            managing_unit: 'managingAuthority',
             code: 'hydroId',
             name: 'geographicalName',
             stream_order: 'streamOrder',
@@ -29,6 +31,7 @@ export const LAYER_ATTRIBUTE_MAP = {
         layerStateId: 'layer_lakes',
         attributes: {
             external_id: 'localId',
+            managing_unit: 'managingAuthority',
             name: 'geographicalName',
             area_km2: 'area',
             lake_type: 'lakeType',
@@ -41,6 +44,7 @@ export const LAYER_ATTRIBUTE_MAP = {
         layerStateId: 'layer_stations',
         attributes: {
             external_id: 'localId',
+            managing_unit: 'managingAuthority',
             name: 'geographicalName',
             station_type: 'measurementType',
             status: 'operationalStatus',
@@ -52,6 +56,7 @@ export const LAYER_ATTRIBUTE_MAP = {
         layerStateId: 'layer_flood',
         attributes: {
             external_id: 'localId',
+            managing_unit: 'managingAuthority',
             name: 'geographicalName',
             hazard_type: 'hazardType',
             area: 'affectedArea',
@@ -63,6 +68,7 @@ export const LAYER_ATTRIBUTE_MAP = {
         layerStateId: 'layer_drought_survey',
         attributes: {
             external_id: 'localId',
+            managing_unit: 'managingAuthority',
             name: 'geographicalName',
             risk_level: 'riskLevel',
             status: 'observedStatus',
@@ -74,6 +80,7 @@ export const LAYER_ATTRIBUTE_MAP = {
         layerStateId: 'layer_saltwater_intrusion',
         attributes: {
             external_id: 'localId',
+            managing_unit: 'managingAuthority',
             name: 'geographicalName',
             salinity: 'salinity',
             risk_level: 'riskLevel',
@@ -85,6 +92,7 @@ export const LAYER_ATTRIBUTE_MAP = {
         layerStateId: 'layer_flood_generation',
         attributes: {
             external_id: 'localId',
+            managing_unit: 'managingAuthority',
             name: 'geographicalName',
             risk_level: 'riskLevel',
             area: 'catchmentArea',

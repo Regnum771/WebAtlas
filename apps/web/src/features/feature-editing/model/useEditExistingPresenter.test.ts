@@ -69,6 +69,29 @@ describe('useEditExistingPresenter', () => {
     expect(result.current.selection).toBeNull();
   });
 
+  it('confirmDelete shows the server message of a refusal, not "try again"', async () => {
+    deleteFeature.mockRejectedValue(new ApiError(403, 'OUT_OF_JURISDICTION', 'Đối tượng thuộc Đà Nẵng; nhóm của anh/chị chỉ có quyền trong Quảng Ngãi.',
+      { unit: '48', permission: 'submission.review', allowed: ['51'] }));
+    const { result } = renderHook(() => useEditExistingPresenter());
+    act(() => result.current.enter());
+    const onSelected = enterEditMode.mock.calls[0][0];
+    act(() => onSelected({ layerKey: 'dams', featureId: 'f1', geometry: { type: 'Point', coordinates: [108, 13] }, isoProps: {} }));
+    await act(async () => { await result.current.confirmDelete(); });
+    expect(result.current.error).toBe('Đối tượng thuộc Đà Nẵng; nhóm của anh/chị chỉ có quyền trong Quảng Ngãi.');
+    expect(result.current.errorDetail).toBe('Thiếu quyền duyệt và xuất bản.');
+  });
+
+  it('confirmDelete shows the server message of a no-permission refusal', async () => {
+    deleteFeature.mockRejectedValue(new ApiError(403, 'NO_PERMISSION', 'Anh/chị chưa có quyền xoá đối tượng ở đơn vị nào.'));
+    const { result } = renderHook(() => useEditExistingPresenter());
+    act(() => result.current.enter());
+    const onSelected = enterEditMode.mock.calls[0][0];
+    act(() => onSelected({ layerKey: 'dams', featureId: 'f1', geometry: { type: 'Point', coordinates: [108, 13] }, isoProps: {} }));
+    await act(async () => { await result.current.confirmDelete(); });
+    expect(result.current.error).toBe('Anh/chị chưa có quyền xoá đối tượng ở đơn vị nào.');
+    expect(result.current.errorDetail).toBeNull();
+  });
+
   it('confirmDelete shows a Vietnamese failure message on other errors', async () => {
     deleteFeature.mockRejectedValue(new Error('boom'));
     const { result } = renderHook(() => useEditExistingPresenter());

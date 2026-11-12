@@ -8,7 +8,7 @@ export function usersService(pg: Pool) {
   const repo = usersRepository(pg);
   const audit = auditService(pg);
   return {
-    list: () => repo.list(),
+    list: () => repo.listWithGroups(),
     async create(input: { email: string; password: string; full_name?: string; role: Role }, actorId?: string): Promise<UserRow> {
       const existing = await repo.findByEmailWithHash(input.email);
       if (existing) throw new ConflictError('Email already in use');

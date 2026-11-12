@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { getShell, resetShell } from '../../features/shell/model/shell.store';
 import { MemoryRouter } from 'react-router-dom';
 
-let mockUser: { id: string; email: string; full_name: string | null; role: string } | null = null;
+let mockUser: { id: string; email: string; full_name: string | null; role: string; isAdmin: boolean; grants: [] } | null = null;
 const logout = vi.fn();
 vi.mock('../../entities/session/model/session.store', () => ({
   useSession: () => ({
@@ -13,6 +13,7 @@ vi.mock('../../entities/session/model/session.store', () => ({
     logout,
   }),
 }));
+vi.mock('../../entities/session/model/useUnitTree', () => ({ useUnitTree: () => null }));
 vi.mock('../../features/auth', () => ({ default: () => <button type="button">Đăng nhập</button> }));
 vi.mock('../../features/search', () => ({ default: () => <div>SEARCH_WIDGET</div> }));
 
@@ -32,10 +33,11 @@ describe('TopBar', () => {
   });
 
   it('a signed-in user sees Trợ lý and the account menu, and no Đăng nhập', async () => {
-    mockUser = { id: '1', email: 'admin@b.test', full_name: 'A', role: 'admin' };
+    mockUser = { id: '1', email: 'admin@b.test', full_name: 'A', role: 'admin', isAdmin: true, grants: [] };
     renderBar();
     expect(screen.queryByRole('button', { name: 'Đăng nhập' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Quản trị viên' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Quản lý' })).toHaveAttribute('href', '/quan-ly');
     const assistant = screen.getByRole('button', { name: 'Trợ lý' });
     expect(assistant).toHaveAttribute('aria-pressed', 'false');
     await userEvent.setup().click(assistant);

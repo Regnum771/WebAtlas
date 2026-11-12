@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
-import type { LayerDef } from '../../layers/registry';
+import { LAYER_REGISTRY, type LayerDef } from '../../layers/registry';
 import { geomInsertSql } from './geometry';
 import { ConflictError, NotFoundError } from '../../errors';
 
@@ -100,8 +100,31 @@ function selectSql(def: LayerDef, relation: string): string {
           FROM ${relation} t`;
 }
 
+export interface UnassignedFeature {
+  layerKey: string;
+  id: string;
+  externalId: string;
+  name: string | null;
+}
+
 export function featuresRepository(pg: Pool) {
   return {
+    /**
+     * Current rows of every layer that still sit at the country level with no geometry: the
+     * initial-assignment rule left them at 'VN' because there was nothing to locate them by.
+     * The relation list comes from the registry, so a ninth layer is picked up automatically.
+     */
+    async listUnassigned(): Promise<UnassignedFeature[]> {
+      const parts = Object.values(LAYER_REGISTRY).map(
+        (def) => `SELECT '${def.key}' AS "layerKey", id::text AS id, external_id::text AS "externalId", name
+                  FROM ${activeRelation(def)}
+                  WHERE managing_unit = 'VN' AND ${def.geomColumn} IS NULL`
+      );
+      const { rows } = await pg.query<UnassignedFeature>(
+        `${parts.join(' UNION ALL ')} ORDER BY "layerKey", name, id`
+      );
+      return rows;
+    },
     async list(def: LayerDef, filter: FeatureFilter = {}): Promise<FeatureRow[]> {
       const where: string[] = [];
       const params: string[] = [];
@@ -136,6 +159,22 @@ export function featuresRepository(pg: Pool) {
     async findByIdOnClient(client: PoolClient, def: LayerDef, id: string): Promise<FeatureRow | null> {
       const { rows } = await client.query(`${selectSql(def, def.table)} WHERE t.id = $1`, [id]);
       return rows[0] ?? null;
+    },
+
+    // True when the row has a geometry that touches none of the unit's own area (the unit's
+    // polygon in admin.provinces or admin.wards). Read on the session client: the row is
+    // usually one this session just wrote. A unit with no polygon counts as outside.
+    async isOutsideUnit(client: PoolClient, def: LayerDef, id: string, unit: string): Promise<boolean> {
+      const { rows } = await client.query<{ outside: boolean }>(
+        `SELECT t.${def.geomColumn} IS NOT NULL AND NOT EXISTS (
+                  SELECT 1 FROM (SELECT geom FROM admin.provinces WHERE code = $2
+                                 UNION ALL
+                                 SELECT geom FROM admin.wards WHERE code = $2) u
+                   WHERE ST_Intersects(u.geom, t.${def.geomColumn})) AS outside
+           FROM ${def.table} t WHERE t.id = $1`,
+        [id, unit]
+      );
+      return rows[0]?.outside === true;
     },
 
     // Insert a brand-new feature row into a specific version.
@@ -275,8 +314,8 @@ export function featuresRepository(pg: Pool) {
         return;
       }
       await client.query(
-        `INSERT INTO ${def.table} (external_id, dataset_version_id, deleted, ${def.geomColumn})
-         SELECT external_id, $1, true, ${def.geomColumn} FROM ${def.table} WHERE id = $2`,
+        `INSERT INTO ${def.table} (external_id, dataset_version_id, deleted, ${def.geomColumn}, managing_unit)
+         SELECT external_id, $1, true, ${def.geomColumn}, managing_unit FROM ${def.table} WHERE id = $2`,
         [versionId, source.rowId]
       );
     },

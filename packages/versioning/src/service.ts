@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { EDITABLE_LAYER_KEYS, type EditableLayerKey } from '@webatlas/shared';
 import { versionsRepository } from './repository';
 import { stampAdminCodes } from './adminStamp';
+import { stampManagingUnits } from './managingUnit';
 import { refreshCurrentRows } from './currentRows';
 import { pruneVersions } from './retention';
 import { buildRiverHierarchy } from './riverHierarchy';
@@ -91,6 +92,9 @@ export function versionsService(pg: Pool) {
       // inside the caller's transaction, same as every other call in this function.
       if ((EDITABLE_LAYER_KEYS as readonly string[]).includes(layerKey)) {
         await stampAdminCodes(client, layerKey as EditableLayerKey, versionId);
+        // After the codes (the assignment rule reads them) and before refreshCurrentRows, so
+        // is_current still marks the previous active state that rows inherit their unit from.
+        await stampManagingUnits(client, layerKey as EditableLayerKey, versionId);
       }
       // Clear current active first (so the partial-unique index never sees two), then
       // activate versionId scoped to this layer, verifying it actually matched a row so a

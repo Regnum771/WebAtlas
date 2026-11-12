@@ -5,6 +5,7 @@ import dbPlugin from './plugins/db';
 import authentication from './plugins/authentication';
 import authRoutes from './modules/auth/routes';
 import usersRoutes from './modules/users/routes';
+import accessGroupsRoutes from './modules/access-groups/routes';
 import layersRoutes from './modules/layers/routes';
 import searchRoutes from './modules/search/routes';
 import geometryRoutes from './modules/geometry/routes';
@@ -39,6 +40,7 @@ export function buildApp(): FastifyInstance {
 
   app.register(authRoutes, { prefix: '/api/auth' });
   app.register(usersRoutes, { prefix: '/api/users' });
+  app.register(accessGroupsRoutes, { prefix: '/api/access-groups' });
   app.register(layersRoutes, { prefix: '/api' });
   app.register(searchRoutes, { prefix: '/api' });
   app.register(geometryRoutes, { prefix: '/api' });

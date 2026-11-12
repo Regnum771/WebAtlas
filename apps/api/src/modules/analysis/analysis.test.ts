@@ -98,7 +98,7 @@ describe('POST /api/analysis/select_within over an admin unit', () => {
 
   it('counts by the stamped codes: the same answer as the assistant, and says so', async () => {
     const ctx = {
-      pool: getPool(), collect: () => undefined, provenance: () => undefined, role: 'viewer',
+      pool: getPool(), collect: () => undefined, provenance: () => undefined, canProposeEdits: false,
       mapContext: { bbox: [106.5, 10.5, 110, 16.5], zoom: 8, visibleLayerStateIds: [], basemap: 'street' },
     } as unknown as ToolContext;
     const tool = featuresInAdminUnitTool(ctx) as unknown as { run: (i: unknown) => Promise<string> };

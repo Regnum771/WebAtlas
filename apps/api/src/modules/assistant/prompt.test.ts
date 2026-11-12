@@ -71,7 +71,7 @@ describe('formatMapContext', () => {
 
 describe('role-specific prompts', () => {
   it('read-only prompt gives non-admins the exact refusal sentence', () => {
-    expect(SYSTEM_PROMPT).toContain('Bạn chỉ có quyền xem dữ liệu; chỉ quản trị viên mới cập nhật được.');
+    expect(SYSTEM_PROMPT).toContain('Tài khoản của bạn chưa có quyền lưu thay đổi trực tiếp, nên tôi không cập nhật được dữ liệu.');
     expect(SYSTEM_PROMPT).not.toContain('propose_feature_update');
   });
 
@@ -80,10 +80,9 @@ describe('role-specific prompts', () => {
     expect(ADMIN_SYSTEM_PROMPT).toContain('tài liệu nguồn');
   });
 
-  it('picks the admin prompt only for admin', () => {
-    expect(systemPromptFor('admin')).toBe(ADMIN_SYSTEM_PROMPT);
-    expect(systemPromptFor('editor')).toBe(SYSTEM_PROMPT);
-    expect(systemPromptFor('viewer')).toBe(SYSTEM_PROMPT);
+  it('picks the update prompt exactly when the tool is offered', () => {
+    expect(systemPromptFor(true)).toBe(ADMIN_SYSTEM_PROMPT);
+    expect(systemPromptFor(false)).toBe(SYSTEM_PROMPT);
   });
 
   it('shares every rule before rule 8, so the variants cannot drift', () => {

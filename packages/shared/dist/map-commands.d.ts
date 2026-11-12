@@ -79,8 +79,10 @@ export declare function capResultItems(items: ResultGeometry[]): {
     items: ResultGeometry[];
     truncated: boolean;
 };
-/** Columns an update may touch: the layer's attributes minus `external_id`, which
- *  is identity, not data (the API's attributeSchema excludes it too). */
+/** Columns an assistant proposal may touch: the layer's attributes minus `external_id`,
+ *  which is identity, not data (the API's attributeSchema excludes it too), and minus
+ *  `managing_unit`: a proposal never moves a feature to another unit (P1); that is done in
+ *  the edit form's "Đơn vị chủ quản" field, which knows the user's jurisdiction. */
 export declare function editableColumns(layerKey: EditableLayerKey): string[];
 export interface FeatureEditProposal {
     kind: 'proposeFeatureEdit';

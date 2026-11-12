@@ -9,8 +9,17 @@ const h = vi.hoisted(() => ({
   target: null as null | HTMLElement,
   overlayOnTop: false,
   labelOnTop: false,
+  thematic: null as null | Record<string, unknown>,
 }));
 
+vi.mock('../entities/session/model/useUnitTree', async () => {
+  const shared = await import('@webatlas/shared');
+  const tree = shared.buildUnitTree([
+    { code: 'VN', level: 'country', parent: null, name: 'Việt Nam' },
+    { code: '48', level: 'province', parent: 'VN', name: 'Đà Nẵng' },
+  ]);
+  return { useUnitTree: () => tree };
+});
 vi.mock('../features/map/model/drawingState', () => ({ isDrawing: () => false, drawingJustEnded: () => false }));
 vi.mock('../features/map/model/mapEditing', () => ({ useMapEditing: () => ({ editing: false }) }));
 vi.mock('../features/roi/model/roi.store', () => ({ setRoi: vi.fn() }));
@@ -25,6 +34,7 @@ vi.mock('../app/providers/MapProvider', () => {
     on: (ev: string, fn: (e: unknown) => void) => { if (ev === 'singleclick') h.handler = fn; },
     un: () => {},
     forEachFeatureAtPixel: (_px: unknown, cb: (f: unknown, l: unknown) => unknown) => {
+      if (h.thematic) cb({ getProperties: () => h.thematic, getId: () => undefined }, { get: () => 'layer_dams' });
       if (h.overlayOnTop) cb({ getProperties: () => ({ geometry: {}, label: 'Vùng phân tích' }), getId: () => undefined }, { get: () => 'layer_roi' });
       // A province tile's label point carries only code and name; the polygon has the full attributes.
       if (h.labelOnTop) cb({ getProperties: () => ({ layer: 'province_labels', code: '66', name: 'Đắk Lắk' }), getId: () => undefined }, { get: () => 'layer_provinces_2026' });
@@ -118,5 +128,31 @@ describe('DynamicPopup on a province label point', () => {
     h.labelOnTop = false;
     // The label point has no fullName: read from it, the candidate would be the bare "Đắk Lắk".
     expect(screen.getByText('Tỉnh Đắk Lắk')).toBeInTheDocument();
+  });
+});
+
+describe('DynamicPopup managing unit', () => {
+  beforeEach(() => { h.handler = null; h.thematic = null; });
+
+  it('the feature card shows the managing unit name', async () => {
+    h.thematic = { layerKey: 'dams', id: 'd1', geographicalName: 'Hồ A', ratedPower: 10, managingAuthority: '48' };
+    render(<DynamicPopup />);
+    await click(1);
+    expect(screen.getByText('Đơn vị chủ quản:')).toBeInTheDocument();
+    expect(screen.getByText('Đà Nẵng')).toBeInTheDocument();
+  });
+
+  it('falls back to the code when the unit is not in the tree', async () => {
+    h.thematic = { layerKey: 'dams', id: 'd1', geographicalName: 'Hồ A', ratedPower: 10, managingAuthority: '99999' };
+    render(<DynamicPopup />);
+    await click(1);
+    expect(screen.getByText('99999')).toBeInTheDocument();
+  });
+
+  it('shows no row when the feature has no unit', async () => {
+    h.thematic = { layerKey: 'dams', id: 'd1', geographicalName: 'Hồ A', ratedPower: 10 };
+    render(<DynamicPopup />);
+    await click(1);
+    expect(screen.queryByText('Đơn vị chủ quản:')).not.toBeInTheDocument();
   });
 });

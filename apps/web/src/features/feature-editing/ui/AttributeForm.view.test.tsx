@@ -35,6 +35,13 @@ describe('AttributeFormView', () => {
     expect(onSubmit).toHaveBeenCalled();
   });
 
+  it('shows a second line under the error when there is one', () => {
+    render(<AttributeFormView {...baseProps} error="Đối tượng thuộc Đà Nẵng." errorDetail="Thiếu quyền duyệt và xuất bản." />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Đối tượng thuộc Đà Nẵng.');
+    expect(alert).toHaveTextContent('Thiếu quyền duyệt và xuất bản.');
+  });
+
   it('shows a form-level error', () => {
     render(<AttributeFormView {...baseProps} error="Hình vẽ không hợp lệ. Vẽ lại." />);
     expect(screen.getByText('Hình vẽ không hợp lệ. Vẽ lại.')).toBeInTheDocument();

@@ -34,7 +34,7 @@ function makeCtx() {
     mapContext: MAP_CONTEXT,
     collect: vi.fn((c: MapCommand) => collected.push(c)),
     provenance: vi.fn(),
-    role: 'viewer',
+    canProposeEdits: false,
   } satisfies ToolContext;
   return { ctx, collected };
 }

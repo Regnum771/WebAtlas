@@ -19,6 +19,14 @@ describe('ToastHost', () => {
     expect(getToasts()).toHaveLength(0);
   });
 
+  it('gives a warning a close button, since it stays until closed', async () => {
+    render(<ToastHost />);
+    act(() => { showToast({ tone: 'warning', title: 'Hình nằm ngoài đơn vị chủ quản' }); });
+    expect(screen.getByRole('status')).toHaveTextContent('Hình nằm ngoài đơn vị chủ quản');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Đóng thông báo' }));
+    expect(getToasts()).toHaveLength(0);
+  });
+
   it('announces a success as a status', () => {
     render(<ToastHost />);
     act(() => { showToast({ tone: 'success', title: 'Đã lưu' }); });

@@ -1,9 +1,14 @@
 import { useCallback, useMemo, useState } from 'react';
 import { LAYER_ATTRIBUTE_MAP, editableColumns, type FeatureEditProposal } from '@webatlas/shared';
 import { ApiError } from '../../../shared/api/apiClient';
+import { refusalOf } from '../../../shared/api/refusal';
 import { updateFeature } from '../api/features.api';
+import { showWarnings } from './saveWarnings';
 
 function messageFor(e: unknown): string {
+  // A jurisdiction refusal carries the reason: show it as the attribute form does.
+  const refusal = refusalOf(e);
+  if (refusal) return refusal.message;
   if (e instanceof ApiError) {
     if (e.status === 403) return 'Bạn không có quyền cập nhật.';
     if (e.status === 404) return 'Đối tượng không còn tồn tại.';
@@ -32,6 +37,8 @@ export function useProposedEditPresenter(
   const [sourceProvider, setSourceProvider] = useState(proposal.sourceProvider ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** A second line under `error`: the missing review right of a refusal (refusalOf). */
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
   const previous = useCallback((c: string) => proposal.current[c] ?? '', [proposal]);
   const isChanged = useCallback((c: string) => values[c] !== previous(c), [values, previous]);
@@ -46,15 +53,18 @@ export function useProposedEditPresenter(
     if (!canSave) return;
     setSaving(true);
     setError(null);
+    setErrorDetail(null);
     try {
       const properties = Object.fromEntries(changed.map((c) => [c, values[c] === '' ? null : values[c]]));
-      await updateFeature(proposal.layerKey, proposal.featureId, {
+      const result = await updateFeature(proposal.layerKey, proposal.featureId, {
         properties,
         source: { document: sourceDocument.trim(), provider: sourceProvider.trim() },
       });
+      showWarnings(result?.warnings);
       onSaved(changed.length);
     } catch (e) {
       setError(messageFor(e));
+      setErrorDetail(refusalOf(e)?.detail ?? null);
     } finally {
       setSaving(false);
     }
@@ -63,6 +73,6 @@ export function useProposedEditPresenter(
   return {
     columns, labels, values, setField, isChanged, previous,
     sourceDocument, setSourceDocument, sourceProvider, setSourceProvider,
-    canSave, saving, error, submit,
+    canSave, saving, error, errorDetail, submit,
   };
 }
