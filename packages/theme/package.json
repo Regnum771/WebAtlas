@@ -1,0 +1,21 @@
+{
+  "name": "@webatlas/theme",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "tsx": "^4.19.2",
+    "typescript": "~6.0.2",
+    "vitest": "^3.0.0"
+  },
+  "exports": {
+    "./tokens.css": "./generated/tokens.css",
+    "./tailwind-theme.css": "./generated/tailwind-theme.css"
+  }
+}
