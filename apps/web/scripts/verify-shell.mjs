@@ -383,7 +383,7 @@ async function signIn(page) {
       { timeout: 20000 },
     );
   } catch {
-    const message = await page.$eval('.dialog', (el) => el.innerText.replace(/\s+/g, ' ')).catch(() => '');
+    const message = await page.$eval(':is([role="dialog"],[role="alertdialog"])', (el) => el.innerText.replace(/\s+/g, ' ')).catch(() => '');
     throw new Error(`sign-in did not finish: ${message}`);
   }
 }

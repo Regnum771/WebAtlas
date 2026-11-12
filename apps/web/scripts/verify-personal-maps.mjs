@@ -492,7 +492,7 @@ async function press(page, selector, label) {
   throw new Error(`no enabled button "${label}" in ${selector}`);
 }
 
-const dialogText = (page) => page.evaluate(() => window.__p3c.text({ selector: '.dialog' }));
+const dialogText = (page) => page.evaluate(() => window.__p3c.text({ selector: ':is([role="dialog"],[role="alertdialog"])' }));
 
 /** Waits until the topmost dialog's text contains `wanted`; fails early on one of `failures`. */
 async function waitDialogText(page, wanted, timeout, failures = []) {
@@ -780,7 +780,7 @@ async function stepCreate(session, ctx) {
   await click(page, { selector: '.my-maps-buttons' }, 'Bản đồ mới');
   await page.waitForSelector('#my-map-title', { visible: true, timeout: 5000 });
   await page.type('#my-map-title', MAP_TITLE);
-  await click(page, { selector: '.dialog' }, 'Tạo');
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Tạo');
   await page.waitForFunction((t, g) => {
     const card = window.__p3c.card(t, g);
     return card?.querySelector('.my-map-head')?.getAttribute('aria-expanded') === 'true' && card.querySelector('.my-map-actions');
@@ -809,11 +809,11 @@ async function uploadInto(session, ctx, path) {
     { timeout: 5000 }, path.split(/[\\/]/).pop());
   const target = await page.$eval('#upload-target', (el) => el.value);
   if (target !== ctx.mapId) throw new Error(`Nhập vào is "${target}", not the map the button belongs to`);
-  await click(page, { selector: '.dialog' }, 'Tải lên và nhập');
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Tải lên và nhập');
   await waitDialogText(page, 'Đã nhập xong.', IMPORT_TIMEOUT_MS, ['Lỗi']);
   const done = await dialogText(page);
-  await click(page, { selector: '.dialog' }, 'Đóng');
-  await page.waitForFunction(() => !document.querySelector('.dialog'), { timeout: 5000 });
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Đóng');
+  await page.waitForFunction(() => !document.querySelector(':is([role="dialog"],[role="alertdialog"])'), { timeout: 5000 });
   return done;
 }
 
@@ -1006,12 +1006,12 @@ async function stepDraw(session, vp) {
   await page.waitForSelector('#new-layer-title', { visible: true, timeout: 5000 });
   await page.type('#new-layer-title', DRAWN_LAYER);
   await page.select('#new-layer-geometry', 'polygon');
-  await click(page, { selector: '.dialog' }, 'Thêm trường');
-  await page.waitForSelector('.dialog input[aria-label="Tên trường"]', { timeout: 5000 });
-  await page.type('.dialog input[aria-label="Tên trường"]', DRAWN_FIELD);
-  await click(page, { selector: '.dialog' }, 'Tạo lớp');
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Thêm trường');
+  await page.waitForSelector(':is([role="dialog"],[role="alertdialog"]) input[aria-label="Tên trường"]', { timeout: 5000 });
+  await page.type(':is([role="dialog"],[role="alertdialog"]) input[aria-label="Tên trường"]', DRAWN_FIELD);
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Tạo lớp');
   try {
-    await page.waitForFunction(() => !document.querySelector('.dialog'), { timeout: 15000 });
+    await page.waitForFunction(() => !document.querySelector(':is([role="dialog"],[role="alertdialog"])'), { timeout: 15000 });
   } catch {
     throw new Error(`Lớp vẽ mới did not close: ${(await dialogText(page)).slice(-300)}`);
   }
@@ -1092,7 +1092,7 @@ async function stepExport(session, vp, ctx) {
   await page.waitForSelector('#export-format', { visible: true, timeout: 15000 });
   await page.select('#export-format', 'shp');
   await page.select('#export-crs', EXPORT_CRS);
-  const layers = await page.$$eval('.dialog fieldset .check-row', (rows) => rows.map((r) => r.textContent.trim()));
+  const layers = await page.$$eval(':is([role="dialog"],[role="alertdialog"]) fieldset .check-row', (rows) => rows.map((r) => r.textContent.trim()));
   if (layers.includes(TIFF_LAYER)) problems.push('the raster is offered for export');
   // The preview follows the options after 300 ms.
   await sleep(2500);
@@ -1108,14 +1108,14 @@ async function stepExport(session, vp, ctx) {
   await shot(session, vp, 'xuat-ten-truong');
 
   const before = filesIn(ctx.downloads);
-  await click(page, { selector: '.dialog' }, 'Xuất');
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Xuất');
   await page.waitForFunction(() => {
-    const dialog = [...document.querySelectorAll('.dialog')].pop();
+    const dialog = [...document.querySelectorAll(':is([role="dialog"],[role="alertdialog"])')].pop();
     const texts = [...(dialog?.querySelectorAll('button') ?? [])].map((b) => b.textContent.trim());
     return texts.includes('Tải tệp') || dialog?.querySelector('.job-step.failed');
   }, { timeout: EXPORT_TIMEOUT_MS });
-  if (await page.$('.dialog .job-step.failed')) throw new Error(`the export failed: ${(await dialogText(page)).slice(-300)}`);
-  await click(page, { selector: '.dialog' }, 'Tải tệp');
+  if (await page.$(':is([role="dialog"],[role="alertdialog"]) .job-step.failed')) throw new Error(`the export failed: ${(await dialogText(page)).slice(-300)}`);
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Tải tệp');
   let zip = null;
   for (let i = 0; i < 60 && !zip; i += 1) {
     await sleep(500);
@@ -1130,11 +1130,11 @@ async function stepExport(session, vp, ctx) {
     }
     console.log(`          ${vp}: downloaded ${join(ctx.downloads, zip)} (${names.join(', ')})`);
   }
-  const listed = await page.$$eval('.dialog .exports-row', (rows) => rows.length);
+  const listed = await page.$$eval(':is([role="dialog"],[role="alertdialog"]) .exports-row', (rows) => rows.length);
   if (listed < 1) problems.push('Tệp đã xuất lists no file');
   await shot(session, vp, 'xuat');
-  await click(page, { selector: '.dialog' }, 'Đóng');
-  await page.waitForFunction(() => !document.querySelector('.dialog'), { timeout: 5000 });
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Đóng');
+  await page.waitForFunction(() => !document.querySelector(':is([role="dialog"],[role="alertdialog"])'), { timeout: 5000 });
   return problems;
 }
 
@@ -1142,7 +1142,7 @@ async function stepExport(session, vp, ctx) {
 async function openShare(page) {
   await menuSelect(page, OWN(), 'Chia sẻ');
   await page.waitForFunction(() => {
-    const d = document.querySelector('.dialog');
+    const d = document.querySelector(':is([role="dialog"],[role="alertdialog"])');
     return d && !d.querySelector('[aria-labelledby="share-current-title"] .spinner') && /Chưa chia sẻ với ai\.|Thu hồi/.test(d.textContent);
   }, { timeout: 10000 });
 }
@@ -1153,16 +1153,16 @@ async function stepShare(owner, recipientSession, vp, ctx) {
   const { page } = owner;
   await openShare(page);
   await page.type('#share-search', ACCOUNTS.recipient.email);
-  await page.waitForFunction((email) => [...document.querySelectorAll('.dialog .share-row')]
+  await page.waitForFunction((email) => [...document.querySelectorAll(':is([role="dialog"],[role="alertdialog"]) .share-row')]
     .some((r) => r.textContent.includes(email)), { timeout: 10000 }, ACCOUNTS.recipient.email);
   await page.evaluate((email) => {
-    const row = [...document.querySelectorAll('.dialog .share-row')].find((r) => r.textContent.includes(email));
+    const row = [...document.querySelectorAll(':is([role="dialog"],[role="alertdialog"]) .share-row')].find((r) => r.textContent.includes(email));
     [...row.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Chia sẻ').click();
   }, ACCOUNTS.recipient.email);
   await page.waitForFunction(() => [...document.querySelectorAll('[aria-labelledby="share-current-title"] .share-row')].length > 0,
     { timeout: 10000 });
   await shot(owner, vp, 'chia-se');
-  await click(page, { selector: '.dialog' }, 'Đóng');
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Đóng');
 
   const { page: rp } = recipientSession;
   await signIn(rp, ACCOUNTS.recipient);
@@ -1220,10 +1220,10 @@ async function stepRevoke(owner, recipientSession, vp, ctx) {
     const row = document.querySelector('[aria-labelledby="share-current-title"] .share-row');
     [...row.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Thu hồi').click();
   });
-  await page.waitForFunction(() => document.querySelectorAll('.dialog').length === 2, { timeout: 5000 });
-  await click(page, { selector: '.dialog' }, 'Thu hồi');
-  await page.waitForFunction(() => document.querySelector('.dialog')?.textContent.includes('Chưa chia sẻ với ai.'), { timeout: 10000 });
-  await click(page, { selector: '.dialog' }, 'Đóng');
+  await page.waitForFunction(() => document.querySelectorAll(':is([role="dialog"],[role="alertdialog"])').length === 2, { timeout: 5000 });
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Thu hồi');
+  await page.waitForFunction(() => document.querySelector(':is([role="dialog"],[role="alertdialog"])')?.textContent.includes('Chưa chia sẻ với ai.'), { timeout: 10000 });
+  await click(page, { selector: ':is([role="dialog"],[role="alertdialog"])' }, 'Đóng');
 
   const { page: rp } = recipientSession;
   const before = await mapLayersOf(rp, ctx.mapId);
@@ -1261,7 +1261,7 @@ async function layoutFits(page) {
       out.push(`the side panel is ${body.scrollWidth}px wide in ${body.clientWidth}px (too wide: ${wide.join(', ')})`);
     }
     const coverers = ['.tool-group', '.tool-menu:not([hidden])', '.scale-slider', '.scale-readout', '.side-panel',
-      '.personal-feature-card', '.toast-host > *', '.dialog'];
+      '.personal-feature-card', '.toast-host > *', ':is([role="dialog"],[role="alertdialog"])'];
     const box = (el) => el.getBoundingClientRect();
     for (const selector of ['.map-scaleline', '.map-mouseposition']) {
       const el = document.querySelector(selector);

@@ -82,7 +82,7 @@ describe('LayerSettingsView', () => {
     await user.click(screen.getByRole('button', { name: 'Lưu trường' }));
     expect(screen.getByText('Hãy nhập tên trường.')).toBeInTheDocument();
     expect(h.onSaveFields).not.toHaveBeenCalled();
-    expect(screen.queryByRole('dialog', { name: 'Xoá trường?' })).toBeNull();
+    expect(screen.queryByRole('alertdialog', { name: 'Xoá trường?' })).toBeNull();
   });
 
   it('a blank new row is dropped without asking', async () => {
@@ -93,7 +93,7 @@ describe('LayerSettingsView', () => {
     await user.click(screen.getByRole('button', { name: 'Thêm trường' }));
     expect(screen.getAllByLabelText('Tên trường')).toHaveLength(2);
     await user.click(screen.getByRole('button', { name: 'Lưu trường' }));
-    expect(screen.queryByRole('dialog', { name: 'Xoá trường?' })).toBeNull();
+    expect(screen.queryByRole('alertdialog', { name: 'Xoá trường?' })).toBeNull();
     expect(h.onSaveFields).toHaveBeenCalledWith([{ name: 'Độ sâu', type: 'number', from: 'Độ sâu' }]);
   });
 
@@ -104,7 +104,7 @@ describe('LayerSettingsView', () => {
     await user.click(screen.getByRole('button', { name: 'Sửa trường' }));
     await user.click(screen.getAllByRole('button', { name: 'Xoá trường' })[0]);
     await user.click(screen.getByRole('button', { name: 'Lưu trường' }));
-    const confirm = screen.getByRole('dialog', { name: 'Xoá trường?' });
+    const confirm = screen.getByRole('alertdialog', { name: 'Xoá trường?' });
     expect(within(confirm).getByText('Giá trị của các trường bị xoá trong mọi đối tượng sẽ mất. Không khôi phục được.')).toBeInTheDocument();
     expect(h.onSaveFields).not.toHaveBeenCalled();
     // Huỷ keeps the rows as they were edited, and saves nothing.
@@ -112,7 +112,7 @@ describe('LayerSettingsView', () => {
     expect(h.onSaveFields).not.toHaveBeenCalled();
     expect(screen.getAllByLabelText('Tên trường').map((i) => (i as HTMLInputElement).value)).toEqual(['Ghi chú']);
     await user.click(screen.getByRole('button', { name: 'Lưu trường' }));
-    await user.click(within(screen.getByRole('dialog', { name: 'Xoá trường?' })).getByRole('button', { name: 'Xoá' }));
+    await user.click(within(screen.getByRole('alertdialog', { name: 'Xoá trường?' })).getByRole('button', { name: 'Xoá' }));
     expect(h.onSaveFields).toHaveBeenCalledWith([{ name: 'Ghi chú', type: 'text', from: 'Ghi chú' }]);
   });
 
@@ -121,7 +121,7 @@ describe('LayerSettingsView', () => {
     const user = userEvent.setup();
     render(<LayerSettingsView layer={layer({ kind: 'edit_copy' })} {...h} />);
     await user.click(screen.getByRole('button', { name: 'Xoá lớp' }));
-    const confirm = screen.getByRole('dialog', { name: 'Xoá lớp này?' });
+    const confirm = screen.getByRole('alertdialog', { name: 'Xoá lớp này?' });
     expect(within(confirm).getByText('Bản nháp sửa lớp sẽ bị huỷ. Không khôi phục được.')).toBeInTheDocument();
     await user.click(within(confirm).getByRole('button', { name: 'Xoá' }));
     expect(h.onRemove).toHaveBeenCalled();

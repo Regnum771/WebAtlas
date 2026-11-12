@@ -51,7 +51,7 @@ describe('PersonalEditingView', () => {
   it('deleting asks first', async () => {
     const onConfirmDelete = vi.fn();
     render(<PersonalEditingView {...base} step="form" confirmOpen onConfirmDelete={onConfirmDelete} />);
-    const dialog = screen.getByRole('dialog', { name: 'Xoá đối tượng này?' });
+    const dialog = screen.getByRole('alertdialog', { name: 'Xoá đối tượng này?' });
     expect(dialog).toHaveTextContent('Không khôi phục được.');
     await userEvent.setup().click(screen.getByRole('button', { name: 'Xoá' }));
     expect(onConfirmDelete).toHaveBeenCalled();

@@ -613,12 +613,12 @@ async function uploadSeries(session, entry) {
     await page.type('#ts-title', entry.typed ?? entry.title);
     await page.type('#ts-abstract', entry.abstract);
     if (entry.pattern) await page.select('#ts-pattern', entry.pattern);
-    await click(page, '.dialog', 'Tải lên');
-    await waitText(page, '.dialog', 'Đã thêm chuỗi thời gian vào bản đồ.', UPLOAD_TIMEOUT_MS, ['Xử lý không thành công', 'Chưa tải lên được', 'Lỗi']);
+    await click(page, ':is([role="dialog"],[role="alertdialog"])', 'Tải lên');
+    await waitText(page, ':is([role="dialog"],[role="alertdialog"])', 'Đã thêm chuỗi thời gian vào bản đồ.', UPLOAD_TIMEOUT_MS, ['Xử lý không thành công', 'Chưa tải lên được', 'Lỗi']);
     const done = Date.now();
     console.log(`time    ${String(session.vp).padEnd(4)} ${entry.title}: upload ${queuedAt ? Math.round((queuedAt - t0) / 1000) : '?'} s, job ${queuedAt ? Math.round((done - queuedAt) / 1000) : '?'} s, total ${Math.round((done - t0) / 1000)} s`);
-    await click(page, '.dialog', 'Đóng');
-    await page.waitForFunction(() => !document.querySelector('.dialog'), { timeout: 10000 });
+    await click(page, ':is([role="dialog"],[role="alertdialog"])', 'Đóng');
+    await page.waitForFunction(() => !document.querySelector(':is([role="dialog"],[role="alertdialog"])'), { timeout: 10000 });
     return [];
   } finally {
     page.off('response', onResponse);
