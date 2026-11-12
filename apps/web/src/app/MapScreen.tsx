@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import TopBar from '../widgets/top-bar';
 import MapView from '../features/map/ui/MapView';
 import MapLoadingBar from '../features/map/ui/MapLoadingBar';
-import ScaleSlider from '../features/map/ui/ScaleSlider';
+import { ZoomControls } from '../features/map/ui/ScaleSlider';
+import StatusBar from '../features/map/ui/StatusBar';
+import { ToolStacksView } from '../features/map/ui/ToolStacks.view';
 import { ToolGroupView, type ToolDef } from '../features/map/ui/ToolGroup.view';
 import MeasureTool from '../features/map/ui/MeasureTool';
 import BasemapTool from '../features/map/ui/BasemapTool';
@@ -149,10 +151,14 @@ export default function MapScreen() {
               onToggle={(id) => toggleTool(id as ToolId)}
               onClose={closeTool}
             />
-            <ScaleSlider />
+            <ToolStacksView>
+              <ZoomControls />
+            </ToolStacksView>
             <FloodScenario />
             <TimeSlider />
             <ToastHost />
+            {/* R8: the bottom edge of the map, never covered. */}
+            <StatusBar />
           </div>
           <PersonalTable />
         </>

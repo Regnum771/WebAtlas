@@ -1260,7 +1260,7 @@ async function layoutFits(page) {
         .slice(0, 3).map((el) => `${el.tagName.toLowerCase()}.${el.className}`);
       out.push(`the side panel is ${body.scrollWidth}px wide in ${body.clientWidth}px (too wide: ${wide.join(', ')})`);
     }
-    const coverers = ['.tool-group', '.tool-menu:not([hidden])', '.scale-slider', '.scale-readout', '.side-panel',
+    const coverers = ['.tool-group', '.tool-menu:not([hidden])', '[data-slot="scale-slider"]', '[data-slot="scale-slider"] output', '.side-panel',
       '.personal-feature-card', '.toast-host [data-sonner-toast]', ':is([role="dialog"],[role="alertdialog"])'];
     const box = (el) => el.getBoundingClientRect();
     for (const selector of ['.map-scaleline', '.map-mouseposition']) {

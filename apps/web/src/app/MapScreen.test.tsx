@@ -6,7 +6,8 @@ import type { ResolvedRoi } from '@webatlas/shared';
 
 vi.mock('../features/map/ui/MapView', () => ({ default: () => <div>MAP_VIEW</div> }));
 vi.mock('../features/map/ui/MapLoadingBar', () => ({ default: () => <div>LOADING</div> }));
-vi.mock('../features/map/ui/ScaleSlider', () => ({ default: () => <div>SCALE_SLIDER</div> }));
+vi.mock('../features/map/ui/ScaleSlider', () => ({ ZoomControls: () => <div>ZOOM_CONTROLS</div> }));
+vi.mock('../features/map/ui/StatusBar', () => ({ default: () => <div>STATUS_BAR</div> }));
 vi.mock('../features/map/ui/MeasureTool', () => ({ default: ({ active }: { active: boolean }) => <div>{`MEASURE:${active}`}</div> }));
 vi.mock('../features/map/ui/BasemapTool', () => ({ default: () => <div>BASEMAP</div> }));
 vi.mock('../features/add-data', () => ({ default: () => <div>ADD_DATA</div> }));
@@ -130,12 +131,15 @@ describe('MapScreen', () => {
     expect(mine.compareDocumentPosition(within(panel).getByText('LAYERS')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('puts the map and its floats in the stage, and the top bar in its slot', () => {
+  it('puts the map, its floats and the status bar in the stage, and the top bar in its slot', () => {
     const { container } = renderScreen();
     const stage = container.querySelector('.map-stage') as HTMLElement;
     expect(within(stage).getByText('MAP_VIEW')).toBeInTheDocument();
     expect(within(stage).getByRole('button', { name: 'Đo' })).toBeInTheDocument();
-    expect(within(stage).getByText('SCALE_SLIDER')).toBeInTheDocument();
+    expect(within(stage).getByText('ZOOM_CONTROLS')).toBeInTheDocument();
+    // R8: the status bar is the last thing in the map box, so it paints over every float before it.
+    const mapBox = stage.querySelector('.map-stage-map') as HTMLElement;
+    expect(mapBox.lastElementChild).toHaveTextContent('STATUS_BAR');
     expect(screen.getByText('TOP_BAR')).toBeInTheDocument();
   });
 

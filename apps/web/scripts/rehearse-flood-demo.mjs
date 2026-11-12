@@ -99,12 +99,12 @@ async function main() {
     // Step 1: open the replay and play.
     await clickButton(page, '.tool-group', 'Kịch bản lũ');
     await page.waitForSelector('.flood-menu-item', { visible: true, timeout: 15000 });
-    const scaleBefore = await page.$eval('.scale-readout-value', (el) => el.textContent);
+    const scaleBefore = await page.$eval('[data-slot="scale-slider"] output', (el) => el.textContent);
     await page.$$eval('.flood-menu-item', (items) => items.find((b) => b.textContent.includes('tái hiện'))?.click());
     await page.waitForFunction(() => document.querySelector('.flood-dock [aria-label="Phát"]:not([disabled])'), { timeout: 60000 });
     const time = await page.$eval('.flood-dock-time', (el) => el.textContent);
     await sleep(1200);
-    const scaleAfter = await page.$eval('.scale-readout-value', (el) => el.textContent);
+    const scaleAfter = await page.$eval('[data-slot="scale-slider"] output', (el) => el.textContent);
     report(scaleAfter !== scaleBefore, 'choosing a scenario flies the map to its area', `${scaleBefore} → ${scaleAfter}`);
     report(time.startsWith('05:00 26/10/2025'), 'dock opens at the decision moment, before the rise', time);
     await clickButton(page, '.tool-group', 'Kịch bản lũ');
@@ -114,7 +114,7 @@ async function main() {
     const after = await page.$eval('.flood-dock-time', (el) => el.textContent);
     report(after !== time, 'playback advances the hour', after);
     const dock = await rectOf(page, '.flood-dock');
-    const scale = await rectOf(page, '.scale-control');
+    const scale = await rectOf(page, '[data-slot="scale-slider"]');
     report(!overlaps(dock, scale), 'dock clear of the scale control');
     // .map-cursor-elevation shows only while the pointer hovers the map.
     for (const sel of ['.map-scaleline', '.map-mouseposition', '.map-crs-select']) {

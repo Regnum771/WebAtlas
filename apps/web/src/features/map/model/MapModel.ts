@@ -1,5 +1,6 @@
 import Map from 'ol/Map';
 import type MousePosition from 'ol/control/MousePosition';
+import type ScaleLine from 'ol/control/ScaleLine';
 import type MapBrowserEvent from 'ol/MapBrowserEvent';
 import { riverOverviewVisibleAt } from './riverOverview';
 import { createLoadTracker } from './loadingState';
@@ -139,6 +140,7 @@ export class MapModel {
   private waterVersionsTimer: ReturnType<typeof setTimeout> | null = null;
   /** Coordinate readout control — kept to swap its formatter on CRS toggle. */
   private mousePosition: MousePosition | null = null;
+  private scaleLine: ScaleLine | null = null;
   private reservoirFilter: ReservoirFilterType = 'all';
   private layerStates: LayerState[] = [];
   private moveendHandler: (() => void) | null = null;
@@ -295,6 +297,7 @@ export class MapModel {
 
     // 3. The map.
     this.mousePosition = createMousePosition();
+    this.scaleLine = createScaleBar();
     const map = new Map({
       target,
       layers: [
@@ -338,7 +341,7 @@ export class MapModel {
       }),
       // An EXPLICIT list, not defaults(): defaults() brings a zoom button and an
       // attribution box that overlap our own toolbar and bottom-right corner.
-      controls: [createScaleBar(), this.mousePosition],
+      controls: [this.scaleLine, this.mousePosition],
     });
 
     // Highlight the clicked river. ol/interaction/Select does not select tile features,
@@ -629,6 +632,26 @@ export class MapModel {
 
   /** Swaps the coordinate readout's formatter (CRS toggle). The control keeps
    *  projecting to EPSG:4326; the formatter converts from there. */
+  /**
+   * Draws the coordinate readout and the scale line into elements outside the map (the status
+   * bar). null puts a readout back on the map's own overlay. OpenLayers only places a control's
+   * element when the control joins a map, so each one is taken off and added again.
+   */
+  setReadoutTargets(targets: { coordinates: HTMLElement | null; scaleLine: HTMLElement | null }): void {
+    if (!this.map) return;
+    const pairs: [MousePosition | ScaleLine | null, HTMLElement | null][] = [
+      [this.mousePosition, targets.coordinates],
+      [this.scaleLine, targets.scaleLine],
+    ];
+    for (const [control, target] of pairs) {
+      if (!control) continue;
+      this.map.removeControl(control);
+      // Typed as element-or-id only; null (stored as is) sends the control back to the map's overlay.
+      control.setTarget(target as HTMLElement);
+      this.map.addControl(control);
+    }
+  }
+
   setCoordinateFormat(format: (coord?: number[]) => string): void {
     this.mousePosition?.setCoordinateFormat(format);
   }

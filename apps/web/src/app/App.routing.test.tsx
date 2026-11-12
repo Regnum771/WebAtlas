@@ -29,6 +29,11 @@ vi.mock('../pages/ho-so', () => ({ default: () => <div>HO_SO</div> }));
 
 import App from './App';
 
+// The status bar's Radix slider measures its thumb; jsdom has no ResizeObserver.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as never;
+}
+
 describe('App routing', () => {
   it('renders the hub over a live map at /', () => {
     window.history.pushState({}, '', '/');

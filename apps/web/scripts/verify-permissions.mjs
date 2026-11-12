@@ -367,7 +367,7 @@ const fmt = (r) => `[${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.w
 async function mapReadoutsClear(page) {
   const problems = [];
   const covered = ['.map-scaleline', '.map-mouseposition'];
-  const coverers = ['.tool-group', '.scale-slider', '.scale-readout', '.tool-menu:not([hidden])'];
+  const coverers = ['.tool-group', '[data-slot="scale-slider"]', '[data-slot="scale-slider"] output', '.tool-menu:not([hidden])'];
   for (const selector of covered) {
     const own = await rectsOf(page, selector);
     if (own.length === 0) problems.push(`${selector} is not on the page`);
@@ -395,7 +395,7 @@ async function quanLyFits(page) {
     const bar = document.querySelector('[data-slot="app-header"]');
     if (!route) return [...out, '.quan-ly-route is not on the page'];
     if (route.getBoundingClientRect().top < bar.getBoundingClientRect().bottom - 0.5) out.push('.quan-ly-route starts above the bottom of the top bar');
-    for (const selector of ['.map-scaleline', '.map-mouseposition', '.tool-group', '.scale-slider']) {
+    for (const selector of ['.map-scaleline', '.map-mouseposition', '.tool-group', '[data-slot="scale-slider"]']) {
       const el = document.querySelector(selector);
       const r = el?.getBoundingClientRect();
       if (!r || r.width === 0) continue;
