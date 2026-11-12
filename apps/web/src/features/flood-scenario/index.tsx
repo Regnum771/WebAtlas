@@ -12,7 +12,6 @@ import {
 } from './model/flood.store';
 import { FloodDockView } from './ui/FloodDock.view';
 import { FloodLegendView } from './ui/FloodLegend.view';
-import './ui/flood.css';
 
 /** The dock and the map layers of the open scenario; renders nothing while none is open. */
 export default function FloodScenario() {

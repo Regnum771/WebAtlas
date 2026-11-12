@@ -8,7 +8,6 @@ import { syncCatalogueLayers } from './model/catalogueLayers';
 import { setStepsFor } from '../time-slider/model/timeSlider.store';
 import { unionSteps } from '../time-slider/model/timeSteps';
 import { useCatalogueHover } from './model/useCatalogueHover';
-import './ui/catalogue.css';
 import { useCataloguePickerPresenter } from './model/useCataloguePickerPresenter';
 import { useSaveToMapPresenter } from './model/useSaveToMapPresenter';
 import { useTimeseriesUploadPresenter } from './model/useTimeseriesUploadPresenter';

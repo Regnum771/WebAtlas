@@ -36,12 +36,6 @@ button.link {
   border: 0;
 }
 
-:focus-visible {
-  outline: 3px solid var(--mark);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 1px var(--ink);
-}
-
 /* Button */
 .btn {
   display: inline-flex;
