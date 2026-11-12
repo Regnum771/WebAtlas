@@ -117,3 +117,29 @@ npm run verify:legacy-styles -w @webatlas/web -- --compare ../../.superpowers/k2
 ```
 
 Thoát với mã 1 khi có khác biệt (in tối đa 50 dòng). Cần Docker stack, API và `npm run dev:web`.
+
+Ảnh chụp không ghi được: phần tử giả (`::before`, `::after`, `::placeholder`), trạng thái hover và
+focus, khổ màn hình khác 1440, hộp thoại và thông báo (chúng không mở trên các trang này). Lớp
+`legacy-compat` phản chiếu toàn bộ preflight để che những chỗ đó. Khác biệt `margin-left` của
+`.top-bar-search` (lề tự động, nút trên thanh xanh hẹp lại) và các hàng mới trong bảng lịch sử
+`/quan-ly/tu-dien` (dữ liệu, không phải kiểu dáng) là đã biết.
+
+# Thay đổi bộ chọn từ K2
+
+Các thành phần dùng chung giờ dựng trên shadcn/Radix và Sonner, nên các script kiểm chứng tìm
+chúng theo vai trò hoặc `data-slot`, không theo lớp CSS cũ:
+
+| Cũ | Mới |
+|---|---|
+| `.dialog` | `:is([role="dialog"],[role="alertdialog"])` — hộp xác nhận là `alertdialog` |
+| `.toast-host > .toast.bad` | `.toast-host [data-slot="toast"][role="alert"]` |
+| `.toast-host > *` | `.toast-host [data-sonner-toast]` |
+| `.spin` | `[data-slot="spinner"]` |
+| `.btn.on-green` | `[data-slot="button"][data-variant="inverse"]` |
+
+Khi một hộp thoại Radix mở, phần còn lại của trang bị ẩn khỏi công cụ đọc màn hình và không nhận
+con trỏ; script nào cần bấm phía sau hộp thoại phải đóng nó trước.
+
+Các kiểm tra đã cũ trước K2 (vẫn FAIL như trên mã trước K2, cần sửa script riêng):
+`verify:shell` 1a, 1b, 9, 10, 11 (11 cần bấm "WMS khác" trước `#wms-url`); `verify:dictionary`
+bước 2–5.
