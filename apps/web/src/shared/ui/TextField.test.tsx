@@ -25,4 +25,24 @@ describe('TextField', () => {
     expect(ref.current).toBe(screen.getByLabelText('Mật khẩu'));
     expect(screen.getByRole('button', { name: 'Hiện' })).toBeInTheDocument();
   });
+
+  it('marks its root as the text field', () => {
+    const { container } = render(<TextField id="e" label="Email" />);
+    expect(container.firstElementChild).toHaveAttribute('data-slot', 'text-field');
+  });
+
+  it('shows after content outside the input box, still describing the input', () => {
+    render(<TextField id="w" label="Công suất" hint="Số thập phân." aria-describedby="w-unit" after={<span id="w-unit">MW</span>} />);
+    const input = screen.getByLabelText('Công suất');
+    const unit = screen.getByText('MW');
+    expect(input.parentElement).not.toContainElement(unit);
+    expect(input).toHaveAccessibleDescription('MW Số thập phân.');
+  });
+
+  it('is invalid when it has an error and not otherwise', () => {
+    const { rerender } = render(<TextField id="e" label="Email" />);
+    expect(screen.getByLabelText('Email')).not.toHaveAttribute('aria-invalid');
+    rerender(<TextField id="e" label="Email" error="Nhập email." />);
+    expect(screen.getByLabelText('Email')).toHaveAttribute('aria-invalid', 'true');
+  });
 });
