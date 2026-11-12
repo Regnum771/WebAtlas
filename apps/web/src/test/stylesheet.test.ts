@@ -16,10 +16,12 @@ describe('design tokens and base styles', () => {
   ])('token %s is %s', (name, value) => {
     expect(tokens).toMatch(new RegExp(`${name}:\\s*${value}\\s*;`, 'i'));
   });
-  it('loads Archivo with its width axis and no other family', () => {
+  it('loads Archivo with its width axis, JetBrains Mono for numbers and Newsreader italic for water names', () => {
     const html = read('../../index.html');
     expect(html).toContain('family=Archivo:wdth,wght@62..125,400..800');
-    expect(html).not.toMatch(/family=(Inter|Newsreader)/);
+    expect(html).toContain('family=JetBrains+Mono:wght@400;500');
+    expect(html).toContain('family=Newsreader:ital,wght@1,400;1,500');
+    expect(html).not.toMatch(/family=Inter/);
     expect(html).toMatch(/<html lang="vi">/);
     expect(html).toMatch(/<title>WebATLAS<\/title>/);
   });

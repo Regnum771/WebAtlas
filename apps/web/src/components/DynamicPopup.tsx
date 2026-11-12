@@ -554,7 +554,7 @@ const DynamicPopup: React.FC = () => {
         <div className="ogc-modal-overlay" onClick={() => setDetailedDam(null)}>
           <div className="ogc-modal float dam-details-modal" onClick={(e) => e.stopPropagation()}>
             <div className="ogc-modal-header">
-              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <h3>
                 <Database size={18} />
                 <span>Chi tiết chuyên sâu: {detail.ten}</span>
               </h3>

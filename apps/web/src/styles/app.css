@@ -16,6 +16,21 @@
 
 @source "../shared/ui";
 @source not "../shared/ui/**/*.test.*";
+/* K3: the map screen's converted folders. */
+@source "../widgets/top-bar";
+@source not "../widgets/top-bar/**/*.test.*";
+@source "../features/shell";
+@source not "../features/shell/**/*.test.*";
+@source "../features/layers-panel";
+@source not "../features/layers-panel/**/*.test.*";
+@source "../features/legend";
+@source not "../features/legend/**/*.test.*";
+@source "../features/map/ui";
+@source not "../features/map/ui/**/*.test.*";
+@source "../features/search";
+@source not "../features/search/**/*.test.*";
+@source "../features/command-palette";
+@source not "../features/command-palette/**/*.test.*";
 
 @theme inline {
   --default-font-family: var(--font-ui);
