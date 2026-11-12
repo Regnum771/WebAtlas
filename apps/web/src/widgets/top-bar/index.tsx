@@ -20,7 +20,7 @@ export default function TopBar() {
       nav={resolveNav(navFor(user, can), services)}
       search={<Search />}
       assistant={user ? { open: assistantOpen, onToggle: toggleAssistant } : null}
-      account={user ? <AccountMenuView email={user.email} role={user.role} canManageUsers={canSeeUsers(user, can)} onLogout={logout} /> : <AuthWidget />}
+      account={user ? <AccountMenuView name={user.full_name} email={user.email} role={user.role} canManageUsers={canSeeUsers(user, can)} onLogout={logout} /> : <AuthWidget />}
     />
   );
 }

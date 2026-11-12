@@ -161,19 +161,19 @@ async function openPage(page, settle, route) {
 
 async function signIn(page, settle) {
   await openPage(page, settle, '/ban-do');
-  const clicked = await page.$$eval('.top-bar button', (buttons) => {
+  const clicked = await page.$$eval('[data-slot="app-header"] button', (buttons) => {
     const button = buttons.find((b) => b.textContent.trim() === 'Đăng nhập');
     button?.click();
     return Boolean(button);
   });
-  if (!clicked) throw new Error('no Đăng nhập button in .top-bar');
+  if (!clicked) throw new Error('no Đăng nhập button in the header');
   await page.waitForSelector('#login-email', { visible: true, timeout: 5000 });
   await page.type('#login-email', EMAIL);
   await page.type('#login-password', PASSWORD);
   await page.$eval('#login-password', (el) => el.form.requestSubmit());
   try {
     await page.waitForFunction(
-      () => [...document.querySelectorAll('.top-bar button')].some((b) => b.textContent.trim() === 'Trợ lý'),
+      () => [...document.querySelectorAll('[data-slot="app-header"] button')].some((b) => b.textContent.trim() === 'Trợ lý'),
       { timeout: 20000 },
     );
   } catch {

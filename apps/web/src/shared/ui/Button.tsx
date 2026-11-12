@@ -3,8 +3,7 @@ import { Button as ShadcnButton } from './shadcn/button';
 import { Spinner } from './Spinner';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  /** `inverse` is for buttons on the green top bar: white outline, white fill when pressed. */
-  variant?: 'outline' | 'solid' | 'quiet' | 'danger' | 'inverse';
+  variant?: 'outline' | 'solid' | 'quiet' | 'danger';
   size?: 'md' | 'sm';
   busy?: boolean;
   /** Shown in place of children while busy. */

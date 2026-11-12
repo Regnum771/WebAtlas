@@ -177,7 +177,7 @@ body {
 }
 
 /* Search (features/search) — lives inside the top bar; .search-box fills the
-   slot (.top-bar-search, styled in shell.css) and anchors the results dropdown. */
+   slot (in the header, TopBar.view.tsx) and anchors the results dropdown. */
 .search-box {
   position: relative;
   width: 100%;

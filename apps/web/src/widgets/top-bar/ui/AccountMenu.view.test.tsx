@@ -5,91 +5,89 @@ import { MemoryRouter } from 'react-router-dom';
 import { AccountMenuView } from './AccountMenu.view';
 import type { Role } from '../../../entities/session/model/session.types';
 
-const renderMenu = (role: Role, onLogout = vi.fn(), email = 'a@b.test', canManageUsers = role === 'admin') =>
+interface Opts { name?: string | null; email?: string; canManageUsers?: boolean; onLogout?: () => void }
+const renderMenu = (role: Role, { name = 'Nguyễn Văn An', email = 'a@b.test', canManageUsers = role === 'admin', onLogout = vi.fn() }: Opts = {}) =>
   render(
     <MemoryRouter>
-      <AccountMenuView email={email} role={role} canManageUsers={canManageUsers} onLogout={onLogout} />
+      <AccountMenuView name={name} email={email} role={role} canManageUsers={canManageUsers} onLogout={onLogout} />
     </MemoryRouter>,
   );
 
 describe('AccountMenuView', () => {
-  it('shows the role on the button, not the email', () => {
+  it('shows the account name on the trigger, not the email', () => {
     renderMenu('admin');
-    const button = screen.getByRole('button', { name: 'Quản trị viên' });
-    expect(button).toHaveAttribute('aria-expanded', 'false');
+    const trigger = screen.getByRole('button', { name: 'Nguyễn Văn An' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('a@b.test')).toBeNull();
   });
 
-  it('is a plain disclosure: the button controls a panel, with no menu roles', async () => {
+  it('falls back to the email when the account has no name', () => {
+    renderMenu('viewer', { name: null });
+    expect(screen.getByRole('button', { name: 'a@b.test' })).toBeInTheDocument();
+    renderMenu('viewer', { name: '  ', email: 'c@d.test' });
+    expect(screen.getByRole('button', { name: 'c@d.test' })).toBeInTheDocument();
+  });
+
+  it('opens a menu with the email and the role, then the account items', async () => {
+    const user = userEvent.setup();
     renderMenu('admin');
-    const button = screen.getByRole('button', { name: 'Quản trị viên' });
-    expect(button).not.toHaveAttribute('aria-haspopup');
-    await userEvent.click(button);
-    expect(button).toHaveAttribute('aria-expanded', 'true');
-    const panel = document.getElementById(button.getAttribute('aria-controls') ?? '');
-    expect(panel).not.toBeNull();
-    expect(panel).not.toHaveAttribute('role');
-    expect(panel).toHaveTextContent('a@b.test');
-    expect(screen.queryByRole('menu')).toBeNull();
-    expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
+    const trigger = screen.getByRole('button', { name: 'Nguyễn Văn An' });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const menu = screen.getByRole('menu');
+    expect(menu).toHaveTextContent('a@b.test');
+    expect(menu).toHaveTextContent('Quản trị viên');
+    expect(screen.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Hồ sơ', 'Người dùng', 'Đăng xuất']);
   });
 
   it('offers Người dùng, pointing into Quản lý, only when canManageUsers', async () => {
     const user = userEvent.setup();
-    const { unmount } = renderMenu('admin');
-    await user.click(screen.getByRole('button', { name: 'Quản trị viên' }));
-    expect(screen.getByRole('link', { name: 'Người dùng' })).toHaveAttribute('href', '/quan-ly/nguoi-dung');
-    unmount();
-    const second = renderMenu('viewer', vi.fn(), 'a@b.test', true);
-    await user.click(screen.getByRole('button', { name: 'Người xem' }));
-    expect(screen.getByRole('link', { name: 'Người dùng' })).toHaveAttribute('href', '/quan-ly/nguoi-dung');
+    const first = renderMenu('admin');
+    await user.click(screen.getByRole('button', { name: 'Nguyễn Văn An' }));
+    expect(screen.getByRole('menuitem', { name: 'Người dùng' })).toHaveAttribute('href', '/quan-ly/nguoi-dung');
+    first.unmount();
+    const second = renderMenu('viewer', { canManageUsers: true });
+    await user.click(screen.getByRole('button', { name: 'Nguyễn Văn An' }));
+    expect(screen.getByRole('menuitem', { name: 'Người dùng' })).toHaveAttribute('href', '/quan-ly/nguoi-dung');
     second.unmount();
     renderMenu('viewer');
-    await user.click(screen.getByRole('button', { name: 'Người xem' }));
-    expect(screen.queryByRole('link', { name: 'Người dùng' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Nguyễn Văn An' }));
+    expect(screen.queryByRole('menuitem', { name: 'Người dùng' })).toBeNull();
   });
 
   it('offers Hồ sơ to every signed-in user', async () => {
     renderMenu('viewer');
-    await userEvent.click(screen.getByRole('button', { name: 'Người xem' }));
-    expect(screen.getByRole('link', { name: 'Hồ sơ' })).toHaveAttribute('href', '/ho-so');
+    await userEvent.click(screen.getByRole('button', { name: 'Nguyễn Văn An' }));
+    expect(screen.getByRole('menuitem', { name: 'Hồ sơ' })).toHaveAttribute('href', '/ho-so');
   });
 
   it('Đăng xuất calls onLogout', async () => {
     const onLogout = vi.fn();
-    renderMenu('viewer', onLogout);
-    await userEvent.click(screen.getByRole('button', { name: 'Người xem' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Đăng xuất' }));
+    renderMenu('viewer', { onLogout });
+    await userEvent.click(screen.getByRole('button', { name: 'Nguyễn Văn An' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Đăng xuất' }));
     expect(onLogout).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('Escape closes the menu and returns focus to the button', async () => {
+  it('Escape closes the menu and returns focus to the trigger', async () => {
     const user = userEvent.setup();
     renderMenu('viewer');
-    const button = screen.getByRole('button', { name: 'Người xem' });
-    await user.click(button);
-    expect(screen.getByRole('button', { name: 'Đăng xuất' })).toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: 'Nguyễn Văn An' });
+    await user.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('button', { name: 'Đăng xuất' })).toBeNull();
-    expect(button).toHaveFocus();
-    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
   });
 
-  it('closes on a press outside and returns focus to the button', async () => {
-    const user = userEvent.setup();
-    renderMenu('viewer');
-    const button = screen.getByRole('button', { name: 'Người xem' });
-    await user.click(button);
-    await user.click(document.body);
-    expect(screen.queryByRole('button', { name: 'Đăng xuất' })).toBeNull();
-    expect(button).toHaveFocus();
-  });
-
-  it('keeps the whole address available when it is cut short', async () => {
+  it('keeps a long name and the whole address available when they are cut short', async () => {
     const email = 'nguyen.thi.minh.khai.phong.tai.nguyen.nuoc@monre.example.vn';
-    renderMenu('viewer', vi.fn(), email);
-    expect(screen.queryByText(email)).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: 'Người xem' }));
-    expect(screen.getByText(email)).toHaveAttribute('title', email);
+    renderMenu('viewer', { name: null, email });
+    expect(screen.getByRole('button', { name: email }).querySelector('[title]')).toHaveAttribute('title', email);
+    await userEvent.click(screen.getByRole('button', { name: email }));
+    expect(screen.getByRole('menu').querySelector(`[title="${email}"]`)).not.toBeNull();
   });
 });

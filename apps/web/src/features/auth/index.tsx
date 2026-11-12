@@ -20,7 +20,7 @@ export default function AuthWidget() {
 
   return (
     <>
-      <Button variant="inverse" onClick={() => setOpen(true)}>Đăng nhập</Button>
+      <Button className="self-center" onClick={() => setOpen(true)}>Đăng nhập</Button>
       <LoginModalView
         open={open}
         values={presenter.values}

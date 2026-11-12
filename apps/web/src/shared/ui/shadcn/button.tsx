@@ -15,8 +15,6 @@ const buttonVariants = cva(
         solid: "border-brand bg-brand text-surface",
         quiet: "border-transparent bg-transparent text-ink hover:bg-surface-2",
         danger: "border-alert bg-alert text-surface",
-        inverse:
-          "border-surface bg-transparent text-surface aria-pressed:bg-surface aria-pressed:text-brand",
       },
       size: {
         md: "h-control px-3",

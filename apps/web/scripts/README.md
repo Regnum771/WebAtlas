@@ -120,9 +120,16 @@ Thoát với mã 1 khi có khác biệt (in tối đa 50 dòng). Cần Docker st
 
 Ảnh chụp không ghi được: phần tử giả (`::before`, `::after`, `::placeholder`), trạng thái hover và
 focus, khổ màn hình khác 1440, hộp thoại và thông báo (chúng không mở trên các trang này). Lớp
-`legacy-compat` phản chiếu toàn bộ preflight để che những chỗ đó. Khác biệt `margin-left` của
-`.top-bar-search` (lề tự động, nút trên thanh xanh hẹp lại) và các hàng mới trong bảng lịch sử
-`/quan-ly/tu-dien` (dữ liệu, không phải kiểu dáng) là đã biết.
+`legacy-compat` phản chiếu toàn bộ preflight để che những chỗ đó. Các khác biệt đã biết khi so với
+ảnh chụp ghi trước K2 (`aa161c5`):
+
+- `missing:` cho các nút `button.btn` cũ và biểu tượng bên trong: K2 dựng lại `Button` trên shadcn
+  (`data-slot`), nên script không còn duyệt chúng;
+- `missing:` cho cả cây `header.top-bar` từ K3 Task 2: thanh đầu mới mang `data-slot="app-header"`;
+- các hàng mới trong bảng lịch sử `/quan-ly/tu-dien` (dữ liệu, không phải kiểu dáng).
+
+Khác biệt `margin-left` của `.top-bar-search` trong K2 đã hết khi K3 dựng lại thanh đầu. Khi một màn
+hình đã chuyển trong K3, phép so sánh không còn áp dụng cho nó.
 
 # Thay đổi bộ chọn từ K2
 

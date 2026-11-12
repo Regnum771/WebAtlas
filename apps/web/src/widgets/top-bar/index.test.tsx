@@ -44,10 +44,10 @@ describe('TopBar', () => {
   });
 
   it('a signed-in user sees Trợ lý and the account menu, and no Đăng nhập', async () => {
-    mockUser = { id: '1', email: 'admin@b.test', full_name: 'A', role: 'admin', isAdmin: true, grants: [] };
+    mockUser = { id: '1', email: 'admin@b.test', full_name: 'Trần Thị Bình', role: 'admin', isAdmin: true, grants: [] };
     renderBar();
     expect(screen.queryByRole('button', { name: 'Đăng nhập' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Quản trị viên' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trần Thị Bình' })).toHaveAttribute('aria-haspopup', 'menu');
     expect(screen.getByRole('link', { name: 'Quản lý' })).toHaveAttribute('href', '/quan-ly');
     expect(screen.getByRole('link', { name: /Điều phối/ })).toHaveAttribute('href', 'http://localhost:3070/');
     const assistant = screen.getByRole('button', { name: 'Trợ lý' });

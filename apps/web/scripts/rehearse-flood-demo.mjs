@@ -169,13 +169,13 @@ async function main() {
       report(false, 'assistant steps', 'set VERIFY_EMAIL and VERIFY_PASSWORD');
       return;
     }
-    await clickButton(page, '.top-bar', 'Đăng nhập');
+    await clickButton(page, '[data-slot="app-header"]', 'Đăng nhập');
     await page.waitForSelector('#login-email', { visible: true, timeout: 5000 });
     await page.type('#login-email', EMAIL);
     await page.type('#login-password', PASSWORD);
     await page.$eval('#login-password', (el) => el.form.requestSubmit());
-    await page.waitForFunction(() => [...document.querySelectorAll('.top-bar button')].some((b) => b.textContent.trim() === 'Trợ lý'), { timeout: 15000 });
-    await clickButton(page, '.top-bar', 'Trợ lý');
+    await page.waitForFunction(() => [...document.querySelectorAll('[data-slot="app-header"] button')].some((b) => b.textContent.trim() === 'Trợ lý'), { timeout: 15000 });
+    await clickButton(page, '[data-slot="app-header"]', 'Trợ lý');
     await page.waitForSelector('[aria-label="Câu hỏi cho trợ lý"]', { visible: true, timeout: 10000 });
 
     const q1 = 'Theo bản tin KTTV 21 giờ ngày 28/10, đến 6 giờ sáng 30/10 những tuyến đường nào bị ngập?';

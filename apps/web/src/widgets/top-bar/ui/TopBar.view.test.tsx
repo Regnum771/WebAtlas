@@ -15,6 +15,13 @@ const ui = (props: Partial<TopBarViewProps> = {}, at = '/ban-do') => (
 );
 
 describe('TopBarView', () => {
+  it('is the converted app header: a primitive scope the legacy sheets skip', () => {
+    render(ui());
+    const header = screen.getByRole('banner');
+    expect(header).toHaveAttribute('data-slot', 'app-header');
+    expect(header).not.toHaveClass('top-bar');
+  });
+
   it('shows the wordmark as a link to the hub, the navigation and the search slot', () => {
     render(ui());
     expect(screen.getByRole('link', { name: 'WebATLAS' })).toHaveAttribute('href', '/');
@@ -32,7 +39,7 @@ describe('TopBarView', () => {
     expect(screen.getByRole('link', { name: 'Bản đồ' })).not.toHaveAttribute('aria-current');
   });
 
-  it('opens another platform service in a new tab and marks one that is down', () => {
+  it('opens another platform service in a new tab and marks one that is down, keeping its title', () => {
     render(ui({ nav: [
       { kind: 'link', href: 'http://localhost:8000/', label: 'Danh mục', down: false },
       { kind: 'link', href: 'http://localhost:3070/', label: 'Điều phối', down: true },
@@ -41,9 +48,10 @@ describe('TopBarView', () => {
     expect(catalogue).toHaveAttribute('href', 'http://localhost:8000/');
     expect(catalogue).toHaveAttribute('target', '_blank');
     expect(catalogue).toHaveAttribute('rel', 'noopener noreferrer');
-    expect(catalogue).not.toHaveClass('is-down');
+    expect(catalogue).not.toHaveAttribute('data-down');
+    expect(catalogue).not.toHaveAttribute('title');
     const ops = screen.getByRole('link', { name: /Điều phối/ });
-    expect(ops).toHaveClass('is-down');
+    expect(ops).toHaveAttribute('data-down', 'true');
     expect(ops).toHaveAttribute('title', 'Điều phối: không kết nối được');
   });
 

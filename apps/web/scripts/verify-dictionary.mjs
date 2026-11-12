@@ -361,13 +361,13 @@ const dialogText = (page) => page.evaluate(() => {
 });
 
 async function signIn(page, { email, password }) {
-  await click(page, { selector: '.top-bar' }, 'Đăng nhập');
+  await click(page, { selector: '[data-slot="app-header"]' }, 'Đăng nhập');
   await page.waitForSelector('#login-email', { visible: true, timeout: 5000 });
   await page.type('#login-email', email);
   await page.type('#login-password', password);
   await page.$eval('#login-password', (el) => el.form.requestSubmit());
   try {
-    await page.waitForFunction(() => Boolean(document.querySelector('.account-trigger')), { timeout: 20000 });
+    await page.waitForFunction(() => Boolean(document.querySelector('[data-slot="account-trigger"]')), { timeout: 20000 });
   } catch {
     throw new Error(`sign-in did not finish: ${await dialogText(page)}`);
   }

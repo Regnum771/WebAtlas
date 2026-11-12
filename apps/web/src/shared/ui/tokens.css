@@ -1,8 +1,6 @@
 /* Design tokens: colour, type, shape and layout constants. */
 :root {
   --green: #14532D;
-  --on-green: #FFFFFF;
-  --on-green-2: #CBE0D2;
   --ink: #18213A;
   --ink-2: #55607A;
   --rule: #C8CEDA;
@@ -28,7 +26,7 @@
 
   --radius: 3px;
 
-  --topbar-height: 52px;
+  --topbar-height: 44px;
   --panel-width: 348px;
   --assistant-width: 360px;
 }

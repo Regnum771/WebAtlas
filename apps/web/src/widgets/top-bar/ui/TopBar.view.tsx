@@ -13,13 +13,23 @@ export interface TopBarViewProps {
   account: ReactNode;
 }
 
+// A nav item fills the header's height so its 2 px underline sits on the header's bottom border.
+const NAV_LINK =
+  'inline-flex items-center gap-0.5 border-b-2 border-transparent pt-0.5 text-body font-medium text-ink-2 no-underline whitespace-nowrap hover:text-ink aria-[current=page]:border-brand aria-[current=page]:font-semibold aria-[current=page]:text-ink';
+
+/** The 44 px header of every screen (spec "Surfaces → Map → Header"). */
 export function TopBarView({ nav, search, assistant, account }: TopBarViewProps) {
   return (
-    <header className="top-bar">
-      <Link to="/" className="wordmark">WebATLAS</Link>
-      <nav aria-label="Điều hướng chính" className="top-nav">
+    <header
+      data-slot="app-header"
+      className="relative z-[100] col-span-full flex h-header items-stretch gap-5 border-b border-line bg-surface px-4 text-ink"
+    >
+      <Link to="/" className="self-center text-[16px] font-bold whitespace-nowrap text-brand no-underline">
+        WebATLAS
+      </Link>
+      <nav aria-label="Điều hướng chính" className="flex items-stretch gap-4">
         {nav.map((item) => item.kind === 'route' ? (
-          <NavLink key={item.to} to={item.to} className="top-nav-link">
+          <NavLink key={item.to} to={item.to} className={NAV_LINK}>
             {item.label}
           </NavLink>
         ) : (
@@ -29,7 +39,8 @@ export function TopBarView({ nav, search, assistant, account }: TopBarViewProps)
             href={item.href}
             target="_blank"
             rel="noopener noreferrer"
-            className={item.down ? 'top-nav-link is-down' : 'top-nav-link'}
+            data-down={item.down || undefined}
+            className={`${NAV_LINK} data-[down]:line-through data-[down]:opacity-60`}
             title={item.down ? `${item.label}: không kết nối được` : undefined}
           >
             {item.label}
@@ -37,17 +48,17 @@ export function TopBarView({ nav, search, assistant, account }: TopBarViewProps)
           </a>
         ))}
       </nav>
-      <div className="top-bar-search">{search}</div>
+      <div className="ml-auto flex w-[270px] min-w-0 shrink items-center">{search}</div>
       {assistant && (
         <Button
-          variant="inverse"
+          className="self-center aria-pressed:border-brand-line aria-pressed:bg-brand-tint aria-pressed:text-brand"
           aria-pressed={assistant.open}
           onClick={assistant.onToggle}
         >
           Trợ lý
         </Button>
       )}
-      {account}
+      <div className="flex min-w-0 items-center">{account}</div>
     </header>
   );
 }
