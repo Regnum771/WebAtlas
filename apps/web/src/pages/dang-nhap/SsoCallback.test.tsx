@@ -52,3 +52,12 @@ describe('SsoCallbackRoute', () => {
     await waitFor(() => expect(screen.getByText('Không đăng nhập được. Vui lòng thử lại.')).toBeInTheDocument());
   });
 });
+
+describe('SsoCallbackRoute card (K5)', () => {
+  it('is a titled card while it signs in', () => {
+    completeSso.mockReturnValue(new Promise(() => {}));
+    renderAt('#token=t');
+    const card = screen.getByRole('region', { name: 'Đăng nhập một lần' });
+    expect(card).toHaveAttribute('data-slot', 'sso-return');
+  });
+});

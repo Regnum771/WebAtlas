@@ -131,7 +131,7 @@ describe('focus ring and toast band (K2 final review)', () => {
 
 // K3: Tailwind scans each folder it converts, never its tests (words there become utilities).
 describe('Tailwind scan list (K3)', () => {
-  const dirs = ['widgets/top-bar', 'features/shell', 'features/layers-panel', 'features/legend', 'features/map/ui', 'features/search', 'features/command-palette', 'pages/trang-chu'];
+  const dirs = ['widgets/top-bar', 'features/shell', 'features/layers-panel', 'features/legend', 'features/map/ui', 'features/search', 'features/command-palette', 'pages/trang-chu', 'features/auth', 'pages/dang-nhap'];
   it.each(dirs)('scans %s and skips its tests', async (dir) => {
     const { readFileSync } = await import('node:fs');
     const { resolve } = await import('node:path');

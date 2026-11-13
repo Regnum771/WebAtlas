@@ -32,6 +32,10 @@
 @source "../features/command-palette";
 @source not "../features/command-palette/**/*.test.*";
 /* The feature popup and its table rows: two files of src/components, scanned one by one. */
+@source "../features/auth";
+@source not "../features/auth/**/*.test.*";
+@source "../pages/dang-nhap";
+@source not "../pages/dang-nhap/**/*.test.*";
 @source "../pages/trang-chu";
 @source not "../pages/trang-chu/**/*.test.*";
 @source "../components/DynamicPopup.tsx";

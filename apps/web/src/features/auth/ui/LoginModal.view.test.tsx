@@ -177,3 +177,25 @@ describe('LoginModalView', () => {
     expect(screen.getByLabelText('Email').closest('form')).toHaveAttribute('novalidate');
   });
 });
+
+describe('LoginModalView layout (K5)', () => {
+  it('puts single sign-on first, then the divider, then the password form, in a converted scope', () => {
+    render(<LoginModalView {...baseProps} onSso={vi.fn()} />);
+    const login = document.querySelector('[data-slot="login"]') as HTMLElement;
+    expect(login).not.toBeNull();
+    const sso = screen.getByRole('button', { name: 'Đăng nhập một lần' });
+    const divider = screen.getByText('Hoặc dùng tài khoản WebATLAS');
+    const email = screen.getByLabelText('Email');
+    expect(sso.closest('.login-sso')).not.toBeNull();
+    expect(sso.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(divider.compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // With single sign-on leading, the password submit steps back to an outline button.
+    expect(screen.getByRole('button', { name: 'Đăng nhập' })).toHaveAttribute('data-variant', 'outline');
+  });
+
+  it('without single sign-on, the password submit is the solid button and no divider shows', () => {
+    render(<LoginModalView {...baseProps} />);
+    expect(screen.queryByText('Hoặc dùng tài khoản WebATLAS')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Đăng nhập' })).toHaveAttribute('data-variant', 'solid');
+  });
+});
