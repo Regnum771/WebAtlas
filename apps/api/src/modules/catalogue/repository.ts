@@ -24,6 +24,8 @@ export interface CatalogueItem {
   bbox4326: [number, number, number, number] | null;
   /** GeoNode's `alternate`, e.g. geonode:ts_1a2b3c4d. */
   layerName: string;
+  /** When the entry last changed here (ISO 8601), for "Mới cập nhật". */
+  updatedAt: string;
 }
 
 interface ResourceRow {
@@ -41,10 +43,11 @@ interface ResourceRow {
   time_steps: Date[] | null;
   bbox4326: number[] | null;
   alternate: string;
+  updated_at: Date;
 }
 
 const COLS = `id, kind, title, abstract, managing_unit, is_published, public_view, public_download, owner_sub, variable, unit,
-              time_steps, bbox4326::float8[] AS bbox4326, alternate`;
+              time_steps, bbox4326::float8[] AS bbox4326, alternate, updated_at`;
 
 function toItem(row: ResourceRow, user: CurrentUser | undefined): CatalogueItem {
   return {
@@ -62,6 +65,7 @@ function toItem(row: ResourceRow, user: CurrentUser | undefined): CatalogueItem 
     timeSteps: row.time_steps ? row.time_steps.map((d) => d.toISOString()) : null,
     bbox4326: row.bbox4326 ? (row.bbox4326.map(Number) as CatalogueItem['bbox4326']) : null,
     layerName: row.alternate,
+    updatedAt: row.updated_at.toISOString(),
   };
 }
 

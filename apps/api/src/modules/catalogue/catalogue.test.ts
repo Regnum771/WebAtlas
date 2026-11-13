@@ -178,6 +178,7 @@ describe('GET /api/catalogue/search', () => {
       kind: 'timeseries', managingUnit: 'VN', variable: 'mưa', unit: 'mm', layerName: `geonode:s1_cat_${PK.pub}`,
       timeSteps: ['2026-10-01T00:00:00.000Z', '2026-10-01T01:00:00.000Z'], bbox4326: [102, 8, 110, 24],
     });
+    expect(new Date(item.updatedAt).toISOString()).toBe(item.updatedAt);
   });
 });
 
@@ -205,6 +206,7 @@ describe('GET /api/catalogue/recent', () => {
     expect(items.map((i) => i.title)).toEqual(['Bản nháp của tôi', 'Lũ tháng 10', 'Độ cao', 'Của tôi, riêng nhóm']);
     expect(items[0].mine).toBe(true);
     expect(items.map((i) => i.title)).not.toContain('Bản nháp người khác');
+    expect((items[0] as Item & { updatedAt: string }).updatedAt).toBe('2099-01-03T00:00:00.000Z');
   });
 
   it('gives 6 entries by default and refuses more than 20', async () => {
