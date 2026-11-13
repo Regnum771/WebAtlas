@@ -31,6 +31,9 @@
 @source not "../features/search/**/*.test.*";
 @source "../features/command-palette";
 @source not "../features/command-palette/**/*.test.*";
+/* The feature popup and its table rows: two files of src/components, scanned one by one. */
+@source "../components/DynamicPopup.tsx";
+@source "../components/AttrTable.tsx";
 
 @theme inline {
   --default-font-family: var(--font-ui);

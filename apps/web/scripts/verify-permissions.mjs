@@ -639,7 +639,7 @@ async function stepVisitor(session, vp, lake, provinceName) {
   await clickLake(session, lake);
   try {
     const row = await page.waitForFunction(() => {
-      const hit = [...document.querySelectorAll('.info-row')].find((el) => el.textContent.includes('Đơn vị chủ quản:'));
+      const hit = [...document.querySelectorAll('[data-slot="feature-popup"] tr')].find((el) => el.querySelector('th')?.textContent.trim() === 'Đơn vị chủ quản');
       return hit ? hit.textContent.replace(/\s+/g, ' ').trim() : false;
     }, { timeout: 15000 });
     const text = await row.jsonValue();

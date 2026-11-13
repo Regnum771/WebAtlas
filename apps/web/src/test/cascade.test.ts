@@ -139,4 +139,11 @@ describe('Tailwind scan list (K3)', () => {
     expect(app).toContain(`@source "../${dir}";`);
     expect(app).toContain(`@source not "../${dir}/**/*.test.*";`);
   });
+
+  it.each(['components/DynamicPopup.tsx', 'components/AttrTable.tsx'])('scans the single file %s', async (file) => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const app = readFileSync(resolve(import.meta.dirname, '../styles/app.css'), 'utf8');
+    expect(app).toContain(`@source "../${file}";`);
+  });
 });

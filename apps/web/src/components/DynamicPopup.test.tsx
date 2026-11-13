@@ -125,7 +125,7 @@ describe('DynamicPopup placement', () => {
     h.target.getBoundingClientRect = () => ({ left: 368, top: 0, right: 1440, bottom: 900, width: 1072, height: 900, x: 368, y: 0, toJSON: () => ({}) });
     const { container } = render(<DynamicPopup />);
     await click(1);
-    const popup = container.querySelector('.dynamic-popup') as HTMLElement;
+    const popup = container.querySelector('[data-slot="feature-popup"]') as HTMLElement;
     expect(popup.style.left).toBe(`${368 + 10 + 15}px`); // getPixelFromCoordinate → [10, 10]
   });
 });
@@ -159,7 +159,7 @@ describe('DynamicPopup managing unit', () => {
     h.thematic = { layerKey: 'dams', id: 'd1', geographicalName: 'Hồ A', ratedPower: 10, managingAuthority: '48' };
     render(<DynamicPopup />);
     await click(1);
-    expect(screen.getByText('Đơn vị chủ quản:')).toBeInTheDocument();
+    expect(screen.getByRole('rowheader', { name: 'Đơn vị chủ quản' })).toBeInTheDocument();
     expect(screen.getByText('Đà Nẵng')).toBeInTheDocument();
   });
 
@@ -174,7 +174,7 @@ describe('DynamicPopup managing unit', () => {
     h.thematic = { layerKey: 'dams', id: 'd1', geographicalName: 'Hồ A', ratedPower: 10 };
     render(<DynamicPopup />);
     await click(1);
-    expect(screen.queryByText('Đơn vị chủ quản:')).not.toBeInTheDocument();
+    expect(screen.queryByRole('rowheader', { name: 'Đơn vị chủ quản' })).not.toBeInTheDocument();
   });
 });
 
@@ -186,7 +186,7 @@ describe('DynamicPopup over a personal layer', () => {
     h.personalOnTop = false;
     // The personal feature card answers this click; the official popup stays shut and asks
     // GeoServer nothing.
-    expect(container.querySelector('.dynamic-popup')).toBeNull();
+    expect(container.querySelector('[data-slot="feature-popup"]')).toBeNull();
     expect(h.info).toHaveLength(0);
   });
 });
@@ -199,7 +199,7 @@ describe('DynamicPopup beside a personal line', () => {
     h.personalNear = false;
     // forEachFeatureAtPixel (no tolerance) misses the line and sees only the province; the
     // personal card hits it with PERSONAL_HIT_TOLERANCE, so the click is the card's.
-    expect(container.querySelector('.dynamic-popup')).toBeNull();
+    expect(container.querySelector('[data-slot="feature-popup"]')).toBeNull();
     expect(h.info).toHaveLength(0);
   });
 });
@@ -213,7 +213,7 @@ describe('DynamicPopup: a personal click after an official one', () => {
     await click(2); // then a personal feature: the card owns this click
     h.personalOnTop = false;
     await act(async () => { h.info[0].resolve(found('Đường A', '1')); });
-    expect(container.querySelector('.dynamic-popup')).toBeNull();
+    expect(container.querySelector('[data-slot="feature-popup"]')).toBeNull();
     expect(screen.queryByText('Đường A')).toBeNull();
     expect(h.members).toHaveLength(0);
   });
@@ -241,16 +241,33 @@ describe('DynamicPopup dictionary rows', () => {
     return r;
   };
 
+  it('is a panel with a header strip naming the layer and an attribute table of th and td rows', async () => {
+    await open({ layerKey: 'dams', id: 'd1', geographicalName: 'Hồ A', ratedPower: 40, operationalStatus: 'xa_lu' });
+    const popup = screen.getByRole('region', { name: 'Hồ A' });
+    expect(popup).toHaveAttribute('data-slot', 'feature-popup');
+    expect(popup).toHaveTextContent(/^Đập & Hồ chứa/);
+    const row = screen.getByRole('rowheader', { name: 'Công suất' }).closest('tr') as HTMLElement;
+    expect(row.querySelector('td')).toHaveTextContent('40 MW');
+    // The actions stay: closing, and the dam's details.
+    expect(screen.getByRole('button', { name: 'Đóng' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Xem chi tiết chuyên sâu' })).toBeInTheDocument();
+  });
+
+  it('sets a river name in the water face', async () => {
+    await open({ layerKey: 'rivers', id: 'r1', geographicalName: 'Sông C', length: 12500 });
+    expect(screen.getByRole('heading', { name: 'Sông C' })).toHaveAttribute('data-water', 'true');
+  });
+
   it('the dam popup shows dictionary labels and display units', async () => {
     await open({ layerKey: 'dams', id: 'd1', geographicalName: 'Hồ A', ratedPower: 40, operationalStatus: 'xa_lu' });
-    expect(screen.getByText('Công suất:')).toBeInTheDocument();
+    expect(screen.getByRole('rowheader', { name: 'Công suất' })).toBeInTheDocument();
     expect(screen.getByText('40 MW')).toBeInTheDocument();
-    expect(screen.getByText('Xả lũ', { selector: 'strong.status-text' })).toBeInTheDocument();
+    expect(screen.getByText('Xả lũ', { selector: 'span.status-text' })).toBeInTheDocument();
   });
 
   it('the lake popup shows volume in triệu m³', async () => {
     await open({ layerKey: 'lakes', id: 'l1', geographicalName: 'Hồ B', volume: 12.5, area: '3.456' });
-    expect(screen.getByText('Dung tích:')).toBeInTheDocument();
+    expect(screen.getByRole('rowheader', { name: 'Dung tích' })).toBeInTheDocument();
     expect(screen.getByText('12,5 triệu m³')).toBeInTheDocument();
     expect(screen.getByText('3,46 km²')).toBeInTheDocument();
   });
@@ -262,7 +279,7 @@ describe('DynamicPopup dictionary rows', () => {
 
   it('the river waterway code shows its dictionary label and value name', async () => {
     await open({ layerKey: 'rivers', id: 'r1', geographicalName: 'Sông C', hydroId: 'canal', length: 12500 });
-    expect(screen.getByText('Loại dòng chảy OSM:')).toBeInTheDocument();
+    expect(screen.getByRole('rowheader', { name: 'Loại dòng chảy OSM' })).toBeInTheDocument();
     expect(screen.getByText('Kênh đào')).toBeInTheDocument();
     expect(screen.queryByText(/Mã phân đoạn/)).not.toBeInTheDocument();
     expect(screen.queryByText('canal')).not.toBeInTheDocument();
@@ -275,6 +292,6 @@ describe('DynamicPopup dictionary rows', () => {
 
   it('a missing value is not shown', async () => {
     await open({ layerKey: 'lakes', id: 'l1', geographicalName: 'Hồ B', volume: null });
-    expect(screen.queryByText('Dung tích:')).not.toBeInTheDocument();
+    expect(screen.queryByRole('rowheader', { name: 'Dung tích' })).not.toBeInTheDocument();
   });
 });

@@ -51,7 +51,7 @@ describe('DynamicPopup for a signed-out visitor', () => {
       </QueryClientProvider>,
     );
     await act(async () => { h.handler!({ pixel: [1, 1], coordinate: [1, 1] }); });
-    expect(screen.getByText('Đơn vị chủ quản:')).toBeInTheDocument();
+    expect(screen.getByRole('rowheader', { name: 'Đơn vị chủ quản' })).toBeInTheDocument();
     expect(await screen.findByText('Đà Nẵng')).toBeInTheDocument();
     expect(screen.queryByText('48')).not.toBeInTheDocument();
   });

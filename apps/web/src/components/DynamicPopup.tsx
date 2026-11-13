@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { drawingJustEnded, isDrawing } from '../features/map/model/drawingState';
 import { useMapContext } from '../app/providers/MapProvider';
-import { X, Info, Activity, Database, Droplets, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
+import { X, Info, Database, ShieldCheck, AlertTriangle, Sliders } from 'lucide-react';
 import { fetchBasemapInfo } from '../features/map/model/basemapInfo';
 import { attributeOf, damStatusDisplay, STREAM_ORDER_LABELS, valueName, type EditableLayerKey } from '@webatlas/shared';
 import { useDictionary } from '../features/dictionary';
@@ -15,6 +15,19 @@ import { getMyMaps } from '../features/my-maps/model/myMaps.store';
 import { useMapEditing } from '../features/map/model/mapEditing';
 import { isBoundaryDecoration } from '../features/map/model/waterTiles';
 import { ManagingUnitRow } from './ManagingUnitRow';
+import { Attr, AttrBlock } from './AttrTable';
+import { Button } from '../shared/ui/Button';
+import { LAYER_REGISTRY } from '../entities/layer/layerRegistry';
+import { LAYER_DISPLAY } from '../entities/layer/layerDisplay';
+
+/** The layer a clicked feature belongs to, for the popup's header strip. */
+function layerNameOf(feature: { layerKey?: string; truocsn?: unknown; population?: unknown; province?: unknown }): string | null {
+  const entry = LAYER_REGISTRY.find((r) => r.layerKey === feature.layerKey);
+  if (entry) return LAYER_DISPLAY[entry.layerStateId]?.name ?? null;
+  if (feature.layerKey === 'basemap') return 'Nền bản đồ';
+  if (feature.truocsn !== undefined || feature.population !== undefined || feature.province !== undefined) return 'Ranh giới hành chính';
+  return null;
+}
 
 interface PopupData {
   coordinate: number[];
@@ -258,27 +271,22 @@ const DynamicPopup: React.FC = () => {
       const statusText = statusAttr && statusCode != null ? valueName(statusAttr, String(statusCode)) : status.label;
       return (
         <>
-          <div className="info-row"><Database size={14} />
-            <span>{lbl('dams', 'wattage_mw')}: <strong>{val('dams', 'wattage_mw')}</strong></span></div>
+          <Attr label={lbl('dams', 'wattage_mw')}>{val('dams', 'wattage_mw')}</Attr>
           {props.annualGeneration != null && (
-            <div className="info-row"><Droplets size={14} />
-              <span>{lbl('dams', 'annual_output')}: <strong>{val('dams', 'annual_output')}</strong></span></div>)}
+            <Attr label={lbl('dams', 'annual_output')}>{val('dams', 'annual_output')}</Attr>)}
           {props.commissioningYear && (
-            <div className="info-row"><Activity size={14} />
-              <span>{lbl('dams', 'year_operational')}: <strong>{val('dams', 'year_operational')}</strong></span></div>)}
+            <Attr label={lbl('dams', 'year_operational')}>{val('dams', 'year_operational')}</Attr>)}
           {props.constructionYear && (
-            <div className="info-row"><Info size={14} />
-              <span>{lbl('dams', 'year_launched')}: <strong>{val('dams', 'year_launched')}</strong></span></div>)}
-          <div className="info-row"><Activity size={14} />
-            <span>{lbl('dams', 'status')}: <strong className="status-text" style={{ color: status.color }}>{statusText}</strong></span></div>
-          <div className="diagrammatic-info">
+            <Attr label={lbl('dams', 'year_launched')}>{val('dams', 'year_launched')}</Attr>)}
+          <Attr label={lbl('dams', 'status')}><span className="status-text" style={{ color: status.color }}>{statusText}</span></Attr>
+          <AttrBlock><div className="diagrammatic-info">
             <div className="title">Nền đồ giải (Cartodiagram):</div>
             <ul>
               <li><strong>Kích thước biểu tượng:</strong> Tỷ lệ {lbl('dams', 'wattage_mw').toLowerCase()} ({val('dams', 'wattage_mw')})</li>
               <li><strong>Màu sắc biểu tượng:</strong> {lbl('dams', 'status')} ({statusText})</li>
             </ul>
-          </div>
-          <div className="status-filter-container">
+          </div></AttrBlock>
+          <AttrBlock><div className="status-filter-container">
             <div className="title">Lọc hồ chứa theo trạng thái:</div>
             <div className="status-filter-buttons">
               {(['all', 'binh_thuong', 'xa_lu', 'nguy_hiem'] as const).map((filterVal) => {
@@ -291,7 +299,7 @@ const DynamicPopup: React.FC = () => {
                 );
               })}
             </div>
-          </div>
+          </div></AttrBlock>
         </>
       );
     }
@@ -312,23 +320,17 @@ const DynamicPopup: React.FC = () => {
       return (
         <>
           {props.fclass && (
-            <div className="info-row"><Info size={14} />
-              <span>Loại: <strong>{FCLASS_LABELS[props.fclass] ?? props.fclass}</strong></span></div>)}
+            <Attr label="Loại">{FCLASS_LABELS[props.fclass] ?? props.fclass}</Attr>)}
           {props.ref && (
-            <div className="info-row"><Database size={14} />
-              <span>Số hiệu: <strong>{props.ref}</strong></span></div>)}
+            <Attr label="Số hiệu">{props.ref}</Attr>)}
           {props.maxspeed != null && (
-            <div className="info-row"><Activity size={14} />
-              <span>Tốc độ tối đa: <strong>{props.maxspeed} km/h</strong></span></div>)}
+            <Attr label="Tốc độ tối đa">{props.maxspeed} km/h</Attr>)}
           {props.oneway === 'yes' && (
-            <div className="info-row"><Info size={14} />
-              <span>Chiều: <strong>Một chiều</strong></span></div>)}
+            <Attr label="Chiều">Một chiều</Attr>)}
           {props.bridge === 'T' && (
-            <div className="info-row"><Info size={14} />
-              <span><strong>Cầu</strong></span></div>)}
+            <Attr label="Công trình">Cầu</Attr>)}
           {props.tunnel === 'T' && (
-            <div className="info-row"><Info size={14} />
-              <span><strong>Hầm</strong></span></div>)}
+            <Attr label="Công trình">Hầm</Attr>)}
         </>
       );
     }
@@ -337,15 +339,12 @@ const DynamicPopup: React.FC = () => {
       return (
         <>
           {has('rivers', 'code') && (
-            <div className="info-row"><Database size={14} />
-              <span>{lbl('rivers', 'code')}: <strong>{val('rivers', 'code')}</strong></span></div>)}
+            <Attr label={lbl('rivers', 'code')}>{val('rivers', 'code')}</Attr>)}
           {/* stream_order is now a rank by KIND of watercourse (OSM), not a Strahler
               order, so the kind name is shown instead of "Cấp N". */}
           {orderName && (
-            <div className="info-row"><Info size={14} />
-              <span>{lbl('rivers', 'stream_order')}: <strong>{orderName}</strong></span></div>)}
-          <div className="info-row"><Droplets size={14} />
-            <span>{lbl('rivers', 'length_m')}: <strong>{val('rivers', 'length_m')}</strong></span></div>
+            <Attr label={lbl('rivers', 'stream_order')}>{orderName}</Attr>)}
+          <Attr label={lbl('rivers', 'length_m')}>{val('rivers', 'length_m')}</Attr>
         </>
       );
     }
@@ -353,76 +352,58 @@ const DynamicPopup: React.FC = () => {
       return (
         <>
           {props.lakeType && (
-            <div className="info-row"><Info size={14} />
-              <span>{lbl('lakes', 'lake_type')}: <strong>{val('lakes', 'lake_type')}</strong></span></div>)}
+            <Attr label={lbl('lakes', 'lake_type')}>{val('lakes', 'lake_type')}</Attr>)}
           {has('lakes', 'area_km2') && (
-            <div className="info-row"><Database size={14} />
-              <span>{lbl('lakes', 'area_km2')}: <strong>{val('lakes', 'area_km2')}</strong></span></div>)}
+            <Attr label={lbl('lakes', 'area_km2')}>{val('lakes', 'area_km2')}</Attr>)}
           {has('lakes', 'volume_mcm') && (
-            <div className="info-row"><Droplets size={14} />
-              <span>{lbl('lakes', 'volume_mcm')}: <strong>{val('lakes', 'volume_mcm')}</strong></span></div>)}
+            <Attr label={lbl('lakes', 'volume_mcm')}>{val('lakes', 'volume_mcm')}</Attr>)}
           {has('lakes', 'shore_len_km') && (
-            <div className="info-row"><Activity size={14} />
-              <span>{lbl('lakes', 'shore_len_km')}: <strong>{val('lakes', 'shore_len_km')}</strong></span></div>)}
+            <Attr label={lbl('lakes', 'shore_len_km')}>{val('lakes', 'shore_len_km')}</Attr>)}
         </>
       );
     }
     if (props.layerKey === 'stations') {
       return (
         <>
-          <div className="info-row"><Database size={14} />
-            <span>{lbl('stations', 'station_type')}: <strong>{val('stations', 'station_type')}</strong></span></div>
-          <div className="info-row"><Activity size={14} />
-            <span>{lbl('stations', 'value')}: <strong>{val('stations', 'value')}</strong></span></div>
-          <div className="info-row"><Info size={14} />
-            <span>{lbl('stations', 'status')}: <strong>{val('stations', 'status')}</strong></span></div>
+          <Attr label={lbl('stations', 'station_type')}>{val('stations', 'station_type')}</Attr>
+          <Attr label={lbl('stations', 'value')}>{val('stations', 'value')}</Attr>
+          <Attr label={lbl('stations', 'status')}>{val('stations', 'status')}</Attr>
         </>
       );
     }
     if (props.layerKey === 'flood_zones') {
       return (
         <>
-          <div className="info-row"><Database size={14} />
-            <span>{lbl('flood_zones', 'hazard_type')}: <strong>{val('flood_zones', 'hazard_type')}</strong></span></div>
-          <div className="info-row"><Droplets size={14} />
-            <span>{lbl('flood_zones', 'area')}: <strong>{val('flood_zones', 'area')}</strong></span></div>
+          <Attr label={lbl('flood_zones', 'hazard_type')}>{val('flood_zones', 'hazard_type')}</Attr>
+          <Attr label={lbl('flood_zones', 'area')}>{val('flood_zones', 'area')}</Attr>
         </>
       );
     }
     if (props.layerKey === 'drought_points') {
       return (
         <>
-          <div className="info-row"><Info size={14} />
-            <span>Phân loại: <strong>Khảo sát hạn hán</strong></span></div>
-          <div className="info-row"><Activity size={14} />
-            <span>{lbl('drought_points', 'status')}: <strong>{val('drought_points', 'status')}</strong></span></div>
+          <Attr label="Phân loại">Khảo sát hạn hán</Attr>
+          <Attr label={lbl('drought_points', 'status')}>{val('drought_points', 'status')}</Attr>
           {props.observationDate && (
-            <div className="info-row"><Database size={14} />
-              <span>{lbl('drought_points', 'survey_date')}: <strong>{val('drought_points', 'survey_date')}</strong></span></div>)}
+            <Attr label={lbl('drought_points', 'survey_date')}>{val('drought_points', 'survey_date')}</Attr>)}
         </>
       );
     }
     if (props.layerKey === 'saltwater_intrusion') {
       return (
         <>
-          <div className="info-row"><Info size={14} />
-            <span>Phân loại: <strong>Xâm nhập mặn</strong></span></div>
-          <div className="info-row"><Droplets size={14} />
-            <span>{lbl('saltwater_intrusion', 'salinity')}: <strong>{val('saltwater_intrusion', 'salinity')}</strong></span></div>
-          <div className="info-row"><Activity size={14} />
-            <span>{lbl('saltwater_intrusion', 'status')}: <strong>{val('saltwater_intrusion', 'status')}</strong></span></div>
+          <Attr label="Phân loại">Xâm nhập mặn</Attr>
+          <Attr label={lbl('saltwater_intrusion', 'salinity')}>{val('saltwater_intrusion', 'salinity')}</Attr>
+          <Attr label={lbl('saltwater_intrusion', 'status')}>{val('saltwater_intrusion', 'status')}</Attr>
         </>
       );
     }
     if (props.layerKey === 'flood_generation') {
       return (
         <>
-          <div className="info-row"><Info size={14} />
-            <span>Phân loại: <strong>Vùng sinh lũ</strong></span></div>
-          <div className="info-row"><Database size={14} />
-            <span>{lbl('flood_generation', 'area')}: <strong>{val('flood_generation', 'area')}</strong></span></div>
-          <div className="info-row"><Activity size={14} />
-            <span>{lbl('flood_generation', 'flow_rate')}: <strong>{val('flood_generation', 'flow_rate')}</strong></span></div>
+          <Attr label="Phân loại">Vùng sinh lũ</Attr>
+          <Attr label={lbl('flood_generation', 'area')}>{val('flood_generation', 'area')}</Attr>
+          <Attr label={lbl('flood_generation', 'flow_rate')}>{val('flood_generation', 'flow_rate')}</Attr>
         </>
       );
     }
@@ -431,18 +412,9 @@ const DynamicPopup: React.FC = () => {
     if (props.truocsn !== undefined) {
       return (
         <>
-          <div className="info-row">
-            <Info size={14} />
-            <span>Tên đầy đủ: <strong>{props.fullName}</strong></span>
-          </div>
+          <Attr label="Tên đầy đủ">{props.fullName}</Attr>
           {props.truocsn && (
-            <div className="info-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Database size={14} />
-                <span>Trước sáp nhập:</span>
-              </div>
-              <strong className="text-gray-700 text-xs ml-5 leading-normal" style={{ whiteSpace: 'pre-wrap' }}>{props.truocsn}</strong>
-            </div>
+            <Attr label="Trước sáp nhập"><span className="font-normal whitespace-pre-wrap">{props.truocsn}</span></Attr>
           )}
         </>
       );
@@ -452,21 +424,12 @@ const DynamicPopup: React.FC = () => {
     if (props.population !== undefined || props.province !== undefined) {
       return (
         <>
-          <div className="info-row">
-            <Info size={14} />
-            <span>Cấp hành chính: <strong>{props.type}</strong></span>
-          </div>
+          <Attr label="Cấp hành chính">{props.type}</Attr>
           {props.population && (
-            <div className="info-row">
-              <Database size={14} />
-              <span>Dân số ước tính: <strong>{props.population}</strong></span>
-            </div>
+            <Attr label="Dân số ước tính">{props.population}</Attr>
           )}
           {props.province && (
-            <div className="info-row">
-              <Droplets size={14} />
-              <span>Thuộc tỉnh: <strong>{props.province}</strong></span>
-            </div>
+            <Attr label="Thuộc tỉnh">{props.province}</Attr>
           )}
         </>
       );
@@ -474,78 +437,89 @@ const DynamicPopup: React.FC = () => {
 
     // The default for every other kind.
     return (
-      <div className="info-row">
-        <Info size={14} />
-        <span>Phân loại: <strong>{props.type || 'Chưa phân loại'}</strong></span>
-      </div>
+      <Attr label="Phân loại">{props.type || 'Chưa phân loại'}</Attr>
     );
   };
 
   const isDamOrReservoir = props.layerKey === 'dams';
   const detail = isDamOrReservoir ? getDetailedDamInfo(props.localId || 0, props.geographicalName || 'Đập & Hồ chứa', props.ratedPower) : null;
 
-  // Position the popup so it does not spill off the screen.
-  let popupLeft = pixel[0] + 15;
-  let popupTop = pixel[1] - 15;
-  let xTranslate = '0';
-  let yTranslate = '-100%';
-
-  // Estimated popup size (width 260px, height about 350px).
-  if (popupLeft + 260 > window.innerWidth) {
-    popupLeft = pixel[0] - 15; // To the left of the pointer.
-    xTranslate = '-100%';
-  }
-  
-  if (popupTop - 350 < 0) {
-    popupTop = pixel[1] + 15; // Below the pointer.
-    yTranslate = '0';
-  }
+  // Place the popup inside the map's box: below the click in the map's upper half, above it in
+  // the lower half, and no taller than the space left there, so it never runs under the header
+  // or over the status bar (32 px, plus 8 px).
+  const POPUP_WIDTH = 300;
+  const box = map?.getTargetElement()?.getBoundingClientRect();
+  const boxTop = box?.top ?? 0;
+  const boxBottom = (box?.bottom ?? window.innerHeight) - 40;
+  const boxRight = box?.right ?? window.innerWidth;
+  const below = pixel[1] - boxTop < (boxBottom - boxTop) / 2;
+  const popupTop = below ? pixel[1] + 15 : pixel[1] - 15;
+  const yTranslate = below ? '0' : '-100%';
+  const maxHeight = Math.max(160, below ? boxBottom - popupTop - 8 : popupTop - boxTop - 8);
+  const toLeft = pixel[0] + 15 + POPUP_WIDTH > boxRight;
+  const popupLeft = toLeft ? pixel[0] - 15 : pixel[0] + 15;
+  const xTranslate = toLeft ? '-100%' : '0';
 
   return (
     <>
-      <div 
-        className="dynamic-popup float"
+      <div
+        data-slot="feature-popup"
+        role="region"
+        aria-labelledby="feature-popup-title"
+        className="absolute z-40 flex w-[300px] flex-col overflow-hidden rounded-lg border border-line bg-surface text-body text-ink shadow-pop"
         style={{
           left: popupLeft,
           top: popupTop,
           transform: `translate(${xTranslate}, ${yTranslate})`,
-          maxHeight: '80vh',
-          overflowY: 'auto'
+          maxHeight,
         }}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <button 
-          className="close-popup-btn" 
-          onClick={() => { setPopupData(null); setCandidates([]); }}
-        >
-          <X size={16} />
-        </button>
-        
-        <div className="popup-header">
-          <h3 className="popup-title">{props.geographicalName || props.name || (props.layerKey === 'rivers' ? `Sông ngòi (${props.hydroId ?? props.localId})` : 'Đối tượng không tên')}</h3>
+        {/* The header strip: the layer, then the feature's name (a river's in the water face). */}
+        <div className="relative flex-none border-b border-line bg-surface-2 py-2 pr-9 pl-3">
+          {layerNameOf(props) && <div className="text-label text-ink-2">{layerNameOf(props)}</div>}
+          <h3
+            id="feature-popup-title"
+            data-water={props.layerKey === 'rivers' || undefined}
+            className="text-panel font-semibold data-[water]:font-water data-[water]:italic data-[water]:text-water"
+          >
+            {props.geographicalName || props.name || (props.layerKey === 'rivers' ? `Sông ngòi (${props.hydroId ?? props.localId})` : 'Đối tượng không tên')}
+          </h3>
           {props.riskLevel && (
             <span className={`status-badge ${props.riskLevel === 'Cao' ? 'risk-high' : props.riskLevel === 'Trung bình' ? 'risk-medium' : 'risk-low'}`}>
               {props.riskLevel}
             </span>
           )}
+          <button
+            type="button"
+            aria-label="Đóng"
+            className="absolute top-1.5 right-1.5 inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-ink-2 hover:bg-surface hover:text-ink"
+            onClick={() => { setPopupData(null); setCandidates([]); }}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
         </div>
-        
-        <div className="popup-content">
-          {renderPopupContent()}
-          <ManagingUnitRow unit={props.managingAuthority} />
+
+        <div className="min-h-0 overflow-y-auto px-3 py-1.5">
+          <table className="w-full border-collapse">
+            <tbody>
+              {renderPopupContent()}
+              <ManagingUnitRow unit={props.managingAuthority} />
+            </tbody>
+          </table>
+          <RoiCandidatesView
+            candidates={candidates}
+            onUse={(roi) => { void setRoi(roi, { fit: true }); setPopupData(null); setCandidates([]); }}
+          />
         </div>
-        <RoiCandidatesView
-          candidates={candidates}
-          onUse={(roi) => { void setRoi(roi, { fit: true }); setPopupData(null); setCandidates([]); }}
-        />
-        
+
         {isDamOrReservoir && (
-          <div className="popup-footer">
-            <button className="details-btn" onClick={() => setDetailedDam(props)}>
-              <Info size={16} />
-              <span>Xem chi tiết chuyên sâu</span>
-            </button>
+          <div className="flex flex-none justify-end border-t border-line-2 px-3 py-2">
+            <Button size="sm" onClick={() => setDetailedDam(props)}>
+              <Info size={14} aria-hidden="true" />
+              Xem chi tiết chuyên sâu
+            </Button>
           </div>
         )}
       </div>

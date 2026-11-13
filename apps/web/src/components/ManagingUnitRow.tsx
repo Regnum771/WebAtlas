@@ -1,5 +1,5 @@
-import { Building2 } from 'lucide-react';
 import { useUnitTree } from '../entities/session/model/useUnitTree';
+import { Attr } from './AttrTable';
 
 /**
  * The "Đơn vị chủ quản" row of a feature card, shared by every editable layer.
@@ -14,7 +14,6 @@ export function ManagingUnitRow({ unit }: { unit: unknown }) {
 function ManagingUnitName({ code }: { code: string }) {
   const tree = useUnitTree();
   return (
-    <div className="info-row"><Building2 size={14} />
-      <span>Đơn vị chủ quản: <strong>{tree?.get(code)?.name ?? code}</strong></span></div>
+    <Attr label="Đơn vị chủ quản">{tree?.get(code)?.name ?? code}</Attr>
   );
 }
