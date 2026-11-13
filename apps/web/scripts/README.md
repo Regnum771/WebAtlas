@@ -137,3 +137,19 @@ con trỏ; script nào cần bấm phía sau hộp thoại phải đóng nó tr�
 
 Các kiểm tra đã cũ trước K2 (vẫn FAIL như trên mã trước K2, cần sửa script riêng):
 `verify:dictionary` bước 2–5. (`verify:shell` đã được `verify:map-shell` thay trong K3.)
+
+# Ảnh chụp bốn lớp cho trang chủ (K5)
+
+Phần mở đầu của trang chủ xếp chồng bốn ảnh WebP cùng phạm vi (vùng chạy HEC-RAS Thu Bồn – Vu Gia 10/2025),
+đã commit trong `src/pages/trang-chu/assets/`: địa hình (bóng đổ từ FABDEM trong PostGIS và đường đồng mức
+100 m), nền bản đồ (đúng chồng lớp mà bản đồ vẽ), mạng sông (ba bậc theo loại), độ sâu ngập lớn nhất (thang tím).
+Chạy lại bằng tay khi dữ liệu đổi, trong image tools, ghi vào cây làm việc cần cập nhật:
+
+```bash
+docker compose -p webatlas -f infra/docker-compose.yml --profile tools run --rm -T --no-deps \
+  --user $(id -u):$(id -g) tools \
+  python3 packages/atlas-data/tools/hub/snapshots.py --out apps/web/src/pages/trang-chu/assets
+```
+
+`--flood-layer` chọn lớp độ sâu khác (mặc định `geonode:ts_7cba03198bc64faf_peak`). Kiểm thử phần thuần:
+`python3 packages/atlas-data/tools/hub/test_snapshots.py`. Chưa có lớp lưu vực nên lớp thứ ba chỉ là mạng sông.
