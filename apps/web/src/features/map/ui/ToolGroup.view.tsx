@@ -100,7 +100,7 @@ export function ToolGroupView({ tools, open, onToggle, onClose, before }: ToolGr
       </div>
       {/* The menu column: left of the stacks (8 px + 32 px + 8 px from the edge), above the status bar.
           --dock-inset: the width of the dock's drawer while it is open over the map (below 1100 px). */}
-      <div className="pointer-events-none absolute top-2 right-[calc(var(--dock-inset,0px)+48px)] bottom-10 z-20 flex w-[min(320px,calc(100%-64px))] flex-col items-stretch">
+      <div className="pointer-events-none absolute top-2 right-[calc(var(--dock-inset,0px)+48px)] bottom-[calc(40px+var(--time-row-height,0px))] z-20 flex w-[min(320px,calc(100%-64px))] flex-col items-stretch">
         {tools.filter((t) => t.content !== undefined).map((tool) => (
           // Not a primitive scope: the menu bodies are legacy and keep the browser defaults, so
           // the panel sets border-solid itself.

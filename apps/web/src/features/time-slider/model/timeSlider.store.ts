@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { stepAtOrBefore, unionSteps } from './timeSteps';
 
+/** Steps per tick (one tick a second): the time row's step size, as the flood scenario's hours per tick. */
 export type TimeSpeed = 1 | 2 | 4;
 
 export interface TimeSliderState {
@@ -74,13 +75,13 @@ export function stepBy(n: number): void {
 function tick() {
   const last = state.steps.length - 1;
   if (last < 0) { pause(); return; }
-  const i = Math.min(currentIndex() + 1, last);
+  const i = Math.min(currentIndex() + state.speed, last);
   const atEnd = i >= last;
   if (atEnd) stopTimer();
   publish({ ...state, time: state.steps[i], playing: atEnd ? false : state.playing });
 }
 
-function startTimer() { stopTimer(); timer = setInterval(tick, 1000 / state.speed); }
+function startTimer() { stopTimer(); timer = setInterval(tick, 1000); }
 
 export function play(): void {
   if (state.steps.length === 0) return;
@@ -92,7 +93,4 @@ export function play(): void {
 
 export function pause(): void { stopTimer(); publish({ ...state, playing: false }); }
 
-export function setSpeed(speed: TimeSpeed): void {
-  publish({ ...state, speed });
-  if (state.playing) startTimer();
-}
+export function setSpeed(speed: TimeSpeed): void { publish({ ...state, speed }); }

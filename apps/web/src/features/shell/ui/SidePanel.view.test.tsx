@@ -17,7 +17,7 @@ describe('SidePanelView placement', () => {
     const panel = screen.getByRole('complementary', { name: 'Bảng bản đồ' });
     // No data-slot: the legacy content inside keeps its browser defaults.
     expect(panel).not.toHaveAttribute('data-slot');
-    for (const c of ['absolute', 'top-2', 'left-[calc(var(--contents-rail)+16px)]', 'bottom-10', 'w-[var(--panel-width)]', 'border', 'border-solid', 'rounded-lg']) {
+    for (const c of ['absolute', 'top-2', 'left-[calc(var(--contents-rail)+16px)]', 'bottom-[calc(40px+var(--time-row-height,0px))]', 'w-[var(--panel-width)]', 'border', 'border-solid', 'rounded-lg']) {
       expect(panel).toHaveClass(c);
     }
   });

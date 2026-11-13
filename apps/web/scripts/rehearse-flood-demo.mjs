@@ -2,14 +2,14 @@
  * Rehearses the flood scenario demo in a real browser and screenshots each step, so the layout
  * and the assistant's answers can be checked by eye before the demo:
  *
- *   1. open Kịch bản lũ, pick the KTTV replay, play a few seconds;
+ *   1. open Kịch bản lũ, pick the KTTV replay (the dock opens), play a few seconds in the time row;
  *   2. sign in, ask which roads are flooded by 06:00 30/10;
  *   3. ask for the evacuation plan;
  *   4. switch to the 1.300 mm preset and ask again.
  *
  * Prints each assistant answer and a PASS / FAIL line per step; exits non-zero on any FAIL.
  *
- * Run: VERIFY_EMAIL=... VERIFY_PASSWORD=... node scripts/rehearse-flood-demo.mjs --out <dir> [--width 1440]
+ * Run: VERIFY_EMAIL=... VERIFY_PASSWORD=... [BASE_URL=...] [API_URL=...] node scripts/rehearse-flood-demo.mjs --out <dir> [--width 1440]
  * Needs: the Docker stack, the scenario build (docs/runbooks/flood-scenario-demo.md), the API
  * with ANTHROPIC_API_KEY, and `npm run dev:web`.
  */
@@ -20,6 +20,7 @@ import puppeteer from 'puppeteer-core';
 
 const CHROME = process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const BASE_URL = (process.env.BASE_URL ?? 'http://localhost:5173').replace(/\/$/, '');
+const API_URL = (process.env.API_URL ?? 'http://localhost:3001').replace(/\/$/, '');
 const EMAIL = process.env.VERIFY_EMAIL;
 const PASSWORD = process.env.VERIFY_PASSWORD;
 const arg = (name, fallback) => {
@@ -73,6 +74,40 @@ const rectOf = (page, selector) => page.$eval(selector, (el) => {
   return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
 }).catch(() => null);
 
+// K4: the scenario's clock is the time row above the status bar; its figures, picker and the
+// evacuation plan button are in the dock (a column from 1100 px, a drawer below).
+const ROW = '[data-slot="time-row"]';
+const ROW_THUMB = `${ROW} [role="slider"]`;
+const HEADER = '[data-slot="run-header"]';
+const DOCK = 'aside[aria-label="Dự báo và phân tích"]';
+
+/** The scenario named in the dock's picker has loaded: the time row is back and nothing is loading. */
+const scenarioReady = (page, nameIncludes) => page.waitForFunction((row, header, name) => {
+  const picker = document.querySelector(`${header} [role="combobox"]`);
+  return document.querySelector(row) && picker?.textContent.includes(name)
+    && !document.querySelector(header)?.textContent.includes('Đang tải');
+}, { timeout: 60000 }, ROW, HEADER, nameIncludes);
+
+/** Picks a scenario in the dock's run header by part of its name. */
+async function pickScenario(page, nameIncludes) {
+  await page.click(`${HEADER} [role="combobox"]`);
+  await page.waitForSelector('[role="option"]', { timeout: 5000 });
+  for (const option of await page.$$('[role="option"]')) {
+    if ((await option.evaluate((o) => o.textContent)).includes(nameIncludes)) { await option.click(); break; }
+  }
+  await scenarioReady(page, nameIncludes);
+}
+
+/** Moves the time row to hour `index` from the keyboard, `pauseMs` between steps (0: as fast as keys go). */
+async function setHourByKeys(page, index, pauseMs = 0) {
+  await page.focus(ROW_THUMB);
+  await page.keyboard.press('Home');
+  for (let i = 0; i < index; i++) {
+    await page.keyboard.press('ArrowRight');
+    if (pauseMs) await sleep(pauseMs);
+  }
+}
+
 async function ask(page, question) {
   const before = await page.$$eval('.assistant-turn-bot', (els) => els.length);
   await page.click('[aria-label="Câu hỏi cho trợ lý"]', { clickCount: 3 });
@@ -101,33 +136,36 @@ async function main() {
     await page.waitForSelector('.flood-menu-item', { visible: true, timeout: 15000 });
     const scaleBefore = await page.$eval('[data-slot="scale-slider"] output', (el) => el.textContent);
     await page.$$eval('.flood-menu-item', (items) => items.find((b) => b.textContent.includes('tái hiện'))?.click());
-    await page.waitForFunction(() => document.querySelector('.flood-dock [aria-label="Phát"]:not([disabled])'), { timeout: 60000 });
-    const time = await page.$eval('.flood-dock-time', (el) => el.textContent);
+    await scenarioReady(page, 'tái hiện');
+    const time = await page.$eval(`${ROW} output`, (el) => el.textContent);
     await sleep(1200);
     const scaleAfter = await page.$eval('[data-slot="scale-slider"] output', (el) => el.textContent);
     report(scaleAfter !== scaleBefore, 'choosing a scenario flies the map to its area', `${scaleBefore} → ${scaleAfter}`);
-    report(time.startsWith('05:00 26/10/2025'), 'dock opens at the decision moment, before the rise', time);
-    await clickButton(page, '.tool-group', 'Kịch bản lũ');
-    await clickButton(page, '.flood-dock', 'Phát');
+    report(time.startsWith('05:00 26/10/2025'), 'the time row opens at the decision moment, before the rise', time);
+    report(await page.$(DOCK) !== null, 'choosing a scenario opens the dock');
+    report(await page.$eval('section[aria-label="Kịch bản lũ"]', (el) => el.hidden), 'the Kịch bản lũ menu closes once the dock has the scenario');
+    await clickButton(page, ROW, 'Phát');
     await sleep(4000);
-    await clickButton(page, '.flood-dock', 'Tạm dừng');
-    const after = await page.$eval('.flood-dock-time', (el) => el.textContent);
+    await clickButton(page, ROW, 'Tạm dừng');
+    const after = await page.$eval(`${ROW} output`, (el) => el.textContent);
     report(after !== time, 'playback advances the hour', after);
-    const dock = await rectOf(page, '.flood-dock');
+    // R8: neither the dock nor the time row covers the status bar.
+    const dock = await rectOf(page, DOCK);
+    const row = await rectOf(page, ROW);
     const scale = await rectOf(page, '[data-slot="scale-slider"]');
-    report(!overlaps(dock, scale), 'dock clear of the scale control');
+    report(!overlaps(dock, scale) && !overlaps(row, scale), 'dock and time row clear of the scale control');
     // .map-cursor-elevation shows only while the pointer hovers the map.
     for (const sel of ['.map-scaleline', '.map-mouseposition', '.map-crs-select']) {
       const r = await rectOf(page, sel);
-      report(r !== null && !overlaps(dock, r), `dock clear of ${sel}`, r ? '' : 'not on the page');
+      report(r !== null && !overlaps(dock, r) && !overlaps(row, r), `dock and time row clear of ${sel}`, r ? '' : 'not on the page');
     }
     await shot('1-replay');
 
     // Step 1c: at the peak hour, pointing at the flood shows its depth by the cursor.
-    await page.$eval('.flood-dock-slider input', (input) => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '87');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    await setHourByKeys(page, 87);
+    // Below 1100 px the dock is a drawer over half the map: close it to look, as a reader would.
+    const drawer = await page.$('aside[data-variant="drawer"]');
+    if (drawer) await clickButton(page, 'aside[data-variant="drawer"]', 'Đóng khung phân tích');
     await sleep(800);
     const box = await page.$eval('.map-stage', (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
     let tip = null;
@@ -140,29 +178,22 @@ async function main() {
     }
     report(tip !== null && /^Ngập (≥ )?[\d,]+ m · /.test(tip), 'pointing at the flood shows its depth', tip ?? 'no label');
     await shot('1c-depth-hover');
+    if (drawer) await clickButton(page, '[data-slot="rail"]', 'Dự báo và phân tích');
 
-    // Step 1a: drag the slider across every hour, then switch scenario: must not trip a rate limit.
-    await page.$eval('.flood-dock-slider input', async (input) => {
-      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-      for (let h = 0; h <= Number(input.max); h++) {
-        set.call(input, String(h));
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        await new Promise((r) => setTimeout(r, 5));
-      }
-    });
-    await page.select('.flood-dock-select', 'preset-1300');
-    const switched = await page.waitForFunction(() => document.querySelector('.flood-dock [aria-label="Phát"]:not([disabled])'), { timeout: 60000 }).then(() => true).catch(() => false);
-    const apiOk = await page.evaluate(async () => (await fetch('http://localhost:3001/api/scenarios')).status);
-    report(switched && apiOk === 200, 'slider drag then scenario switch still loads, API not rate-limited', `GET /api/scenarios → ${apiOk}`);
-    await page.select('.flood-dock-select', 'kttv-2025-10');
-    await page.waitForFunction(() => document.querySelector('.flood-dock [aria-label="Phát"]:not([disabled])'), { timeout: 60000 });
+    // Step 1a: sweep the time row across every hour, then switch scenario: must not trip a rate limit.
+    const lastHour = await page.$eval(ROW_THUMB, (el) => Number(el.getAttribute('aria-valuemax')));
+    await setHourByKeys(page, lastHour, 5);
+    const switched = await pickScenario(page, '1.300').then(() => true).catch(() => false);
+    const apiOk = await page.evaluate(async (api) => (await fetch(`${api}/api/scenarios`)).status, API_URL);
+    report(switched && apiOk === 200, 'time row sweep then scenario switch still loads, API not rate-limited', `GET /api/scenarios → ${apiOk}`);
+    await pickScenario(page, 'tái hiện');
 
-    // Step 1b: the plan from the dock button, the fallback if the assistant cannot answer.
-    await clickButton(page, '.flood-dock', 'Phương án sơ tán');
+    // Step 1b: the plan from the dock's button, the fallback if the assistant cannot answer.
+    await clickButton(page, HEADER, 'Phương án sơ tán');
     const planFromDock = await page.waitForFunction(() => document.querySelector('.flood-legend')?.textContent.includes('Điểm tập kết'), { timeout: 30000 }).then(() => true).catch(() => false);
     report(planFromDock, 'plan drawn from the dock button');
     await shot('1b-plan-from-dock');
-    await clickButton(page, '.flood-dock', 'Phương án sơ tán');
+    await clickButton(page, HEADER, 'Phương án sơ tán');
 
     // Step 2: sign in and ask about roads.
     if (!EMAIL || !PASSWORD) {
@@ -193,9 +224,12 @@ async function main() {
     report(/sơ tán|tập kết/i.test(a2), 'plan answer gives an evacuation plan');
     await shot('3-plan');
 
-    // Step 4: switch to 1.300 mm and ask again.
-    await page.select('.flood-dock-select', 'preset-1300');
-    await page.waitForFunction(() => document.querySelector('.flood-dock [aria-label="Phát"]:not([disabled])'), { timeout: 60000 });
+    // Step 4: switch to 1.300 mm (the dock's forecast view, from the rail) and ask again in Trợ lý,
+    // whose conversation the dock keeps while it shows the other view.
+    await clickButton(page, '[data-slot="rail"]', 'Dự báo và phân tích');
+    await pickScenario(page, '1.300');
+    await clickButton(page, '[data-slot="rail"]', 'Trợ lý');
+    report(await page.$$eval('.assistant-turn-bot', (els) => els.length) >= 2, 'Trợ lý kept its conversation across the dock switch');
     const q3 = 'Nếu mưa 1.300 mm thì phương án sơ tán thay đổi thế nào?';
     const a3 = await ask(page, q3);
     answers.push({ q: q3, a: a3 });

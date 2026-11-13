@@ -42,7 +42,7 @@ describe('cascade layers', () => {
 
   it('puts every legacy stylesheet in the legacy layer, below which the compat sheet has its own layer', () => {
     const legacy = ['ol/ol.css', '../index.css', './main.css', '../features/catalogue/ui/catalogue.css',
-      '../features/flood-scenario/ui/flood.css', '../features/time-slider/ui/time-slider.css'];
+      '../features/flood-scenario/ui/flood.css'];
     const list = imports(app).slice(6);
     expect(list.map((s) => s.replace(/\s+/g, ' '))).toEqual(legacy.map((p) => `@import "${p}" layer(legacy);`));
   });

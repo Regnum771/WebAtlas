@@ -431,23 +431,35 @@ async function frame(session, bbox) {
   await waitRender(session.page);
 }
 
-/** The slider's state, or null while it is not shown. */
-const sliderState = (page) => page.evaluate(() => {
-  const range = document.querySelector('.time-slider-range');
-  if (!range) return null;
-  return { max: Number(range.max), value: Number(range.value), text: document.querySelector('.time-slider-time')?.textContent.trim() ?? '' };
-});
+/** The time row's slider (K4), its thumb carrying the ARIA values. */
+const TIME_THUMB = '[data-slot="time-row"] [role="slider"]';
 
-/** Moves the slider to step `index` the way a drag does (one input event). */
+/** The time row's state, or null while it is not shown. */
+const sliderState = (page) => page.evaluate((thumbSel) => {
+  const thumb = document.querySelector(thumbSel);
+  if (!thumb) return null;
+  return {
+    max: Number(thumb.getAttribute('aria-valuemax')), value: Number(thumb.getAttribute('aria-valuenow')),
+    text: document.querySelector('[data-slot="time-row"] output')?.textContent.trim() ?? '',
+  };
+}, TIME_THUMB);
+
+/** Moves the time row to step `index` from the keyboard: Home, then one ArrowRight per step. */
 async function setSliderIndex(page, index) {
-  await page.evaluate((i) => {
-    const range = document.querySelector('.time-slider-range');
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-    setter.call(range, String(i));
-    range.dispatchEvent(new Event('input', { bubbles: true }));
-    range.dispatchEvent(new Event('change', { bubbles: true }));
-  }, index);
+  await page.focus(TIME_THUMB);
+  await page.keyboard.press('Home');
+  for (let i = 0; i < index; i++) await page.keyboard.press('ArrowRight');
   await sleep(300);
+}
+
+/** Picks the time row's step size ("4 bước/giây") in its Select. */
+async function pickStepSize(page, label) {
+  await page.click('[data-slot="time-row"] [aria-label="Bước mỗi giây"]');
+  await page.waitForSelector('[role="option"]', { timeout: 5000 });
+  for (const option of await page.$$('[role="option"]')) {
+    if ((await option.evaluate((o) => o.textContent.trim())) === label) { await option.click(); break; }
+  }
+  await sleep(200);
 }
 
 /** What the screen shows inside the map, one screenshot, as RGBA rows of the map's box. */
@@ -650,7 +662,7 @@ async function stepAddDepth(session, ctx) {
   const problems = [];
   await addFromResults(page, DEPTH.title);
   ctx.depthRow = await tagRow(page, DEPTH.title);
-  await page.waitForSelector('.time-slider-range', { timeout: 10000 });
+  await page.waitForSelector(TIME_THUMB, { timeout: 10000 });
   const s = await sliderState(page);
   if (s.max + 1 !== DEPTH_STEPS) problems.push(`the slider has ${s.max + 1} steps, expected ${DEPTH_STEPS}`);
   if (s.text !== '25/10/2025 00:00') problems.push(`the slider starts at "${s.text}", expected 25/10/2025 00:00`);
@@ -747,13 +759,13 @@ async function stepRainAndPlay(session, ctx) {
   const firstRain = proxy.filter((r) => r.id === ctx.rain.id && r.params.REQUEST === 'GetMap').pop();
   const rainAt = (t) => [...steps].filter((x) => Date.parse(x) <= Date.parse(t)).sort().pop();
   if (!firstRain || firstRain.params.TIME !== rainAt(AT)) problems.push(`the rain layer asked TIME=${firstRain?.params.TIME}, expected ${rainAt(AT)}`);
-  // Play at 4× for 6 s: 24 steps of the union, past the next day's rain step (19 hourly steps
-  // from 12:00 Vietnam time to the 07:00 rain day boundary, 00:00 UTC).
-  await click(page, '.time-slider-speeds', '4×');
+  // Play at 4 steps a second for 6 s: 24 steps of the union, past the next day's rain step (19
+  // hourly steps from 12:00 Vietnam time to the 07:00 rain day boundary, 00:00 UTC).
+  await pickStepSize(page, '4 bước/giây');
   const from = proxy.length;
-  await click(page, '.time-slider', 'Phát');
+  await click(page, '[data-slot="time-row"]', 'Phát');
   await sleep(6000);
-  await click(page, '.time-slider', 'Tạm dừng');
+  await click(page, '[data-slot="time-row"]', 'Tạm dừng');
   const sent = proxy.slice(from).filter((r) => r.params.REQUEST === 'GetMap');
   const depthTimes = new Set(sent.filter((r) => r.id === ctx.depth.id).map((r) => r.params.TIME));
   const rainTimes = new Set(sent.filter((r) => r.id === ctx.rain.id).map((r) => r.params.TIME));

@@ -41,8 +41,8 @@ sample data carries a MẪU tag. Numbers in `font-num`. Vietnamese copy, existin
 ## Decisions This Plan Makes Beyond the Spec
 
 1. **The dock is the page's third grid column at 1100 px and wider**, where Trợ lý's column is today, so it
-   never covers the map's status bar: the status bar ends at the dock's edge. Below 1100 px it is a Vaul drawer
-   from the right over the map, stopping 32 px above the bottom (R8).
+   never covers the map's status bar: the status bar ends at the dock's edge. Below 1100 px it is a drawer
+   from the right over the map, stopping above the status bar and the time row (R8). See decision 12.
 2. **Trợ lý is a view of the dock** (spec assumption 5). The dock shows either the forecast/analysis tabs or
    Trợ lý. The header button, `/` and the rail's Trợ lý button switch to it. `toggleAssistant` keeps its name.
 3. **The rail is always there.** The contents panel's title row gains a collapse button. Opening the dock
@@ -75,6 +75,14 @@ sample data carries a MẪU tag. Numbers in `font-num`. Vietnamese copy, existin
 11. **Xuất CSV exports the active tab:** Tổng quan and Mực nước export the forecast-point table and every
     station's hourly series. Phân tích exports the existing result CSV. Mưa exports the rain series when there
     is one, and is disabled otherwise.
+
+12. **(Found while building) No Vaul.** Vaul 1.1.2 accepts `modal={false}` but never passes it to the Radix
+    dialog it wraps, so its drawer trapped focus and hid the map from assistive technology: the time row's
+    keys did nothing while it was open. The narrow dock is a plain non-modal `aside` inside the map stage,
+    sliding in by CSS (not under reduced motion), closed by its × or Escape inside it. Vaul is uninstalled;
+    swipe-to-close is not offered.
+13. **(Found while building) Trợ lý keeps its conversation.** Both dock views stay mounted while the dock is
+    open; the one not shown is hidden, so switching to the forecast view and back keeps the chat.
 
 ## Tasks
 

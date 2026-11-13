@@ -80,7 +80,13 @@
   --panel-clear: calc(var(--contents-rail) + 16px);
 }
 
-/* Below 1100px the dock is a drawer over the map's right edge; the tool stacks move left of it. */
+/* Below 1100px the dock is a drawer over the map's right edge (Dock.view.tsx); the tool stacks
+   move left of it. It slides in from the right. */
+@keyframes dock-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
 .map-stage-map[data-dock="drawer"] {
   --dock-inset: min(var(--dock-width), calc(100% - 58px));
 }
@@ -100,7 +106,8 @@
    readout. */
 .toast-host {
   position: absolute;
-  bottom: var(--toast-band-bottom);
+  /* Above the time row too while it shows (TimeRow.view.tsx). */
+  bottom: calc(var(--toast-band-bottom) + var(--time-row-height, 0px));
   /* Spans the stage right of the contents panel less a margin, so the toast list inside is sized
      from the map, not the window. */
   left: var(--panel-clear);

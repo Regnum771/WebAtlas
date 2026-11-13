@@ -229,10 +229,43 @@ describe('MapScreen dock and rail', () => {
     wide = false;
     const { container } = renderScreen();
     act(() => { openDock(); });
-    const drawer = screen.getByRole('dialog', { name: 'Dự báo và phân tích' });
+    const drawer = screen.getByRole('complementary', { name: 'Dự báo và phân tích' });
+    expect(drawer).toHaveAttribute('data-variant', 'drawer');
     expect(container.querySelector('.map-stage-map')).toContainElement(drawer);
     expect(container.querySelector('.map-stage-map')).toHaveAttribute('data-dock', 'drawer');
     expect(container.querySelector('.app-shell')).not.toHaveClass('with-dock');
+  });
+
+  it('the drawer stays open while the reader works the map beside it', async () => {
+    wide = false;
+    const user = userEvent.setup();
+    renderScreen();
+    act(() => { openDock(); });
+    await user.click(screen.getByRole('button', { name: 'Mục lục' }));
+    expect(screen.getByRole('complementary', { name: 'Dự báo và phân tích' })).toBeInTheDocument();
+    // Escape outside the drawer leaves it; Escape inside closes it.
+    await user.keyboard('{Escape}');
+    expect(getShell().dock).toBe('forecast');
+    // (On the × button the first Escape closes its tooltip; from the content it closes the drawer.)
+    screen.getByRole('tab', { name: 'Tổng quan' }).focus();
+    await user.keyboard('{Escape}');
+    expect(getShell().dock).toBeNull();
+  });
+});
+
+describe('MapScreen dock views', () => {
+  it('keeps Trợ lý mounted, hidden, while the dock shows the forecast view', () => {
+    signIn('viewer');
+    renderScreen();
+    act(() => { toggleAssistant(); });
+    const chat = screen.getByText('ASSISTANT');
+    act(() => { openDock(); });
+    expect(screen.getByRole('complementary', { name: 'Dự báo và phân tích' })).toBeInTheDocument();
+    expect(chat).toBeInTheDocument();
+    expect(chat).not.toBeVisible();
+    act(() => { toggleAssistant(); });
+    expect(screen.getByText('ASSISTANT')).toBe(chat);
+    expect(chat).toBeVisible();
   });
 });
 

@@ -31,6 +31,8 @@
   /* The analysis dock (Dock.view.tsx) and the rail left of the contents panel (Rail.view.tsx). */
   --dock-width: 500px;
   --contents-rail: 34px;
+  /* The time row above the status bar (TimeRow.view.tsx). */
+  --time-row-size: 44px;
 }
 
 /* Supported viewport: 768px wide and up. See scripts/verify-shell.mjs. */

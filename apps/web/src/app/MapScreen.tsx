@@ -13,7 +13,7 @@ import AddData from '../features/add-data';
 import FeatureEditing from '../features/feature-editing';
 import MyMaps, { PersonalTable } from '../features/my-maps';
 import CatalogueLayersSection from '../features/catalogue';
-import TimeSlider from '../features/time-slider';
+import TimeRow from '../features/time-row';
 import { useTimeSlider } from '../features/time-slider/model/timeSlider.store';
 import LayersPanel from '../features/layers-panel';
 import Legend from '../features/legend';
@@ -46,7 +46,6 @@ export default function MapScreen() {
   const { dock, contentsCollapsed, tool } = useShell();
   // From 1100 px the dock is a page column; below, a drawer over the map (Dock.view.tsx).
   const dockAsColumn = useMediaQuery(DOCK_COLUMN_QUERY);
-  const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
   const roi = useRoi();
   const analysis = useAnalysisTools();
   const flood = useFloodScenario();
@@ -112,12 +111,14 @@ export default function MapScreen() {
     dockNode = (
       <DockView
         variant={dockAsColumn ? 'column' : 'drawer'}
-        container={stageEl}
         title={assistantShown ? 'Trợ lý' : 'Dự báo và phân tích'}
         closeLabel={assistantShown ? 'Đóng trợ lý' : 'Đóng khung phân tích'}
         onClose={closeDock}
       >
-        {assistantShown ? <Assistant /> : <ForecastDock analysis={analysis.result} />}
+        {/* Both views stay mounted while the dock is open, so switching between them keeps
+            Trợ lý's conversation; the one not shown is hidden. */}
+        {signedIn && <div hidden={!assistantShown} className="h-full"><Assistant /></div>}
+        <div hidden={assistantShown}><ForecastDock analysis={analysis.result} /></div>
       </DockView>
     );
   }
@@ -173,7 +174,6 @@ export default function MapScreen() {
           {/* The map and everything floating on it; a personal layer's table docks under it
               and the map shrinks to the space left (MapView follows its box's size). */}
           <div
-            ref={setStageEl}
             className="map-stage-map"
             data-contents={contentsCollapsed ? 'collapsed' : 'open'}
             data-dock={dockShown && !dockAsColumn ? 'drawer' : undefined}
@@ -204,11 +204,12 @@ export default function MapScreen() {
               onClose={closeTool}
             />
             <FloodScenario />
-            <TimeSlider />
+            {/* R8: the time row sits directly above the status bar while a time layer is on. */}
+            <TimeRow />
             <ToastHost />
             {/* R8: the bottom edge of the map, never covered. */}
             <StatusBar />
-            {/* Below 1100 px the dock is a drawer inside the stage (mounted here through a portal). */}
+            {/* Below 1100 px the dock is a drawer over the map's right edge, inside the stage. */}
             {!dockAsColumn && dockNode}
           </div>
           <PersonalTable />

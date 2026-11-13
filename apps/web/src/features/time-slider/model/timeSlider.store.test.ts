@@ -40,7 +40,7 @@ describe('timeSlider.store', () => {
     expect(getTimeSlider().time).toBe(S[0]);
   });
 
-  it('play advances one step per 1000 / speed ms and stops at the last step', () => {
+  it('play advances one step a second at step size 1 and stops at the last step', () => {
     setSteps(S);
     play();
     expect(getTimeSlider().playing).toBe(true);
@@ -53,12 +53,17 @@ describe('timeSlider.store', () => {
     expect(getTimeSlider().time).toBe(S[2]);
   });
 
-  it('speed changes the interval, pause stops it', () => {
+  it('the step size is how many steps each tick advances; pause stops it', () => {
     setSteps(S);
-    setSpeed(4);
+    setSpeed(2);
     play();
-    vi.advanceTimersByTime(250);
-    expect(getTimeSlider().time).toBe(S[1]);
+    vi.advanceTimersByTime(1000);
+    expect(getTimeSlider().time).toBe(S[2]);
+    expect(getTimeSlider().playing).toBe(false);
+    setTime(S[0]);
+    setSpeed(1);
+    play();
+    vi.advanceTimersByTime(1000);
     pause();
     vi.advanceTimersByTime(2000);
     expect(getTimeSlider().time).toBe(S[1]);
