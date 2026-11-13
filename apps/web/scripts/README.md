@@ -90,6 +90,24 @@ dòng `FAIL` nào. **`SKIPPED` không phải là đạt**: chỉ coi là kiểm 
 
 `verify-shell.mjs` (khung trước K3) đã bỏ cùng các kiểm tra cũ của nó.
 
+# Script kiểm chứng các trang K5
+
+`verify-pages.mjs` kiểm trên trình duyệt các trang K5 ở 768×900, 1100×900 và 1440×900, mỗi kiểm tra một dòng
+`PASS`, `FAIL` hoặc `SKIPPED`:
+
+1. Trang chủ: phần mở đầu, chồng bốn lớp (bốn ảnh đã nạp, bốn nhãn nằm trong cửa sổ), các bảng dịch vụ, mục
+   "Mới cập nhật"; không cuộn ngang.
+2. Trang chủ khi người đọc chọn giảm chuyển động: không phần tử nào chạy hoạt ảnh.
+3. Hồ sơ khi chưa đăng nhập: khung trang hiện, không cuộn ngang.
+4. Đã đăng nhập (`VERIFY_EMAIL`, `VERIFY_PASSWORD` của một quản trị viên; nếu không in `SKIPPED`): hồ sơ và từng
+   mục Quản lý hiện tiêu đề, trang và mục không cuộn ngang (bảng tự cuộn trong khung của nó).
+
+```bash
+VERIFY_EMAIL=... VERIFY_PASSWORD=... npm run verify:pages -w @webatlas/web -- --out <thư-mục>
+```
+
+Cần máy chủ dev, API và Docker stack như các script khác. Thoát mã khác 0 khi có dòng `FAIL`.
+
 # Ảnh chụp kiểu dáng phần cũ
 
 `verify-legacy-styles.mjs` chứng minh các màn hình cũ không đổi giao diện khi chuyển sang

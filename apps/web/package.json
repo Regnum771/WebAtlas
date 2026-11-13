@@ -12,6 +12,7 @@
     "test": "vitest run",
     "verify:legacy-styles": "node scripts/verify-legacy-styles.mjs",
     "verify:map-shell": "node scripts/verify-map-shell.mjs",
+    "verify:pages": "node scripts/verify-pages.mjs",
     "verify:permissions": "node scripts/verify-permissions.mjs",
     "verify:personal-maps": "node scripts/verify-personal-maps.mjs",
     "verify:dictionary": "node scripts/verify-dictionary.mjs",
