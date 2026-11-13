@@ -15,7 +15,7 @@ vi.mock('../../entities/session/model/session.store', () => ({
 }));
 vi.mock('../../entities/session/model/useUnitTree', () => ({ useUnitTree: () => null }));
 vi.mock('../../features/auth', () => ({ default: () => <button type="button">Đăng nhập</button> }));
-vi.mock('../../features/search', () => ({ default: () => <div>SEARCH_WIDGET</div> }));
+vi.mock('../../features/command-palette', () => ({ default: () => <div>SEARCH_WIDGET</div> }));
 vi.mock('../../entities/platform/model/platformServices.store', () => ({
   usePlatformServices: () => ({
     services: [

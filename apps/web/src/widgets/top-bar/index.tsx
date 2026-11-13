@@ -1,7 +1,7 @@
 import { useShell, toggleAssistant } from '../../features/shell/model/shell.store';
 import { useSession } from '../../entities/session/model/session.store';
 import AuthWidget from '../../features/auth';
-import Search from '../../features/search';
+import CommandPalette from '../../features/command-palette';
 import { TopBarView } from './ui/TopBar.view';
 import { AccountMenuView } from './ui/AccountMenu.view';
 import { useCan } from '../../entities/session/model/useCan';
@@ -18,7 +18,7 @@ export default function TopBar() {
   return (
     <TopBarView
       nav={resolveNav(navFor(user, can), services)}
-      search={<Search />}
+      search={<CommandPalette />}
       assistant={user ? { open: assistantOpen, onToggle: toggleAssistant } : null}
       account={user ? <AccountMenuView name={user.full_name} email={user.email} role={user.role} canManageUsers={canSeeUsers(user, can)} onLogout={logout} /> : <AuthWidget />}
     />
