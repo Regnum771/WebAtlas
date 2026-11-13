@@ -11,17 +11,22 @@ export default function ProfileRoute() {
   const { status, currentUser, method } = useSession();
   const tree = useUnitTree();
   const { services } = usePlatformServices();
-  if (status === 'authenticating') return <div className="quan-ly-route"><Spinner label="Đang tải…" /></div>;
+  // .quan-ly-route places the page over the map; the page draws its own ground and spacing.
+  const page = 'quan-ly-route bg-surface-2 p-0';
+  if (status === 'authenticating') return <div className={page}><div className="px-6 py-8"><Spinner label="Đang tải…" /></div></div>;
   if (status !== 'authenticated' || !currentUser) {
     return (
-      <div className="quan-ly-route">
-        <div className="quan-ly-section"><h2>Hồ sơ</h2><p>Đăng nhập để xem hồ sơ.</p></div>
+      <div className={page}>
+        <div data-slot="profile" className="mx-auto flex max-w-[960px] flex-col gap-2 px-6 py-8 text-body">
+          <h1 className="text-page font-semibold">Hồ sơ</h1>
+          <p className="text-ink-2">Đăng nhập để xem hồ sơ.</p>
+        </div>
       </div>
     );
   }
   const keycloak = findService(services, 'keycloak');
   return (
-    <div className="quan-ly-route">
+    <div className={page}>
       <ProfileView
         name={currentUser.full_name}
         email={currentUser.email}

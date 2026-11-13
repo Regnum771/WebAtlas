@@ -988,9 +988,4 @@ body {
 .dictionary-value-color { max-width: 10rem; }
 .dictionary-unit-preview { margin: 0; padding-left: var(--space-4); }
 
-/* Hồ sơ (/ho-so) */
-.profile-facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); margin: 0; }
-.profile-facts dt { color: var(--ink-2); }
-.profile-facts dd { margin: 0; }
-.profile-scope h3 { margin: 0 0 var(--space-2); font-size: var(--text-lg); }
 
