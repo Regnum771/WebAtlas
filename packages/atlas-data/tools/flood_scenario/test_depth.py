@@ -57,7 +57,8 @@ steps = depth.depth_rgba(np.array([[k * 0.25 for k in range(1, 17)]], "float32")
 check("16 steps, 16 distinct colours", len({tuple(c) for c in steps}) == 16)
 check("steps decode back to depth", all(depth.depth_of_rgba(tuple(c)) == (k + 1) * 0.25 for k, c in enumerate(steps)))
 check("transparent decodes to dry", depth.depth_of_rgba((0, 0, 0, 0)) is None)
-check("band of 1.75 m", tuple(depth.depth_rgba(np.array([[1.75]], "float32"))[0, 0][:3]) == (0x3A + 3, 0x86, 0xC8))
+check("band of 1.75 m", tuple(depth.depth_rgba(np.array([[1.75]], "float32"))[0, 0][:3]) == (0x6B + 3, 0x5B, 0xB8))
+check("bands are the depth-1..5 violets", [c for _, c in depth.BANDS] == [(0xC9, 0xC3, 0xEA), (0x9A, 0x8F, 0xD6), (0x6B, 0x5B, 0xB8), (0x3F, 0x2E, 0x8C), (0x26, 0x1A, 0x5C)])
 
 coast_dist = np.array([[0.0, 1.0, 2.0, 3.0, 4.0, 6.0]], "float32")  # km from the sea
 prof = depth.profile_surface({"down": 2.0, "up": 10.0}, {"down": 1.0, "up": 4.0}, coast_dist, sea_level=0.5)

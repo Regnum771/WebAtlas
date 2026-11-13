@@ -7,12 +7,15 @@ connects to a river channel is kept, so closed hollows far from the river stay d
 import numpy as np
 from scipy import ndimage
 
-# Depth bands (upper bound in metres, RGB): five clearly different blues, so depth reads at a glance.
-# Within a band every 0.25 m step adds its index in the band to red: invisible to the eye, but it
-# lets the web app read the exact step back from a frame pixel (apps/web .../depthColour.ts mirrors
-# this table; keep them in step).
-BANDS = [(0.5, (0xBF, 0xE3, 0xF5)), (1.0, (0x74, 0xB9, 0xE6)), (2.0, (0x3A, 0x86, 0xC8)),
-         (3.0, (0x1C, 0x56, 0xA0)), (float("inf"), (0x0B, 0x2A, 0x6B))]
+# Depth bands (upper bound in metres, RGB): five violets (theme tokens depth-1..5), so depth reads at
+# a glance and never as basemap water. Within a band every 0.25 m step adds its index in the band to
+# red: invisible to the eye, but it lets the web app read the exact step back from a frame pixel
+# (apps/web .../depthColour.ts mirrors this table; keep them in step).
+BANDS = [(0.5, (0xC9, 0xC3, 0xEA)), (1.0, (0x9A, 0x8F, 0xD6)), (2.0, (0x6B, 0x5B, 0xB8)),
+         (3.0, (0x3F, 0x2E, 0x8C)), (float("inf"), (0x26, 0x1A, 0x5C))]
+# The five blues frames were drawn with until 2026-11-13; recolor_frames.py maps them to BANDS.
+BLUE_BANDS = [(0.5, (0xBF, 0xE3, 0xF5)), (1.0, (0x74, 0xB9, 0xE6)), (2.0, (0x3A, 0x86, 0xC8)),
+              (3.0, (0x1C, 0x56, 0xA0)), (float("inf"), (0x0B, 0x2A, 0x6B))]
 STEP_M = 0.25
 MAX_STEP = 16  # 4 m; deeper water takes the 4 m colour
 ALPHA = 200
@@ -20,18 +23,23 @@ ALPHA = 200
 FIRST_STEP = [1, 2, 4, 8, 12]
 
 
-def _band_of_step(k):
-    return next(i for i, (upper, _) in enumerate(BANDS) if k * STEP_M < upper)
+def _band_of_step(k, bands=BANDS):
+    return next(i for i, (upper, _) in enumerate(bands) if k * STEP_M < upper)
 
 
-def _step_colour(k):
-    b = _band_of_step(k)
-    r, g, bl = BANDS[b][1]
+def _step_colour(k, bands=BANDS):
+    b = _band_of_step(k, bands)
+    r, g, bl = bands[b][1]
     return (r + k - FIRST_STEP[b], g, bl, ALPHA)
 
 
+def lut(bands=BANDS):
+    """Row k is the colour of step k under `bands`; row 0 is dry (transparent)."""
+    return np.array([(0, 0, 0, 0)] + [_step_colour(k, bands) for k in range(1, MAX_STEP + 1)], dtype=np.uint8)
+
+
 # Row k is the colour of step k; row 0 is dry (transparent).
-_LUT = np.array([(0, 0, 0, 0)] + [_step_colour(k) for k in range(1, MAX_STEP + 1)], dtype=np.uint8)
+_LUT = lut()
 
 
 def profile_surface(levels, station_dist_km, coast_dist_km, sea_level=0.8):
@@ -73,7 +81,7 @@ def above_baseline(depth, baseline):
 
 
 def depth_rgba(depth, max_m=None):
-    """H x W x 4 uint8 image: banded blues by depth in 0.25 m steps, transparent where dry."""
+    """H x W x 4 uint8 image: banded violets by depth in 0.25 m steps, transparent where dry."""
     k = np.where(depth > 0, np.clip(np.round(depth / STEP_M), 1, MAX_STEP), 0).astype(np.intp)
     return _LUT[k]
 

@@ -65,8 +65,8 @@ sample data carries a MẪU tag. Numbers in `font-num`. Vietnamese copy, existin
    style use five bands (< 0,5 · 0,5–1 · 1–2 · 2–3 · ≥ 3 m). Tokens `depth-1..4` keep their values for the
    first four bands. A new `depth-5` `#261A5C` takes ≥ 3 m. The pixel encoding (band colour + step offset in
    red) is unchanged, so the hover still reads depth exactly. Existing frames are recoloured in place by the
-   generalised `recolor_frames.py`, with no rebuild. The catalogue's `webatlas_depth` style is updated in the file and
-   re-applied to GeoNode's GeoServer.
+   generalised `recolor_frames.py`, with no rebuild. The catalogue's `webatlas_depth` style is updated in the file; it
+   is re-applied to GeoNode's GeoServer when K4 merges (see Task 2).
 10. **Charts:** shadcn's `chart` component on Recharts 3. Water level: the gauge level line (`series-2`,
     observed), bulletin forecast points (`series-1`, open circles), BĐ1–BĐ3 as dashed `alarm-1..3` lines with
     text labels, the record line, the issue-time line, the current-time line, a crosshair tooltip. Profile:
@@ -95,7 +95,9 @@ Files: `packages/theme/tokens.json` (+ generated), `packages/atlas-data/tools/fl
 - [ ] `depth-5` token; theme regenerated; contrast test untouched (no text on depth).
 - [ ] Python and TS band tables in violet, in step; the decode test checks colours the Python build prints.
 - [ ] `recolor_frames.py` takes the source bands (`--from blue-bands`) and maps every step colour to the new one.
-- [ ] Run it on the server's frame cache; re-apply `webatlas_depth` with `ensure_styles()`.
+- [ ] Run it on this worktree's copy of the frame cache only. The main checkout's frames and GeoNode's
+  `webatlas_depth` style also serve the LAN demo, which runs `main` (blue decode); they change when K4 merges:
+  `recolor_frames.py` on `main`'s cache, then `ensure_styles()`.
 - [ ] Commit: `feat: độ sâu ngập màu tím — năm dải, khung ảnh và kiểu lớp chuỗi thời gian`
 
 ### Task 3: Charts with a table view
