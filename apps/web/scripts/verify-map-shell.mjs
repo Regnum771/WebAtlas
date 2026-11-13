@@ -3,8 +3,8 @@
  * 768x900, 1100x900 and 1440x900. Each check prints one PASS, FAIL or SKIPPED line:
  *
  *   1. The header is 44 px tall and does not overflow; the page does not scroll sideways.
- *   2. The contents panel is 312 px wide, 8 px from the stage's top and left, and ends at least
- *      8 px above the status bar.
+ *   2. The rail is 34 px wide at the stage's top-left; the contents panel is 312 px wide, 8 px right
+ *      of the rail and from the stage's top, and ends at least 8 px above the status bar.
  *   3. The status bar (R8) lies along the stage's bottom edge, 32 px tall, unclipped, and is what
  *      the pointer hits at its two ends and at the slider's thumb: with every menu closed, with
  *      each tool menu open in turn (3a), and with a toast showing (3b).
@@ -13,6 +13,10 @@
  *   5. Ctrl K opens the command palette and Escape closes it.
  *   6. Signed in (VERIFY_EMAIL, VERIFY_PASSWORD; else SKIPPED): the header still does not overflow
  *      with a long account name, and with Trợ lý open the status bar is still uncovered.
+ *   7. K4, with the first flood scenario open: the dock opens on Tổng quan (a column from 1100 px,
+ *      a drawer below) with KPI values and units; neither the dock nor the time row covers the status
+ *      bar, the time row sits directly on it, a drawer ends above the time row; the level chart's
+ *      Bảng view lists the hours; Phát advances the time; × on the time row closes the scenario.
  *
  * A screenshot per width goes to --out. Exits 1 on any FAIL.
  *
@@ -113,10 +117,14 @@ async function runViewport(browser, viewport) {
   // 2. The contents panel.
   const panel = await page.evaluate(() => {
     const p = window.__ms.rect('.side-panel'), s = window.__ms.rect('.map-stage-map'), b = window.__ms.rect('[data-slot="status-bar"]');
-    return p && s && b ? { w: Math.round(p.w), left: Math.round(p.x - s.x), top: Math.round(p.y - s.y), aboveBar: Math.round(b.y - p.b) } : null;
+    const rail = window.__ms.rect('[data-slot="rail"]');
+    return p && s && b && rail ? {
+      railW: Math.round(rail.w), railLeft: Math.round(rail.x - s.x),
+      w: Math.round(p.w), left: Math.round(p.x - s.x), top: Math.round(p.y - s.y), aboveBar: Math.round(b.y - p.b),
+    } : null;
   });
-  const panelOk = panel && panel.w === 312 && panel.left === 8 && panel.top === 8 && panel.aboveBar >= 8;
-  line(panelOk ? 'PASS' : 'FAIL', vp, '2', 'panel 312 px, 8 px in, clear of the status bar', JSON.stringify(panel));
+  const panelOk = panel && panel.railW === 34 && panel.railLeft === 8 && panel.w === 312 && panel.left === 50 && panel.top === 8 && panel.aboveBar >= 8;
+  line(panelOk ? 'PASS' : 'FAIL', vp, '2', 'rail 34 px; panel 312 px, 8 px right of the rail, clear of the status bar', JSON.stringify(panel));
 
   // 3. The status bar with everything closed.
   let problems = await page.evaluate(() => window.__ms.barProblems());
@@ -162,6 +170,57 @@ async function runViewport(browser, viewport) {
   await sleep(300);
   const closed = !(await page.$('[role="dialog"]'));
   line(opened && closed ? 'PASS' : 'FAIL', vp, '5', 'Ctrl K opens the palette, Escape closes it', `opened ${opened}, closed ${closed}`);
+
+  // 7. K4: the dock and the time row, with the first flood scenario open.
+  await (await page.$('[data-slot="tool-stack"] button[aria-label="Kịch bản lũ"]')).click();
+  await page.waitForSelector('.flood-menu-item', { visible: true, timeout: 15000 });
+  await page.click('.flood-menu-item');
+  const ready = await page.waitForSelector('[data-slot="time-row"]', { timeout: 120000 }).then(() => true, () => false);
+  await sleep(1500);
+  await page.evaluate(PAGE_HELPERS);
+  const dock = await page.evaluate((wide) => {
+    const ms = window.__ms;
+    const aside = document.querySelector('aside[aria-label="Dự báo và phân tích"]');
+    const tab = document.querySelector('[aria-label="Nội dung khung"] [aria-selected="true"]')?.textContent;
+    const kpis = [...document.querySelectorAll('[data-slot="kpi-row"] [data-slot="number-value"] .sr-only')].map((e) => e.textContent);
+    const bar = ms.rect('[data-slot="status-bar"]'), row = ms.rect('[data-slot="time-row"]'), d = ms.rect(aside);
+    const out = [];
+    if (!aside) out.push('no dock');
+    else if (aside.dataset.variant !== (wide ? 'column' : 'drawer')) out.push(`variant ${aside.dataset.variant}`);
+    if (tab !== 'Tổng quan') out.push(`tab ${tab}`);
+    // Each KPI reads "<value> <unit>".
+    if (kpis.length < 4 || !kpis.every((k) => /\s\S+$/.test(k))) out.push(`KPIs ${JSON.stringify(kpis)}`);
+    if (ms.overlap(d, bar)) out.push('the dock covers the status bar');
+    if (ms.overlap(row, bar)) out.push('the time row covers the status bar');
+    if (row && bar && Math.abs(row.b - bar.y) > 0.5) out.push(`time row bottom ${row.b}, bar top ${bar.y}`);
+    if (!wide && d && row && d.b > row.y + 0.5) out.push(`drawer bottom ${d.b} below the time row's top ${row.y}`);
+    return { out, bar: ms.barProblems() };
+  }, vp >= 1100);
+  line(ready && !dock.out.length ? 'PASS' : 'FAIL', vp, '7a', 'dock on Tổng quan with KPIs; dock and time row clear of the status bar', ready ? dock.out.join('; ') : 'the scenario did not load');
+  line(dock.bar.length ? 'FAIL' : 'PASS', vp, '7b', 'status bar uncovered with the dock and the time row', dock.bar.join('; '));
+  await page.screenshot({ path: join(OUT, `verify-map-shell-${vp}-dock.png`) });
+  const levelFig = await page.$('figure[aria-label^="Mực nước tại"]');
+  let tableRows = 0;
+  if (levelFig) {
+    for (const tab of await levelFig.$$('[role="tab"]')) {
+      if ((await tab.evaluate((t) => t.textContent)) === 'Bảng') await tab.click();
+    }
+    await sleep(300);
+    tableRows = await levelFig.$$eval('table tbody tr', (rs) => rs.length);
+  }
+  line(tableRows > 24 ? 'PASS' : 'FAIL', vp, '7c', "the level chart's Bảng view lists the hours", `${tableRows} rows`);
+  const before = await page.$eval('[data-slot="time-row"] output', (o) => o.textContent);
+  await page.click('[data-slot="time-row"] button[aria-label="Phát"]');
+  await sleep(2500);
+  await page.click('[data-slot="time-row"] button[aria-label="Tạm dừng"]');
+  const after = await page.$eval('[data-slot="time-row"] output', (o) => o.textContent);
+  line(after !== before ? 'PASS' : 'FAIL', vp, '7d', 'Phát advances the time row', `${before} → ${after}`);
+  await page.click('[data-slot="time-row"] button[aria-label="Đóng kịch bản lũ"]');
+  await sleep(500);
+  const gone = !(await page.$('[data-slot="time-row"]'));
+  line(gone ? 'PASS' : 'FAIL', vp, '7e', '× on the time row closes the scenario');
+  await page.evaluate(() => document.querySelector('button[aria-label="Đóng khung phân tích"]')?.click());
+  await sleep(300);
 
   // 6. Signed in.
   if (!EMAIL || !PASSWORD) {
