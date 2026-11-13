@@ -32,7 +32,7 @@ describe('emitters', () => {
 
   it('tailwind theme uses Tailwind namespaces', () => {
     const css = emitTailwindTheme(tokens);
-    expect(css.split('\n')[1]).toBe('@theme {');
+    expect(css.split('\n')[1]).toBe('@theme static {');
     expect(css).toContain('--color-brand: #14532D;');
     expect(css).toContain('--radius-md: 4px;');
     expect(css).toContain('--font-ui: "Archivo", "Segoe UI", system-ui, sans-serif;');

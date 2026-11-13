@@ -18,11 +18,11 @@
             <Opacity>1.0</Opacity>
             <ColorMap type="intervals">
               <ColorMapEntry color="#000000" quantity="0" opacity="0"/>
-              <ColorMapEntry color="#bfe3f5" quantity="0.5" label="&lt; 0,5 m"/>
-              <ColorMapEntry color="#74b9e6" quantity="1" label="0,5–1 m"/>
-              <ColorMapEntry color="#3a86c8" quantity="2" label="1–2 m"/>
-              <ColorMapEntry color="#1c56a0" quantity="3" label="2–3 m"/>
-              <ColorMapEntry color="#0b2a6b" quantity="100000" label="≥ 3 m"/>
+              <ColorMapEntry color="#c9c3ea" quantity="0.5" label="&lt; 0,5 m"/>
+              <ColorMapEntry color="#9a8fd6" quantity="1" label="0,5–1 m"/>
+              <ColorMapEntry color="#6b5bb8" quantity="2" label="1–2 m"/>
+              <ColorMapEntry color="#3f2e8c" quantity="3" label="2–3 m"/>
+              <ColorMapEntry color="#261a5c" quantity="100000" label="≥ 3 m"/>
             </ColorMap>
           </RasterSymbolizer>
         </Rule>

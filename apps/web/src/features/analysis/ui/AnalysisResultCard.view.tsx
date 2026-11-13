@@ -13,38 +13,47 @@ export interface AnalysisResultCardViewProps {
   elevation: DictAttribute;
   roiLabel?: string | null;
   onRow: (row: AnalysisRow) => void;
-  onExport: () => void;
   onClear: () => void;
   renderRowAction?: (row: AnalysisRow) => ReactNode;
 }
 
-export function AnalysisResultCardView({ result, elevation, roiLabel, onRow, onExport, onClear, renderRowAction }: AnalysisResultCardViewProps) {
+/**
+ * A spatial-analysis result in the dock's Phân tích tab: the tool and region, the summary figures,
+ * the profile chart, the features found (each zooms the map), and the source. Xuất CSV is in the
+ * dock's tab row.
+ */
+export function AnalysisResultCardView({ result, elevation, roiLabel, onRow, onClear, renderRowAction }: AnalysisResultCardViewProps) {
   return (
-    <section className="analysis-card" aria-label="Kết quả phân tích">
-      <h3 className="analysis-card-title">{ANALYSIS_TOOL_LABELS[result.op]}</h3>
-      {roiLabel && <p className="analysis-note">Kết quả cho: {roiLabel}</p>}
-      <table className="analysis-summary">
+    <section data-slot="analysis-result" aria-label="Kết quả phân tích" className="flex flex-col gap-3 text-body text-ink">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="m-0 text-panel font-semibold">{ANALYSIS_TOOL_LABELS[result.op]}</h3>
+          {roiLabel && <p className="m-0 text-label text-ink-2">Kết quả cho: {roiLabel}</p>}
+        </div>
+        <Button size="sm" variant="quiet" onClick={onClear}>Xoá kết quả</Button>
+      </div>
+      <table className="w-full border-collapse">
         <tbody>
           {Object.entries(result.summary).map(([k, v]) => {
             // The API labels elevation figures "… (m)" and sends metres; show them in the display unit.
             const isElevation = typeof v === 'number' && k.endsWith(ELEVATION_SUFFIX);
             return (
-              <tr key={k}>
-                <th scope="row">{isElevation ? k.slice(0, -ELEVATION_SUFFIX.length) : k}</th>
-                <td>{isElevation ? formatValue(elevation, v) : String(v)}</td>
+              <tr key={k} className="h-control-sm border-0 border-b border-solid border-line-3">
+                <th scope="row" className="pr-2 text-left font-normal text-ink-2">{isElevation ? k.slice(0, -ELEVATION_SUFFIX.length) : k}</th>
+                <td className="text-right font-num text-num">{isElevation ? formatValue(elevation, v) : String(v)}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
-      {result.profile && <ProfileChartView profile={result.profile} elevation={elevation} />}
+      {result.profile && <ProfileChartView profile={result.profile} elevation={elevation} source={result.attribution} />}
       {result.rows && result.rows.length > 0 && (
-        <ul className="analysis-rows">
+        <ul className="m-0 flex max-h-[220px] list-none flex-col overflow-y-auto rounded-md border border-solid border-line p-0">
           {result.rows.map((row, i) => (
-            <li key={row.featureId ?? i}>
-              <button type="button" className="analysis-row" onClick={() => onRow(row)}>
+            <li key={row.featureId ?? i} className="flex min-h-control-sm items-center justify-between gap-2 border-0 border-b border-solid border-line-3 px-2 last:border-b-0">
+              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-left text-body text-water hover:underline" onClick={() => onRow(row)}>
                 {row.name ?? '(không tên)'}
-                {row.distanceKm !== undefined && <span className="analysis-row-meta"> · {row.distanceKm} km</span>}
+                {row.distanceKm !== undefined && <span className="text-ink-2"> · <span className="font-num">{row.distanceKm}</span> km</span>}
               </button>
               {renderRowAction?.(row)}
             </li>
@@ -53,12 +62,8 @@ export function AnalysisResultCardView({ result, elevation, roiLabel, onRow, onE
       )}
       {/* A tool that lists features and found none says so; a tool with no list (rows absent) says nothing. */}
       {result.rows && result.rows.length === 0 && <Message title="Không tìm thấy đối tượng nào trong vùng này." />}
-      {result.truncated && <p className="analysis-note">Chỉ hiển thị một phần kết quả trên bản đồ.</p>}
-      {result.attribution && <p className="analysis-attribution">{result.attribution}</p>}
-      <div className="analysis-actions">
-        <Button size="sm" onClick={onExport}>Xuất CSV</Button>
-        <Button size="sm" variant="quiet" onClick={onClear}>Xoá kết quả</Button>
-      </div>
+      {result.truncated && <p className="m-0 text-label text-ink-2">Chỉ hiển thị một phần kết quả trên bản đồ.</p>}
+      {result.attribution && !result.profile && <p className="m-0 text-label text-ink-2">Nguồn: {result.attribution}</p>}
     </section>
   );
 }

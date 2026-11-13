@@ -1,26 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useMapContext } from '../../app/providers/MapProvider';
 import { DICTIONARY, attributeOf, formatScenarioTime } from '@webatlas/shared';
 import { useDictionary } from '../dictionary';
-import { useImpactsSummary } from './model/useImpactsSummary';
 import { useFitOnScenario } from './model/useFitOnScenario';
 import { attachDepthHover } from './model/depthHover';
 import { frameUrl } from './api/flood.api';
 import { clearFloodLayers, syncFloodLayers } from './model/floodLayers';
-import {
-  closeScenario, hidePlan, loadScenarios, openScenario, pause, play, retry, setHour, setSpeed, showPlan, useFloodScenario,
-} from './model/flood.store';
-import { FloodDockView } from './ui/FloodDock.view';
+import { loadScenarios, openScenario, useFloodScenario } from './model/flood.store';
 import { FloodLegendView } from './ui/FloodLegend.view';
 
-/** The dock and the map layers of the open scenario; renders nothing while none is open. */
+/**
+ * The map side of the open scenario: its layers, the fly-to and the depth hover. Renders nothing;
+ * the scenario's figures are in the dock (features/forecast-dock), its clock in the time row.
+ */
 export default function FloodScenario() {
   const s = useFloodScenario();
   const { map } = useMapContext();
   // A served copy missing the band falls back to the code copy rather than blanking the page.
   const depthAttr = attributeOf(useDictionary(), 'flood_depth', '1') ?? attributeOf(DICTIONARY, 'flood_depth', '1')!;
-  const [stationId, setStationId] = useState('cau-lau');
-  const impacts = useImpactsSummary(s.scenarioId, s.status === 'ready', s.hour);
 
   useEffect(() => { void loadScenarios(); }, []);
 
@@ -55,16 +52,7 @@ export default function FloodScenario() {
 
   useEffect(() => () => { if (map) clearFloodLayers(map); }, [map]);
 
-  if (!s.scenarioId) return null;
-  return (
-    <FloodDockView
-      scenarios={s.scenarios ?? []} scenarioId={s.scenarioId} detail={s.detail} hour={s.hour} playing={s.playing}
-      speed={s.speed} status={s.status} loaded={s.loaded} error={s.error} stationId={stationId}
-      onScenario={(id) => void openScenario(id)} onHour={setHour} onPlay={play} onPause={pause} onSpeed={setSpeed}
-      onStation={setStationId} onRetry={() => void retry()} onClose={closeScenario}
-      impacts={impacts} planShown={s.planShown} onTogglePlan={() => (s.planShown ? hidePlan() : void showPlan(s.scenarioId!))}
-    />
-  );
+  return null;
 }
 
 /** The Kịch bản lũ tool menu: pick a scenario to open the dock. */

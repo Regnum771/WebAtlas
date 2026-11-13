@@ -4,9 +4,9 @@ import { DEPTH_BANDS, depthAt, depthOfRgba, formatDepth, pixelOf } from './depth
 
 // Colours printed by packages/atlas-data/tools/flood_scenario/depth.py's depth_rgba: the two tables must agree.
 const FROM_PYTHON: [number, number[]][] = [
-  [0.25, [191, 227, 245, 200]], [0.5, [116, 185, 230, 200]], [0.75, [117, 185, 230, 200]],
-  [1.0, [58, 134, 200, 200]], [1.75, [61, 134, 200, 200]], [2.0, [28, 86, 160, 200]],
-  [2.75, [31, 86, 160, 200]], [3.0, [11, 42, 107, 200]], [4.0, [15, 42, 107, 200]],
+  [0.25, [201, 195, 234, 200]], [0.5, [154, 143, 214, 200]], [0.75, [155, 143, 214, 200]],
+  [1.0, [107, 91, 184, 200]], [1.75, [110, 91, 184, 200]], [2.0, [63, 46, 140, 200]],
+  [2.75, [66, 46, 140, 200]], [3.0, [38, 26, 92, 200]], [4.0, [42, 26, 92, 200]],
 ];
 
 describe('depthOfRgba', () => {
@@ -31,7 +31,7 @@ describe('pixelOf', () => {
 describe('depthAt', () => {
   it('reads the depth under a coordinate from a frame image', () => {
     const data = new Uint8ClampedArray(2 * 1 * 4);
-    data.set([61, 134, 200, 200], 4); // pixel (1, 0) is 1.75 m
+    data.set([110, 91, 184, 200], 4); // pixel (1, 0) is 1.75 m
     const frame = { width: 2, height: 1, data };
     expect(depthAt(frame, [0, 0, 2, 1], [1.5, 0.5])).toBe(1.75);
     expect(depthAt(frame, [0, 0, 2, 1], [0.5, 0.5])).toBeNull();
@@ -50,6 +50,6 @@ describe('formatDepth and the legend bands', () => {
 
   it('has five bands with labels for the legend', () => {
     expect(DEPTH_BANDS.map((b) => b.label)).toEqual(['< 0,5 m', '0,5–1 m', '1–2 m', '2–3 m', '≥ 3 m']);
-    expect(DEPTH_BANDS.map((b) => b.css)).toEqual(['#bfe3f5', '#74b9e6', '#3a86c8', '#1c56a0', '#0b2a6b']);
+    expect(DEPTH_BANDS.map((b) => b.css)).toEqual(['#c9c3ea', '#9a8fd6', '#6b5bb8', '#3f2e8c', '#261a5c']);
   });
 });

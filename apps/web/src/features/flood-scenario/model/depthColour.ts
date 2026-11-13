@@ -2,7 +2,7 @@ import { formatValue, type DictAttribute } from '@webatlas/shared';
 
 /**
  * Reads flood depth back from a frame pixel. Mirrors BANDS in
- * packages/atlas-data/tools/flood_scenario/depth.py: five blues, and within a band each 0.25 m step
+ * packages/atlas-data/tools/flood_scenario/depth.py: five violets (theme tokens depth-1..5), and within a band each 0.25 m step
  * adds its index in the band to red, so a pixel names its step exactly. Keep the two in step;
  * depthColour.test.ts checks this table against colours the Python build printed.
  */
@@ -12,11 +12,11 @@ const STEP_M = 0.25;
 const MAX_STEP = 16;
 
 export const DEPTH_BANDS: DepthBand[] = [
-  { upper: 0.5, rgb: [0xbf, 0xe3, 0xf5], css: '#bfe3f5', label: '< 0,5 m', firstStep: 1 },
-  { upper: 1, rgb: [0x74, 0xb9, 0xe6], css: '#74b9e6', label: '0,5–1 m', firstStep: 2 },
-  { upper: 2, rgb: [0x3a, 0x86, 0xc8], css: '#3a86c8', label: '1–2 m', firstStep: 4 },
-  { upper: 3, rgb: [0x1c, 0x56, 0xa0], css: '#1c56a0', label: '2–3 m', firstStep: 8 },
-  { upper: Infinity, rgb: [0x0b, 0x2a, 0x6b], css: '#0b2a6b', label: '≥ 3 m', firstStep: 12 },
+  { upper: 0.5, rgb: [0xc9, 0xc3, 0xea], css: '#c9c3ea', label: '< 0,5 m', firstStep: 1 },
+  { upper: 1, rgb: [0x9a, 0x8f, 0xd6], css: '#9a8fd6', label: '0,5–1 m', firstStep: 2 },
+  { upper: 2, rgb: [0x6b, 0x5b, 0xb8], css: '#6b5bb8', label: '1–2 m', firstStep: 4 },
+  { upper: 3, rgb: [0x3f, 0x2e, 0x8c], css: '#3f2e8c', label: '2–3 m', firstStep: 8 },
+  { upper: Infinity, rgb: [0x26, 0x1a, 0x5c], css: '#261a5c', label: '≥ 3 m', firstStep: 12 },
 ];
 
 const bandOfStep = (k: number) => DEPTH_BANDS.findIndex((b) => k * STEP_M < b.upper);

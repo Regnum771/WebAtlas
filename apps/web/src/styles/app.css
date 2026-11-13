@@ -12,7 +12,6 @@
 @import "./main.css" layer(legacy);
 @import "../features/catalogue/ui/catalogue.css" layer(legacy);
 @import "../features/flood-scenario/ui/flood.css" layer(legacy);
-@import "../features/time-slider/ui/time-slider.css" layer(legacy);
 
 @source "../shared/ui";
 @source not "../shared/ui/**/*.test.*";
@@ -53,6 +52,13 @@
 @source not "../pages/ho-so/**/*.test.*";
 @source "../pages/trang-chu";
 @source not "../pages/trang-chu/**/*.test.*";
+@source "../features/time-row";
+@source not "../features/time-row/**/*.test.*";
+@source "../features/forecast-dock";
+@source not "../features/forecast-dock/**/*.test.*";
+@source "../features/flood-scenario/ui/LevelChart.view.tsx";
+@source "../features/analysis/ui/ProfileChart.view.tsx";
+@source "../features/analysis/ui/AnalysisResultCard.view.tsx";
 @source "../components/DynamicPopup.tsx";
 @source "../components/AttrTable.tsx";
 

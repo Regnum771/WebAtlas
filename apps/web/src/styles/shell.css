@@ -27,8 +27,8 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-.app-shell.with-assistant {
-  grid-template-columns: minmax(0, 1fr) var(--assistant-width);
+.app-shell.with-dock {
+  grid-template-columns: minmax(0, 1fr) var(--dock-width);
 }
 
 .side-panel-rule {
@@ -53,9 +53,6 @@
   /* The toast band's bottom edge: 12px above the status bar (32px, StatusBar.view.tsx), the
      only thing along the stage's bottom edge. 32px + 12px = 44px. */
   --toast-band-bottom: 44px;
-  /* The contents panel floats 8px from the stage's left edge and is --panel-width wide
-     (SidePanel.view.tsx); floats that start at the left keep 8px clear of it. */
-  --panel-clear: calc(var(--panel-width) + 16px);
   /* A two-line toast: two lines of 13px text at 1.35 (35.1px), 18px padding and
      a 2px border on each side = 57.1px, rounded up. */
   --toast-band-height: 58px;
@@ -73,6 +70,25 @@
   position: relative;
   flex: 1;
   min-height: 0;
+  /* The rail sits 8px from the stage's left edge, the contents panel 8px right of it and
+     --panel-width wide (Rail.view.tsx, SidePanel.view.tsx); floats that start at the left keep 8px
+     clear of whichever is showing. */
+  --panel-clear: calc(var(--contents-rail) + var(--panel-width) + 24px);
+}
+
+.map-stage-map[data-contents="collapsed"] {
+  --panel-clear: calc(var(--contents-rail) + 16px);
+}
+
+/* Below 1100px the dock is a drawer over the map's right edge (Dock.view.tsx); the tool stacks
+   move left of it. It slides in from the right. */
+@keyframes dock-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.map-stage-map[data-dock="drawer"] {
+  --dock-inset: min(var(--dock-width), calc(100% - 58px));
 }
 
 .connection-strip {
@@ -90,7 +106,8 @@
    readout. */
 .toast-host {
   position: absolute;
-  bottom: var(--toast-band-bottom);
+  /* Above the time row too while it shows (TimeRow.view.tsx). */
+  bottom: calc(var(--toast-band-bottom) + var(--time-row-height, 0px));
   /* Spans the stage right of the contents panel less a margin, so the toast list inside is sized
      from the map, not the window. */
   left: var(--panel-clear);
@@ -107,32 +124,6 @@
   pointer-events: auto;
 }
 
-.assistant-dock {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-  background: var(--sheet);
-  color: var(--ink);
-  border-left: 1px solid var(--ink);
-}
-
-.assistant-dock-close {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: var(--sheet);
-  color: var(--ink);
-  border: 1px solid var(--ink);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
 
 /* A tool's menu (ToolGroup.view.tsx draws its box): the legacy body inside is a column of sections. */
 .tool-menu {
@@ -263,30 +254,12 @@
   font: inherit;
 }
 
-@media (max-width: 1099px) {
-  /* Too narrow for three columns: the assistant floats over the map's right edge. */
-  .app-shell.with-assistant {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .assistant-dock {
-    position: absolute;
-    top: var(--topbar-height);
-    right: 0;
-    /* R8: it stops above the status bar (32px, StatusBar.view.tsx) along the map's bottom edge. */
-    bottom: 32px;
-    width: min(var(--assistant-width), calc(100vw - var(--panel-width) - 16px));
-    /* Above routed pages (90), so Trợ lý also works on /print and /quan-ly. */
-    z-index: 95;
-  }
-}
-
-@media (min-width: 1100px) {
-  /* While the assistant is docked, a routed page stops at the dock's left edge, so
-     Trợ lý works on every screen. Routed pages are later siblings of .app-shell. */
-  .app-shell.with-assistant ~ .print-route,
-  .app-shell.with-assistant ~ .quan-ly-route {
-    right: var(--assistant-width);
-  }
+/* While the dock is a column, a routed page stops at its left edge, so Trợ lý works on every
+   screen. Routed pages are later siblings of .app-shell. Below 1100px the dock is a drawer above
+   them (Dock.view.tsx, z-index 95 over the routed pages' 90). */
+.app-shell.with-dock ~ .print-route,
+.app-shell.with-dock ~ .quan-ly-route {
+  right: var(--dock-width);
 }
 
 /* Thêm dữ liệu tabs and the catalogue picker / catalogue layers section */
