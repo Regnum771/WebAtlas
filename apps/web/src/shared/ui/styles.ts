@@ -30,4 +30,15 @@ export const ui = {
   check: 'flex cursor-pointer items-start gap-2 [&>input]:mt-0.5 [&>input]:accent-brand',
   formActions: 'flex justify-end gap-2 pt-1',
   fieldError: 'text-label text-alert-ink',
+  /** A labelled control that is not a TextField: label above, control, then hint or error. */
+  field: 'flex flex-col gap-1',
+  label: 'font-semibold',
+  /** Native controls drawn as TextField draws its input (ink-2 border for 3:1, 4 px corners). */
+  input: 'h-control w-full rounded-md border border-solid border-ink-2 bg-surface px-2 text-body aria-invalid:border-alert',
+  select: 'h-control w-full cursor-pointer rounded-md border border-solid border-ink-2 bg-surface px-2 text-body aria-invalid:border-alert',
+  textarea: 'w-full rounded-md border border-solid border-ink-2 bg-surface px-2 py-1.5 text-body aria-invalid:border-alert',
+  /** A small explanatory line under a control. */
+  note: 'text-label text-ink-2',
+  /** A row of buttons under a form. */
+  acts: 'flex flex-wrap items-center gap-2',
 } as const;

@@ -45,6 +45,10 @@
 @source "../pages/quan-ly";
 @source not "../pages/quan-ly/**/*.test.*";
 @source "../features/my-maps/ui/UsageTable.view.tsx";
+@source "../features/dictionary/ui/DictionaryEditor.view.tsx";
+@source "../features/dictionary/ui/DictionaryHistory.view.tsx";
+@source "../features/dictionary/ui/StoredUnitDialog.view.tsx";
+@source "../features/dictionary/ui/ValueListEditor.view.tsx";
 @source "../pages/ho-so";
 @source not "../pages/ho-so/**/*.test.*";
 @source "../pages/trang-chu";

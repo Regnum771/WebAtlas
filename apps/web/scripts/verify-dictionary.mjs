@@ -771,7 +771,7 @@ async function stepRestore(session, vp, ctx) {
   const edited = `${original}${EDIT_SUFFIX}`;
   await openEditor(page, edited);
   const clicked = await page.evaluate(() => {
-    const field = document.querySelector('#dict-attr-label')?.closest('.dictionary-field');
+    const field = document.querySelector('#dict-attr-label')?.closest('[data-slot="dictionary-field"]');
     const button = field && [...field.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Khôi phục mặc định');
     button?.click();
     return Boolean(button);
@@ -779,7 +779,7 @@ async function stepRestore(session, vp, ctx) {
   if (!clicked) throw new Error('the label field offers no "Khôi phục mặc định"');
   await waitServedLabel(original);
   ctx.edited = false;
-  const rows = () => page.$$eval('.dictionary-history-table tbody tr', (trs) => trs.map((tr) => [...tr.cells].map((c) => c.textContent.replace(/\s+/g, ' ').trim())));
+  const rows = () => page.$$eval('[data-slot="dictionary-history"] tbody tr', (trs) => trs.map((tr) => [...tr.cells].map((c) => c.textContent.replace(/\s+/g, ' ').trim())));
   const start = Date.now();
   let list = [];
   while (Date.now() - start < 15000) {
