@@ -121,6 +121,21 @@ export function catalogueRepository(pg: Pool) {
       return { items: rows.map((r) => toItem(r, user)), total, page: input.page, pageSize: PAGE_SIZE };
     },
 
+    /**
+     * The `limit` visible resources changed last (the hub's "Mới cập nhật"), newest first: the same
+     * visibility as search, ordered by updated_at rather than created_at.
+     */
+    async recent(user: CurrentUser | undefined, limit: number): Promise<CatalogueItem[]> {
+      const { rows } = await pg.query<ResourceRow>(
+        `SELECT ${COLS} FROM catalogue.resources
+          WHERE ${visibleSql(1)}
+          ORDER BY updated_at DESC, id
+          LIMIT $2`,
+        [user?.oidcSubject ?? null, limit]
+      );
+      return rows.map((r) => toItem(r, user));
+    },
+
     /** One visible resource; one that is missing or not visible to the caller is the same 404. */
     async get(user: CurrentUser | undefined, id: string): Promise<CatalogueItem> {
       const item = (await visibleItems(pg, user, [id])).get(id);

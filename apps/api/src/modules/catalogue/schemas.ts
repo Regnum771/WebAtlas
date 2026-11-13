@@ -10,6 +10,11 @@ export const SearchQuery = z.object({
 
 export const IdParams = z.object({ id: z.string().uuid() });
 
+/** GET /api/catalogue/recent: how many entries, 6 by default, at most 20. */
+export const RecentQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(20).default(6),
+});
+
 /** The clocks a HEC-RAS `Time Date Stamp` may be read in (it carries no zone of its own). */
 export const HDF_TIME_ZONES = ['Asia/Ho_Chi_Minh', 'UTC'] as const;
 
