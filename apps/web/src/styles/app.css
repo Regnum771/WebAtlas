@@ -53,6 +53,10 @@
 @source not "../pages/ho-so/**/*.test.*";
 @source "../pages/trang-chu";
 @source not "../pages/trang-chu/**/*.test.*";
+@source "../features/forecast-dock";
+@source not "../features/forecast-dock/**/*.test.*";
+@source "../features/flood-scenario/ui/LevelChart.view.tsx";
+@source "../features/analysis/ui/ProfileChart.view.tsx";
 @source "../components/DynamicPopup.tsx";
 @source "../components/AttrTable.tsx";
 

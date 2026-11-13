@@ -104,22 +104,7 @@
   font-size: var(--text-xs);
 }
 
-.flood-chart {
-  display: block;
-  width: 100%;
-  height: 120px;
-}
 
-.flood-chart-axis { font-size: 10px; fill: var(--ink-2); }
-.flood-chart-label { font-size: 10px; fill: var(--ink-2); }
-.flood-chart-grid { stroke: var(--rule); stroke-width: 1; }
-.flood-chart-alarm { stroke: var(--alert); stroke-width: 1; stroke-dasharray: 5 4; opacity: 0.6; }
-.flood-chart-record { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 1 3; }
-.flood-chart-bulletin { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
-.flood-chart-level { fill: none; stroke: #2171b5; stroke-width: 2; }
-.flood-chart-forecast { fill: var(--sheet); stroke: var(--ink); stroke-width: 1.5; }
-.flood-chart-cursor { stroke: var(--ink); stroke-width: 1.5; }
-.flood-chart-now { fill: var(--mark); stroke: var(--ink); stroke-width: 1.5; }
 
 .flood-dock-controls {
   display: flex;
@@ -244,7 +229,6 @@
   .flood-dock-controls { flex-wrap: wrap; }
   .flood-dock-slider { flex-basis: 100%; order: 3; }
   .flood-dock-time { min-width: 0; }
-  .flood-chart { height: 90px; }
 }
 
 .flood-legend {

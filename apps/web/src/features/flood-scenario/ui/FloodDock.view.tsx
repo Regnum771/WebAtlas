@@ -85,7 +85,8 @@ export function FloodDockView(p: FloodDockViewProps) {
               ))}
             </select>
             <LevelChartView station={station} level={series.level} forecast={series.forecast} hour={p.hour}
-              bulletinHour={p.detail!.bulletinHour} startTime={start} />
+              bulletinHour={p.detail!.bulletinHour} startTime={start}
+              source="Trung tâm Dự báo KTTV quốc gia, bản tin lũ 27–31/10/2025" sample />
           </div>
         )}
       </div>

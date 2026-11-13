@@ -573,8 +573,6 @@ body {
 .analysis-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .analysis-layers { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; border: none; padding: 0; margin: 0; }
 .analysis-layers label { justify-content: flex-start; }
-.profile-chart { margin: 0; }
-.profile-chart-axis { display: flex; justify-content: space-between; font-size: var(--text-xs); color: var(--ink-2); }
 
 /* Print / export the map */
 /* A page over the map, below the top bar (spec, Screens); the map and its chrome stay mounted
