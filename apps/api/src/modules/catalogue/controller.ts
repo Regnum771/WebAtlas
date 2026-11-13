@@ -3,7 +3,7 @@ import { AuthError, ConflictError, MALFORMED_UPLOAD, ValidationError } from '../
 import { validate } from '../../lib/validate';
 import type { CurrentUser } from '../../types/fastify';
 import { catalogueRepository } from './repository';
-import { IdParams, SearchQuery, TimeseriesBody } from './schemas';
+import { IdParams, RecentQuery, SearchQuery, TimeseriesBody } from './schemas';
 import { NEEDS_SSO, catalogueUploadsService } from './uploads';
 
 function userOf(req: FastifyRequest): CurrentUser {
@@ -14,6 +14,12 @@ function userOf(req: FastifyRequest): CurrentUser {
 export async function search(req: FastifyRequest, reply: FastifyReply) {
   const query = validate(SearchQuery, req.query);
   reply.send(await catalogueRepository(req.server.pg).search(req.currentUser, query));
+}
+
+/** The hub's "Mới cập nhật": the entries the caller may see, changed last first. */
+export async function recent(req: FastifyRequest, reply: FastifyReply) {
+  const { limit } = validate(RecentQuery, req.query);
+  reply.send({ items: await catalogueRepository(req.server.pg).recent(req.currentUser, limit) });
 }
 
 export async function getItem(req: FastifyRequest, reply: FastifyReply) {

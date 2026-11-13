@@ -3,6 +3,7 @@ import type { AccessGroup } from '../api/accessGroups.api';
 import { Button } from '../../../shared/ui/Button';
 import { Message } from '../../../shared/ui/Message';
 import { Spinner } from '../../../shared/ui/Spinner';
+import { ui } from '../../../shared/ui/styles';
 
 export function GroupListView({ groups, tree, loading, listError, onRetry, onNew, onEdit, onDelete }: {
   groups: AccessGroup[];
@@ -16,9 +17,9 @@ export function GroupListView({ groups, tree, loading, listError, onRetry, onNew
 }) {
   const unitName = (code: string) => tree?.get(code)?.name ?? code;
   return (
-    <div className="user-mgmt">
-      <div className="user-mgmt-header">
-        <h2>Nhóm quyền</h2>
+    <section data-slot="admin-section" aria-labelledby="nhom-quyen" className={ui.section}>
+      <div className={ui.head}>
+        <h2 id="nhom-quyen" className={ui.title}>Nhóm quyền</h2>
         <Button variant="solid" onClick={onNew}>Tạo nhóm</Button>
       </div>
       {listError && (
@@ -27,30 +28,41 @@ export function GroupListView({ groups, tree, loading, listError, onRetry, onNew
       {loading ? (
         <Spinner label="Đang tải" />
       ) : !listError && groups.length === 0 ? (
-        <p>Chưa có nhóm nào.</p>
+        <p className={ui.hint}>Chưa có nhóm nào.</p>
       ) : groups.length > 0 ? (
-        <table className="user-table">
-          <thead>
-            <tr><th>Tên nhóm</th><th>Đơn vị</th><th>Quyền</th><th>Thành viên</th><th>Thao tác</th></tr>
-          </thead>
-          <tbody>
-            {groups.map((g) => (
-              <tr key={g.id}>
-                <td>{g.name}{g.description && <div className="hint">{g.description}</div>}</td>
-                <td>{g.units.map(unitName).join(', ')}</td>
-                <td>{g.permissions.map((p) => PERMISSION_LABELS[p]).join(', ')}</td>
-                <td>{g.memberCount}</td>
-                <td>
-                  <div className="user-actions">
-                    <Button size="sm" onClick={() => onEdit(g)}>Sửa</Button>
-                    <Button size="sm" onClick={() => onDelete(g)}>Xoá</Button>
-                  </div>
-                </td>
+        <div className={ui.tableWrap}>
+          <table className={ui.table}>
+            <thead className={ui.thead}>
+              <tr>
+                <th scope="col" className={ui.th}>Tên nhóm</th>
+                <th scope="col" className={ui.th}>Đơn vị</th>
+                <th scope="col" className={ui.th}>Quyền</th>
+                <th scope="col" className={`${ui.th} text-right`}>Thành viên</th>
+                <th scope="col" className={ui.th}>Thao tác</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {groups.map((g) => (
+                <tr key={g.id} className={ui.tr}>
+                  <td className={ui.td}>
+                    <span className="font-semibold">{g.name}</span>
+                    {g.description && <div className={`${ui.hint} text-label`}>{g.description}</div>}
+                  </td>
+                  <td className={ui.td}>{g.units.map(unitName).join(', ')}</td>
+                  <td className={`${ui.td} text-ink-2`}>{g.permissions.map((p) => PERMISSION_LABELS[p]).join(', ')}</td>
+                  <td className={`${ui.td} text-right font-num text-num`}>{g.memberCount}</td>
+                  <td className={ui.td}>
+                    <div className={ui.actions}>
+                      <Button size="sm" onClick={() => onEdit(g)}>Sửa</Button>
+                      <Button size="sm" onClick={() => onDelete(g)}>Xoá</Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
-    </div>
+    </section>
   );
 }

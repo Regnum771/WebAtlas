@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { createTimeseries, createUpload, getItem, search } from './controller';
+import { createTimeseries, createUpload, getItem, recent, search } from './controller';
 import { copyToMap } from './copy';
 import { wmsProxy } from './proxy';
 
@@ -12,6 +12,7 @@ export default async function catalogueRoutes(app: FastifyInstance) {
   const optional = { preHandler: [app.authenticateOptional] };
   const signedIn = { preHandler: [app.authenticate] };
   app.get('/search', optional, search);
+  app.get('/recent', optional, recent);
   app.post('/uploads', signedIn, createUpload);
   app.post('/timeseries', signedIn, createTimeseries);
   app.get('/:id', optional, getItem);

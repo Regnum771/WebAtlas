@@ -4,6 +4,7 @@ import { Message } from '../../../shared/ui/Message';
 import { TextField } from '../../../shared/ui/TextField';
 import { ROLE_LABELS } from '../../../entities/session/model/roleLabels';
 import type { Role } from '../../../entities/session/model/session.types';
+import { ui } from '../../../shared/ui/styles';
 
 interface Values { email: string; password: string; full_name: string; role: Role; }
 
@@ -21,7 +22,7 @@ export function UserFormModalView({ open, mode, values, fieldErrors, formError, 
 }) {
   return (
     <Dialog open={open} title={mode === 'create' ? 'Thêm người dùng' : 'Sửa người dùng'} onClose={onClose}>
-      <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className="user-form">
+      <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className={ui.form}>
         <TextField
           id="uf-email" label="Email" type="email" value={values.email}
           readOnly={mode === 'edit'} error={fieldErrors.email}
@@ -42,9 +43,10 @@ export function UserFormModalView({ open, mode, values, fieldErrors, formError, 
           onChange={(e) => onField('full_name', e.target.value)}
         />
 
-        <div className="field">
-          <label htmlFor="uf-role">Vai trò</label>
-          <select id="uf-role" className="input" value={values.role} onChange={(e) => onField('role', e.target.value)}>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="uf-role" className="font-semibold">Vai trò</label>
+          <select id="uf-role" value={values.role} onChange={(e) => onField('role', e.target.value)}
+            className="h-control cursor-pointer rounded-md border border-solid border-ink-2 bg-surface px-2 text-body">
             <option value="admin">{ROLE_LABELS.admin}</option>
             <option value="viewer">{ROLE_LABELS.viewer}</option>
           </select>
@@ -52,7 +54,7 @@ export function UserFormModalView({ open, mode, values, fieldErrors, formError, 
 
         {formError && <Message tone="error" title={formError} />}
 
-        <div className="user-form-actions">
+        <div className={ui.formActions}>
           <Button onClick={onClose}>Huỷ</Button>
           <Button type="submit" variant="solid" busy={saving} disabled={!canSave && !saving}>
             {mode === 'create' ? 'Tạo' : 'Lưu'}

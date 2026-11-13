@@ -5,6 +5,7 @@ import { Button } from '../../../shared/ui/Button';
 import { Message } from '../../../shared/ui/Message';
 import { TextField } from '../../../shared/ui/TextField';
 import type { GroupFormValues, TemplateChoice } from '../model/useGroupsPresenter';
+import { ui } from '../../../shared/ui/styles';
 
 export function GroupFormView({ open, mode, values, template, fieldErrors, formError, canSave, saving, picker,
   onTemplate, onField, onTogglePermission, onSubmit, onClose }: {
@@ -30,30 +31,34 @@ export function GroupFormView({ open, mode, values, template, fieldErrors, formE
   ];
   return (
     <Dialog open={open} title={mode === 'create' ? 'Tạo nhóm' : 'Sửa nhóm'} onClose={onClose}>
-      <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className="user-form group-form">
+      <form data-slot="group-form" onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className={ui.form}>
         {mode === 'create' && (
-          <fieldset className="group-form-set">
-            <legend>Từ mẫu</legend>
-            {choices.map((c) => (
-              <label key={c.id}>
-                <input type="radio" name="group-template" checked={template === c.id} onChange={() => onTemplate(c.id)} />
-                {' '}{c.label}
-              </label>
-            ))}
+          <fieldset className={ui.fieldset}>
+            <legend className={ui.legend}>Từ mẫu</legend>
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+              {choices.map((c) => (
+                <label key={c.id} className={ui.check}>
+                  <input type="radio" name="group-template" checked={template === c.id} onChange={() => onTemplate(c.id)} />
+                  <span>{c.label}</span>
+                </label>
+              ))}
+            </div>
           </fieldset>
         )}
 
         {picker}
 
-        <fieldset className="group-form-set">
-          <legend>Quyền</legend>
-          {PERMISSIONS.map((p) => (
-            <label key={p}>
-              <input type="checkbox" checked={values.permissions.includes(p)} onChange={() => onTogglePermission(p)} />
-              {' '}{PERMISSION_LABELS[p]}
-            </label>
-          ))}
-          {fieldErrors.permissions && <p className="hint bad" role="alert">{fieldErrors.permissions}</p>}
+        <fieldset className={ui.fieldset}>
+          <legend className={ui.legend}>Quyền</legend>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-4 gap-y-1.5">
+            {PERMISSIONS.map((p) => (
+              <label key={p} className={ui.check}>
+                <input type="checkbox" checked={values.permissions.includes(p)} onChange={() => onTogglePermission(p)} />
+                <span>{PERMISSION_LABELS[p]}</span>
+              </label>
+            ))}
+          </div>
+          {fieldErrors.permissions && <p className={ui.fieldError} role="alert">{fieldErrors.permissions}</p>}
         </fieldset>
 
         <TextField id="gf-name" label="Tên nhóm" value={values.name} error={fieldErrors.name}
@@ -63,7 +68,7 @@ export function GroupFormView({ open, mode, values, template, fieldErrors, formE
 
         {formError && <Message tone="error" title={formError} />}
 
-        <div className="user-form-actions">
+        <div className={ui.formActions}>
           <Button onClick={onClose}>Huỷ</Button>
           <Button type="submit" variant="solid" busy={saving} disabled={!canSave && !saving}>Lưu</Button>
         </div>

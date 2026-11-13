@@ -32,7 +32,7 @@ describe('useCatalogueHover', () => {
   const fetchMock = vi.fn();
   const item: CatalogueItem = {
     id: 't', kind: 'timeseries', title: 't', abstract: '', managingUnit: null, isPublished: true, mine: false,
-    variable: 'depth', unit: 'm', timeSteps: ['2025-10-26T00:00:00Z'], bbox4326: null, layerName: 'geonode:t',
+    variable: 'depth', unit: 'm', timeSteps: ['2025-10-26T00:00:00Z'], bbox4326: null, layerName: 'geonode:t', updatedAt: '2026-11-12T00:00:00Z',
   };
   beforeEach(() => {
     vi.useFakeTimers();

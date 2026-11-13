@@ -52,17 +52,29 @@ export default function QuanLyRoute() {
   );
 
   return (
-    <div className="quan-ly-route">
-      {visible.length > 0 && (
-        <nav aria-label="Quản lý" className="quan-ly-nav">
-          {visible.map((item) => (
-            <NavLink key={item.to} to={item.to} className="quan-ly-nav-link">{item.label}</NavLink>
-          ))}
-        </nav>
-      )}
-      {failed && retryMessage}
-      {undecided && !failed && (visible.length === 0 || waitingHere) && <Spinner label="Đang tải…" />}
-      {onVisible && <Outlet />}
+    // .quan-ly-route places the page over the map (and stops it at a docked Trợ lý); the page draws
+    // its own ground: the section links beside the content from 1024 px, above it when narrower.
+    <div className="quan-ly-route bg-surface-2 p-0">
+      <div data-slot="quan-ly" className="mx-auto flex max-w-[1240px] flex-col gap-6 px-6 py-8 text-body text-ink lg:flex-row lg:items-start">
+        {visible.length > 0 && (
+          <nav aria-label="Quản lý" className="flex shrink-0 flex-wrap gap-1 lg:w-52 lg:flex-col">
+            {visible.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className="flex h-control items-center rounded-md px-3 text-ink-2 no-underline hover:bg-surface hover:text-ink aria-[current=page]:bg-brand-tint aria-[current=page]:font-semibold aria-[current=page]:text-brand"
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          {failed && retryMessage}
+          {undecided && !failed && (visible.length === 0 || waitingHere) && <Spinner label="Đang tải…" />}
+          {onVisible && <Outlet />}
+        </div>
+      </div>
     </div>
   );
 }

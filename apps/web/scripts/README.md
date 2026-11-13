@@ -90,6 +90,24 @@ dòng `FAIL` nào. **`SKIPPED` không phải là đạt**: chỉ coi là kiểm 
 
 `verify-shell.mjs` (khung trước K3) đã bỏ cùng các kiểm tra cũ của nó.
 
+# Script kiểm chứng các trang K5
+
+`verify-pages.mjs` kiểm trên trình duyệt các trang K5 ở 768×900, 1100×900 và 1440×900, mỗi kiểm tra một dòng
+`PASS`, `FAIL` hoặc `SKIPPED`:
+
+1. Trang chủ: phần mở đầu, chồng bốn lớp (bốn ảnh đã nạp, bốn nhãn nằm trong cửa sổ), các bảng dịch vụ, mục
+   "Mới cập nhật"; không cuộn ngang.
+2. Trang chủ khi người đọc chọn giảm chuyển động: không phần tử nào chạy hoạt ảnh.
+3. Hồ sơ khi chưa đăng nhập: khung trang hiện, không cuộn ngang.
+4. Đã đăng nhập (`VERIFY_EMAIL`, `VERIFY_PASSWORD` của một quản trị viên; nếu không in `SKIPPED`): hồ sơ và từng
+   mục Quản lý hiện tiêu đề, trang và mục không cuộn ngang (bảng tự cuộn trong khung của nó).
+
+```bash
+VERIFY_EMAIL=... VERIFY_PASSWORD=... npm run verify:pages -w @webatlas/web -- --out <thư-mục>
+```
+
+Cần máy chủ dev, API và Docker stack như các script khác. Thoát mã khác 0 khi có dòng `FAIL`.
+
 # Ảnh chụp kiểu dáng phần cũ
 
 `verify-legacy-styles.mjs` chứng minh các màn hình cũ không đổi giao diện khi chuyển sang
@@ -137,3 +155,19 @@ con trỏ; script nào cần bấm phía sau hộp thoại phải đóng nó tr�
 
 Các kiểm tra đã cũ trước K2 (vẫn FAIL như trên mã trước K2, cần sửa script riêng):
 `verify:dictionary` bước 2–5. (`verify:shell` đã được `verify:map-shell` thay trong K3.)
+
+# Ảnh chụp bốn lớp cho trang chủ (K5)
+
+Phần mở đầu của trang chủ xếp chồng bốn ảnh WebP cùng phạm vi (vùng chạy HEC-RAS Thu Bồn – Vu Gia 10/2025),
+đã commit trong `src/pages/trang-chu/assets/`: địa hình (bóng đổ từ FABDEM trong PostGIS và đường đồng mức
+100 m), nền bản đồ (đúng chồng lớp mà bản đồ vẽ), mạng sông (ba bậc theo loại), độ sâu ngập lớn nhất (thang tím).
+Chạy lại bằng tay khi dữ liệu đổi, trong image tools, ghi vào cây làm việc cần cập nhật:
+
+```bash
+docker compose -p webatlas -f infra/docker-compose.yml --profile tools run --rm -T --no-deps \
+  --user $(id -u):$(id -g) tools \
+  python3 packages/atlas-data/tools/hub/snapshots.py --out apps/web/src/pages/trang-chu/assets
+```
+
+`--flood-layer` chọn lớp độ sâu khác (mặc định `geonode:ts_7cba03198bc64faf_peak`). Kiểm thử phần thuần:
+`python3 packages/atlas-data/tools/hub/test_snapshots.py`. Chưa có lớp lưu vực nên lớp thứ ba chỉ là mạng sông.

@@ -16,7 +16,7 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 const layer = (id: string, kind: CatalogueItem['kind'], over: Partial<CatalogueLayer> = {}): CatalogueLayer => ({
   item: {
     id, kind, title: id, abstract: '', managingUnit: null, isPublished: true, mine: false, variable: null, unit: null,
-    timeSteps: kind === 'timeseries' ? ['2026-01-01T00:00:00Z'] : null, bbox4326: null, layerName: `geonode:${id}`,
+    timeSteps: kind === 'timeseries' ? ['2026-01-01T00:00:00Z'] : null, bbox4326: null, layerName: `geonode:${id}`, updatedAt: '2026-11-12T00:00:00Z',
   },
   visible: true, opacity: 1, status: 'ok', ...over,
 });

@@ -178,6 +178,43 @@ describe('GET /api/catalogue/search', () => {
       kind: 'timeseries', managingUnit: 'VN', variable: 'mưa', unit: 'mm', layerName: `geonode:s1_cat_${PK.pub}`,
       timeSteps: ['2026-10-01T00:00:00.000Z', '2026-10-01T01:00:00.000Z'], bbox4326: [102, 8, 110, 24],
     });
+    expect(new Date(item.updatedAt).toISOString()).toBe(item.updatedAt);
+  });
+});
+
+describe('GET /api/catalogue/recent', () => {
+  // Far in the future, so the fixtures come first whatever else the catalogue holds.
+  beforeAll(async () => {
+    const at = (pk: number, day: number) => getPool().query(
+      `UPDATE catalogue.resources SET updated_at = $2 WHERE geonode_pk = $1`, [pk, `2099-01-${String(day).padStart(2, '0')}T00:00:00Z`]);
+    await at(PK.raster, 1);
+    await at(PK.pub, 2);
+    await at(PK.mine, 3);
+    await at(PK.theirs, 4);
+  });
+
+  it('gives an anonymous caller the published public entries, changed last first', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/catalogue/recent?limit=20' });
+    expect(res.statusCode).toBe(200);
+    const titles = fixtureItems(res.json().items).map((i) => i.title);
+    expect(titles).toEqual(['Lũ tháng 10', 'Độ cao']);
+  });
+
+  it('adds the caller\'s own unpublished entry, and never another user\'s', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/catalogue/recent?limit=20', headers: await auth(OWNER) });
+    const items = fixtureItems(res.json().items);
+    expect(items.map((i) => i.title)).toEqual(['Bản nháp của tôi', 'Lũ tháng 10', 'Độ cao', 'Của tôi, riêng nhóm']);
+    expect(items[0].mine).toBe(true);
+    expect(items.map((i) => i.title)).not.toContain('Bản nháp người khác');
+    expect((items[0] as Item & { updatedAt: string }).updatedAt).toBe('2099-01-03T00:00:00.000Z');
+  });
+
+  it('gives 6 entries by default and refuses more than 20', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/catalogue/recent', headers: await auth(OWNER) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().items.length).toBeLessThanOrEqual(6);
+    expect((await app.inject({ method: 'GET', url: '/api/catalogue/recent?limit=21' })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: '/api/catalogue/recent?limit=0' })).statusCode).toBe(400);
   });
 });
 
