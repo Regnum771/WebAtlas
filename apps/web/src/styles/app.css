@@ -32,6 +32,8 @@
 @source "../features/command-palette";
 @source not "../features/command-palette/**/*.test.*";
 /* The feature popup and its table rows: two files of src/components, scanned one by one. */
+@source "../pages/trang-chu";
+@source not "../pages/trang-chu/**/*.test.*";
 @source "../components/DynamicPopup.tsx";
 @source "../components/AttrTable.tsx";
 
@@ -52,6 +54,25 @@
   --color-border: var(--color-line);
   --color-input: var(--color-ink-2);
   --color-ring: var(--color-mark);
+}
+
+/* The hub hero's motion (K5): a layer of the stack bobbing, the background contours drifting, the river
+   line flowing. Every use carries motion-reduce:animate-none. */
+@theme {
+  --animate-stack-float: stack-float 6s ease-in-out infinite;
+  --animate-contour-drift: contour-drift 40s ease-in-out infinite alternate;
+  --animate-river-flow: river-flow 14s linear infinite;
+  @keyframes stack-float {
+    0%, 100% { translate: 0 0; }
+    50% { translate: 0 -5px; }
+  }
+  @keyframes contour-drift {
+    from { transform: translate(0, 0); }
+    to { transform: translate(-24px, 10px); }
+  }
+  @keyframes river-flow {
+    to { stroke-dashoffset: -400; }
+  }
 }
 
 @layer base {

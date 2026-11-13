@@ -36,7 +36,7 @@ import { PERSONAL_CATALOGUE_PROP, syncPersonalLayers, type PersonalLayerEntry } 
 
 const item = (id: string, kind: CatalogueItem['kind'], timeSteps: string[] | null = null): CatalogueItem => ({
   id, kind, title: id, abstract: '', managingUnit: 'VN', isPublished: true, mine: false, variable: null, unit: null,
-  timeSteps, bbox4326: null, layerName: `geonode:${id}`,
+  timeSteps, bbox4326: null, layerName: `geonode:${id}`, updatedAt: '2026-11-12T00:00:00Z',
 });
 const link = (id: string, catalogue: CatalogueItem | null): LayerSummary => ({
   id, kind: 'catalogue', title: `Liên kết ${id}`, position: 0, style: {}, geometryType: null, fields: [],

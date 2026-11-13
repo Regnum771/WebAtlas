@@ -23,6 +23,8 @@ export interface CatalogueItem {
   timeSteps: string[] | null;
   bbox4326: [number, number, number, number] | null;
   layerName: string;
+  /** When the entry last changed (ISO 8601). */
+  updatedAt: string;
 }
 
 export interface CatalogueSearchResult {
@@ -64,6 +66,11 @@ export function searchCatalogue(q: { q?: string; kind?: CatalogueKind | ''; page
   if (q.kind) params.set('kind', q.kind);
   params.set('page', String(q.page ?? 1));
   return apiRequest<CatalogueSearchResult>(`${BASE}/search?${params}`);
+}
+
+/** The entries the reader may see, changed last first (the hub's "Mới cập nhật"). */
+export function fetchRecentCatalogue(limit = 6): Promise<{ items: CatalogueItem[] }> {
+  return apiRequest<{ items: CatalogueItem[] }>(`${BASE}/recent?limit=${limit}`);
 }
 
 export function getCatalogueItem(id: string): Promise<CatalogueItem> {

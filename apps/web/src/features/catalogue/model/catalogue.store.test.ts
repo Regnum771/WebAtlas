@@ -11,7 +11,7 @@ import type { CatalogueItem } from '../api/catalogue.api';
 
 const item = (id: string, over: Partial<CatalogueItem> = {}): CatalogueItem => ({
   id, kind: 'vector', title: `Lớp ${id}`, abstract: '', managingUnit: null, isPublished: true, mine: false,
-  variable: null, unit: null, timeSteps: null, bbox4326: null, layerName: `geonode:${id}`, ...over,
+  variable: null, unit: null, timeSteps: null, bbox4326: null, layerName: `geonode:${id}`, updatedAt: '2026-11-12T00:00:00Z', ...over,
 });
 
 describe('catalogue.store', () => {

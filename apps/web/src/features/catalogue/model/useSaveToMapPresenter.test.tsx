@@ -31,7 +31,7 @@ const MINE = map('m1', 'Bản của tôi', 'owner');
 const SHARED = map('m2', 'Được chia sẻ', 'recipient');
 const ITEM: CatalogueItem = {
   id: 'r1', kind: 'vector', title: 'Trạm đo mưa', abstract: '', managingUnit: 'VN', isPublished: true, mine: false,
-  variable: null, unit: null, timeSteps: null, bbox4326: null, layerName: 'geonode:r1',
+  variable: null, unit: null, timeSteps: null, bbox4326: null, layerName: 'geonode:r1', updatedAt: '2026-11-12T00:00:00Z',
 };
 const job = (status: string, over: Record<string, unknown> = {}) => ({
   id: 'j1', kind: 'import', status, mapId: 'm1', progress: status === 'succeeded' ? 100 : 10, steps: [],
