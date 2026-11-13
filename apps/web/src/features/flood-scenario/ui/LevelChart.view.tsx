@@ -73,7 +73,7 @@ export function LevelChartView({ station, level, forecast, hour, bulletinHour, s
 
   const chart = (
     <ChartContainer config={config} className="h-[200px] w-full" initialDimension={{ width: 460, height: 200 }}>
-      <ComposedChart data={rows} margin={{ top: 12, right: 36, bottom: 0, left: 0 }}>
+      <ComposedChart data={rows} margin={{ top: 12, right: 52, bottom: 0, left: 0 }}>
         <CartesianGrid vertical={false} />
         <XAxis
           dataKey="h" type="number" domain={[0, hours]} ticks={midnightHours(startTime, hours)}

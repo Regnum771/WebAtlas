@@ -57,6 +57,7 @@
 @source not "../features/forecast-dock/**/*.test.*";
 @source "../features/flood-scenario/ui/LevelChart.view.tsx";
 @source "../features/analysis/ui/ProfileChart.view.tsx";
+@source "../features/analysis/ui/AnalysisResultCard.view.tsx";
 @source "../components/DynamicPopup.tsx";
 @source "../components/AttrTable.tsx";
 

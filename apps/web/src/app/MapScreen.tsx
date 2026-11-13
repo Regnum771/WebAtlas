@@ -30,7 +30,7 @@ import { DockView } from '../features/shell/ui/Dock.view';
 import { RailView } from '../features/shell/ui/Rail.view';
 import ForecastDock from '../features/forecast-dock';
 import {
-  closeAssistant, closeDock, closeTool, getShell, openTool, toggleAssistant, toggleContents, toggleForecastDock, toggleTool,
+  closeAssistant, closeDock, closeTool, getShell, openDock, openTool, toggleAssistant, toggleContents, toggleForecastDock, toggleTool,
   useShell, type ToolId,
 } from '../features/shell/model/shell.store';
 import { DOCK_COLUMN_QUERY, useMediaQuery } from '../shared/lib/useMediaQuery';
@@ -89,6 +89,17 @@ export default function MapScreen() {
     if (startedResolving || newError || newHint) openTool('roi');
   }, [roi.status, roi.error, roi.hint]);
 
+  // Opening a flood scenario (from its tool menu, the dock or the assistant) opens the dock on
+  // Tổng quan; a new analysis result opens it on Phân tích (K4 plan, decision 4).
+  // The Kịch bản lũ menu has done its job once the scenario is in the dock.
+  useEffect(() => {
+    if (!flood.scenarioId) return;
+    openDock('overview');
+    if (getShell().tool === 'flood') closeTool();
+  }, [flood.scenarioId]);
+  const analysisResult = analysis.result?.result ?? null;
+  useEffect(() => { if (analysisResult) openDock('analysis'); }, [analysisResult]);
+
   useEffect(() => { void primeAdminUnits(); }, []);
 
   // The assistant costs API tokens per message, so it is authenticated-only;
@@ -106,7 +117,7 @@ export default function MapScreen() {
         closeLabel={assistantShown ? 'Đóng trợ lý' : 'Đóng khung phân tích'}
         onClose={closeDock}
       >
-        {assistantShown ? <Assistant /> : <ForecastDock />}
+        {assistantShown ? <Assistant /> : <ForecastDock analysis={analysis.result} />}
       </DockView>
     );
   }

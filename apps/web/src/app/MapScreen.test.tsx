@@ -54,7 +54,11 @@ vi.mock('../features/flood-scenario', () => ({
   FloodLegend: () => <div>FLOOD_LEGEND</div>,
   FloodScenarioToolContent: () => <div>FLOOD_MENU</div>,
 }));
-vi.mock('../features/analysis', () => ({ useAnalysisTools: () => ({ buttons: <div>ANALYSIS_BUTTONS</div>, panel: <div>ANALYSIS_PANEL</div> }) }));
+/** The analysis result the mocked presenter hands MapScreen; null: none. */
+const analysisSlot: { current: null | { node: unknown; exportCsv: () => void; result: object } } = { current: null };
+vi.mock('../features/analysis', () => ({
+  useAnalysisTools: () => ({ buttons: <div>ANALYSIS_BUTTONS</div>, panel: <div>ANALYSIS_PANEL</div>, result: analysisSlot.current }),
+}));
 vi.mock('../features/roi/ui/RoiChip', () => ({ default: () => <div>ROI_STATUS</div> }));
 vi.mock('../features/roi/ui/RoiDrawButtons', () => ({ default: () => <div>ROI_DRAW</div> }));
 vi.mock('../widgets/top-bar', () => ({ default: () => <div>TOP_BAR</div> }));
@@ -79,6 +83,7 @@ vi.mock('../entities/session/model/useUnitTree', async () => {
 
 import MapScreen from './MapScreen';
 import { resetShell, toggleAssistant, getShell, openTool, closeTool, openDock } from '../features/shell/model/shell.store';
+import { openScenario, resetFloodStore, setFloodLoader } from '../features/flood-scenario/model/flood.store';
 import { getRoiState, resetRoiStore, setRoi, setRoiHint, setRoiResolver, startDrawing } from '../features/roi/model/roi.store';
 
 const renderScreen = () => render(<MemoryRouter><MapScreen /></MemoryRouter>);
@@ -110,8 +115,9 @@ const menuOf = (tool: string) =>
 /** The window width the dock's media query sees: from 1100 px the dock is a column. */
 let wide = true;
 beforeEach(() => {
-  signOut(); resetShell(); resetRoiStore();
+  signOut(); resetShell(); resetRoiStore(); resetFloodStore();
   wide = true;
+  analysisSlot.current = null;
   window.matchMedia = ((query: string) => ({
     matches: query === '(min-width: 1100px)' ? wide : false,
     media: query, addEventListener() {}, removeEventListener() {},
@@ -227,6 +233,28 @@ describe('MapScreen dock and rail', () => {
     expect(container.querySelector('.map-stage-map')).toContainElement(drawer);
     expect(container.querySelector('.map-stage-map')).toHaveAttribute('data-dock', 'drawer');
     expect(container.querySelector('.app-shell')).not.toHaveClass('with-dock');
+  });
+});
+
+describe('MapScreen opens the dock', () => {
+  it('on Tổng quan when a flood scenario opens', async () => {
+    setFloodLoader({
+      fetchScenarios: async () => [], fetchScenario: () => new Promise(() => {}), fetchRoads: () => new Promise(() => {}),
+      fetchPlan: async () => [], preloadFrames: async () => {},
+    });
+    renderScreen();
+    await act(async () => { void openScenario('kttv-2025-10'); });
+    expect(getShell()).toMatchObject({ dock: 'forecast', dockTab: 'overview' });
+    expect(screen.getByRole('complementary', { name: 'Dự báo và phân tích' })).toBeInTheDocument();
+  });
+
+  it('on Phân tích when a new analysis result arrives', () => {
+    const { rerender } = renderScreen();
+    expect(getShell().dock).toBeNull();
+    analysisSlot.current = { node: <p>KẾT QUẢ</p>, exportCsv: () => {}, result: {} };
+    rerender(<MemoryRouter><MapScreen /></MemoryRouter>);
+    expect(getShell()).toMatchObject({ dock: 'forecast', dockTab: 'analysis' });
+    expect(screen.getByText('KẾT QUẢ')).toBeInTheDocument();
   });
 });
 

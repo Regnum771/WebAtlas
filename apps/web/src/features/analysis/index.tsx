@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { DICTIONARY, attributeOf } from '@webatlas/shared';
+import { DICTIONARY, attributeOf, type AnalysisResult } from '@webatlas/shared';
+import { openDock } from '../shell/model/shell.store';
 import { useDictionary } from '../dictionary';
 import { useMapCommands } from '../map/model/useMapCommands';
 import { useRoi } from '../roi/model/roi.store';
@@ -10,11 +11,21 @@ import { AnalysisParamsView } from './ui/AnalysisParams.view';
 import { UseAsRoiButton } from '../roi/ui/UseAsRoiButton';
 import { AnalysisResultCardView } from './ui/AnalysisResultCard.view';
 
+export interface AnalysisResultSlot {
+  /** The result card, for the dock's Phân tích tab. */
+  node: ReactNode;
+  /** Xuất CSV in the dock's tab row. */
+  exportCsv: () => void;
+  /** Changes with each new result, so the dock can open on it. */
+  result: AnalysisResult;
+}
+
 /**
- * Returns the tool buttons and the parameter form or result as two nodes sharing one
- * presenter — MapScreen lays them out one under the other in the Vùng phân tích menu.
+ * Returns the tool buttons, the parameter form and the result, sharing one presenter. MapScreen
+ * lays the buttons and the form out in the Vùng phân tích menu, and hands the result to the dock's
+ * Phân tích tab; while there is a result, the menu points to it.
  */
-export function useAnalysisTools(): { buttons: ReactNode; panel: ReactNode } {
+export function useAnalysisTools(): { buttons: ReactNode; panel: ReactNode; result: AnalysisResultSlot | null } {
   const run = useMapCommands();
   const roi = useRoi();
   const a = useAnalysis({ run });
@@ -33,6 +44,16 @@ export function useAnalysisTools(): { buttons: ReactNode; panel: ReactNode } {
       onParams={a.setParams} onRun={() => void a.execute()} onCancel={a.cancel}
     />
   ) : a.result ? (
+    <p className="analysis-note">
+      Kết quả ở khung Phân tích.{' '}
+      <button type="button" className="link" onClick={() => openDock('analysis')}>Xem kết quả</button>
+    </p>
+  ) : null;
+
+  const result = a.result ? {
+    result: a.result,
+    exportCsv: a.exportCsv,
+    node: (
     <AnalysisResultCardView
       result={a.result}
       elevation={dem}
@@ -46,10 +67,10 @@ export function useAnalysisTools(): { buttons: ReactNode; panel: ReactNode } {
         row.layerKey && row.featureId
           ? <UseAsRoiButton roi={{ source: 'feature', layerKey: row.layerKey, featureId: row.featureId }} label={row.name ?? 'đối tượng'} />
           : null}
-      onExport={a.exportCsv}
       onClear={a.clear}
     />
-  ) : null;
+    ),
+  } : null;
 
-  return { buttons, panel };
+  return { buttons, panel, result };
 }
