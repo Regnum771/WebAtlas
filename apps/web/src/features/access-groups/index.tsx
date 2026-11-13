@@ -15,7 +15,7 @@ const LEVEL_HINT = {
 export function AccessGroupsPanel() {
   const p = useGroupsPresenter();
   return (
-    <div className="user-mgmt-panel">
+    <div className="flex flex-col gap-4">
       <GroupListView
         groups={p.groups} tree={p.tree} loading={p.loading} listError={p.listError}
         onRetry={p.retry} onNew={p.openCreate} onEdit={p.openEdit} onDelete={p.askDelete}

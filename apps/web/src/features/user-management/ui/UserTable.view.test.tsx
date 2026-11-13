@@ -89,10 +89,11 @@ describe('UserTableView', () => {
     expect(onRetryGroups).toHaveBeenCalled();
   });
 
-  it('marks the Ngày tạo column so the narrow-width CSS can hide it', () => {
+  it('drops the Ngày tạo column below 1100 px, header and cells alike', () => {
     const { container } = render(<UserTableView users={users} canModify={() => true} onEdit={vi.fn()} onToggleActive={vi.fn()} onNew={vi.fn()} loading={false} listError={null} {...extra} />);
     const header = [...container.querySelectorAll('th')].find((th) => th.textContent === 'Ngày tạo');
-    expect(header).toHaveClass('col-created');
-    expect(container.querySelectorAll('td.col-created')).toHaveLength(users.length);
+    expect(header).toHaveClass('hidden', 'min-[1100px]:table-cell');
+    const cells = [...container.querySelectorAll('tbody tr')].map((tr) => tr.children[header!.cellIndex] as HTMLElement);
+    expect(cells.every((td) => td.classList.contains('hidden') && td.classList.contains('min-[1100px]:table-cell'))).toBe(true);
   });
 });

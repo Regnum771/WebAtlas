@@ -36,6 +36,15 @@
 @source not "../features/auth/**/*.test.*";
 @source "../pages/dang-nhap";
 @source not "../pages/dang-nhap/**/*.test.*";
+@source "../features/user-management";
+@source not "../features/user-management/**/*.test.*";
+@source "../features/access-groups";
+@source not "../features/access-groups/**/*.test.*";
+@source "../features/unassigned";
+@source not "../features/unassigned/**/*.test.*";
+@source "../pages/quan-ly";
+@source not "../pages/quan-ly/**/*.test.*";
+@source "../features/my-maps/ui/UsageTable.view.tsx";
 @source "../pages/ho-so";
 @source not "../pages/ho-so/**/*.test.*";
 @source "../pages/trang-chu";

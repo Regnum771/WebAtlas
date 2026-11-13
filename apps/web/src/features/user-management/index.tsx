@@ -10,7 +10,7 @@ import { Button } from '../../shared/ui/Button';
 export function UserManagementPanel({ onClose }: { onClose: () => void }) {
   const p = useUsersPresenter();
   return (
-    <div className="user-mgmt-panel">
+    <div className="flex flex-col gap-4">
       <UserTableView
         users={p.users} canModify={p.canModify} adminActions={p.adminActions} summaryFor={p.summaryFor}
         onEdit={p.openEdit} onToggleActive={p.toggleActive} onGroups={p.openGroups} onNew={p.openCreate}
@@ -35,7 +35,7 @@ export function UserManagementPanel({ onClose }: { onClose: () => void }) {
         groupsLoading={p.groupsLoading} groupsError={p.groupsError}
         onToggle={p.toggleGroup} onSubmit={p.submitGroups} onClose={p.closeGroups}
       />
-      <div className="user-mgmt-footer">
+      <div>
         <Button onClick={onClose}>Về bản đồ</Button>
       </div>
     </div>

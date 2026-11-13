@@ -212,45 +212,44 @@ async function login({ email, password }) {
 async function openQuanLy(page, section) {
   if (!page.url().includes('/quan-ly')) {
     await clickText(page, 'nav[aria-label="Điều hướng chính"] a', 'Quản lý');
-    await page.waitForSelector('.quan-ly-nav', { timeout: 10000 });
+    await page.waitForSelector('nav[aria-label="Quản lý"]', { timeout: 10000 });
   }
-  await clickText(page, '.quan-ly-nav a', section);
-  await page.waitForFunction((s) => document.querySelector('.quan-ly-nav [aria-current="page"]')?.textContent.trim() === s,
+  await clickText(page, 'nav[aria-label="Quản lý"] a', section);
+  await page.waitForFunction((s) => document.querySelector('nav[aria-label="Quản lý"] [aria-current="page"]')?.textContent.trim() === s,
     { timeout: 10000 }, section);
   await sleep(500);
 }
 
 /** Group names in the Nhóm quyền table. */
 const groupNames = (page) =>
-  page.$$eval('.user-table tbody tr', (rows) => rows.map((r) => r.cells[0].childNodes[0]?.textContent.trim() ?? ''));
+  page.$$eval('[data-slot="admin-section"] table tbody tr', (rows) => rows.map((r) => r.cells[0].childNodes[0]?.textContent.trim() ?? ''));
 
 async function deleteTestGroups(page) {
   for (let guard = 0; guard < 10; guard += 1) {
     const names = await groupNames(page);
     const index = names.findIndex((n) => n.startsWith(GROUP_PREFIX));
     if (index === -1) return;
-    await page.$$eval('.user-table tbody tr', (rows, i) => {
+    await page.$$eval('[data-slot="admin-section"] table tbody tr', (rows, i) => {
       [...rows[i].querySelectorAll('button')].find((b) => b.textContent.trim() === 'Xoá')?.click();
     }, index);
     await page.waitForSelector(':is([role="dialog"],[role="alertdialog"])', { visible: true, timeout: 5000 });
     await clickText(page, ':is([role="dialog"],[role="alertdialog"]) button', 'Xoá');
-    await page.waitForFunction((n, before) => document.querySelectorAll('.user-table tbody tr').length < before
-      || !document.querySelector('.user-table'), { timeout: 10000 }, names[index], names.length);
+    await page.waitForFunction((n, before) => document.querySelectorAll('[data-slot="admin-section"] table tbody tr').length < before
+      || !document.querySelector('[data-slot="admin-section"] table'), { timeout: 10000 }, names[index], names.length);
     await sleep(300);
   }
   throw new Error('could not clear the earlier test groups');
 }
 
 async function createGroup(page, { name, template, unit }) {
-  await clickText(page, '.user-mgmt-header button', 'Tạo nhóm');
-  await page.waitForSelector('.group-form', { visible: true, timeout: 5000 });
-  await clickText(page, '.group-form label', template, { exact: true });
+  await clickText(page, '[data-slot="admin-section"] button', 'Tạo nhóm');
+  await page.waitForSelector('[data-slot="group-form"]', { visible: true, timeout: 5000 });
+  await clickText(page, '[data-slot="group-form"] label', template, { exact: true });
   // The picker lists every unit; the search narrows it to the one with this exact code.
-  await page.type('.unit-picker input[type="search"]', unit);
+  await page.type('[data-slot="unit-picker"] input[type="search"]', unit);
   await sleep(400);
   const picked = await page.evaluate((code) => {
-    const row = [...document.querySelectorAll('.unit-picker-row')]
-      .find((li) => li.querySelector('.unit-picker-code')?.textContent.trim() === code);
+    const row = document.querySelector(`[data-slot="unit-picker"] li[data-code="${code}"]`);
     const box = row?.querySelector('input');
     if (!box || box.disabled) return false;
     box.click();
@@ -259,7 +258,7 @@ async function createGroup(page, { name, template, unit }) {
   if (!picked) throw new Error(`unit ${unit} is not selectable in the picker`);
   // The templates carry the feature permissions; the review right is added on top.
   const review = await page.evaluate((label) => {
-    const box = [...document.querySelectorAll('.group-form-set label')]
+    const box = [...document.querySelectorAll('[data-slot="group-form"] fieldset label')]
       .find((l) => l.textContent.includes(label))?.querySelector('input');
     if (!box) return false;
     if (!box.checked) box.click();
@@ -269,37 +268,37 @@ async function createGroup(page, { name, template, unit }) {
   await page.click('#gf-name', { clickCount: 3 });
   await page.type('#gf-name', name);
   await sleep(200);
-  await clickText(page, '.group-form button', 'Lưu');
+  await clickText(page, '[data-slot="group-form"] button', 'Lưu');
   try {
-    await page.waitForFunction(() => !document.querySelector('.group-form'), { timeout: 10000 });
+    await page.waitForFunction(() => !document.querySelector('[data-slot="group-form"]'), { timeout: 10000 });
   } catch {
-    const message = await page.$eval('.group-form', (el) => el.innerText.replace(/\s+/g, ' ')).catch(() => '');
+    const message = await page.$eval('[data-slot="group-form"]', (el) => el.innerText.replace(/\s+/g, ' ')).catch(() => '');
     throw new Error(`group "${name}" was not saved: ${message.slice(-200)}`);
   }
   await sleep(500);
 }
 
 async function assignGroup(page, email, groupName) {
-  await page.waitForSelector('.user-table tbody tr', { timeout: 10000 });
-  const clicked = await page.$$eval('.user-table tbody tr', (rows, mail) => {
+  await page.waitForSelector('[data-slot="admin-section"] table tbody tr', { timeout: 10000 });
+  const clicked = await page.$$eval('[data-slot="admin-section"] table tbody tr', (rows, mail) => {
     const row = rows.find((r) => r.cells[0].textContent.trim() === mail);
     const button = row && [...row.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Nhóm');
     button?.click();
     return Boolean(button);
   }, email);
   if (!clicked) throw new Error(`user ${email} is not in the Người dùng table`);
-  await page.waitForSelector('.group-form', { visible: true, timeout: 5000 });
-  await page.waitForFunction(() => document.querySelectorAll('.group-form-set label').length > 0, { timeout: 10000 });
+  await page.waitForSelector('[data-slot="group-form"]', { visible: true, timeout: 5000 });
+  await page.waitForFunction(() => document.querySelectorAll('[data-slot="group-form"] fieldset label').length > 0, { timeout: 10000 });
   const ticked = await page.evaluate((wanted) => {
-    const box = [...document.querySelectorAll('.group-form-set label')]
+    const box = [...document.querySelectorAll('[data-slot="group-form"] fieldset label')]
       .find((l) => l.textContent.replace(/\s+/g, ' ').trim().startsWith(wanted))?.querySelector('input');
     if (!box || box.disabled) return false;
     if (!box.checked) box.click();
     return true;
   }, groupName);
   if (!ticked) throw new Error(`group "${groupName}" is not offered in the user's group dialog`);
-  await clickText(page, '.group-form button', 'Lưu');
-  await page.waitForFunction(() => !document.querySelector('.group-form'), { timeout: 10000 });
+  await clickText(page, '[data-slot="group-form"] button', 'Lưu');
+  await page.waitForFunction(() => !document.querySelector('[data-slot="group-form"]'), { timeout: 10000 });
   await sleep(500);
 }
 
@@ -307,7 +306,7 @@ async function assignGroup(page, email, groupName) {
 async function stepGroups(session, vp) {
   const { page } = session;
   await openQuanLy(page, 'Nhóm quyền');
-  await page.waitForSelector('.user-mgmt', { timeout: 10000 });
+  await page.waitForSelector('[data-slot="admin-section"]', { timeout: 10000 });
   await sleep(800);
   await deleteTestGroups(page);
   await createGroup(page, { name: GROUP_P, template: 'Cán bộ cấp tỉnh', unit: PROVINCE });
@@ -320,7 +319,7 @@ async function stepGroups(session, vp) {
   await assignGroup(page, ACCOUNTS.p.email, GROUP_P);
   await assignGroup(page, ACCOUNTS.x.email, GROUP_X);
   for (const [email, group] of [[ACCOUNTS.p.email, GROUP_P], [ACCOUNTS.x.email, GROUP_X]]) {
-    const row = await page.$$eval('.user-table tbody tr', (rows, mail) =>
+    const row = await page.$$eval('[data-slot="admin-section"] table tbody tr', (rows, mail) =>
       rows.find((r) => r.cells[0].textContent.trim() === mail)?.innerText.replace(/\s+/g, ' ') ?? '', email);
     if (!row.includes(group)) problems.push(`${email} does not show "${group}" after the assignment: ${row.slice(0, 160)}`);
   }
@@ -338,8 +337,8 @@ async function stepUnassigned(session, vp, adminToken) {
     problems.push('the API lists no unassigned features, so there is nothing to see (is the data loaded?)');
     return problems;
   }
-  await page.waitForSelector('.quan-ly-section .user-table tbody tr', { timeout: 15000 });
-  const rows = await page.$$eval('.quan-ly-section .user-table tbody tr', (trs) => trs.map((r) => r.cells[0].textContent.trim()));
+  await page.waitForSelector('[data-slot="admin-section"] table tbody tr', { timeout: 15000 });
+  const rows = await page.$$eval('[data-slot="admin-section"] table tbody tr', (trs) => trs.map((r) => r.cells[0].textContent.trim()));
   if (rows.length !== expected.length) problems.push(`the page shows ${rows.length} rows, the API lists ${expected.length}`);
   const dams = expected.filter((f) => f.layerKey === 'dams').length;
   const damRows = rows.filter((label) => label === DAMS_LABEL).length;
@@ -405,8 +404,8 @@ async function quanLyFits(page) {
       el.style.pointerEvents = previous;
       if (hit && !route.contains(hit)) out.push(`${selector} shows through the Quản lý area`);
     }
-    const nav = document.querySelector('.quan-ly-nav');
-    if (!nav) out.push('.quan-ly-nav is not on the page');
+    const nav = document.querySelector('nav[aria-label="Quản lý"]');
+    if (!nav) out.push('the Quản lý nav is not on the page');
     else {
       for (const a of nav.querySelectorAll('a')) {
         const r = a.getBoundingClientRect();
@@ -658,7 +657,7 @@ async function stepVisitor(session, vp, lake, provinceName) {
 
 async function deleteGroupsAsAdmin(session) {
   await openQuanLy(session.page, 'Nhóm quyền');
-  await session.page.waitForSelector('.user-mgmt', { timeout: 10000 });
+  await session.page.waitForSelector('[data-slot="admin-section"]', { timeout: 10000 });
   await sleep(800);
   await deleteTestGroups(session.page);
 }

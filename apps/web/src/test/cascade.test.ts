@@ -131,7 +131,7 @@ describe('focus ring and toast band (K2 final review)', () => {
 
 // K3: Tailwind scans each folder it converts, never its tests (words there become utilities).
 describe('Tailwind scan list (K3)', () => {
-  const dirs = ['widgets/top-bar', 'features/shell', 'features/layers-panel', 'features/legend', 'features/map/ui', 'features/search', 'features/command-palette', 'pages/trang-chu', 'features/auth', 'pages/dang-nhap', 'pages/ho-so'];
+  const dirs = ['widgets/top-bar', 'features/shell', 'features/layers-panel', 'features/legend', 'features/map/ui', 'features/search', 'features/command-palette', 'pages/trang-chu', 'features/auth', 'pages/dang-nhap', 'pages/ho-so', 'features/user-management', 'features/access-groups', 'features/unassigned', 'pages/quan-ly'];
   it.each(dirs)('scans %s and skips its tests', async (dir) => {
     const { readFileSync } = await import('node:fs');
     const { resolve } = await import('node:path');
@@ -140,7 +140,7 @@ describe('Tailwind scan list (K3)', () => {
     expect(app).toContain(`@source not "../${dir}/**/*.test.*";`);
   });
 
-  it.each(['components/DynamicPopup.tsx', 'components/AttrTable.tsx'])('scans the single file %s', async (file) => {
+  it.each(['components/DynamicPopup.tsx', 'components/AttrTable.tsx', 'features/my-maps/ui/UsageTable.view.tsx'])('scans the single file %s', async (file) => {
     const { readFileSync } = await import('node:fs');
     const { resolve } = await import('node:path');
     const app = readFileSync(resolve(import.meta.dirname, '../styles/app.css'), 'utf8');
