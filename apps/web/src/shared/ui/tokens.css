@@ -28,7 +28,9 @@
 
   --topbar-height: 44px;
   --panel-width: 312px;
-  --assistant-width: 360px;
+  /* The analysis dock (Dock.view.tsx) and the rail left of the contents panel (Rail.view.tsx). */
+  --dock-width: 500px;
+  --contents-rail: 34px;
 }
 
 /* Supported viewport: 768px wide and up. See scripts/verify-shell.mjs. */

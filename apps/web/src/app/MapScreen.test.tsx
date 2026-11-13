@@ -78,7 +78,7 @@ vi.mock('../entities/session/model/useUnitTree', async () => {
 });
 
 import MapScreen from './MapScreen';
-import { resetShell, toggleAssistant, getShell, openTool, closeTool } from '../features/shell/model/shell.store';
+import { resetShell, toggleAssistant, getShell, openTool, closeTool, openDock } from '../features/shell/model/shell.store';
 import { getRoiState, resetRoiStore, setRoi, setRoiHint, setRoiResolver, startDrawing } from '../features/roi/model/roi.store';
 
 const renderScreen = () => render(<MemoryRouter><MapScreen /></MemoryRouter>);
@@ -107,7 +107,16 @@ const never = () => new Promise<ResolvedRoi>(() => {});
 const menuOf = (tool: string) =>
   document.getElementById(screen.getByRole('button', { name: tool }).getAttribute('aria-controls')!) as HTMLElement;
 
-beforeEach(() => { signOut(); resetShell(); resetRoiStore(); });
+/** The window width the dock's media query sees: from 1100 px the dock is a column. */
+let wide = true;
+beforeEach(() => {
+  signOut(); resetShell(); resetRoiStore();
+  wide = true;
+  window.matchMedia = ((query: string) => ({
+    matches: query === '(min-width: 1100px)' ? wide : false,
+    media: query, addEventListener() {}, removeEventListener() {},
+  })) as unknown as typeof window.matchMedia;
+});
 
 describe('MapScreen', () => {
   it('floats the contents panel inside the map box, not in a grid column of its own', () => {
@@ -178,6 +187,46 @@ describe('MapScreen', () => {
     rerender(<MemoryRouter><MapScreen /></MemoryRouter>);
     expect(screen.queryByRole('complementary', { name: 'Trợ lý' })).toBeNull();
     expect(getShell().assistantOpen).toBe(false);
+  });
+});
+
+describe('MapScreen dock and rail', () => {
+  it('has a rail with Mục lục and Dự báo và phân tích, and Trợ lý once signed in', async () => {
+    renderScreen();
+    const rail = screen.getByRole('navigation', { name: 'Thanh bảng' });
+    expect(within(rail).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Mục lục', 'Dự báo và phân tích']);
+    expect(within(rail).getByRole('button', { name: 'Mục lục' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('folds the contents panel from Mục lục and opens it again', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await user.click(screen.getByRole('button', { name: 'Mục lục' }));
+    expect(screen.queryByRole('complementary', { name: 'Bảng bản đồ' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Mục lục' }));
+    expect(screen.getByRole('complementary', { name: 'Bảng bản đồ' })).toBeInTheDocument();
+  });
+
+  it('opens the forecast view as a column from the rail, folding the contents panel', async () => {
+    const user = userEvent.setup();
+    const { container } = renderScreen();
+    await user.click(screen.getByRole('button', { name: 'Dự báo và phân tích' }));
+    expect(screen.getByRole('complementary', { name: 'Dự báo và phân tích' })).toBeInTheDocument();
+    expect(container.querySelector('.app-shell')).toHaveClass('with-dock');
+    expect(screen.queryByRole('complementary', { name: 'Bảng bản đồ' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Đóng khung phân tích' }));
+    expect(screen.queryByRole('complementary', { name: 'Dự báo và phân tích' })).toBeNull();
+    expect(screen.getByRole('complementary', { name: 'Bảng bản đồ' })).toBeInTheDocument();
+  });
+
+  it('below 1100 px the dock is a drawer inside the map stage, and the grid has no third column', () => {
+    wide = false;
+    const { container } = renderScreen();
+    act(() => { openDock(); });
+    const drawer = screen.getByRole('dialog', { name: 'Dự báo và phân tích' });
+    expect(container.querySelector('.map-stage-map')).toContainElement(drawer);
+    expect(container.querySelector('.map-stage-map')).toHaveAttribute('data-dock', 'drawer');
+    expect(container.querySelector('.app-shell')).not.toHaveClass('with-dock');
   });
 });
 

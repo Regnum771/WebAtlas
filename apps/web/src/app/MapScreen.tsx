@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChartSpline, FilePlus2, Layers, PencilLine, Printer, Ruler, SquareDashed, Waves } from 'lucide-react';
 import TopBar from '../widgets/top-bar';
@@ -26,20 +26,27 @@ import { stopDrawing, useRoi } from '../features/roi/model/roi.store';
 import { useAnalysisTools } from '../features/analysis';
 import { AppShellView } from '../features/shell/ui/AppShell.view';
 import { SidePanelView } from '../features/shell/ui/SidePanel.view';
-import { AssistantDockView } from '../features/shell/ui/AssistantDock.view';
+import { DockView } from '../features/shell/ui/Dock.view';
+import { RailView } from '../features/shell/ui/Rail.view';
+import ForecastDock from '../features/forecast-dock';
 import {
-  closeAssistant, closeTool, getShell, openTool, toggleTool, useShell, type ToolId,
+  closeAssistant, closeDock, closeTool, getShell, openTool, toggleAssistant, toggleContents, toggleForecastDock, toggleTool,
+  useShell, type ToolId,
 } from '../features/shell/model/shell.store';
+import { DOCK_COLUMN_QUERY, useMediaQuery } from '../shared/lib/useMediaQuery';
 import { useSession } from '../entities/session/model/session.store';
 import { useCanSaveDirectly } from '../entities/session/model/useCanSaveDirectly';
 import { primeAdminUnits } from '../entities/admin-unit/adminUnits.store';
 import { ConnectionStrip } from '../shared/ui/ConnectionStrip';
 import { ToastHost } from '../shared/ui/ToastHost';
 
-/** The map page: one grid holding the top bar, the map stage (with the floating contents panel) and the assistant. */
+/** The map page: one grid holding the top bar, the map stage (rail, floating contents panel, tools) and the dock. */
 export default function MapScreen() {
   const { status } = useSession();
-  const { assistantOpen, tool } = useShell();
+  const { dock, contentsCollapsed, tool } = useShell();
+  // From 1100 px the dock is a page column; below, a drawer over the map (Dock.view.tsx).
+  const dockAsColumn = useMediaQuery(DOCK_COLUMN_QUERY);
+  const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
   const roi = useRoi();
   const analysis = useAnalysisTools();
   const flood = useFloodScenario();
@@ -86,7 +93,23 @@ export default function MapScreen() {
 
   // The assistant costs API tokens per message, so it is authenticated-only;
   // showing it to an anonymous visitor would only ever produce a 401.
-  const dockOpen = status === 'authenticated' && assistantOpen;
+  const signedIn = status === 'authenticated';
+  const assistantShown = signedIn && dock === 'assistant';
+  const dockShown = dock === 'forecast' || assistantShown;
+  let dockNode: ReactNode = null;
+  if (dockShown) {
+    dockNode = (
+      <DockView
+        variant={dockAsColumn ? 'column' : 'drawer'}
+        container={stageEl}
+        title={assistantShown ? 'Trợ lý' : 'Dự báo và phân tích'}
+        closeLabel={assistantShown ? 'Đóng trợ lý' : 'Đóng khung phân tích'}
+        onClose={closeDock}
+      >
+        {assistantShown ? <Assistant /> : <ForecastDock />}
+      </DockView>
+    );
+  }
 
   // Every tool's content stays mounted while its menu is closed (see ToolGroupView):
   // RoiChip keeps the map's ROI layer in step with the store, and the measure and
@@ -138,13 +161,23 @@ export default function MapScreen() {
         <>
           {/* The map and everything floating on it; a personal layer's table docks under it
               and the map shrinks to the space left (MapView follows its box's size). */}
-          <div className="map-stage-map">
+          <div
+            ref={setStageEl}
+            className="map-stage-map"
+            data-contents={contentsCollapsed ? 'collapsed' : 'open'}
+            data-dock={dockShown && !dockAsColumn ? 'drawer' : undefined}
+          >
             {/* MapView lives here, never inside a <Route>: navigating to
                 /quan-ly overlays a live map instead of unmounting it. */}
             <MapView />
             <MapLoadingBar />
-            {/* The contents panel floats over the map's top-left corner (SidePanel.view.tsx). */}
-            <SidePanelView footer={<Link to="/print" className="link">In và xuất</Link>}>
+            {/* The rail and, right of it, the contents panel float over the map's top-left corner. */}
+            <RailView
+              contentsOpen={!contentsCollapsed} onContents={toggleContents}
+              forecastOpen={dock === 'forecast'} onForecast={toggleForecastDock}
+              assistant={signedIn ? { open: assistantShown, onToggle: toggleAssistant } : null}
+            />
+            <SidePanelView collapsed={contentsCollapsed} footer={<Link to="/print" className="link">In và xuất</Link>}>
               <MyMaps />
               {status === 'authenticated' && <hr className="side-panel-rule" />}
               <CatalogueLayersSection time={slider.time} />
@@ -164,11 +197,13 @@ export default function MapScreen() {
             <ToastHost />
             {/* R8: the bottom edge of the map, never covered. */}
             <StatusBar />
+            {/* Below 1100 px the dock is a drawer inside the stage (mounted here through a portal). */}
+            {!dockAsColumn && dockNode}
           </div>
           <PersonalTable />
         </>
       )}
-      assistant={dockOpen ? <AssistantDockView onClose={closeAssistant}><Assistant /></AssistantDockView> : null}
+      dock={dockAsColumn ? dockNode : null}
     />
   );
 }

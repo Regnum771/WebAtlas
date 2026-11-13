@@ -46,8 +46,8 @@ export function AssistantPanelView({ turns, loading, error, onSend, onRetry }: P
   };
 
   return (
+    // The dock's header names the panel (Dock.view.tsx).
     <div className="assistant-panel">
-      <h2 className="panel-title">Trợ lý</h2>
 
       {/* polite, not assertive: a reply should be announced without cutting off
           whatever the screen reader is already saying. The error block below
