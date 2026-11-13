@@ -272,7 +272,8 @@
     position: absolute;
     top: var(--topbar-height);
     right: 0;
-    bottom: 0;
+    /* R8: it stops above the status bar (32px, StatusBar.view.tsx) along the map's bottom edge. */
+    bottom: 32px;
     width: min(var(--assistant-width), calc(100vw - var(--panel-width) - 16px));
     /* Above routed pages (90), so Trợ lý also works on /print and /quan-ly. */
     z-index: 95;
