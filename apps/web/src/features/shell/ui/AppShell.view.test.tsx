@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { AppShellView } from './AppShell.view';
 
-const slots = { topBar: <div>TOP</div>, panel: <div>PANEL</div>, strip: <div>STRIP</div>, stage: <div>STAGE</div> };
+const slots = { topBar: <div>TOP</div>, strip: <div>STRIP</div>, stage: <div>STAGE</div> };
 
 describe('AppShellView', () => {
   it('renders every slot', () => {
     render(<AppShellView {...slots} assistant={<div>ASSIST</div>} />);
-    for (const t of ['TOP', 'PANEL', 'STRIP', 'STAGE', 'ASSIST']) expect(screen.getByText(t)).toBeInTheDocument();
+    for (const t of ['TOP', 'STRIP', 'STAGE', 'ASSIST']) expect(screen.getByText(t)).toBeInTheDocument();
   });
 
   it('has no assistant column when the assistant slot is null', () => {

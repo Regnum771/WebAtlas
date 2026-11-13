@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { ChartSpline, FilePlus2, Layers, PencilLine, Printer, Ruler, SquareDashed, Waves } from 'lucide-react';
 import TopBar from '../widgets/top-bar';
 import MapView from '../features/map/ui/MapView';
 import MapLoadingBar from '../features/map/ui/MapLoadingBar';
-import ScaleSlider from '../features/map/ui/ScaleSlider';
+import { ZoomControls } from '../features/map/ui/ScaleSlider';
+import StatusBar from '../features/map/ui/StatusBar';
 import { ToolGroupView, type ToolDef } from '../features/map/ui/ToolGroup.view';
 import MeasureTool from '../features/map/ui/MeasureTool';
 import BasemapTool from '../features/map/ui/BasemapTool';
@@ -34,7 +36,7 @@ import { primeAdminUnits } from '../entities/admin-unit/adminUnits.store';
 import { ConnectionStrip } from '../shared/ui/ConnectionStrip';
 import { ToastHost } from '../shared/ui/ToastHost';
 
-/** The map page: one grid holding the top bar, the docked panel, the map stage and the assistant. */
+/** The map page: one grid holding the top bar, the map stage (with the floating contents panel) and the assistant. */
 export default function MapScreen() {
   const { status } = useSession();
   const { assistantOpen, tool } = useShell();
@@ -46,6 +48,7 @@ export default function MapScreen() {
   const canEdit = useCanSaveDirectly();
   // A feature drawing or edit-existing mode is active in Biên tập.
   const [editBusy, setEditBusy] = useState(false);
+  const navigate = useNavigate();
 
   // Logging out hides the top bar's assistant button but would leave an
   // already-open dock behind. Only reacts to `status` leaving 'authenticated'.
@@ -88,11 +91,14 @@ export default function MapScreen() {
   // Every tool's content stays mounted while its menu is closed (see ToolGroupView):
   // RoiChip keeps the map's ROI layer in step with the store, and the measure and
   // analysis tools hold state that must outlive a closed menu.
-  const tools: (ToolDef & { id: ToolId })[] = [
-    { id: 'measure', label: 'Đo', content: <MeasureTool active={tool === 'measure'} /> },
+  const icon = (Icon: typeof Ruler) => <Icon size={16} aria-hidden="true" />;
+  const tools: ToolDef[] = [
+    { id: 'measure', label: 'Đo', icon: icon(Ruler), stack: 'analysis', content: <MeasureTool active={tool === 'measure'} /> },
     {
       id: 'roi',
       label: 'Vùng phân tích',
+      icon: icon(SquareDashed),
+      stack: 'analysis',
       on: roi.resolved !== null,
       content: (
         <>
@@ -103,9 +109,11 @@ export default function MapScreen() {
         </>
       ),
     },
-    { id: 'add-data', label: 'Thêm dữ liệu', content: <AddData /> },
-    { id: 'basemap', label: 'Nền bản đồ', content: <BasemapTool /> },
-    { id: 'flood', label: 'Kịch bản lũ', on: flood.scenarioId !== null, content: <FloodScenarioToolContent /> },
+    // Trắc diện độ cao is one of the analysis tools: it opens Vùng phân tích's menu.
+    { id: 'profile', label: 'Trắc diện độ cao', icon: icon(ChartSpline), stack: 'analysis', opens: 'roi' },
+    { id: 'print', label: 'In và xuất', icon: icon(Printer), stack: 'analysis', onSelect: () => navigate('/print') },
+    { id: 'add-data', label: 'Thêm dữ liệu', icon: icon(FilePlus2), stack: 'data', content: <AddData /> },
+    { id: 'flood', label: 'Kịch bản lũ', icon: icon(Waves), stack: 'data', on: flood.scenarioId !== null, content: <FloodScenarioToolContent /> },
   ];
   // UX only: FeatureEditing keeps its own RequireSaveDirectly gate and the backend enforces every write.
   // Closing Biên tập (or the session ending, which unmounts it) cancels a feature
@@ -114,25 +122,17 @@ export default function MapScreen() {
     tools.push({
       id: 'edit',
       label: 'Biên tập',
+      icon: icon(PencilLine),
+      stack: 'data',
       on: editBusy,
       content: <FeatureEditing active={tool === 'edit'} onBusyChange={setEditBusy} />,
     });
   }
+  tools.push({ id: 'basemap', label: 'Nền bản đồ', icon: icon(Layers), stack: 'basemap', content: <BasemapTool /> });
 
   return (
     <AppShellView
       topBar={<TopBar />}
-      panel={(
-        <SidePanelView footer={<Link to="/print" className="link">In và xuất</Link>}>
-          <MyMaps />
-          {status === 'authenticated' && <hr className="side-panel-rule" />}
-          <CatalogueLayersSection time={slider.time} />
-          <LayersPanel />
-          <hr className="side-panel-rule" />
-          <Legend />
-          <FloodLegend />
-        </SidePanelView>
-      )}
       strip={<ConnectionStrip />}
       stage={(
         <>
@@ -143,16 +143,27 @@ export default function MapScreen() {
                 /quan-ly overlays a live map instead of unmounting it. */}
             <MapView />
             <MapLoadingBar />
+            {/* The contents panel floats over the map's top-left corner (SidePanel.view.tsx). */}
+            <SidePanelView footer={<Link to="/print" className="link">In và xuất</Link>}>
+              <MyMaps />
+              {status === 'authenticated' && <hr className="side-panel-rule" />}
+              <CatalogueLayersSection time={slider.time} />
+              <LayersPanel />
+              <Legend />
+              <FloodLegend />
+            </SidePanelView>
             <ToolGroupView
+              before={<ZoomControls />}
               tools={tools}
               open={tool}
               onToggle={(id) => toggleTool(id as ToolId)}
               onClose={closeTool}
             />
-            <ScaleSlider />
             <FloodScenario />
             <TimeSlider />
             <ToastHost />
+            {/* R8: the bottom edge of the map, never covered. */}
+            <StatusBar />
           </div>
           <PersonalTable />
         </>

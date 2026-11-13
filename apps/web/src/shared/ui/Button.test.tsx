@@ -65,11 +65,11 @@ describe('Button', () => {
     expect(screen.getByRole('button')).toHaveAttribute('data-variant', 'danger');
   });
 
-  it('an inverse toggle on the green bar stays pressable while pressed', async () => {
+  it('a pressed toggle stays pressable while pressed', async () => {
     const onClick = vi.fn();
-    render(<Button variant="inverse" aria-pressed="true" onClick={onClick}>Lớp</Button>);
+    render(<Button aria-pressed="true" onClick={onClick}>Lớp</Button>);
     const b = screen.getByRole('button', { name: 'Lớp', pressed: true });
-    expect(b).toHaveAttribute('data-variant', 'inverse');
+    expect(b).toHaveAttribute('data-variant', 'outline');
     await userEvent.click(b);
     expect(onClick).toHaveBeenCalledOnce();
   });

@@ -6,7 +6,8 @@ import type { ResolvedRoi } from '@webatlas/shared';
 
 vi.mock('../features/map/ui/MapView', () => ({ default: () => <div>MAP_VIEW</div> }));
 vi.mock('../features/map/ui/MapLoadingBar', () => ({ default: () => <div>LOADING</div> }));
-vi.mock('../features/map/ui/ScaleSlider', () => ({ default: () => <div>SCALE_SLIDER</div> }));
+vi.mock('../features/map/ui/ScaleSlider', () => ({ ZoomControls: () => <div>ZOOM_CONTROLS</div> }));
+vi.mock('../features/map/ui/StatusBar', () => ({ default: () => <div>STATUS_BAR</div> }));
 vi.mock('../features/map/ui/MeasureTool', () => ({ default: ({ active }: { active: boolean }) => <div>{`MEASURE:${active}`}</div> }));
 vi.mock('../features/map/ui/BasemapTool', () => ({ default: () => <div>BASEMAP</div> }));
 vi.mock('../features/add-data', () => ({ default: () => <div>ADD_DATA</div> }));
@@ -109,6 +110,12 @@ const menuOf = (tool: string) =>
 beforeEach(() => { signOut(); resetShell(); resetRoiStore(); });
 
 describe('MapScreen', () => {
+  it('floats the contents panel inside the map box, not in a grid column of its own', () => {
+    const { container } = renderScreen();
+    const panel = screen.getByRole('complementary', { name: 'Bảng bản đồ' });
+    expect(panel.parentElement).toBe(container.querySelector('.map-stage-map'));
+  });
+
   it('shows the layer list and the legend together in the side panel', () => {
     renderScreen();
     const panel = screen.getByRole('complementary', { name: 'Bảng bản đồ' });
@@ -130,12 +137,15 @@ describe('MapScreen', () => {
     expect(mine.compareDocumentPosition(within(panel).getByText('LAYERS')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('puts the map and its floats in the stage, and the top bar in its slot', () => {
+  it('puts the map, its floats and the status bar in the stage, and the top bar in its slot', () => {
     const { container } = renderScreen();
     const stage = container.querySelector('.map-stage') as HTMLElement;
     expect(within(stage).getByText('MAP_VIEW')).toBeInTheDocument();
     expect(within(stage).getByRole('button', { name: 'Đo' })).toBeInTheDocument();
-    expect(within(stage).getByText('SCALE_SLIDER')).toBeInTheDocument();
+    expect(within(stage).getByText('ZOOM_CONTROLS')).toBeInTheDocument();
+    // R8: the status bar is the last thing in the map box, so it paints over every float before it.
+    const mapBox = stage.querySelector('.map-stage-map') as HTMLElement;
+    expect(mapBox.lastElementChild).toHaveTextContent('STATUS_BAR');
     expect(screen.getByText('TOP_BAR')).toBeInTheDocument();
   });
 
@@ -172,11 +182,14 @@ describe('MapScreen', () => {
 });
 
 describe('MapScreen tool group', () => {
-  it('offers the five reader tools, in order, with every menu closed', () => {
+  it('offers the reader tools in their stacks, in order, with every menu closed', () => {
     const { container } = renderScreen();
     const group = container.querySelector('.tool-group') as HTMLElement;
-    expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'Đo', 'Vùng phân tích', 'Thêm dữ liệu', 'Nền bản đồ', 'Kịch bản lũ',
+    // The zoom stack (mocked here) comes first; then measure, analysis, profile, print; the data
+    // tools; the basemap.
+    expect(within(group).getByText('ZOOM_CONTROLS')).toBeInTheDocument();
+    expect(within(group).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Đo', 'Vùng phân tích', 'Trắc diện độ cao', 'In và xuất', 'Thêm dữ liệu', 'Kịch bản lũ', 'Nền bản đồ',
     ]);
     expect(screen.queryAllByRole('region')).toHaveLength(0);
     expect(getShell().tool).toBeNull();
@@ -262,11 +275,11 @@ describe('MapScreen tool group', () => {
     signIn('admin');
     renderScreen();
     const button = screen.getByRole('button', { name: 'Biên tập' });
-    expect(button).not.toHaveClass('is-on');
+    expect(button).not.toHaveAttribute('data-on', 'true');
     act(() => { editing.onBusyChange?.(true); });
-    expect(button).toHaveClass('is-on');
+    expect(button).toHaveAttribute('data-on', 'true');
     act(() => { editing.onBusyChange?.(false); });
-    expect(button).not.toHaveClass('is-on');
+    expect(button).not.toHaveAttribute('data-on', 'true');
   });
 
   it('does not let a user without review rights open Biên tập', () => {
@@ -317,10 +330,10 @@ describe('MapScreen tool group', () => {
     setRoiResolver(() => Promise.resolve(RESOLVED));
     renderScreen();
     const button = screen.getByRole('button', { name: 'Vùng phân tích' });
-    expect(button).not.toHaveClass('is-on');
+    expect(button).not.toHaveAttribute('data-on', 'true');
     await act(async () => { await setRoi(PROVINCE, { fit: true }); });
     act(() => { closeTool(); });
-    expect(button).toHaveClass('is-on');
+    expect(button).toHaveAttribute('data-on', 'true');
     expect(getRoiState().resolved).toBe(RESOLVED);
   });
 

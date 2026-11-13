@@ -2,11 +2,13 @@
    assistant column.
 
    z-index scale, shared by every layer of the interface:
-     10   floats in the map stage (tool group, loading bar, scale slider) and the docked
+     10   floats in the map stage (tool group, tool stacks, loading bar) and the docked
           personal-layer table under them
+     15   contents panel floating over the map's top-left corner
      20   open tool menu
      30   toast host
      40   feature popup
+     45   status bar along the map's bottom edge (R8: nothing in a map state covers it)
      90   routed page
      95   assistant floating over the map and routed pages (below 1100px)
      100  top bar
@@ -22,27 +24,11 @@
   height: 100%;
   display: grid;
   grid-template-rows: var(--topbar-height) minmax(0, 1fr);
-  grid-template-columns: var(--panel-width) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .app-shell.with-assistant {
-  grid-template-columns: var(--panel-width) minmax(0, 1fr) var(--assistant-width);
-}
-
-.side-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--sheet);
-  color: var(--ink);
-  border-right: 1px solid var(--ink);
-  font-stretch: 92%;
-}
-
-.side-panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  grid-template-columns: minmax(0, 1fr) var(--assistant-width);
 }
 
 .side-panel-rule {
@@ -51,11 +37,6 @@
   margin: 0;
 }
 
-.side-panel-footer {
-  flex: none;
-  padding: 10px 14px;
-  border-top: 1px solid var(--rule);
-}
 
 .map-column {
   display: flex;
@@ -65,16 +46,16 @@
 }
 
 .map-stage {
-  /* Width of the scale control's column (slider and readout), fixed rather than
-     content-sized so the tool dock can reserve it: the longest readout,
-     "1:12.800.000" at weight 650 with tabular figures, measures 81.2px in Chrome,
-     plus 16px padding and 2px border = 99.2px, rounded up. */
-  --scale-column: 100px;
-  /* The toast band's bottom edge: 12px above the tallest bottom-corner stack. On
-     the right the CRS select tops the coordinate and elevation readouts at 92px
-     above the stage's bottom edge (measured in Chrome); on the left the scale bar
-     reaches 65px. 92px + 12px = 104px. */
-  --toast-band-bottom: 104px;
+  /* The column at the stage's right edge that the tool stacks take (ToolStacks.view.tsx): 32px
+     buttons 8px from the edge, plus 8px. The tool dock, the flood dock and the time slider
+     keep clear of it. */
+  --scale-column: 48px;
+  /* The toast band's bottom edge: 12px above the status bar (32px, StatusBar.view.tsx), the
+     only thing along the stage's bottom edge. 32px + 12px = 44px. */
+  --toast-band-bottom: 44px;
+  /* The contents panel floats 8px from the stage's left edge and is --panel-width wide
+     (SidePanel.view.tsx); floats that start at the left keep 8px clear of it. */
+  --panel-clear: calc(var(--panel-width) + 16px);
   /* A two-line toast: two lines of 13px text at 1.35 (35.1px), 18px padding and
      a 2px border on each side = 57.1px, rounded up. */
   --toast-band-height: 58px;
@@ -106,15 +87,14 @@
 }
 
 /* A band at the bottom of the stage, centred, directly above every bottom-corner
-   readout; the tool dock keeps clear of it (see .tool-dock). */
+   readout. */
 .toast-host {
   position: absolute;
   bottom: var(--toast-band-bottom);
-  left: 0;
-  right: 0;
-  margin-inline: auto;
-  width: max-content;
-  max-width: calc(100% - 24px);
+  /* Spans the stage right of the contents panel less a margin, so the toast list inside is sized
+     from the map, not the window. */
+  left: var(--panel-clear);
+  right: 12px;
   z-index: 30;
   display: flex;
   flex-direction: column;
@@ -154,84 +134,11 @@
   cursor: pointer;
 }
 
-/* Tool group: labelled buttons at the map's top-left corner, each opening a menu
-   just under them; one menu is open at a time. .tool-dock is one column holding
-   the buttons and then the menus, so an open menu follows however many rows the
-   buttons wrap onto.
-   Width: the column keeps 12px (its left), the scale control's column and 24px
-   (that column's right gutter and a gap) of the stage free, so neither the
-   buttons, which wrap, nor a menu can reach the slider or the readout.
-   Height: 12px above; below, the bottom-corner readouts and the toast band above
-   them (--toast-band-bottom, then a two-line toast, --toast-band-height) stay
-   clear, plus a 12px gap; the open menu scrolls inside that.
-   The column itself takes no pointer events (it would cover map between its
-   children); it creates no stacking context, so the group (10) and the menu (20)
-   stack by the scale above. */
-.tool-dock {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  max-width: calc(100% - 12px - var(--scale-column) - 24px);
-  max-height: calc(100% - 12px - var(--toast-band-bottom) - var(--toast-band-height) - 12px);
-  pointer-events: none;
-}
-
-.tool-dock > * {
-  pointer-events: auto;
-}
-
-.tool-group {
-  z-index: 10;
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  max-width: 100%;
-}
-
-.tool-btn {
-  height: 30px;
-  padding: 0 10px;
-  background: transparent;
-  color: var(--ink);
-  border: 0;
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.tool-btn + .tool-btn {
-  border-left: 1px solid var(--rule);
-}
-
-.tool-btn.is-on {
-  background: var(--ink);
-  color: var(--sheet);
-}
-
-/* Lifts the focused button so its neighbours do not paint over the focus ring. */
-.tool-btn:focus-visible {
-  position: relative;
-  z-index: 1;
-}
-
-/* Its height is bounded by .tool-dock; min-height: 0 lets it shrink and scroll. */
+/* A tool's menu (ToolGroup.view.tsx draws its box): the legacy body inside is a column of sections. */
 .tool-menu {
-  z-index: 20;
-  width: min(320px, 100%);
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-3);
-  color: var(--ink);
 }
 
 /* Closed menus stay mounted; `display: flex` above would otherwise undo `hidden`. */
@@ -356,147 +263,18 @@
   font: inherit;
 }
 
-/* One fixed-width column: the slider centred in it, the readout filling it. */
-.scale-control {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 10;
-  width: var(--scale-column);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.scale-slider {
-  width: 34px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.scale-step {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  background: transparent;
-  color: var(--ink);
-  border: 0;
-  cursor: pointer;
-}
-
-.scale-step:disabled {
-  color: var(--rule);
-  cursor: default;
-}
-
-/* The track is 280 px: eleven stops, 28 px apart, the first at the bottom. */
-.scale-track {
-  position: relative;
-  width: 100%;
-  height: 280px;
-}
-
-.scale-tick {
-  position: absolute;
-  right: 0;
-  width: 10px;
-  height: 1.5px;
-  margin-top: -0.75px;
-  background: var(--ink);
-  pointer-events: none;
-}
-
-.scale-tick.named {
-  width: 18px;
-  height: 3px;
-  margin-top: -1.5px;
-}
-
-/* The native range is 16 px taller than the track so the thumb centre travels
-   exactly the 280 px the ticks span. */
-.scale-range {
-  position: absolute;
-  top: -8px;
-  left: 0;
-  width: 100%;
-  height: 296px;
-  margin: 0;
-  padding: 0;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  appearance: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.scale-range::-webkit-slider-runnable-track {
-  width: 2px;
-  background: var(--ink);
-}
-
-.scale-range::-moz-range-track {
-  width: 2px;
-  background: var(--ink);
-}
-
-.scale-range::-webkit-slider-thumb {
-  appearance: none;
-  box-sizing: border-box;
-  width: 16px;
-  height: 16px;
-  margin-left: -7px;
-  background: var(--ink);
-  border: 3px solid var(--sheet);
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px var(--ink);
-}
-
-.scale-range::-moz-range-thumb {
-  box-sizing: border-box;
-  width: 16px;
-  height: 16px;
-  background: var(--ink);
-  border: 3px solid var(--sheet);
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px var(--ink);
-}
-
-.scale-readout {
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  padding: 6px 8px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.scale-readout-value {
-  font-size: var(--text-sm);
-  font-weight: 650;
-}
-
-.scale-readout-name {
-  font-size: var(--text-xs);
-  color: var(--ink-2);
-}
-
 @media (max-width: 1099px) {
   /* Too narrow for three columns: the assistant floats over the map's right edge. */
   .app-shell.with-assistant {
-    grid-template-columns: var(--panel-width) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
   .assistant-dock {
     position: absolute;
     top: var(--topbar-height);
     right: 0;
-    bottom: 0;
-    width: min(var(--assistant-width), calc(100vw - var(--panel-width)));
+    /* R8: it stops above the status bar (32px, StatusBar.view.tsx) along the map's bottom edge. */
+    bottom: 32px;
+    width: min(var(--assistant-width), calc(100vw - var(--panel-width) - 16px));
     /* Above routed pages (90), so Trợ lý also works on /print and /quan-ly. */
     z-index: 95;
   }
@@ -509,124 +287,6 @@
   .app-shell.with-assistant ~ .quan-ly-route {
     right: var(--assistant-width);
   }
-}
-
-/* Top bar: wordmark, navigation, search, assistant, account. */
-.top-bar {
-  grid-column: 1 / -1;
-  position: relative;
-  z-index: 100;
-  height: var(--topbar-height);
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  padding: 0 16px;
-  background: var(--green);
-  color: var(--on-green);
-}
-
-.wordmark {
-  color: var(--on-green);
-  font-size: var(--text-lg);
-  font-weight: 700;
-  letter-spacing: 0;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.top-nav {
-  display: flex;
-  align-self: stretch;
-  gap: 18px;
-}
-
-.top-nav-link {
-  display: inline-flex;
-  align-items: center;
-  box-sizing: border-box;
-  color: var(--on-green-2);
-  font-size: var(--text-md);
-  text-decoration: none;
-  border-bottom: 3px solid transparent;
-}
-
-.top-nav-link svg { margin-left: 2px; }
-
-/* A platform service the API could not reach: still a link, dimmed, with the reason in its title. */
-.top-nav-link.is-down { opacity: 0.6; text-decoration: line-through; }
-
-.top-nav-link[aria-current="page"] {
-  color: var(--on-green);
-  font-weight: 650;
-  border-bottom-color: var(--on-green);
-}
-
-.top-bar-search {
-  margin-left: auto;
-  width: 270px;
-  min-width: 0;
-  flex-shrink: 1;
-}
-
-.account {
-  position: relative;
-}
-
-.account-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: 32px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--on-green);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--on-green);
-  font: inherit;
-  font-size: var(--text-md);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.account-menu {
-  position: absolute;
-  top: calc(100% + var(--space-2));
-  right: 0;
-  z-index: 110;
-  display: flex;
-  flex-direction: column;
-  min-width: 200px;
-  max-width: 280px;
-  padding: var(--space-2);
-  color: var(--ink);
-  font-size: var(--text-md);
-}
-
-.account-email {
-  padding: var(--space-2) var(--space-3);
-  color: var(--ink-2);
-  font-size: var(--text-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.account-item {
-  display: block;
-  padding: var(--space-2) var(--space-3);
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.account-item:hover {
-  background: var(--paper);
 }
 
 /* Thêm dữ liệu tabs and the catalogue picker / catalogue layers section */

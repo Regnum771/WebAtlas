@@ -1,26 +1,51 @@
 import { useMemo } from 'react';
+import { legendFor, type LegendEntry } from '@webatlas/shared';
 import { useMapContext, type LayerState } from '../../../app/providers/MapProvider';
 import { LAYER_DISPLAY, type LayerDisplayMeta } from '../../../entities/layer/layerDisplay';
 import { LAYER_REGISTRY } from '../../../entities/layer/layerRegistry';
 import { useLayerCatalog } from '../../../entities/layer/useLayerCatalog';
 import { createCommandExecutor } from '../../map/model/mapCommands';
+import { formatScale, scaleAtZoom, snapScaleForReadout } from '../../map/model/zoomScale';
+import { useDictionary } from '../../dictionary';
 
 export interface PanelLayer {
   id: string;
   name: string;
   visible: boolean;
   opacity: number;
+  /** The map is zoomed out past the layer's first scale: it draws nothing yet. */
   gated: boolean;
-  gateHint?: string;
+  /** "từ 1:555.000": the layer draws only from that scale in. Absent for a layer drawn at every scale. */
+  scaleNote?: string;
+  /** The first entry of the layer's legend, drawn beside its name; null when it has none. */
+  swatch?: LegendEntry | null;
 }
 
 export interface PanelGroup {
   name: string;
   layers: PanelLayer[];
+  /** Layers of the group that are on. */
+  on: number;
+  total: number;
 }
 
-function formatZoom(z: number): string {
-  return String(z).replace('.', ',');
+/** The scale a minimum zoom stands for, as the status bar's readout would print it. */
+function scaleNoteFor(minZoom: number): string {
+  return `từ ${formatScale(snapScaleForReadout(scaleAtZoom(minZoom)))}`;
+}
+
+/** Folds case and Vietnamese accents (đ included), so "dap" finds "Đập". */
+export function foldForSearch(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().trim();
+}
+
+/** Pure: the groups narrowed to layers whose name holds `query`; empty groups drop out. */
+export function filterPanelGroups(groups: PanelGroup[], query: string): PanelGroup[] {
+  const q = foldForSearch(query);
+  if (!q) return groups;
+  return groups
+    .map((g) => ({ ...g, layers: g.layers.filter((l) => foldForSearch(l.name).includes(q)) }))
+    .filter((g) => g.layers.length > 0);
 }
 
 /** Pure: turns layer state + display metadata into grouped rows. Tested directly. */
@@ -30,6 +55,8 @@ export function buildPanelGroups(input: {
   display: Record<string, Pick<LayerDisplayMeta, 'name' | 'group' | 'minZoom'>>;
   layersState: Pick<LayerState, 'id' | 'visible' | 'opacity'>[];
   currentZoom: number;
+  /** The swatch for a layer's row; rows get none without it. */
+  swatchFor?: (layerStateId: string) => LegendEntry | null;
 }): PanelGroup[] {
   const groups: PanelGroup[] = [];
 
@@ -41,11 +68,11 @@ export function buildPanelGroups(input: {
     // but the river overview shows the main rivers at every zoom level. Saying
     // "shown from 8.5" would then contradict what the user is looking at.
     const alwaysDrawnBySubstitute = state.id === 'layer_rivers';
-    const gated =
-      !alwaysDrawnBySubstitute && meta.minZoom !== undefined && input.currentZoom < meta.minZoom;
+    const limited = !alwaysDrawnBySubstitute && meta.minZoom !== undefined;
+    const gated = limited && input.currentZoom < meta.minZoom!;
     let group = groups.find((g) => g.name === meta.group);
     if (!group) {
-      group = { name: meta.group, layers: [] };
+      group = { name: meta.group, layers: [], on: 0, total: 0 };
       groups.push(group);
     }
     group.layers.push({
@@ -54,8 +81,11 @@ export function buildPanelGroups(input: {
       visible: state.visible,
       opacity: state.opacity,
       gated,
-      gateHint: gated ? `hiện từ mức ${formatZoom(meta.minZoom!)}` : undefined,
+      scaleNote: limited ? scaleNoteFor(meta.minZoom!) : undefined,
+      ...(input.swatchFor ? { swatch: input.swatchFor(state.id) } : {}),
     });
+    group.total += 1;
+    if (state.visible) group.on += 1;
   }
 
   return groups;
@@ -64,8 +94,15 @@ export function buildPanelGroups(input: {
 export function useLayersPanel(currentZoom: number) {
   const { map, setBasemap, layersState, toggleLayerVisibility, setLayerOpacity } = useMapContext();
   const catalog = useLayerCatalog();
+  const dictionary = useDictionary();
 
-  const groups = buildPanelGroups({ display: LAYER_DISPLAY, layersState, currentZoom });
+  const groups = buildPanelGroups({
+    display: LAYER_DISPLAY,
+    layersState,
+    currentZoom,
+    swatchFor: (id) => legendFor(id, dictionary)[0]?.entries[0] ?? null,
+  });
+  const onCount = groups.reduce((n, g) => n + g.on, 0);
 
   // A layer the API says exists but that has no display metadata would silently
   // vanish from the panel. Surface it instead: map catalog keys through
@@ -103,8 +140,17 @@ export function useLayersPanel(currentZoom: number) {
     run({ kind: 'setLayerOpacity', layerStateId, opacity });
   };
 
+  /** Tắt hết: every layer of the panel off, each through the executor. */
+  const turnAllOff = () => {
+    for (const layer of groups.flatMap((g) => g.layers)) {
+      if (layer.visible) run({ kind: 'setLayerVisible', layerStateId: layer.id, visible: false });
+    }
+  };
+
   return {
     groups,
+    onCount,
+    turnAllOff,
     toggleLayerVisibility: onToggleLayerVisibility,
     setLayerOpacity: onSetLayerOpacity,
     catalogError: catalog.isError,

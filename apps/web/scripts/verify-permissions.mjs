@@ -171,14 +171,14 @@ async function clickText(page, selector, text, { exact = true, scope = 'document
 }
 
 async function signIn(page, { email, password }) {
-  await clickText(page, '.top-bar button', 'Đăng nhập');
+  await clickText(page, '[data-slot="app-header"] button', 'Đăng nhập');
   await page.waitForSelector('#login-email', { visible: true, timeout: 5000 });
   await page.type('#login-email', email);
   await page.type('#login-password', password);
   await page.$eval('#login-password', (el) => el.form.requestSubmit());
   try {
     await page.waitForFunction(
-      () => Boolean(document.querySelector('.account-trigger')),
+      () => Boolean(document.querySelector('[data-slot="account-trigger"]')),
       { timeout: 20000 },
     );
   } catch {
@@ -211,7 +211,7 @@ async function login({ email, password }) {
 
 async function openQuanLy(page, section) {
   if (!page.url().includes('/quan-ly')) {
-    await clickText(page, '.top-nav a', 'Quản lý');
+    await clickText(page, 'nav[aria-label="Điều hướng chính"] a', 'Quản lý');
     await page.waitForSelector('.quan-ly-nav', { timeout: 10000 });
   }
   await clickText(page, '.quan-ly-nav a', section);
@@ -367,7 +367,7 @@ const fmt = (r) => `[${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.w
 async function mapReadoutsClear(page) {
   const problems = [];
   const covered = ['.map-scaleline', '.map-mouseposition'];
-  const coverers = ['.tool-group', '.scale-slider', '.scale-readout', '.tool-menu:not([hidden])'];
+  const coverers = ['.tool-group', '[data-slot="scale-slider"]', '[data-slot="scale-slider"] output', '.tool-menu:not([hidden])'];
   for (const selector of covered) {
     const own = await rectsOf(page, selector);
     if (own.length === 0) problems.push(`${selector} is not on the page`);
@@ -392,10 +392,10 @@ async function quanLyFits(page) {
     const doc = document.documentElement;
     if (doc.scrollWidth > window.innerWidth) out.push(`page is ${doc.scrollWidth}px wide in a ${window.innerWidth}px window`);
     const route = document.querySelector('.quan-ly-route');
-    const bar = document.querySelector('.top-bar');
+    const bar = document.querySelector('[data-slot="app-header"]');
     if (!route) return [...out, '.quan-ly-route is not on the page'];
     if (route.getBoundingClientRect().top < bar.getBoundingClientRect().bottom - 0.5) out.push('.quan-ly-route starts above the bottom of the top bar');
-    for (const selector of ['.map-scaleline', '.map-mouseposition', '.tool-group', '.scale-slider']) {
+    for (const selector of ['.map-scaleline', '.map-mouseposition', '.tool-group', '[data-slot="scale-slider"]']) {
       const el = document.querySelector(selector);
       const r = el?.getBoundingClientRect();
       if (!r || r.width === 0) continue;
@@ -634,12 +634,12 @@ async function stepVisitor(session, vp, lake, provinceName) {
   const problems = [];
   const tools = await page.$$eval('.tool-group button', (bs) => bs.map((b) => b.textContent.trim()));
   if (tools.includes('Biên tập')) problems.push('Biên tập is offered to a visitor');
-  const links = await page.$$eval('.top-nav a', (as) => as.map((a) => a.textContent.trim()));
+  const links = await page.$$eval('nav[aria-label="Điều hướng chính"] a', (as) => as.map((a) => a.textContent.trim()));
   if (links.includes('Quản lý')) problems.push('Quản lý is offered to a visitor');
   await clickLake(session, lake);
   try {
     const row = await page.waitForFunction(() => {
-      const hit = [...document.querySelectorAll('.info-row')].find((el) => el.textContent.includes('Đơn vị chủ quản:'));
+      const hit = [...document.querySelectorAll('[data-slot="feature-popup"] tr')].find((el) => el.querySelector('th')?.textContent.trim() === 'Đơn vị chủ quản');
       return hit ? hit.textContent.replace(/\s+/g, ' ').trim() : false;
     }, { timeout: 15000 });
     const text = await row.jsonValue();
@@ -693,11 +693,11 @@ async function runViewport(browser, viewport, ctx) {
       return problems;
     });
     await check(vp, '5c', 'on the map, Biên tập and Quản lý are reachable and nothing covers the scale bar or the readout', async () => {
-      await clickText(admin.page, '.top-nav a', 'Bản đồ');
+      await clickText(admin.page, 'nav[aria-label="Điều hướng chính"] a', 'Bản đồ');
       await admin.page.waitForFunction(() => !document.querySelector('.quan-ly-route'), { timeout: 10000 });
       await sleep(800);
       const problems = [
-        ...(await reachable(admin.page, '.top-nav a', 'Quản lý')),
+        ...(await reachable(admin.page, 'nav[aria-label="Điều hướng chính"] a', 'Quản lý')),
         ...(await reachable(admin.page, '.tool-group button', 'Biên tập')),
         ...(await mapReadoutsClear(admin.page)),
       ];
@@ -717,7 +717,7 @@ async function runViewport(browser, viewport, ctx) {
     return stepEditLake(p, vp, ctx.pLake, ctx.pToken);
   });
   await check(vp, '2b', 'P, with no users.manage and no right at VN, does not see Quản lý nor the unassigned list', async () => {
-    const links = await p.page.$$eval('.top-nav a', (as) => as.map((a) => a.textContent.trim()));
+    const links = await p.page.$$eval('nav[aria-label="Điều hướng chính"] a', (as) => as.map((a) => a.textContent.trim()));
     const problems = links.includes('Quản lý') ? ['Quản lý is offered to P'] : [];
     const res = await api('GET', '/api/layers/unassigned', ctx.pToken);
     if (res.status !== 403) problems.push(`GET /api/layers/unassigned answered ${res.status} for P, expected 403`);

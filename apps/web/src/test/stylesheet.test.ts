@@ -11,15 +11,17 @@ describe('design tokens and base styles', () => {
   it.each([
     ['--green', '#14532D'], ['--ink', '#18213A'], ['--ink-2', '#55607A'], ['--rule', '#C8CEDA'],
     ['--paper', '#F3F5F4'], ['--sheet', '#FFFFFF'], ['--mark', '#FFD928'], ['--alert', '#B3261E'],
-    ['--topbar-height', '52px'], ['--panel-width', '348px'], ['--radius', '3px'],
+    ['--topbar-height', '44px'], ['--panel-width', '312px'], ['--radius', '3px'],
     ['--text-xs', '11.5px'], ['--text-sm', '13px'], ['--text-md', '14px'], ['--text-lg', '16px'], ['--text-xl', '21px'],
   ])('token %s is %s', (name, value) => {
     expect(tokens).toMatch(new RegExp(`${name}:\\s*${value}\\s*;`, 'i'));
   });
-  it('loads Archivo with its width axis and no other family', () => {
+  it('loads Archivo with its width axis, JetBrains Mono for numbers and Newsreader italic for water names', () => {
     const html = read('../../index.html');
     expect(html).toContain('family=Archivo:wdth,wght@62..125,400..800');
-    expect(html).not.toMatch(/family=(Inter|Newsreader)/);
+    expect(html).toContain('family=JetBrains+Mono:wght@400;500');
+    expect(html).toContain('family=Newsreader:ital,wght@1,400;1,500');
+    expect(html).not.toMatch(/family=Inter/);
     expect(html).toMatch(/<html lang="vi">/);
     expect(html).toMatch(/<title>WebATLAS<\/title>/);
   });

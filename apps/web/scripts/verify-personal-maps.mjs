@@ -508,13 +508,13 @@ async function waitDialogText(page, wanted, timeout, failures = []) {
 }
 
 async function signIn(page, { email, password }) {
-  await click(page, { selector: '.top-bar' }, 'Đăng nhập');
+  await click(page, { selector: '[data-slot="app-header"]' }, 'Đăng nhập');
   await page.waitForSelector('#login-email', { visible: true, timeout: 5000 });
   await page.type('#login-email', email);
   await page.type('#login-password', password);
   await page.$eval('#login-password', (el) => el.form.requestSubmit());
   try {
-    await page.waitForFunction(() => Boolean(document.querySelector('.account-trigger')), { timeout: 20000 });
+    await page.waitForFunction(() => Boolean(document.querySelector('[data-slot="account-trigger"]')), { timeout: 20000 });
   } catch {
     throw new Error(`sign-in did not finish: ${await dialogText(page)}`);
   }
@@ -1260,7 +1260,7 @@ async function layoutFits(page) {
         .slice(0, 3).map((el) => `${el.tagName.toLowerCase()}.${el.className}`);
       out.push(`the side panel is ${body.scrollWidth}px wide in ${body.clientWidth}px (too wide: ${wide.join(', ')})`);
     }
-    const coverers = ['.tool-group', '.tool-menu:not([hidden])', '.scale-slider', '.scale-readout', '.side-panel',
+    const coverers = ['.tool-group', '.tool-menu:not([hidden])', '[data-slot="scale-slider"]', '[data-slot="scale-slider"] output', '.side-panel',
       '.personal-feature-card', '.toast-host [data-sonner-toast]', ':is([role="dialog"],[role="alertdialog"])'];
     const box = (el) => el.getBoundingClientRect();
     for (const selector of ['.map-scaleline', '.map-mouseposition']) {

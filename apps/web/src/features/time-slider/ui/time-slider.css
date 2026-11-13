@@ -1,7 +1,7 @@
 /* The shared time bar along the bottom of the map stage; it moves above the flood dock when that is open. */
 .time-slider {
   position: absolute;
-  left: 12px;
+  left: var(--panel-clear);
   right: calc(var(--scale-column) + 24px);
   bottom: var(--toast-band-bottom);
   z-index: 10;

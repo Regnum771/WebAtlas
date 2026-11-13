@@ -99,12 +99,12 @@ async function main() {
     // Step 1: open the replay and play.
     await clickButton(page, '.tool-group', 'Kịch bản lũ');
     await page.waitForSelector('.flood-menu-item', { visible: true, timeout: 15000 });
-    const scaleBefore = await page.$eval('.scale-readout-value', (el) => el.textContent);
+    const scaleBefore = await page.$eval('[data-slot="scale-slider"] output', (el) => el.textContent);
     await page.$$eval('.flood-menu-item', (items) => items.find((b) => b.textContent.includes('tái hiện'))?.click());
     await page.waitForFunction(() => document.querySelector('.flood-dock [aria-label="Phát"]:not([disabled])'), { timeout: 60000 });
     const time = await page.$eval('.flood-dock-time', (el) => el.textContent);
     await sleep(1200);
-    const scaleAfter = await page.$eval('.scale-readout-value', (el) => el.textContent);
+    const scaleAfter = await page.$eval('[data-slot="scale-slider"] output', (el) => el.textContent);
     report(scaleAfter !== scaleBefore, 'choosing a scenario flies the map to its area', `${scaleBefore} → ${scaleAfter}`);
     report(time.startsWith('05:00 26/10/2025'), 'dock opens at the decision moment, before the rise', time);
     await clickButton(page, '.tool-group', 'Kịch bản lũ');
@@ -114,7 +114,7 @@ async function main() {
     const after = await page.$eval('.flood-dock-time', (el) => el.textContent);
     report(after !== time, 'playback advances the hour', after);
     const dock = await rectOf(page, '.flood-dock');
-    const scale = await rectOf(page, '.scale-control');
+    const scale = await rectOf(page, '[data-slot="scale-slider"]');
     report(!overlaps(dock, scale), 'dock clear of the scale control');
     // .map-cursor-elevation shows only while the pointer hovers the map.
     for (const sel of ['.map-scaleline', '.map-mouseposition', '.map-crs-select']) {
@@ -169,13 +169,13 @@ async function main() {
       report(false, 'assistant steps', 'set VERIFY_EMAIL and VERIFY_PASSWORD');
       return;
     }
-    await clickButton(page, '.top-bar', 'Đăng nhập');
+    await clickButton(page, '[data-slot="app-header"]', 'Đăng nhập');
     await page.waitForSelector('#login-email', { visible: true, timeout: 5000 });
     await page.type('#login-email', EMAIL);
     await page.type('#login-password', PASSWORD);
     await page.$eval('#login-password', (el) => el.form.requestSubmit());
-    await page.waitForFunction(() => [...document.querySelectorAll('.top-bar button')].some((b) => b.textContent.trim() === 'Trợ lý'), { timeout: 15000 });
-    await clickButton(page, '.top-bar', 'Trợ lý');
+    await page.waitForFunction(() => [...document.querySelectorAll('[data-slot="app-header"] button')].some((b) => b.textContent.trim() === 'Trợ lý'), { timeout: 15000 });
+    await clickButton(page, '[data-slot="app-header"]', 'Trợ lý');
     await page.waitForSelector('[aria-label="Câu hỏi cho trợ lý"]', { visible: true, timeout: 10000 });
 
     const q1 = 'Theo bản tin KTTV 21 giờ ngày 28/10, đến 6 giờ sáng 30/10 những tuyến đường nào bị ngập?';

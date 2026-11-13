@@ -317,7 +317,7 @@ async function waitText(page, selector, wanted, timeout, failures = []) {
 /** Signs in through Đăng nhập → Đăng nhập một lần → Keycloak's form; back on the map, signed in. */
 async function signInSso(session, { username, password }) {
   const { page } = session;
-  await click(page, '.top-bar', 'Đăng nhập');
+  await click(page, '[data-slot="app-header"]', 'Đăng nhập');
   // The SSO button shows once /api/auth/config has answered.
   await page.waitForSelector('.login-sso button', { visible: true, timeout: 60000 });
   await Promise.all([
@@ -332,7 +332,7 @@ async function signInSso(session, { username, password }) {
     page.click('#kc-login'),
   ]);
   try {
-    await page.waitForFunction(() => Boolean(document.querySelector('.account-trigger')), { timeout: 60000 });
+    await page.waitForFunction(() => Boolean(document.querySelector('[data-slot="account-trigger"]')), { timeout: 60000 });
   } catch {
     throw new Error(`SSO sign-in did not finish on ${page.url()}: ${(await text(page, 'body')).slice(0, 200)}`);
   }
@@ -382,7 +382,7 @@ async function search(page, query) {
   await sleep(300);
   await page.waitForFunction(() => {
     const p = document.querySelector('.catalogue-picker');
-    return p && !p.querySelector('.spin') && (p.querySelector('.catalogue-results') || p.textContent.includes('Không có dữ liệu phù hợp.') || p.textContent.includes('Không kết nối được'));
+    return p && !p.querySelector('[data-slot="spinner"]') && (p.querySelector('.catalogue-results') || p.textContent.includes('Không có dữ liệu phù hợp.') || p.textContent.includes('Không kết nối được'));
   }, { timeout: 20000 });
   await sleep(300);
   return page.evaluate(() => [...document.querySelectorAll('.catalogue-result')].map((li) => ({

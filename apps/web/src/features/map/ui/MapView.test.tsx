@@ -24,6 +24,7 @@ vi.mock('../model/mapEditing', () => ({
 const updateSize = vi.fn();
 const init = vi.fn();
 const setLoadingListener = vi.fn();
+const setReadoutTargets = vi.fn();
 vi.mock('../model/MapModel', () => ({
   MapModel: vi.fn().mockImplementation(() => ({
     init,
@@ -36,10 +37,12 @@ vi.mock('../model/MapModel', () => ({
     setReservoirFilter: vi.fn(),
     setContourSettings: vi.fn(),
     setCoordinateFormat: vi.fn(),
+    setReadoutTargets,
   })),
 }));
 
 import MapView from './MapView';
+import { resetReadoutTargets, setCoordinatesTarget, setScaleLineTarget } from '../model/readoutTargets';
 
 describe('MapView', () => {
   beforeEach(() => {
@@ -47,6 +50,8 @@ describe('MapView', () => {
     init.mockClear();
     setLoadingListener.mockClear();
     setBusy.mockClear();
+    setReadoutTargets.mockClear();
+    resetReadoutTargets();
   });
   afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -86,5 +91,16 @@ describe('MapView', () => {
     // for good (see review round 1 finding).
     expect(setLoadingListener).toHaveBeenCalledTimes(1);
     expect(setLoadingListener).toHaveBeenCalledWith(setBusy);
+  });
+
+  it('hands the readout elements of the status bar to the map, whichever mounts first', () => {
+    const coords = document.createElement('div');
+    const scale = document.createElement('div');
+    render(<MapView />);
+    expect(setReadoutTargets).toHaveBeenLastCalledWith({ coordinates: null, scaleLine: null });
+    act(() => { setCoordinatesTarget(coords); setScaleLineTarget(scale); });
+    expect(setReadoutTargets).toHaveBeenLastCalledWith({ coordinates: coords, scaleLine: scale });
+    act(() => { setCoordinatesTarget(null); });
+    expect(setReadoutTargets).toHaveBeenLastCalledWith({ coordinates: null, scaleLine: scale });
   });
 });

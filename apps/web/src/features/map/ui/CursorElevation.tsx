@@ -5,7 +5,7 @@ import { useDictionary } from '../../dictionary';
 import { useCursorElevation } from '../model/useCursorElevation';
 
 /**
- * Ô "Độ cao" ngay trên ô toạ độ góc dưới phải.
+ * Ô "Độ cao" trong thanh trạng thái, ngay sau ô toạ độ.
  *
  * Ẩn hẳn — chứ không hiện "—" — trong ba trường hợp: chưa rê chuột lần nào, con trỏ ở
  * ngoài vùng có DEM (ví dụ ngoài biển), và máy chủ chưa nạp DEM. Một ô trống nằm đó mãi
@@ -23,7 +23,7 @@ const CursorElevation: React.FC = () => {
   if (elevationM === null && !pending) return null;
 
   return (
-    <div className="map-cursor-elevation" aria-live="off">
+    <div className="map-cursor-elevation font-num text-num whitespace-nowrap" aria-live="off">
       Độ cao: {elevationM === null ? '…' : formatValue(dem, elevationM)}
     </div>
   );

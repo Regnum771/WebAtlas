@@ -4,8 +4,7 @@ import { useMapEditing } from '../model/mapEditing';
 import { MapModel } from '../model/MapModel';
 import { formatCoordinate } from '../model/crs';
 import { useCrsPreference } from '../model/crsPreference';
-import CursorElevation from './CursorElevation';
-import CrsSelect from './CrsSelect';
+import { useReadoutTargets } from '../model/readoutTargets';
 
 const MapView: React.FC = () => {
   const el = useRef<HTMLDivElement>(null);
@@ -35,6 +34,12 @@ const MapView: React.FC = () => {
     modelRef.current?.setCoordinateFormat((c) => formatCoordinate(c, crsId));
   }, [crsId]);
 
+  // The coordinate readout and the scale line live in the status bar (StatusBar.tsx).
+  const readouts = useReadoutTargets();
+  useEffect(() => {
+    modelRef.current?.setReadoutTargets(readouts);
+  }, [readouts]);
+
   // OpenLayers caches the viewport size and does not watch its container, so
   // tell it whenever the container's own box changes (panel, dock or window
   // resize). Where ResizeObserver does not exist, fall back to window resize.
@@ -51,15 +56,7 @@ const MapView: React.FC = () => {
     return () => observer.disconnect();
   }, []);
 
-  return (
-    // CursorElevation sits INSIDE the map box because it is positioned absolutely against
-    // that box, next to the coordinate readout OpenLayers draws. OL inserts its .ol-viewport
-    // into the same element and does not remove existing children, so the two coexist.
-    <div ref={el} className={`map-container basemap-${basemap}`}>
-      <CursorElevation />
-      <CrsSelect />
-    </div>
-  );
+  return <div ref={el} className={`map-container basemap-${basemap}`} />;
 };
 
 export default MapView;

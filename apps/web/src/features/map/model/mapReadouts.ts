@@ -17,17 +17,16 @@ export function formatLonLat(coord: number[] | undefined): string {
   return `${Math.abs(lon).toFixed(COORD_DECIMALS)}°${ew}  ${Math.abs(lat).toFixed(COORD_DECIMALS)}°${ns}`;
 }
 
-/** Thanh tỷ lệ góc dưới trái. `bar` + `text` cho ra thanh có vạch kèm số, và OL
- *  tự đổi đơn vị xuống m khi phóng gần — đúng như bản đồ tham chiếu làm.
+/** Thước tỷ lệ trong thanh trạng thái: một đoạn thẳng kèm khoảng cách ("200 km"); OL tự đổi
+ *  đơn vị xuống m khi phóng gần. Tỷ số "1:…" do ô đọc tỷ lệ của thanh trạng thái hiện, nên ở
+ *  đây không vẽ thêm thanh có vạch.
  *
- *  CHỈ HỆ MÉT: không dựng thêm ScaleLine thứ hai cho dặm/mile — bản đồ tham
- *  chiếu (OpenLayers 2) hiện cả hai chỉ vì ScaleLine mặc định của nó vậy, chứ
- *  dặm không mang thông tin gì cho công tác thuỷ lợi Việt Nam. */
+ *  CHỈ HỆ MÉT: dặm không mang thông tin gì cho công tác thuỷ lợi Việt Nam. */
 export function createScaleBar(): ScaleLine {
-  return new ScaleLine({ units: 'metric', bar: true, steps: 2, text: true, minWidth: 90, className: 'map-scaleline' });
+  return new ScaleLine({ units: 'metric', minWidth: 64, className: 'map-scaleline' });
 }
 
-/** Toạ độ con trỏ góc dưới phải, quy đổi sang EPSG:4326 dù khung nhìn bản đồ
+/** Toạ độ con trỏ trong thanh trạng thái, quy đổi sang EPSG:4326 dù khung nhìn bản đồ
  *  là EPSG:3857 — `projection` của MousePosition lo việc quy đổi này. */
 export function createMousePosition(): MousePosition {
   return new MousePosition({
