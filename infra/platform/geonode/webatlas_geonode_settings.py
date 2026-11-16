@@ -45,12 +45,12 @@ WEBATLAS_BRIDGE_TOKEN = os.environ["WEBATLAS_BRIDGE_TOKEN"]
 # Live-check hook only (X-Webatlas-Bridge-Fail header); never set it outside a test run.
 WEBATLAS_BRIDGE_TEST_HOOKS = os.environ.get("WEBATLAS_BRIDGE_TEST_HOOKS", "0") == "1"
 
-# The WebATLAS look (K7): template overrides in webatlas_bridge/templates, and the generated stylesheet
-# (packages/theme/generated/geonode, mounted at /usr/src/webatlas/theme) as a template directory so
-# custom_theme.html can inline it. They must come before geonode_mapstore_client's own folder, which that
-# app puts first in its ready(); WebatlasBridgeConfig.ready() (apps.py) runs later and moves these ahead.
-# The context processor gives the header its WebATLAS and Dagster addresses.
-WEBATLAS_TEMPLATE_DIRS = ["/usr/src/webatlas/webatlas_bridge/templates", "/usr/src/webatlas/theme"]
+# The WebATLAS look (K7): template overrides in webatlas_bridge/templates. They must come before
+# geonode_mapstore_client's own folder, which that app puts first in its ready(); WebatlasBridgeConfig.ready()
+# (apps.py) runs later and moves this one ahead. The generated stylesheet (packages/theme/generated/geonode,
+# mounted at /usr/src/webatlas/theme) is inlined by the wa_theme_css tag. The context processor gives the
+# header its WebATLAS and Dagster addresses.
+WEBATLAS_TEMPLATE_DIRS = ["/usr/src/webatlas/webatlas_bridge/templates"]
 TEMPLATES[0]["OPTIONS"]["context_processors"] += ["webatlas_bridge.context_processors.webatlas"]  # noqa: F405
 
 # Moderation (GeoNode's advanced workflow): a new resource stays unpublished and unapproved, seen by

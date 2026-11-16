@@ -39,7 +39,10 @@ describe('GeoNode theme', () => {
     const [target] = geonodeTargets;
     expect(target!.path).toBe('geonode/webatlas-theme/geonode.css');
     const snippet = readFileSync(`${TEMPLATES}geonode-mapstore-client/snippets/custom_theme.html`, 'utf8');
-    expect(snippet).toContain('{% include "webatlas-theme/geonode.css" %}');
+    expect(snippet).toContain('{% wa_theme_css %}');
+    // The tag reads the generated file where compose mounts generated/geonode.
+    const tags = readFileSync(`${TEMPLATES}../templatetags/webatlas_ui.py`, 'utf8');
+    expect(tags).toContain(`"/usr/src/webatlas/theme/${target!.path.slice('geonode/'.length)}"`);
     for (const name of ['brand_navbar.html', 'brand_navbar_default_left_menu_items.html', 'hero.html']) {
       expect(existsSync(`${TEMPLATES}geonode-mapstore-client/snippets/${name}`), name).toBe(true);
     }
