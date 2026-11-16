@@ -1,0 +1,50 @@
+# The WebATLAS frame around Dagster (K8, spec "Dagster, artboard 6"). Sits between oauth2-proxy
+# (dagster-auth, which still does the sign-in) and dagster-webserver:
+#   browser -> dagster-auth:4180 -> dagster-frame:8080 -> dagster-webserver:3000
+# It serves the generated stylesheet (packages/theme/generated/dagster, mounted at /etc/webatlas) and
+# injects a link to it plus the 44 px frame into Dagster's HTML pages with sub_filter. Best effort: a
+# Dagster upgrade that changes its HTML shell may need these strings adjusted.
+# ${WEBATLAS_WEB_URL} is filled in by the nginx image's envsubst at start; nginx's own $variables are not.
+
+# Dagster sends a per-response nonce CSP whose style-src allows 'self' and inline styles only. Add the Google
+# Fonts stylesheet origin (Archivo, JetBrains Mono, as WebATLAS loads them), keeping the rest, nonce included.
+map $upstream_http_content_security_policy $wa_csp {
+    "~^(?<head>.*style-src )(?<tail>.*)$"  "${head}https://fonts.googleapis.com ${tail}";
+    default                                $upstream_http_content_security_policy;
+}
+
+map $http_upgrade $wa_connection {
+    default upgrade;
+    ""      close;
+}
+
+server {
+    listen 8080;
+
+    location = /__webatlas/dagster.css {
+        alias /etc/webatlas/dagster.css;
+        default_type text/css;
+        add_header Cache-Control "no-cache";
+    }
+
+    location / {
+        proxy_pass http://dagster-webserver:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # GraphQL subscriptions run over websockets.
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $wa_connection;
+        proxy_read_timeout 3600s;
+        # sub_filter can only rewrite an uncompressed body.
+        proxy_set_header Accept-Encoding "";
+
+        proxy_hide_header Content-Security-Policy;
+        add_header Content-Security-Policy $wa_csp always;
+
+        sub_filter_once on;
+        sub_filter '</head>' '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;500&display=swap"><link rel="stylesheet" href="/__webatlas/dagster.css"></head>';
+        sub_filter '<body>' '<body><div class="wa-dg-frame" role="banner"><a class="wa-dg-mark" href="${WEBATLAS_WEB_URL}/">WebATLAS</a><span class="wa-dg-title">Điều phối dữ liệu</span><a class="wa-dg-back" href="${WEBATLAS_WEB_URL}/ban-do">← Về bản đồ</a></div>';
+    }
+}

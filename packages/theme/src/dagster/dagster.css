@@ -1,0 +1,105 @@
+/* WebATLAS frame and colours for Dagster 1.13.27 (K8). Hand-written; the generator prepends the --wa-* tokens.
+   infra/platform/dagster-frame/ serves it at /__webatlas/dagster.css and injects the link and the frame
+   (div.wa-dg-frame, first in <body>) into Dagster's HTML. Best effort (spec): Dagster's own text stays
+   English, and a Dagster upgrade may move what the layout rules below rely on. Dark themes are left alone. */
+
+/* ---------- Dagster's variables, light themes ---------- */
+
+/* Dagster declares these on :root in a stylesheet that loads after this one; html:root outranks it. */
+html:root {
+  --font-default: var(--wa-font-ui);
+  --font-family-default: var(--wa-font-ui);
+  --font-mono: var(--wa-font-num);
+}
+
+/* Dagster declares the light set on .themeLight, .themeLightNoRedGreen, and .themeSystem/:root under
+   prefers-color-scheme: light. html-qualified selectors outrank all of them. */
+html .themeLight,
+html .themeLightNoRedGreen,
+html:root.themeLight,
+html body.themeLight {
+  --color-accent-primary: var(--wa-color-brand);
+  --color-accent-primary-hover: #0F4224;
+  --color-link-default: var(--wa-color-water);
+  --color-text-default: var(--wa-color-ink);
+  --color-text-light: var(--wa-color-ink-2);
+  --color-background-default: var(--wa-color-surface);
+  --color-background-light: var(--wa-color-surface-2);
+  --color-background-light-hover: var(--wa-color-line-3);
+  --color-border-default: var(--wa-color-line);
+  --color-keyline-default: var(--wa-color-line-2);
+  --color-focus-ring: var(--wa-color-mark);
+}
+@media (prefers-color-scheme: light) {
+  html:root,
+  html .themeSystem,
+  html .themeSystemNoRedGreen {
+    --color-accent-primary: var(--wa-color-brand);
+    --color-accent-primary-hover: #0F4224;
+    --color-link-default: var(--wa-color-water);
+    --color-text-default: var(--wa-color-ink);
+    --color-text-light: var(--wa-color-ink-2);
+    --color-background-default: var(--wa-color-surface);
+    --color-background-light: var(--wa-color-surface-2);
+    --color-background-light-hover: var(--wa-color-line-3);
+    --color-border-default: var(--wa-color-line);
+    --color-keyline-default: var(--wa-color-line-2);
+    --color-focus-ring: var(--wa-color-mark);
+  }
+}
+
+/* ---------- The 44 px WebATLAS frame ---------- */
+
+html { --wa-dg-frame: var(--wa-size-header); }
+
+.wa-dg-frame {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  /* Above Dagster's page, below its portals (Blueprint overlays, toasts and dialogs from z-index 20). */
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: var(--wa-dg-frame);
+  padding: 0 16px;
+  border-bottom: 1px solid var(--wa-color-line);
+  background: var(--wa-color-surface);
+  color: var(--wa-color-ink);
+  font-family: var(--wa-font-ui);
+  font-size: var(--wa-text-body);
+  line-height: 1;
+}
+.wa-dg-frame a { text-decoration: none; }
+.wa-dg-frame a:hover { text-decoration: underline; }
+.wa-dg-mark { color: var(--wa-color-brand); font-size: 16px; font-weight: 700; white-space: nowrap; }
+.wa-dg-mark:hover { text-decoration: none !important; }
+.wa-dg-title {
+  padding-left: 16px;
+  border-left: 1px solid var(--wa-color-line);
+  color: var(--wa-color-ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wa-dg-back { margin-left: auto; color: var(--wa-color-water); font-weight: 600; white-space: nowrap; }
+
+/* Dagster lays its app out over the whole viewport (100vh/100% boxes, fixed overlays). Move that viewport
+   below the frame: the Next.js root becomes a fixed box under it, and a transform makes it the containing
+   block for Dagster's own position: fixed layers, so they stay inside it too. */
+#__next {
+  position: fixed;
+  top: var(--wa-dg-frame);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: auto;
+  transform: translateZ(0);
+}
+
+/* R9: a 2 px mark ring with a 1 px ink outline. */
+:focus-visible {
+  outline: 2px solid var(--wa-color-mark) !important;
+  outline-offset: 0;
+  box-shadow: 0 0 0 3px var(--wa-color-ink) !important;
+}

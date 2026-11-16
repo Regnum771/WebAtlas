@@ -283,16 +283,30 @@ services:
     volumes:
       - dagster_home:/opt/dagster/home/storage
 
+  # The WebATLAS frame around Dagster (K8): injects the 44 px frame and the theme stylesheet into Dagster's
+  # pages. platform/dagster-frame/default.conf.template; the stylesheet is packages/theme/generated/dagster.
+  dagster-frame:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - dagster-webserver
+    environment:
+      WEBATLAS_WEB_URL: http://localhost:5173
+    volumes:
+      - ./platform/dagster-frame/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ../packages/theme/generated/dagster:/etc/webatlas:ro
+    # No published port either: dagster-auth below is still the only way in.
+
   # Dagster has no sign-in of its own: Keycloak, realm role `dieu-phoi`, in front of it.
   dagster-auth:
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
     restart: unless-stopped
     depends_on:
       - keycloak
-      - dagster-webserver
+      - dagster-frame
     command:
       - --http-address=0.0.0.0:4180
-      - --upstream=http://dagster-webserver:3000
+      - --upstream=http://dagster-frame:8080
       - --provider=keycloak-oidc
       - --client-id=dagster
       - --redirect-url=http://localhost:3070/oauth2/callback
