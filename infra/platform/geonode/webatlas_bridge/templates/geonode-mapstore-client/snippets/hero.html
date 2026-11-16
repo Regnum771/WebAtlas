@@ -1,0 +1,25 @@
+{% load webatlas_ui %}
+{% comment %}
+  The catalogue's front band (K7). Replaces geonode_mapstore_client's hero.html ("GeoNode — sharing geospatial
+  data and maps.", or the admin's carousel) with the WebATLAS dark contour band of the sign-in page.
+  #gn-hero and .gn-hero are kept: MapStore's homepage script measures them.
+{% endcomment %}
+<div id="gn-hero" class="gn-hero wa-gn-hero">
+    <svg class="wa-gn-hero__art" aria-hidden="true" focusable="false" viewBox="0 0 1200 260" preserveAspectRatio="xMidYMid slice">
+        <g class="wa-gn-hero__contours">
+            <path d="M -40 250 C 220 210, 420 290, 700 230 S 1100 170, 1260 210"/>
+            <path d="M -40 214 C 220 174, 420 254, 700 194 S 1100 134, 1260 174"/>
+            <path d="M -40 178 C 220 138, 420 218, 700 158 S 1100 98, 1260 138"/>
+            <path d="M -40 142 C 220 102, 420 182, 700 122 S 1100 62, 1260 102"/>
+            <path d="M -40 106 C 220 66, 420 146, 700 86 S 1100 26, 1260 66"/>
+            <path d="M -40 70 C 220 30, 420 110, 700 50 S 1100 -10, 1260 30"/>
+        </g>
+        <path class="wa-gn-hero__river" d="M 760 280 C 820 220, 900 200, 960 150 S 1080 60, 1240 20"/>
+    </svg>
+    <div class="jumbotron">
+        <div class="gn-hero-description">
+            <h1>{% wa_t "Data catalogue" "Danh mục dữ liệu" %}</h1>
+            <p>{% wa_t "Datasets, maps and documents of the WebATLAS platform. A signed-in reader sees the entries their agency may use." "Bộ dữ liệu, bản đồ và tài liệu của nền tảng WebATLAS. Khi đăng nhập, bạn thấy các mục đơn vị mình được dùng." %}</p>
+        </div>
+    </div>
+</div>

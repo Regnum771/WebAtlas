@@ -1,0 +1,71 @@
+{% load static %}
+{% load get_menu_json %}
+{% load webatlas_ui %}
+{% get_menu_json 'TOPBAR_MENU' as TOPBAR_MENU %}
+{% get_menu_json 'TOPBAR_MENU_LEFT' as TOPBAR_MENU_LEFT %}
+{% get_menu_json 'TOPBAR_MENU_RIGHT' as TOPBAR_MENU_RIGHT %}
+{% comment %}
+  The WebATLAS header on GeoNode (K7, spec artboard 4). Replaces geonode_mapstore_client's brand_navbar.html.
+  Row 1 is the WebATLAS bar (as apps/web/src/widgets/top-bar/ui/TopBar.view.tsx): wordmark, the platform's
+  pages with "Danh mục" current, then GeoNode's search, language and account menu. Row 2 is GeoNode's own
+  sections as tabs. MapStore's collapsing-navbar script is left out: the tabs scroll sideways instead.
+  Ids kept for GeoNode's scripts: #gn-brand-navbar, #gn-search-bar, #sign-in, .gn-brand-navbar-menu.
+{% endcomment %}
+<nav id="gn-brand-navbar" class="wa-gn-bar" aria-label="{% wa_t 'Main navigation' 'Điều hướng chính' %}">
+    <a class="wa-gn-mark" href="{{ WEBATLAS_WEB_URL }}/">WebATLAS</a>
+    <ul class="wa-gn-nav">
+        <li><a href="{{ WEBATLAS_WEB_URL }}/ban-do">{% wa_t "Map" "Bản đồ" %}</a></li>
+        <li><a href="/" aria-current="page">{% wa_t "Catalogue" "Danh mục" %}</a></li>
+        {% if request.user.is_superuser %}
+            <li>
+                <a href="{{ WEBATLAS_DAGSTER_URL }}/" target="_blank" rel="noopener noreferrer">
+                    {% wa_t "Orchestration" "Điều phối" %}
+                    <svg class="wa-gn-ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="{% wa_t '(opens a new tab)' '(mở thẻ mới)' %}"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>
+                </a>
+            </li>
+        {% endif %}
+        <li><a href="{{ WEBATLAS_WEB_URL }}/du-lieu">{% wa_t "Data" "Dữ liệu" %}</a></li>
+    </ul>
+    <div class="wa-gn-right">
+        {% include './search_bar.html' with search_bar_id='gn-search-bar' %}
+        <ul class="gn-brand-navbar-right-menu-container">
+            {% include './language_selector.html' with align_right=True %}
+            {% for menu_item in TOPBAR_MENU_RIGHT %}
+                {% include './menu_item.html' with menu_item=menu_item align_right=True %}
+            {% endfor %}
+            {% include './brand_navbar_default_right_menu_items.html' %}
+        </ul>
+    </div>
+</nav>
+<nav class="wa-gn-tabs" aria-label="{% wa_t 'Catalogue sections' 'Mục của danh mục' %}">
+    <ul class="gn-brand-navbar-menu">
+        {% include './brand_navbar_default_left_menu_items.html' %}
+        {% for menu_item in TOPBAR_MENU %}
+            {% include './menu_item.html' with menu_item=menu_item %}
+        {% endfor %}
+        {% for menu_item in TOPBAR_MENU_LEFT %}
+            {% include './menu_item.html' with menu_item=menu_item %}
+        {% endfor %}
+    </ul>
+</nav>
+<script>
+    // Kept from GeoNode's navbar: "Đăng nhập" returns to the page it was pressed on.
+    (function () {
+        function manageUrlChange() {
+            var signIn = document.getElementById("sign-in");
+            if (!signIn) return;
+            if (window.location.pathname === "/account/login/") {
+                signIn.setAttribute("href", window.location.href);
+                return;
+            }
+            var href = signIn.getAttribute("href").split("next=")[0];
+            var parts = window.location.href.split(window.location.pathname);
+            signIn.setAttribute("href", href + "next=" + encodeURIComponent(window.location.pathname + parts[parts.length - 1]));
+        }
+        window.addEventListener("DOMContentLoaded", manageUrlChange);
+        // GeoNode's search_bar.html hard-codes an English placeholder.
+        var search = document.querySelector("#gn-search-bar input");
+        if (search) search.setAttribute("placeholder", "{% wa_t 'Search the catalogue' 'Tìm trong danh mục' %}");
+        window.addEventListener("hashchange", manageUrlChange);
+    })();
+</script>
