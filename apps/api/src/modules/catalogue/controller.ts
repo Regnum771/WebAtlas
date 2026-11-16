@@ -27,6 +27,12 @@ export async function getItem(req: FastifyRequest, reply: FastifyReply) {
   reply.send(await catalogueRepository(req.server.pg).get(req.currentUser, id));
 }
 
+/** GET /api/catalogue/:id/layers — a GeoNode Map's constituent layers, for "Lưu vào bản đồ của tôi" to expand. */
+export async function getMapLayers(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = validate(IdParams, req.params);
+  reply.send({ layers: await catalogueRepository(req.server.pg).mapLayers(req.currentUser, id) });
+}
+
 /** One multipart field, `file`. Multipart is registered for the catalogue routes only (server.ts). */
 export async function createUpload(req: FastifyRequest, reply: FastifyReply) {
   const user = userOf(req);

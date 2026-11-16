@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const h = vi.hoisted(() => ({ ctx: { map: { fake: 'map' } }, addWmsOverlay: vi.fn(), search: vi.fn() }));
 vi.mock('../../app/providers/MapProvider', () => ({ useMapContext: () => h.ctx }));
@@ -16,12 +17,18 @@ import { getToasts, resetToasts } from '../../shared/ui/toast.store';
 
 const toasts = () => getToasts().map(({ tone, title, body }) => ({ tone, title, body }));
 
+// CataloguePicker's "Thêm vào bản đồ" for a Map/Document needs useSaveToMapPresenter (TanStack Query).
+function renderAddData() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}><AddData /></QueryClientProvider>);
+}
+
 async function openWmsTab() {
   await userEvent.click(screen.getByRole('tab', { name: 'WMS khác' }));
 }
 
 async function addLayer() {
-  render(<AddData />);
+  renderAddData();
   await openWmsTab();
   await userEvent.type(screen.getByLabelText('Địa chỉ dịch vụ WMS'), 'https://example.com/wms');
   await userEvent.type(screen.getByLabelText('Tên lớp'), 'ws:rivers');
@@ -54,7 +61,7 @@ describe('AddData', () => {
   });
 
   it('a refused form touches neither the map nor the popups', async () => {
-    render(<AddData />);
+    renderAddData();
     await openWmsTab();
     await userEvent.type(screen.getByLabelText('Địa chỉ dịch vụ WMS'), 'example.com/wms');
     await userEvent.click(screen.getByRole('button', { name: 'Thêm vào bản đồ' }));
@@ -63,7 +70,7 @@ describe('AddData', () => {
   });
 
   it('opens on the catalogue tab', async () => {
-    render(<AddData />);
+    renderAddData();
     expect(screen.getByRole('tab', { name: 'Từ Danh mục', selected: true })).toBeInTheDocument();
     expect(await screen.findByText('Không có dữ liệu phù hợp.')).toBeInTheDocument();
   });

@@ -42,6 +42,7 @@ class SyncReport:
     updated: int
     removed: int
     marked: int = 0
+    maps_synced: int = 0
 
 
 def kind_of(r: dict) -> str:
@@ -87,6 +88,15 @@ def _pages(since, http) -> Iterator[dict]:
         log.warning("bridge listing repeats page %s: stopped", page)
 
 
+def fetch_map_layers(map_pk: int, session=None) -> list[dict]:
+    """A GeoNode Map's own layers (local ones only; see webatlas_bridge.views.map_layers)."""
+    base = os.environ["GEONODE_BRIDGE_URL"].rstrip("/") + f"/webatlas-bridge/maps/{map_pk}/layers"
+    headers = {"Authorization": f"Bearer {os.environ['WEBATLAS_BRIDGE_TOKEN']}"}
+    r = (session or requests).get(base, headers=headers, timeout=_LIST_TIMEOUT)
+    r.raise_for_status()
+    return r.json()["layers"]
+
+
 def last_synced(conn: psycopg.Connection) -> datetime | None:
     return conn.execute("SELECT max(synced_at) FROM catalogue.resources").fetchone()[0]
 
@@ -109,11 +119,16 @@ def sync(conn: psycopg.Connection, resources: Iterable[dict], now: datetime, ful
         listed.add(r["pk"])
         if r.get("state") != "PROCESSED":
             continue
+        kind = kind_of(r)
         alternate = r.get("alternate")
         if not (isinstance(alternate, str) and alternate.strip()):
-            # One such item must not abort every run (alternate is NOT NULL).
-            log.warning("resource %s has no alternate: skipped", r["pk"])
-            continue
+            # A Map or Document has no GeoServer layer and so no alternate of its own: expected,
+            # not an error (the column allows NULL only for those two kinds). Any other kind
+            # without one must not abort the run (alternate is NOT NULL for them).
+            if kind not in ("map", "document"):
+                log.warning("resource %s has no alternate: skipped", r["pk"])
+                continue
+            alternate = None
         if _ghost_series(conn, r):
             log.warning("resource %s (%s): no GeoServer layer and no worker row, skipped", r["pk"], alternate)
             continue
@@ -146,7 +161,7 @@ def sync(conn: psycopg.Connection, resources: Iterable[dict], now: datetime, ful
                    synced_at = EXCLUDED.synced_at, updated_at = EXCLUDED.updated_at
             RETURNING (xmax = 0)
             """,
-            dict(pk=r["pk"], uuid=r["uuid"], alternate=alternate, kind=kind_of(r), title=r["title"],
+            dict(pk=r["pk"], uuid=r["uuid"], alternate=alternate, kind=kind, title=r["title"],
                  abstract=r.get("abstract") or "", owner=r.get("ownerSub"), pub=bool(r["isPublished"]),
                  appr=bool(r["isApproved"]),
                  # Absent (an older bridge) reads as not granted: the entry stays private.
@@ -161,6 +176,54 @@ def sync(conn: psycopg.Connection, resources: Iterable[dict], now: datetime, ful
     if full:
         removed, marked = _reconcile(conn, listed, now)
     return SyncReport(inserted, updated, removed, marked)
+
+
+def sync_map_composition(conn: psycopg.Connection, map_resource_id, layers: list[dict]) -> None:
+    """
+    Full-replace catalogue.map_composition for one Map (its resource id in catalogue.resources,
+    not GeoNode's own pk). `layers` is fetch_map_layers()'s list, already in GeoNode's order. A
+    constituent dataset not yet in catalogue.resources (not synced, or not local) is still written
+    with layer_resource_id NULL, keeping the Map's order among the ones that did resolve; a later
+    sync of this Map (once that dataset is synced too) replaces the row and fills it in.
+    """
+    conn.execute("DELETE FROM catalogue.map_composition WHERE map_resource_id = %s", (map_resource_id,))
+    if not layers:
+        return
+    pks = [l["datasetPk"] for l in layers]
+    resolved = dict(conn.execute(
+        "SELECT geonode_pk, id FROM catalogue.resources WHERE geonode_pk = ANY(%s)", (pks,)
+    ).fetchall())
+    with conn.cursor() as cur:
+        cur.executemany(
+            """INSERT INTO catalogue.map_composition (map_resource_id, position, layer_resource_id, visible, opacity)
+               VALUES (%(map_id)s, %(pos)s, %(layer_id)s, %(visible)s, %(opacity)s)""",
+            [dict(map_id=map_resource_id, pos=l["order"], layer_id=resolved.get(l["datasetPk"]),
+                  visible=bool(l["visible"]), opacity=float(l["opacity"])) for l in layers],
+        )
+
+
+def sync_maps(conn: psycopg.Connection, resources: Iterable[dict], fetch_layers=fetch_map_layers) -> int:
+    """
+    sync_map_composition() for every 'map' resource among `resources` that made it into
+    catalogue.resources (kind_of() agrees and it was PROCESSED — the same rule sync() applies).
+    Returns how many Maps were (re)synced. One bridge call per Map; maps are rare, so this runs
+    after every sync(), incremental or full.
+    """
+    n = 0
+    for r in resources:
+        if kind_of(r) != "map" or r.get("state") != "PROCESSED":
+            continue
+        row = conn.execute("SELECT id FROM catalogue.resources WHERE geonode_pk = %s", (r["pk"],)).fetchone()
+        if row is None:
+            continue  # sync() skipped this row too (bad bbox, no alternate, ...)
+        try:
+            layers = fetch_layers(r["pk"])
+        except Exception:
+            log.exception("webatlas bridge: fetching layers of map %s failed, composition left as is", r["pk"])
+            continue
+        sync_map_composition(conn, row[0], layers)
+        n += 1
+    return n
 
 
 def _ghost_series(conn: psycopg.Connection, r: dict) -> bool:
@@ -212,13 +275,17 @@ def plan(last: datetime | None, full: bool) -> tuple[bool, Optional[datetime]]:
     return False, last - _OVERLAP
 
 
-def run(conn: psycopg.Connection, now: datetime, full: bool, fetch=fetch_resources) -> Optional[SyncReport]:
+def run(
+    conn: psycopg.Connection, now: datetime, full: bool, fetch=fetch_resources, fetch_layers=fetch_map_layers
+) -> Optional[SyncReport]:
     """One scheduled run in one transaction; None when another run holds the lock."""
     if not conn.execute("SELECT pg_try_advisory_xact_lock(%s)", (_LOCK_KEY,)).fetchone()[0]:
         log.warning("another catalogue sync is running: skipped")
         conn.rollback()
         return None
     full, since = plan(last_synced(conn), full)
-    report = sync(conn, fetch(since), now, full=full)
+    resources = list(fetch(since))
+    report = sync(conn, resources, now, full=full)
+    maps_synced = sync_maps(conn, resources, fetch_layers=fetch_layers)
     conn.commit()
-    return report
+    return SyncReport(report.inserted, report.updated, report.removed, report.marked, maps_synced)

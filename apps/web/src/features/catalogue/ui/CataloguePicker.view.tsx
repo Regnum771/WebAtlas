@@ -4,6 +4,7 @@ import { Message } from '../../../shared/ui/Message';
 import { Spinner } from '../../../shared/ui/Spinner';
 import type { CatalogueItem, CatalogueKind } from '../api/catalogue.api';
 import type { PickerStatus } from '../model/useCataloguePickerPresenter';
+import { SavePanel, type SaveToMapProps } from './CatalogueLayersSection.view';
 
 export interface CataloguePickerViewProps {
   query: string;
@@ -16,6 +17,11 @@ export interface CataloguePickerViewProps {
   addedIds: Set<string>;
   /** Signed in: the time-series upload is offered. */
   canUpload: boolean;
+  /**
+   * Signed in: a Map or a Document (not DRAWABLE, so no free-standing preview) goes straight to
+   * "which own map" instead — a Map expands into its layers there (useSaveToMapPresenter).
+   */
+  save?: SaveToMapProps;
   onQuery: (q: string) => void;
   onKind: (k: CatalogueKind | '') => void;
   onSearch: () => void;
@@ -68,11 +74,22 @@ export function CataloguePickerView(p: CataloguePickerViewProps) {
                 {item.mine && !item.isPublished && <span className="badge">Chưa duyệt</span>}
               </div>
               <span className="hint">{[KIND_LABEL[item.kind], item.managingUnit].filter(Boolean).join(' · ')}</span>
-              {DRAWABLE.includes(item.kind) && (
+              {DRAWABLE.includes(item.kind) ? (
                 p.addedIds.has(item.id)
                   ? <span className="hint">Đã thêm</span>
                   : <Button size="sm" aria-label={`Thêm vào bản đồ: ${item.title}`} onClick={() => p.onAdd(item)}>Thêm vào bản đồ</Button>
+              ) : p.save ? (
+                <Button
+                  size="sm" aria-label={`Thêm vào bản đồ: ${item.title}`}
+                  aria-pressed={p.save.open?.itemId === item.id}
+                  onClick={() => p.save?.start(item.id, 'link')}
+                >
+                  Thêm vào bản đồ
+                </Button>
+              ) : (
+                <span className="hint">Đăng nhập để thêm</span>
               )}
+              {p.save?.open?.itemId === item.id && <SavePanel item={item} save={p.save} />}
             </li>
           ))}
         </ul>

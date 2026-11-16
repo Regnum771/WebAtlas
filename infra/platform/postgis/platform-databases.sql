@@ -61,3 +61,7 @@ GRANT SELECT, INSERT, UPDATE ON catalogue.resources TO webatlas_orchestrator;
 -- The full listing deletes rows GeoNode no longer lists.
 GRANT DELETE ON catalogue.resources TO webatlas_orchestrator;
 GRANT EXECUTE ON FUNCTION catalogue.unit_for_bbox(float8, float8, float8, float8) TO webatlas_orchestrator;
+
+-- A GeoNode Map's layer composition (migration 1000000000040_catalogue-map-composition): full
+-- replace on each sync (catalogue_sync.py sync_map_composition), hence SELECT/INSERT/DELETE only.
+GRANT SELECT, INSERT, DELETE ON catalogue.map_composition TO webatlas_orchestrator;

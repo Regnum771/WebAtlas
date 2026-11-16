@@ -33,16 +33,17 @@ export const CopyBody = z.object({ mapId: z.string().uuid() });
 
 interface Source { url: string; ext: '.geojson' | '.tif'; mimetype: string; accepts: RegExp }
 
-function sourceOf(item: CatalogueItem): Source {
-  const ws = workspaceOf(item.layerName);
-  const name = item.layerName.includes(':') ? item.layerName.slice(item.layerName.indexOf(':') + 1) : item.layerName;
+/** `layerName`: the caller's own non-null copy (kind is already vector or raster, which always carry one). */
+function sourceOf(item: CatalogueItem, layerName: string): Source {
+  const ws = workspaceOf(layerName);
+  const name = layerName.includes(':') ? layerName.slice(layerName.indexOf(':') + 1) : layerName;
   const ows = `${geoserverUrl()}/${ws}/ows`;
   if (item.kind === 'vector') {
     // WFS 1.0.0 keeps x/y (lon/lat) order in EPSG:4326, which is what a GeoJSON reader expects.
     // One feature more than the import takes, so a layer over the limit fails the import
     // (worker.py's row check) rather than arriving silently cut short.
     const q = new URLSearchParams({
-      service: 'WFS', version: '1.0.0', request: 'GetFeature', typeName: item.layerName,
+      service: 'WFS', version: '1.0.0', request: 'GetFeature', typeName: layerName,
       outputFormat: 'application/json', srsName: 'EPSG:4326', maxFeatures: String(IMPORT_MAX_ROWS + 1),
     });
     return { url: `${ows}?${q}`, ext: '.geojson', mimetype: 'application/geo+json', accepts: /json/i };
@@ -74,7 +75,7 @@ export function catalogueCopyService(pg: Pool) {
   return {
     async copy(user: CurrentUser, id: string, mapId: string): Promise<{ job: Job }> {
       const item = await catalogueRepository(pg).get(user, id); // 404 when not visible
-      if (item.kind !== 'vector' && item.kind !== 'raster') throw new ValidationError(LINK_ONLY);
+      if ((item.kind !== 'vector' && item.kind !== 'raster') || item.layerName === null) throw new ValidationError(LINK_ONLY);
       // GeoNode's download permission (or ownership): the read below uses the admin account.
       if (!item.downloadable) throw new ForbiddenError(NO_DOWNLOAD);
       // The import's own owner check, made before anything is read, so a refused copy costs nothing.
@@ -82,7 +83,7 @@ export function catalogueCopyService(pg: Pool) {
       if (role === null) throw new NotFoundError(MAP_NOT_FOUND);
       if (role !== 'owner') throw new ForbiddenError(OWNER_ONLY);
 
-      const source = sourceOf(item);
+      const source = sourceOf(item, item.layerName);
       let res: Response;
       try {
         res = await geoserverGet(source.url, AbortSignal.timeout(COPY_TIMEOUT_MS));

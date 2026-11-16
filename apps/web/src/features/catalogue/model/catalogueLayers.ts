@@ -94,7 +94,10 @@ export function syncCatalogueLayers(
     const key = l.get(scope.prop);
     if (typeof key === 'string') existing.set(key, l as ImageLayer<ImageWMS>);
   }
-  const wanted = layers.filter((l) => l.status === 'ok');
+  // A map or a document has no WMS of its own (the catalogue proxy 404s it, by design): no OL
+  // layer for either, even if one somehow reached this list (expanding a Map adds its real
+  // layers instead, never the Map entry itself — see useSaveToMapPresenter).
+  const wanted = layers.filter((l) => l.status === 'ok' && l.item.kind !== 'map' && l.item.kind !== 'document');
   const keyOf = (l: DrawnCatalogueLayer) => l.key ?? l.item.id;
   const wantedItem = new globalThis.Map(wanted.map((l) => [keyOf(l), l.item.id]));
   for (const [key, layer] of existing) {

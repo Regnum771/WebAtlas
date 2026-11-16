@@ -33,6 +33,7 @@ from geonode.base import enumerations
 from geonode.base.models import ExtraMetadata, ResourceBase
 from geonode.geoserver.helpers import gs_catalog, ogc_server_settings, sync_instance_with_geoserver
 from geonode.layers.models import Dataset
+from geonode.maps.models import Map
 from geonode.resource.utils import resourcebase_post_save
 
 from webatlas_bridge.auth import require_bridge_token
@@ -438,3 +439,28 @@ def list_resources(request):
         "lastUpdated": r.last_updated.isoformat() if r.last_updated else None,
     } for r in rows]
     return JsonResponse({"resources": resources, "next": page + 1 if more else None})
+
+
+@require_http_methods(["GET"])
+@require_bridge_token
+def map_layers(request, pk):
+    """
+    What a GeoNode Map (resource_type 'map') is made of: its MapLayer rows that point at one of
+    GeoNode's own datasets (local=True, dataset_id set), ordered as GeoNode stacks them. A layer
+    pointing elsewhere (a remote WMS, local=False) is not a WebATLAS catalogue entry and is left
+    out — nothing here to resolve it to. 404 when the pk is not a Map at all.
+
+    catalogue_sync.py resolves each datasetPk to a catalogue.resources row by geonode_pk (catalogue
+    syncs every resource, Maps' member datasets included) and writes catalogue.map_composition.
+    """
+    try:
+        m = Map.objects.get(pk=pk)
+    except Map.DoesNotExist:
+        return _error(404, f"Không có bản đồ GeoNode #{pk}.")
+    layers = [{
+        "datasetPk": l.dataset_id,
+        "order": l.order,
+        "visible": bool(l.visibility),
+        "opacity": float(l.opacity) if l.opacity is not None else 1.0,
+    } for l in m.maplayers.filter(local=True, dataset_id__isnull=False).order_by("order")]
+    return JsonResponse({"layers": layers})

@@ -139,7 +139,7 @@ export async function wmsProxy(req: FastifyRequest, reply: FastifyReply) {
   const { id } = validate(IdParams, req.params);
   const item = await catalogueRepository(req.server.pg).get(req.currentUser, id);
   // A map or document names no layer this proxy may draw (a layer group may hold unpublished members).
-  if (item.kind === 'map' || item.kind === 'document') throw new NotFoundError(ITEM_NOT_FOUND);
+  if (item.kind === 'map' || item.kind === 'document' || item.layerName === null) throw new NotFoundError(ITEM_NOT_FOUND);
   const query = wmsQuery(req.query as Record<string, unknown>, item.layerName);
   const url = `${geoserverUrl()}/${workspaceOf(item.layerName)}/wms?${query}`;
 

@@ -35,11 +35,13 @@ export function TimeseriesUploadDialog({ onClose, viewExtent4326: extent }: {
 export function CataloguePicker() {
   const picker = useCataloguePickerPresenter();
   const { status } = useSession();
+  const signedIn = status === 'authenticated';
+  const save = useSaveToMapPresenter({ enabled: signedIn });
   const { map } = useMapContext();
   const [uploading, setUploading] = useState(false);
   return (
     <>
-      <CataloguePickerView {...picker} canUpload={status === 'authenticated'} onUpload={() => setUploading(true)} />
+      <CataloguePickerView {...picker} canUpload={signedIn} save={signedIn ? save : undefined} onUpload={() => setUploading(true)} />
       {uploading && <TimeseriesUploadDialog onClose={() => setUploading(false)} viewExtent4326={() => viewExtent4326(map)} />}
     </>
   );

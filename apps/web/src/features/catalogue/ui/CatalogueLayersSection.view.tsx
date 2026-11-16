@@ -39,7 +39,7 @@ function Legend({ item }: { item: CatalogueItem }) {
 }
 
 /** The map picker of one row: which own map, then the action; a copy's job shows its progress. */
-function SavePanel({ item, save }: { item: CatalogueItem; save: SaveToMapProps }) {
+export function SavePanel({ item, save }: { item: CatalogueItem; save: SaveToMapProps }) {
   const mode = save.open!.mode;
   const label = mode === 'link' ? 'Lưu vào bản đồ của tôi' : 'Sao vào Bản của tôi';
   return (

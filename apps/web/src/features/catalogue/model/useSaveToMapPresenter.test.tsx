@@ -14,7 +14,11 @@ vi.mock('../../my-maps/api/workspace.api', () => ({
   getJob: (id: string) => getJob(id),
 }));
 const copyCatalogueItem = vi.fn();
-vi.mock('../api/catalogue.api', () => ({ copyCatalogueItem: (...a: unknown[]) => copyCatalogueItem(...a) }));
+const fetchCatalogueMapLayers = vi.fn();
+vi.mock('../api/catalogue.api', () => ({
+  copyCatalogueItem: (...a: unknown[]) => copyCatalogueItem(...a),
+  fetchCatalogueMapLayers: (...a: unknown[]) => fetchCatalogueMapLayers(...a),
+}));
 
 import { ApiError } from '../../../shared/api/apiClient';
 import { getToasts, resetToasts } from '../../../shared/ui/toast.store';
@@ -33,6 +37,8 @@ const ITEM: CatalogueItem = {
   id: 'r1', kind: 'vector', title: 'Trạm đo mưa', abstract: '', managingUnit: 'VN', isPublished: true, mine: false,
   variable: null, unit: null, timeSteps: null, bbox4326: null, layerName: 'geonode:r1', updatedAt: '2026-11-12T00:00:00Z',
 };
+const MAP_ITEM: CatalogueItem = { ...ITEM, id: 'g1', kind: 'map', title: 'Bản đồ GeoNode', layerName: null };
+const layerItem = (id: string, title: string): CatalogueItem => ({ ...ITEM, id, title, layerName: `geonode:${id}` });
 const job = (status: string, over: Record<string, unknown> = {}) => ({
   id: 'j1', kind: 'import', status, mapId: 'm1', progress: status === 'succeeded' ? 100 : 10, steps: [],
   result: null, error: null, createdAt: '', finishedAt: null, ...over,
@@ -46,7 +52,7 @@ function setup() {
 }
 
 beforeEach(() => {
-  [listMaps, getMap, addCatalogueLink, getJob, copyCatalogueItem].forEach((m) => m.mockReset());
+  [listMaps, getMap, addCatalogueLink, getJob, copyCatalogueItem, fetchCatalogueMapLayers].forEach((m) => m.mockReset());
   resetMyMapsStore();
   resetCatalogue();
   resetToasts();
@@ -78,6 +84,42 @@ describe('useSaveToMapPresenter', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.map('m1') });
     expect(getToasts().at(-1)?.title).toBe('Đã lưu “Trạm đo mưa” vào “Bản của tôi”.');
     expect(result.current.open).toBeNull();
+  });
+
+  it('Lưu vào bản đồ của tôi on a Map: expands into its layers, in GeoNode\'s order, with its visible/opacity', async () => {
+    fetchCatalogueMapLayers.mockResolvedValue({
+      layers: [
+        { item: layerItem('a1', 'Nền A'), visible: true, opacity: 1 },
+        { item: layerItem('b1', 'Nền B'), visible: false, opacity: 0.4 },
+      ],
+    });
+    addCatalogueLink
+      .mockResolvedValueOnce({ layer: { id: 'c1' }, revision: 5 })
+      .mockResolvedValueOnce({ layer: { id: 'c2' }, revision: 6 });
+    const { result, invalidate } = setup();
+    await waitFor(() => expect(result.current.targets).toHaveLength(1));
+    act(() => result.current.start('g1', 'link'));
+    await act(async () => { await result.current.submit(MAP_ITEM); });
+    expect(fetchCatalogueMapLayers).toHaveBeenCalledWith('g1');
+    expect(addCatalogueLink).toHaveBeenNthCalledWith(1, 'm1', { resourceId: 'a1', title: 'Nền A', expectedRevision: 4 });
+    expect(addCatalogueLink).toHaveBeenNthCalledWith(2, 'm1', { resourceId: 'b1', title: 'Nền B', expectedRevision: 5 });
+    expect(getMyMaps().expanded.has('m1')).toBe(true);
+    expect(getMyMaps().layers.c1).toEqual({ visible: true, opacity: 1 });
+    expect(getMyMaps().layers.c2).toEqual({ visible: false, opacity: 0.4 });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.map('m1') });
+    expect(getToasts().at(-1)?.title).toBe('Đã thêm 2 lớp từ “Bản đồ GeoNode” vào “Bản của tôi”.');
+    expect(result.current.open).toBeNull();
+  });
+
+  it('a Map with no layer the caller may see is reported, and nothing is added', async () => {
+    fetchCatalogueMapLayers.mockResolvedValue({ layers: [] });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.targets).toHaveLength(1));
+    act(() => result.current.start('g1', 'link'));
+    await act(async () => { await result.current.submit(MAP_ITEM); });
+    expect(addCatalogueLink).not.toHaveBeenCalled();
+    expect(result.current.error).toBe('Bản đồ này không có lớp nào xem được để thêm.');
+    expect(result.current.open).not.toBeNull();
   });
 
   it('an API refusal is shown verbatim and the layer stays', async () => {
