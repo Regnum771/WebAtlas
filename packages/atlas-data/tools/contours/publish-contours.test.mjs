@@ -45,6 +45,8 @@ case "$method $url" in
   "GET "*/layergroups/basemap)                code="\${STUB_GROUP_GET:-404}" ;;
   "POST "*/layergroups)                       code="\${STUB_GROUP_CREATE:-201}" ;;
   "PUT "*/layergroups/basemap)                code="\${STUB_GROUP_UPDATE:-200}" ;;
+  "GET "*/gwc/rest/layers/*)                  code="\${STUB_GWC_GET:-200}"; page='<GeoServerLayer><expireCache>0</expireCache><expireClients>0</expireClients></GeoServerLayer>' ;;
+  "PUT "*/gwc/rest/layers/*)                  code="\${STUB_GWC_PUT:-200}" ;;
   "PUT "*/layers/*)                           code="\${STUB_STYLE:-200}" ;;
   "POST "*/gwc/rest/masstruncate)             code="\${STUB_TRUNCATE:-200}" ;;
   "POST "*/gwc/rest/seed/*)                   code="\${STUB_SEED:-200}" ;;
@@ -53,6 +55,8 @@ esac
 if [ -n "\${STUB_LOG:-}" ] && [ "$method" != GET ]; then
   printf '%s %s %s\n' "$method" "$url" "$(printf '%s' "$body" | tr -d '\n')" >> "$STUB_LOG"
 fi
+# A call with no -w wants the body (curl -f): the page on 200, exit 22 otherwise.
+if [ -z "$fmt" ]; then [ "$code" = 200 ] || exit 22; printf '%s' "\${page:-}"; exit 0; fi
 out="\${fmt//%\\{http_code\\}/\$code}"
 printf '%b' "\$out"
 `;
@@ -100,6 +104,20 @@ describe('publish-contours.sh — REST call failures must fail the publish', { t
     expect(r.status).not.toBe(0);
     expect(r.stdout).toContain('style: 403');
     expect(r.stdout).not.toContain('truncate:');
+  });
+
+  it('lets browsers cache the tiles of every interval for a day, and stops before truncating if it cannot', () => {
+    const log = join(stubDir, 'client-cache.log');
+    rmSync(log, { force: true });
+    const r = run({ STUB_LOG: log });
+    expect(r.status).toBe(0);
+    const puts = readFileSync(log, 'utf8').split('\n').filter((l) => l.includes('/gwc/rest/layers/webatlas:contours_'));
+    expect(puts.length).toBeGreaterThan(0);
+    expect(puts.length).toBe((r.stdout.match(/^== contours_/gm) ?? []).length);
+    for (const line of puts) expect(line).toContain('<expireClients>86400</expireClients>');
+    const bad = run({ STUB_GWC_PUT: '500' });
+    expect(bad.status).not.toBe(0);
+    expect(bad.stdout).not.toContain('truncate:');
   });
 
   it('updates an existing featuretype with PUT', () => {

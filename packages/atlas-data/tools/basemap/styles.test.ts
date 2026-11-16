@@ -36,6 +36,21 @@ function scaleGates(sld: string): number[] {
   return [...sld.matchAll(/<MaxScaleDenominator>(\d+)<\/MaxScaleDenominator>/g)].map((m) => Number(m[1]));
 }
 
+/**
+ * The farthest scale a road class draws at: the largest MaxScaleDenominator over the rules named
+ * `<key>_casing_z..` / `<key>_fill_z..` / `<key>_z..`, or Infinity if one has none (every scale).
+ */
+function appearsFrom(sld: string, key: string): number {
+  const rules = [...sld.matchAll(new RegExp(`<Rule><Name>${key}_(?:casing_|fill_)?z\\d+</Name>(.*?)</Rule>`, 'g'))];
+  expect(rules.length, `no rules for ${key}`).toBeGreaterThan(0);
+  return Math.max(...rules.map((m) => Number(/<MaxScaleDenominator>(\d+)</.exec(m[1])?.[1] ?? Infinity)));
+}
+
+/** The FeatureTypeStyle passes of an SLD, in drawing order. */
+function passes(sld: string): string[] {
+  return [...sld.matchAll(/<FeatureTypeStyle>([\s\S]*?)<\/FeatureTypeStyle>/g)].map((m) => m[1]);
+}
+
 function fclassesNamed(sld: string): Set<string> {
   return new Set(
     [...sld.matchAll(/<ogc:Literal>([^<]+)<\/ogc:Literal>/g)].map((m) => m[1]),
@@ -59,21 +74,51 @@ describe('basemap SLD artifacts', () => {
     // The range now reaches 1:12.800.000, where drawing all 62.598 national road
     // segments is a hairball. motorway alone (9.946) is the readable overview;
     // trunk and primary join as you come in.
-    const gates = new Set(scaleGates(read('basemap_roads_vn')));
-    expect(gates).toEqual(new Set([5_000_000, 3_000_000, 1_000_000]));
+    const vn = read('basemap_roads_vn');
+    expect(appearsFrom(vn, 'motorway')).toBe(Infinity);
+    expect(appearsFrom(vn, 'trunk')).toBe(5_000_000);
+    expect(appearsFrom(vn, 'primary')).toBe(3_000_000);
   });
 
-  it('tiers the region roads by the agreed thresholds', () => {
-    const gates = new Set(scaleGates(read('basemap_roads_region')));
-    expect(gates).toEqual(new Set([1_000_000, 500_000, 250_000, 100_000, 50_000]));
-  });
-
-  it('uses the widened close end — tracks and paths appear below 1:100.000', () => {
+  it('brings the region road classes in at the agreed thresholds', () => {
+    const region = read('basemap_roads_region');
+    expect(appearsFrom(region, 'secondary')).toBe(1_000_000);
+    expect(appearsFrom(region, 'tertiary')).toBe(500_000);
+    expect(appearsFrom(region, 'unclassified')).toBe(500_000);
+    expect(appearsFrom(region, 'residential')).toBe(250_000);
     // Before the range reached 1:25.000 there was nothing left to reveal below
     // 1:200.000, so the last two notches showed the same map, only bigger.
-    const sld = read('basemap_roads_region');
-    const trackRule = sld.slice(sld.indexOf('<Name>track_path</Name>'));
-    expect(trackRule).toContain('<MaxScaleDenominator>100000</MaxScaleDenominator>');
+    for (const key of ['service', 'track', 'path', 'cycleway']) expect(appearsFrom(region, key)).toBe(100_000);
+  });
+
+  it('draws every casing before any fill, with the bigger road\'s fill on top', () => {
+    // In one pass GeoServer draws way by way: each casing lands on the previous way's fill,
+    // leaving a grey blob at every joint and a line across every junction.
+    for (const name of ['basemap_roads_vn', 'basemap_roads_region']) {
+      const [casings, fills] = passes(read(name));
+      expect(casings, name).toContain('_casing_z');
+      expect(casings, name).not.toContain('_fill_z');
+      expect(fills, name).toContain('_fill_z');
+      expect(fills, name).not.toContain('_casing_z');
+      // Geofabrik's code grows as the class shrinks (5111 motorway ... 5155 steps).
+      expect(fills, name).toContain('<VendorOption name="sortBy">code D</VendorOption>');
+    }
+  });
+
+  it('colours the road classes as the OpenStreetMap map does', () => {
+    const vn = read('basemap_roads_vn');
+    const fill = (key: string) => new RegExp(`<Name>${key}_fill_z\\d+</Name>.*?name="stroke">(#[0-9a-f]{6})<`).exec(vn)?.[1];
+    expect(fill('motorway')).toBe('#e892a2');
+    expect(fill('trunk')).toBe('#f9b29c');
+    expect(fill('primary')).toBe('#fcd6a4');
+  });
+
+  it('names a font the GeoServer image has', () => {
+    // Arial is not installed there: GeoServer fell back to a serif face without a word.
+    for (const name of ['basemap_roads_vn', 'basemap_roads_region', 'basemap_places_vn', 'basemap_places_region']) {
+      const families = new Set([...read(name).matchAll(/name="font-family">([^<]+)</g)].map((m) => m[1]));
+      expect(families, name).toEqual(new Set(['DejaVu Sans']));
+    }
   });
 
   it('labels roads, tiered so names do not swamp the map', () => {
@@ -144,6 +189,7 @@ describe.skipIf(!process.env.DATABASE_URL)('basemap SLD artifacts vs live tables
       { table: 'roads_region', named: roadsNamed },
       { table: 'railways_vn', named: fclassesNamed(read('basemap_railways')) },
       { table: 'water_region', named: fclassesNamed(read('basemap_water')) },
+      { table: 'landuse_region', named: fclassesNamed(read('basemap_landuse')) },
     ];
 
     for (const { table, named } of groups) {

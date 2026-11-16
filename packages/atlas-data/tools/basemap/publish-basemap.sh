@@ -6,7 +6,8 @@
 # one go: the styles need the feature types, and the layer group needs the styles. The registry runs
 #   publish-basemap.sh featuretypes   ->   styles.py   ->   publish-basemap.sh group   ->   publish-basemap.sh seed
 #   featuretypes  ensure workspace, basemap_pg store and every feature type (no group, no truncate)
-#   group         create or PUT the five layer groups the web app requests, then truncate their tile caches
+#   group         create or PUT the five layer groups the web app requests, let browsers cache their
+#                 tiles (TILE_CLIENT_CACHE_SECONDS, default one day), then truncate their tile caches
 #   seed          start a background GWC seed of the working region (zooms 5-12) for the five groups.
 #                 Separate from `group` so that stage stays a pure publish-and-truncate; GWC runs the
 #                 tasks, so the build does not wait for them and returns once they are accepted.
@@ -21,6 +22,7 @@
 #   GEOSERVER_ADMIN_PASSWORD  required (environment only, never argv)
 #   GEOSERVER_WORKSPACE       default webatlas
 #   GEOSERVER_DB_PASSWORD     required when the store has to be created
+#   TILE_CLIENT_CACHE_SECONDS default 86400 (lib/geoserver.sh)
 #   GEOSERVER_DB_HOST/PORT/NAME/USER  how GeoServer reaches PostGIS
 #     (inside docker compose that is host=db, NOT localhost)
 set -euo pipefail
@@ -113,6 +115,11 @@ for entry in "${LAYER_GROUPS[@]}"; do
     require_2xx "layergroup $name" "$(gs_curl -XPOST -H "Content-Type: application/json" "$GS/workspaces/$WS/layergroups" -d "$body")"
   fi
   names+=("$name")
+done
+
+echo "== browser cache lifetime of the tiles (${TILE_CLIENT_CACHE_SECONDS} s)"
+for name in "${names[@]}"; do
+  gs_set_tile_client_cache "$name"
 done
 
 echo "== truncate stale tiles (style and group changes do not invalidate the cache)"

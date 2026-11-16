@@ -139,7 +139,7 @@ docker compose -f infra/docker-compose.yml --profile tools run --rm -T --no-deps
   bash packages/atlas-data/tools/basemap/publish-basemap.sh group
 ```
 
-`styles.py` generates the SLDs (muted Positron-lineage palette, scale-dependent rules) and assigns them. `publish-basemap.sh group` builds the five layer groups in the table above (the land-only `webatlas:basemap` and the four context groups), refuses to start if a style they name is missing, and truncates their tile cache.
+`styles.py` generates the SLDs (the standard OpenStreetMap map's colours: a colour per road class, widths that grow with zoom, casings drawn in a pass before the fills; scale-dependent rules) and assigns them. `publish-basemap.sh group` builds the five layer groups in the table above (the land-only `webatlas:basemap` and the four context groups), refuses to start if a style they name is missing, and truncates their tile cache.
 
 **Order matters:** feature types, then styles, then the group: `styles.py` assigns styles to layers that must already exist, and the layer group references styles that must exist first.
 
@@ -167,6 +167,7 @@ Open it. Land should be near-white on a pale blue sea, and nothing else: the bas
 - **Changing a style or the layer group does not invalidate cached tiles.** You will keep seeing the old render until you truncate — `publish-basemap.sh` does this at the end. If a style change seems to do nothing, this is why.
 - **WMTS rows are top-origin; TMS rows are bottom-origin.** `WMTS row = (2^z − 1) − TMS row`. Mixing them gives `TileOutOfRange`. OpenLayers' `XYZ` source uses top-origin, matching WMTS.
 - **GeoServer connects to PostGIS as `host=db`**, the compose service name — not `localhost`. `localhost` inside the container is the container itself.
+- **Browsers keep tiles for a day.** GeoWebCache's default (`expireClients` 0) answers `Cache-Control: no-cache, no-store`, so every view re-downloaded every tile of all five groups. `publish-basemap.sh group` and `publish-contours.sh` set `expireClients` to `TILE_CLIENT_CACHE_SECONDS` (default 86400). The consequence: after a republish a browser can show old tiles for up to a day, since the truncate empties only the server's cache. A hard reload fetches them again; set `TILE_CLIENT_CACHE_SECONDS=0` before publishing to go back to no caching.
 - **Label priority.** `places_*` styles rank labels by `population`, otherwise GeoServer resolves collisions by row order and drops Hà Nội in favour of whichever small town it read first. Only 79 of 175 cities carry a population value.
 - **Hà Nội is `fclass = 'national_capital'`**, not `'city'`. A filter of `fclass IN ('city','town')` silently omits the capital.
 
