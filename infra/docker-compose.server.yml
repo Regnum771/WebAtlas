@@ -1,0 +1,22 @@
+# Server-only override: this host already runs other services on 5432/8080/8000/3001.
+# Host ports moved (db 15432, GeoServer 18081 via infra/.env; GeoNode 18000 here), all on 127.0.0.1.
+# Browser addresses stay http://localhost:<original> through the SSH tunnel (see RESTORE.md notes).
+#
+#   docker compose -p webatlas -f infra/docker-compose.yml -f infra/docker-compose.platform.yml \
+#     -f infra/docker-compose.server.yml up -d
+services:
+  geonode:
+    ports: !override
+      - "127.0.0.1:18000:80"
+
+# The root disk (Docker's data-root) is small and shared; every WebATLAS volume lives on /home.
+x-bind: &bind {type: none, o: bind}
+volumes:
+  db_data:                { driver_opts: { <<: *bind, device: /home/ngoquockhanh/webatlas-data/db_data } }
+  geoserver_data:         { driver_opts: { <<: *bind, device: /home/ngoquockhanh/webatlas-data/geoserver_data } }
+  keycloak_data:          { driver_opts: { <<: *bind, device: /home/ngoquockhanh/webatlas-data/keycloak_data } }
+  geonode_statics:        { driver_opts: { <<: *bind, device: /home/ngoquockhanh/webatlas-data/geonode_statics } }
+  geonode_geoserver_data: { driver_opts: { <<: *bind, device: /home/ngoquockhanh/webatlas-data/geonode_geoserver_data } }
+  geonode_data:           { driver_opts: { <<: *bind, device: /home/ngoquockhanh/webatlas-data/geonode_data } }
+  geonode_tmp:            { driver_opts: { <<: *bind, device: /home/ngoquockhanh/webatlas-data/geonode_tmp } }
+  dagster_home:           { driver_opts: { <<: *bind, device: /home/ngoquockhanh/webatlas-data/dagster_home } }

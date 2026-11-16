@@ -22,9 +22,18 @@ export interface CatalogueItem {
   unit: string | null;
   timeSteps: string[] | null;
   bbox4326: [number, number, number, number] | null;
-  layerName: string;
+  /** Null for a map or a document: neither has a GeoServer layer of its own. */
+  layerName: string | null;
   /** When the entry last changed (ISO 8601). */
   updatedAt: string;
+}
+
+/** One layer of a GeoNode Map (GET /api/catalogue/:id/layers), in GeoNode's order. */
+export interface CatalogueMapLayer {
+  item: CatalogueItem;
+  /** Whether GeoNode showed this layer in the Map; applied once, when it is added. */
+  visible: boolean;
+  opacity: number;
 }
 
 export interface CatalogueSearchResult {
@@ -75,6 +84,15 @@ export function fetchRecentCatalogue(limit = 6): Promise<{ items: CatalogueItem[
 
 export function getCatalogueItem(id: string): Promise<CatalogueItem> {
   return apiRequest<CatalogueItem>(`${BASE}/${encodeURIComponent(id)}`);
+}
+
+/**
+ * A GeoNode Map's constituent layers, resolved and ordered, filtered to the ones the caller may
+ * see (catalogue.map_composition, synced from GeoNode). Used to expand "Lưu vào bản đồ của tôi"
+ * on a Map into its real layers: a Map has no WMS of its own to draw (catalogueWmsUrl 404s it).
+ */
+export function fetchCatalogueMapLayers(id: string): Promise<{ layers: CatalogueMapLayer[] }> {
+  return apiRequest<{ layers: CatalogueMapLayer[] }>(`${BASE}/${encodeURIComponent(id)}/layers`);
 }
 
 /** The WMS proxy of one entry; every request to it must carry the token (see fetchCatalogueBlob). */
@@ -138,8 +156,9 @@ async function authorisedGet(url: string, signal?: AbortSignal): Promise<Respons
   return res;
 }
 
-/** A legend image for the entry, as a blob URL (token-authorized like the map images). */
+/** A legend image for the entry, as a blob URL (token-authorized like the map images). Never called for a map or a document: neither has a layer to draw a legend for. */
 export function fetchCatalogueLegend(item: Pick<CatalogueItem, 'id' | 'layerName'>, signal?: AbortSignal): Promise<string> {
+  if (item.layerName === null) return Promise.reject(new ApiError(404, 'HTTP_ERROR', 'Mục này không có chú giải.'));
   const params = new URLSearchParams({
     SERVICE: 'WMS', VERSION: '1.3.0', REQUEST: 'GetLegendGraphic', FORMAT: 'image/png', LAYER: item.layerName,
   });

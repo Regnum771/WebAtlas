@@ -22,8 +22,8 @@ export interface CatalogueItem {
   unit: string | null;
   timeSteps: string[] | null;
   bbox4326: [number, number, number, number] | null;
-  /** GeoNode's `alternate`, e.g. geonode:ts_1a2b3c4d. */
-  layerName: string;
+  /** GeoNode's `alternate`, e.g. geonode:ts_1a2b3c4d. Null for a map or a document: neither has a GeoServer layer of its own. */
+  layerName: string | null;
   /** When the entry last changed here (ISO 8601), for "Mới cập nhật". */
   updatedAt: string;
 }
@@ -42,7 +42,7 @@ interface ResourceRow {
   unit: string | null;
   time_steps: Date[] | null;
   bbox4326: number[] | null;
-  alternate: string;
+  alternate: string | null;
   updated_at: Date;
 }
 
@@ -146,5 +146,34 @@ export function catalogueRepository(pg: Pool) {
       if (!item) throw new NotFoundError(ITEM_NOT_FOUND);
       return item;
     },
+
+    /**
+     * What a GeoNode Map is made of (catalogue.map_composition, synced from GeoNode's own layer
+     * list): its constituent layers, in GeoNode's order, each one the caller may see. A layer the
+     * sync could not resolve yet, or one the caller may not see, is left out rather than failing
+     * the whole list — the Map still expands into however much of it is usable. 404 when `id` is
+     * not a visible 'map' entry.
+     */
+    async mapLayers(user: CurrentUser | undefined, id: string): Promise<MapLayerEntry[]> {
+      const map = (await visibleItems(pg, user, [id])).get(id);
+      if (!map || map.kind !== 'map') throw new NotFoundError(ITEM_NOT_FOUND);
+      const { rows } = await pg.query<{ layer_resource_id: string | null; visible: boolean; opacity: number }>(
+        `SELECT layer_resource_id, visible, opacity FROM catalogue.map_composition
+          WHERE map_resource_id = $1 ORDER BY position`,
+        [id]
+      );
+      const layerIds = rows.map((r) => r.layer_resource_id).filter((v): v is string => v !== null);
+      const items = await visibleItems(pg, user, layerIds);
+      return rows
+        .filter((r) => r.layer_resource_id !== null && items.has(r.layer_resource_id))
+        .map((r) => ({ item: items.get(r.layer_resource_id as string) as CatalogueItem, visible: r.visible, opacity: r.opacity }));
+    },
   };
+}
+
+export interface MapLayerEntry {
+  item: CatalogueItem;
+  /** Whether GeoNode showed this layer in the Map; applied once, client-side, when it is added. */
+  visible: boolean;
+  opacity: number;
 }

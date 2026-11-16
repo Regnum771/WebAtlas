@@ -61,8 +61,8 @@ def sync_catalogue(context) -> None:
     if report is None:
         context.log.warning("catalogue: another sync is running, skipped")
         return
-    context.log.info("catalogue: %d inserted, %d updated, %d marked, %d removed",
-                     report.inserted, report.updated, report.marked, report.removed)
+    context.log.info("catalogue: %d inserted, %d updated, %d marked, %d removed, %d maps synced",
+                     report.inserted, report.updated, report.marked, report.removed, report.maps_synced)
 
 
 @dg.job(name="dong_bo_danh_muc")

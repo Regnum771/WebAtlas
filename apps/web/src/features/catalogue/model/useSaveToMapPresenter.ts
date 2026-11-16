@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { showToast } from '../../../shared/ui/toast.store';
 import * as ws from '../../my-maps/api/workspace.api';
-import { expandMap, setLayerVisible } from '../../my-maps/model/myMaps.store';
+import { expandMap, setLayerOpacity, setLayerVisible } from '../../my-maps/model/myMaps.store';
 import { keys, useJob, useMapWrite } from '../../my-maps/model/queries';
-import { copyCatalogueItem, type CatalogueItem } from '../api/catalogue.api';
+import { copyCatalogueItem, fetchCatalogueMapLayers, type CatalogueItem } from '../api/catalogue.api';
 import { removeCatalogueLayer } from './catalogue.store';
 import type { SaveMode, SaveToMapState } from './saveToMap';
 
@@ -97,7 +97,31 @@ export function useSaveToMapPresenter({ enabled }: { enabled: boolean }) {
     setError(null);
     setDone(null);
     try {
-      if (open.mode === 'link') {
+      if (open.mode === 'link' && item.kind === 'map') {
+        // A Map has no WMS of its own (it is a saved composition, not a layer): add what it is
+        // made of instead, one link per already-catalogued constituent layer, in GeoNode's order.
+        const { layers } = await fetchCatalogueMapLayers(item.id);
+        if (layers.length === 0) {
+          setError('Bản đồ này không có lớp nào xem được để thêm.');
+        } else {
+          for (const l of layers) {
+            const { layer } = await write.run(
+              (expectedRevision) => ws.addCatalogueLink(mapId, { resourceId: l.item.id, title: l.item.title, expectedRevision }),
+              { refetch: false },
+            );
+            setLayerVisible(layer.id, l.visible);
+            setLayerOpacity(layer.id, l.opacity);
+          }
+          expandMap(mapId);
+          await Promise.all([
+            qc.invalidateQueries({ queryKey: keys.map(mapId) }),
+            qc.invalidateQueries({ queryKey: keys.maps }),
+          ]);
+          const n = layers.length;
+          showToast({ tone: 'success', title: `Đã thêm ${n} lớp từ “${item.title}” vào “${titleOf(mapId)}”.` });
+          setOpen(null);
+        }
+      } else if (open.mode === 'link') {
         const { layer } = await write.run((expectedRevision) => ws.addCatalogueLink(mapId, { resourceId: item.id, expectedRevision }));
         // The entry now lives in the map: shown there, no longer as a free-standing layer drawn twice.
         expandMap(mapId);

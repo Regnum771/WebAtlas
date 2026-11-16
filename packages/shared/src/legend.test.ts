@@ -64,10 +64,10 @@ describe('legendFor', () => {
   });
 
   it('uses the standard OpenStreetMap Carto basemap palette', () => {
-    expect(LAYER_PALETTE.layer_bm_roads).toMatchObject({ color: '#f7f1d0', stroke: '#9e9e9e' });
-    expect(LAYER_PALETTE.layer_bm_railways).toMatchObject({ color: '#b3b2a9' });
-    expect(LAYER_PALETTE.layer_bm_water).toMatchObject({ color: '#b5d0d0', stroke: '#7aa9b5' });
-    expect(LAYER_PALETTE.layer_bm_landuse).toMatchObject({ color: '#c8d7ab', secondary: '#e7e7e7' });
+    expect(LAYER_PALETTE.layer_bm_roads).toMatchObject({ color: '#fcd6a4', stroke: '#a06b00' });
+    expect(LAYER_PALETTE.layer_bm_railways).toMatchObject({ color: '#707070' });
+    expect(LAYER_PALETTE.layer_bm_water).toEqual({ color: '#aad3df' });
+    expect(LAYER_PALETTE.layer_bm_landuse).toMatchObject({ color: '#add19e', secondary: '#e0dfdf' });
   });
 
   it('returns a swatch for every hazard layer', () => {

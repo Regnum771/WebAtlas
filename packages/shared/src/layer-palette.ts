@@ -41,10 +41,11 @@ export const LAYER_PALETTE: Record<string, LayerPaletteEntry> = {
   // second hand-typed list is what caused the terrain/dem and legend-colour
   // drift this palette exists to prevent, and a Python/TypeScript split would
   // put that copy where no TS test could ever catch it.
-  // Standard OpenStreetMap Carto palette: pale paper land, cream roads, cyan water,
-  // green landuse, and muted grey/railway tones.
-  layer_bm_roads: { color: '#f7f1d0', stroke: '#9e9e9e' },
-  layer_bm_railways: { color: '#b3b2a9' },
-  layer_bm_water: { color: '#b5d0d0', stroke: '#7aa9b5' },
-  layer_bm_landuse: { color: '#c8d7ab', secondary: '#e7e7e7' },
+  // The standard OpenStreetMap map's (OSM Carto) colours. Roads: the primary road's fill and
+  // casing, the one road swatch the legend shows (styles.py gives each class its own colour).
+  // Water has no outline, as on OSM. Landuse: forest, and residential as the built-up grey.
+  layer_bm_roads: { color: '#fcd6a4', stroke: '#a06b00' },
+  layer_bm_railways: { color: '#707070' },
+  layer_bm_water: { color: '#aad3df' },
+  layer_bm_landuse: { color: '#add19e', secondary: '#e0dfdf' },
 };

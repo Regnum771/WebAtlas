@@ -77,3 +77,23 @@ gs_seed_region() {
     "$GEOSERVER_URL/gwc/rest/seed/$WS:$layer.json" \
     -d "{\"seedRequest\":{\"name\":\"$WS:$layer\",\"bounds\":{\"coords\":{\"double\":$REGION_BOUNDS_3857}},\"srs\":{\"number\":3857},\"gridSetId\":\"EPSG:900913\",\"zoomStart\":$z0,\"zoomStop\":$z1,\"format\":\"image/png\",\"type\":\"seed\",\"threadCount\":2}}")"
 }
+
+# How long a browser may keep a cached tile without asking again, in seconds. GWC's default (0)
+# sends `Cache-Control: no-cache, no-store`, so every view re-downloads every tile of every basemap
+# layer. One day is a compromise: after a republish a browser can show old tiles for up to a day
+# (the truncate empties only the server's cache); a hard reload fetches them again.
+TILE_CLIENT_CACHE_SECONDS="${TILE_CLIENT_CACHE_SECONDS:-86400}"
+
+# Set that lifetime on one cached layer (expireClients). GWC's REST has no partial update, so the
+# layer's own configuration is read, that one value replaced, and the whole sent back. The cached
+# tiles are untouched. Usage: gs_set_tile_client_cache <layer>
+gs_set_tile_client_cache() {
+  local layer="$1" url="$GEOSERVER_URL/gwc/rest/layers/$WS:$1.xml" xml
+  xml=$(curl -s -f -u "$AUTH" "$url") || { echo "ERROR: GET $url failed" >&2; exit 1; }
+  case "$xml" in
+    *"<expireClients>"*"</expireClients>"*) ;;
+    *) echo "ERROR: GET $url returned no <expireClients>: not a GWC layer configuration" >&2; exit 1 ;;
+  esac
+  xml=$(sed -E "s#<expireClients>[^<]*</expireClients>#<expireClients>${TILE_CLIENT_CACHE_SECONDS}</expireClients>#" <<<"$xml")
+  require_2xx "client cache $layer" "$(gs_curl -XPUT -H "Content-Type: text/xml" "$url" -d "$xml")"
+}

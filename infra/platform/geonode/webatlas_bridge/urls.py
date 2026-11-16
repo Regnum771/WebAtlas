@@ -11,4 +11,5 @@ from geonode.urls import handler500  # noqa: F401
 urlpatterns = [
     path("webatlas-bridge/datasets", views.register_dataset, name="webatlas_bridge_datasets"),
     path("webatlas-bridge/resources", views.list_resources, name="webatlas_bridge_resources"),
+    path("webatlas-bridge/maps/<int:pk>/layers", views.map_layers, name="webatlas_bridge_map_layers"),
 ] + geonode_urlpatterns

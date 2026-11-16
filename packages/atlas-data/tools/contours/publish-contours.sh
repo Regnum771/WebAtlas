@@ -14,6 +14,7 @@
 #   GEOSERVER_ADMIN_USER      default admin
 #   GEOSERVER_ADMIN_PASSWORD  required (environment only, never argv)
 #   CONTOUR_STORE             default basemap_pg (the PostGIS store over schema `basemap`)
+#   TILE_CLIENT_CACHE_SECONDS default 86400: how long a browser keeps a tile (lib/geoserver.sh)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -82,6 +83,8 @@ XML
     "<layer><defaultStyle><name>$WS:contours_plain</name></defaultStyle>
        <styles><style><name>$WS:contours_labelled</name></style></styles></layer>")
   require_2xx style "$style_code"
+
+  gs_set_tile_client_cache "$NAME"
 
   truncate_code=$(gs_curl -XPOST -H "Content-Type: text/xml" \
     --data "<truncateLayer><layerName>$WS:$NAME</layerName></truncateLayer>" \

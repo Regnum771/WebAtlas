@@ -105,8 +105,16 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
       # The issuer is the browser address everywhere; containers reach the token, user-info and
       # key endpoints through keycloak:8080 (dynamic back channel).
-      KC_HOSTNAME: http://localhost:8180
-      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      # KC_HOSTNAME left unset on purpose: with hostname:v2 this makes Keycloak derive every
+      # self-referencing URL from each request's own Host header, instead of one fixed value.
+      # Containers reach it as keycloak:8080 (so backchannel calls still resolve there, same as
+      # before); browsers reach it as whatever they actually dialled — localhost:8180 direct (e.g.
+      # through an SSH tunnel, for the admin console) or the LAN proxy's origin (the webatlas
+      # realm's login flow), and each then gets back matching self-referencing URLs. A fixed
+      # KC_HOSTNAME can only be correct for one browser-facing address at a time — don't pin it
+      # back to either. backchannel-dynamic must be false when hostname is unset (Keycloak's own
+      # requirement: with no fixed hostname, backchannel is already dynamic by default).
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "false"
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx384m"
