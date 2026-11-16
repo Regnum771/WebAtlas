@@ -75,6 +75,16 @@ describe('Keycloak login theme', () => {
     expect(css).toContain('prefers-reduced-motion: reduce');
   });
 
+  it('defaults to Vietnamese and keeps English as an explicit, remembered choice', () => {
+    const ftl = read('template.ftl');
+    // Redirect only when no language was chosen and the URL names none (no loop).
+    expect(ftl).toMatch(/wa_locale=\/\.test\(document\.cookie\)/);
+    expect(ftl).toMatch(/!\/\[\?&\]kc_locale=\/\.test\(location\.search\)/);
+    expect(ftl).toContain('location.replace("${waViUrl?js_string?no_esc}")');
+    // The language links record the choice.
+    expect(ftl).toMatch(/document\.cookie = "wa_locale=" \+ link\.lang/);
+  });
+
   it('builds one folder Keycloak can load', () => {
     const paths = keycloakTargets.map((t) => t.path);
     expect(paths.every((p) => p.startsWith('keycloak/webatlas/login/'))).toBe(true);

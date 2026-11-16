@@ -17,6 +17,24 @@
             <meta name="${meta?split('==')[0]}" content="${meta?split('==')[1]}"/>
         </#list>
     </#if>
+    <#--
+      Vietnamese for everyone, English only by choice. Keycloak ranks the browser's Accept-Language above the
+      realm default, so an English browser would land on English. Until the reader has picked a language with
+      the links (the wa_locale cookie), any other language is swapped for Vietnamese once, through the same
+      kc_locale link the toggle uses; Keycloak then keeps it in its own locale cookie for the pages after
+      sign-in as well. A URL that already names a language is never redirected, so this cannot loop.
+    -->
+    <#if realm.internationalizationEnabled && locale.currentLanguageTag != "vi">
+        <#list locale.supported as l><#if l.languageTag == "vi"><#assign waViUrl = l.url></#if></#list>
+        <#if waViUrl??>
+            <script>
+                (function () {
+                    var chosen = /(?:^|;\s*)wa_locale=/.test(document.cookie);
+                    if (!chosen && !/[?&]kc_locale=/.test(location.search)) location.replace("${waViUrl?js_string?no_esc}");
+                })();
+            </script>
+        </#if>
+    </#if>
     <title>${msg("loginTitle",(realm.displayName!'WebATLAS'))}</title>
     <link rel="icon" href="${url.resourcesPath}/img/favicon.svg" type="image/svg+xml" />
     <#-- The same families and axes as apps/web/index.html. -->
@@ -132,6 +150,13 @@
                         <a href="${l.url}" lang="${l.languageTag}" hreflang="${l.languageTag}"<#if l.languageTag == locale.currentLanguageTag> aria-current="true"</#if>><#if l.languageTag == "vi">Tiếng Việt<#elseif l.languageTag == "en">English<#else>${l.label}</#if></a>
                     </#list>
                 </nav>
+                <script>
+                    // Remember an explicit choice for a year, so the Vietnamese default above stops applying.
+                    document.getElementById("kc-locale").addEventListener("click", function (event) {
+                        var link = event.target.closest("a[lang]");
+                        if (link) document.cookie = "wa_locale=" + link.lang + "; path=/; max-age=31536000; SameSite=Lax";
+                    });
+                </script>
             </#if>
         </div>
 
