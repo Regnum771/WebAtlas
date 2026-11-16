@@ -111,6 +111,22 @@ To stop the stack: `docker compose -f infra/docker-compose.yml --env-file infra/
 > `CORS_ORIGIN` in `apps/api/.env` if you change the Vite port). `npm run build:web` type-checks and builds the
 > frontend; `npm run lint:web` runs oxlint.
 
+### Demo / SSO account
+
+`atlas:up` also stands up Keycloak (`infra/docker-compose.platform.yml`) and seeds one demo user via
+`infra/platform/keycloak/webatlas-realm.json`, imported from `KC_DEV_USERNAME` / `KC_DEV_EMAIL` /
+`KC_DEV_PASSWORD` in `infra/.env` (realm import only happens once, on that container's first start).
+Use it with **Đăng nhập một lần** (single sign-on) in the login dialog:
+
+| | |
+|---|---|
+| Username | `demo` (from `KC_DEV_USERNAME`) |
+| Email | `demo@webatlas.local` (from `KC_DEV_EMAIL`) |
+| Password | `KC_DEV_PASSWORD` in `infra/.env` — not committed; see that file on the machine running the stack |
+
+It has the `admin` role plus `dieu-phoi` (opens the Dagster orchestration UI). Keycloak itself at
+`http://localhost:8180`, admin console login from `KC_ADMIN_PASSWORD` in `infra/.env`.
+
 ### Workspace worker (personal-map import/export)
 
 Imports and exports of personal maps are jobs the API queues in `workspace.jobs`; a Python worker
