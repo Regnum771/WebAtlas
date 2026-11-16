@@ -1,0 +1,13 @@
+{% load webatlas_ui %}
+{% comment %}
+  GeoNode's own sections, as tabs under the WebATLAS header (spec artboard 4: Bộ dữ liệu · Bản đồ · Tài liệu ·
+  Chờ duyệt). GeoStories and Dashboards stay reachable from "Tất cả". header.html marks the current one
+  active by its href, so the ids and hrefs are GeoNode's.
+{% endcomment %}
+<li><a id="all-resources" href="/all" class="nav-link btn btn-default">{% wa_t "All resources" "Tất cả" %}</a></li>
+<li><a id="datasets" href="/datasets" class="nav-link btn btn-default">{% wa_t "Datasets" "Bộ dữ liệu" %}</a></li>
+<li><a id="maps" href="/maps" class="nav-link btn btn-default">{% wa_t "Maps" "Bản đồ" %}</a></li>
+<li><a id="documents" href="/documents" class="nav-link btn btn-default">{% wa_t "Documents" "Tài liệu" %}</a></li>
+{% if request.user.is_authenticated %}
+    <li><a id="pending-approval" href="/catalogue/#/search/?f=pending-approval" class="nav-link btn btn-default">{% wa_t "Pending approval" "Chờ duyệt" %}</a></li>
+{% endif %}

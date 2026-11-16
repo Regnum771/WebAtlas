@@ -1,0 +1,213 @@
+<#--
+  WebATLAS login layout (K6, spec "Keycloak sign-in, artboard 5"): the dark contour hero on the left,
+  the form on the right. Adapted from Keycloak 26.4's base template.ftl; the scripts that keep the
+  login flow working (session polling, the auth-session check, single-use links) are kept as they are.
+-->
+<#import "footer.ftl" as loginFooter>
+<#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false>
+<!DOCTYPE html>
+<html class="${properties.kcHtmlClass!}" lang="${lang}"<#if realm.internationalizationEnabled> dir="${(locale.rtl)?then('rtl','ltr')}"</#if>>
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="robots" content="noindex, nofollow">
+    <#if properties.meta?has_content>
+        <#list properties.meta?split(' ') as meta>
+            <meta name="${meta?split('==')[0]}" content="${meta?split('==')[1]}"/>
+        </#list>
+    </#if>
+    <#--
+      Vietnamese for everyone, English only by choice. Keycloak ranks the browser's Accept-Language above the
+      realm default, so an English browser would land on English. Until the reader has picked a language with
+      the links (the wa_locale cookie), any other language is swapped for Vietnamese once, through the same
+      kc_locale link the toggle uses; Keycloak then keeps it in its own locale cookie for the pages after
+      sign-in as well. A URL that already names a language is never redirected, so this cannot loop.
+    -->
+    <#if realm.internationalizationEnabled && locale.currentLanguageTag != "vi">
+        <#list locale.supported as l><#if l.languageTag == "vi"><#assign waViUrl = l.url></#if></#list>
+        <#if waViUrl??>
+            <script>
+                (function () {
+                    var chosen = /(?:^|;\s*)wa_locale=/.test(document.cookie);
+                    if (!chosen && !/[?&]kc_locale=/.test(location.search)) location.replace("${waViUrl?js_string?no_esc}");
+                })();
+            </script>
+        </#if>
+    </#if>
+    <title>${msg("loginTitle",(realm.displayName!'WebATLAS'))}</title>
+    <link rel="icon" href="${url.resourcesPath}/img/favicon.svg" type="image/svg+xml" />
+    <#-- The same families and axes as apps/web/index.html. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;500&display=swap" />
+    <#if properties.styles?has_content>
+        <#list properties.styles?split(' ') as style>
+            <link href="${url.resourcesPath}/${style}" rel="stylesheet" />
+        </#list>
+    </#if>
+    <#if properties.scripts?has_content>
+        <#list properties.scripts?split(' ') as script>
+            <script src="${url.resourcesPath}/${script}" type="text/javascript"></script>
+        </#list>
+    </#if>
+    <script type="importmap">
+        {
+            "imports": {
+                "rfc4648": "${url.resourcesCommonPath}/vendor/rfc4648/rfc4648.js"
+            }
+        }
+    </script>
+    <#if scripts??>
+        <#list scripts as script>
+            <script src="${script}" type="text/javascript"></script>
+        </#list>
+    </#if>
+    <script type="module">
+        import { startSessionPolling } from "${url.resourcesPath}/js/authChecker.js";
+
+        startSessionPolling(
+            "${url.ssoLoginInOtherTabsUrl?no_esc}"
+        );
+    </script>
+    <script type="module">
+        document.addEventListener("click", (event) => {
+            const link = event.target.closest("a[data-once-link]");
+
+            if (!link) {
+                return;
+            }
+
+            if (link.getAttribute("aria-disabled") === "true") {
+                event.preventDefault();
+                return;
+            }
+
+            const { disabledClass } = link.dataset;
+
+            if (disabledClass) {
+                link.classList.add(...disabledClass.trim().split(/\s+/));
+            }
+
+            link.setAttribute("role", "link");
+            link.setAttribute("aria-disabled", "true");
+        });
+    </script>
+    <#if authenticationSession??>
+        <script type="module">
+            import { checkAuthSession } from "${url.resourcesPath}/js/authChecker.js";
+
+            checkAuthSession(
+                "${authenticationSession.authSessionIdHash}"
+            );
+        </script>
+    </#if>
+</head>
+
+<body class="${properties.kcBodyClass!} ${bodyClass}" data-page-id="login-${pageId}">
+<div class="wa-split">
+    <aside class="wa-hero">
+        <#-- Decoration only: faint contours drifting and a river line flowing (off under reduced motion). -->
+        <svg class="wa-hero__art" aria-hidden="true" focusable="false" viewBox="0 0 600 900" preserveAspectRatio="xMidYMid slice">
+            <g class="wa-hero__contours">
+                <path d="M -40 860 C 120 814, 260 900, 380 842 S 560 790, 660 836"/>
+                <path d="M -40 798 C 120 752, 260 838, 380 780 S 560 728, 660 774"/>
+                <path d="M -40 736 C 120 690, 260 776, 380 718 S 560 666, 660 712"/>
+                <path d="M -40 674 C 120 628, 260 714, 380 656 S 560 604, 660 650"/>
+                <path d="M -40 612 C 120 566, 260 652, 380 594 S 560 542, 660 588"/>
+                <path d="M -40 550 C 120 504, 260 590, 380 532 S 560 480, 660 526"/>
+                <path d="M -40 488 C 120 442, 260 528, 380 470 S 560 418, 660 464"/>
+                <path d="M -40 426 C 120 380, 260 466, 380 408 S 560 356, 660 402"/>
+                <path d="M -40 364 C 120 318, 260 404, 380 346 S 560 294, 660 340"/>
+                <path d="M -40 302 C 120 256, 260 342, 380 284 S 560 232, 660 278"/>
+                <path d="M -40 240 C 120 194, 260 280, 380 222 S 560 170, 660 216"/>
+                <path d="M -40 178 C 120 132, 260 218, 380 160 S 560 108, 660 154"/>
+                <path d="M -40 116 C 120 70, 260 156, 380 98 S 560 46, 660 92"/>
+                <path d="M -40 54 C 120 8, 260 94, 380 36 S 560 -16, 660 30"/>
+            </g>
+            <g class="wa-hero__summit">
+                <path d="M 470 250 C 540 236, 572 290, 548 330 S 452 368, 428 318 S 418 260, 470 250 Z"/>
+                <path d="M 474 272 C 522 264, 540 298, 526 322 S 466 346, 450 314 S 444 278, 474 272 Z"/>
+                <path d="M 480 292 C 504 288, 514 304, 506 316 S 476 328, 468 312 S 466 294, 480 292 Z"/>
+            </g>
+            <#-- The river keeps right of x≈420 below y≈540, clear of the wordmark and lead text at the bottom left. -->
+            <path class="wa-hero__river" d="M 590 920 C 520 830, 450 760, 470 660 S 520 560, 430 470 S 270 380, 320 250 S 300 60, 250 -20"/>
+        </svg>
+        <div class="wa-hero__body">
+            <p class="wa-hero__mark">${realm.displayName!'WebATLAS'}</p>
+            <p class="wa-hero__lead">${msg("waHeroLead")}</p>
+        </div>
+        <p class="wa-hero__foot">${msg("waHeroFoot")}</p>
+    </aside>
+
+    <main class="wa-panel">
+        <div class="wa-panel__top">
+            <span class="wa-panel__mark">${realm.displayName!'WebATLAS'}</span>
+            <#if realm.internationalizationEnabled && locale.supported?size gt 1>
+                <nav class="wa-locale" id="kc-locale" aria-label="${msg("waLanguage")}">
+                    <#list locale.supported as l>
+                        <#-- Each language named in itself, so a reader can always find their own. -->
+                        <a href="${l.url}" lang="${l.languageTag}" hreflang="${l.languageTag}"<#if l.languageTag == locale.currentLanguageTag> aria-current="true"</#if>><#if l.languageTag == "vi">Tiếng Việt<#elseif l.languageTag == "en">English<#else>${l.label}</#if></a>
+                    </#list>
+                </nav>
+                <script>
+                    // Remember an explicit choice for a year, so the Vietnamese default above stops applying.
+                    document.getElementById("kc-locale").addEventListener("click", function (event) {
+                        var link = event.target.closest("a[lang]");
+                        if (link) document.cookie = "wa_locale=" + link.lang + "; path=/; max-age=31536000; SameSite=Lax";
+                    });
+                </script>
+            </#if>
+        </div>
+
+        <div class="wa-card">
+            <header class="wa-card__head">
+                <h1 id="kc-page-title" class="wa-title"><#nested "header"></h1>
+                <#if displayRequiredFields>
+                    <p class="wa-hint"><span class="wa-required" aria-hidden="true">*</span> ${msg("requiredFields")}</p>
+                </#if>
+                <#if auth?has_content && auth.showUsername() && !auth.showResetCredentials()>
+                    <#nested "show-username">
+                    <div id="kc-username" class="wa-attempted">
+                        <span id="kc-attempted-username">${auth.attemptedUsername}</span>
+                        <a id="reset-login" href="${url.loginRestartFlowUrl}">${msg("restartLoginTooltip")}</a>
+                    </div>
+                </#if>
+            </header>
+
+            <div id="kc-content">
+                <#-- App-initiated actions should not see warning messages about the need to complete the action during login. -->
+                <#if displayMessage && message?has_content && (message.type != 'warning' || !isAppInitiatedAction??)>
+                    <div class="${properties.kcAlertClass!} wa-alert--${message.type}" role="<#if message.type = 'error'>alert<#else>status</#if>">
+                        <span class="${properties.kcAlertTitleClass!}">${kcSanitize(message.summary)?no_esc}</span>
+                    </div>
+                </#if>
+
+                <#nested "form">
+
+                <#if auth?has_content && auth.showTryAnotherWayLink()>
+                    <form id="kc-select-try-another-way-form" action="${url.loginAction}" method="post">
+                        <div class="${properties.kcFormGroupClass!}">
+                            <input type="hidden" name="tryAnotherWay" value="on"/>
+                            <a href="#" id="try-another-way"
+                               onclick="document.forms['kc-select-try-another-way-form'].requestSubmit();return false;">${msg("doTryAnotherWay")}</a>
+                        </div>
+                    </form>
+                </#if>
+
+                <#nested "socialProviders">
+
+                <#if displayInfo>
+                    <div id="kc-info" class="${properties.kcSignUpClass!}">
+                        <#nested "info">
+                    </div>
+                </#if>
+            </div>
+
+            <@loginFooter.content/>
+        </div>
+    </main>
+</div>
+</body>
+</html>
+</#macro>

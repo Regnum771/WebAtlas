@@ -1,0 +1,50 @@
+{% extends "account/base.html" %}
+{% load i18n %}
+{% load bootstrap_tags %}
+{% load account socialaccount %}
+{% load webatlas_ui %}
+{% comment %}
+  GeoNode's sign-in page, WebATLAS style (K7). Replaces geonode/templates/account/login.html, whose text was
+  half English. The platform signs in through Keycloak, so single sign-on leads; GeoNode's own password form
+  (local accounts such as the admin) sits behind a disclosure and opens by itself when it has errors.
+{% endcomment %}
+
+{% block head_title %}{% wa_t "Sign in" "Đăng nhập" %}{% endblock %}
+
+{% block body_outer %}
+<div class="wa-gn-signin">
+    <h1 class="wa-gn-signin__title">{% wa_t "Sign in to the catalogue" "Đăng nhập danh mục" %}</h1>
+    <p class="wa-gn-signin__lead">{% wa_t "Use the WebATLAS account your agency issued." "Dùng tài khoản WebATLAS do đơn vị của bạn cấp." %}</p>
+
+    {% get_providers as socialaccount_providers %}
+    {% for provider in socialaccount_providers %}
+        <a class="btn btn-primary wa-gn-signin__sso" href="{% provider_login_url provider.id process='login' %}">{{ provider.name }}</a>
+    {% endfor %}
+
+    <details class="wa-gn-signin__local"{% if form.errors %} open{% endif %}>
+        <summary>{% wa_t "Local GeoNode account (administrators)" "Tài khoản GeoNode cục bộ (quản trị)" %}</summary>
+        {% if form.non_field_errors %}
+            <div class="wa-gn-alert" role="alert">
+                <strong>{% wa_t "Could not sign in" "Không đăng nhập được" %}</strong>
+                {% for error in form.non_field_errors %}<span>{{ error }}</span>{% endfor %}
+            </div>
+        {% endif %}
+        <form role="form" method="POST" action="{% url 'account_login' %}" autocapitalize="off">
+            {% csrf_token %}
+            <div class="wa-gn-field">
+                <label for="id_login">{% wa_t "Username or email" "Tên đăng nhập hoặc email" %}</label>
+                <input id="id_login" name="login" type="text" class="form-control" autocomplete="username" value="{{ form.login.value|default_if_none:'' }}" required>
+            </div>
+            <div class="wa-gn-field">
+                <label for="id_password">{% wa_t "Password" "Mật khẩu" %}</label>
+                <input id="id_password" name="password" type="password" class="form-control" autocomplete="current-password" required>
+            </div>
+            <label class="wa-gn-check"><input type="checkbox" name="remember" id="id_remember"> {% wa_t "Remember me" "Ghi nhớ đăng nhập" %}</label>
+            {% if redirect_field_value %}
+                <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
+            {% endif %}
+            <button class="btn btn-default" type="submit">{% wa_t "Sign in" "Đăng nhập" %}</button>
+        </form>
+    </details>
+</div>
+{% endblock body_outer %}

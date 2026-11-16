@@ -11,6 +11,7 @@
   "internationalizationEnabled": true,
   "supportedLocales": ["vi", "en"],
   "defaultLocale": "vi",
+  "loginTheme": "webatlas",
   "roles": {
     "realm": [
       { "name": "dieu-phoi", "description": "Opens the orchestration UI (Dagster) behind oauth2-proxy." }
@@ -90,6 +91,7 @@
       "enabled": true,
       "firstName": "Quản trị",
       "lastName": "Thử nghiệm",
+      "attributes": { "locale": ["vi"] },
       "realmRoles": ["default-roles-webatlas", "dieu-phoi"],
       "credentials": [
         { "type": "password", "value": "${KC_DEV_PASSWORD}", "temporary": false }
